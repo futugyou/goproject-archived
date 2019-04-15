@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"log"
 	"os"
-	"work/golangpro/ch5/links"
+	"work/golang-test/golangpro/ch5/links"
 )
 
 var tokens = make(chan struct{}, 20)
