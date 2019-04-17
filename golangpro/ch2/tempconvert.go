@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"os"
 	"strconv"
-	"work/golangpro/ch2/tempconv"
+	"work/golang-test/golangpro/ch2/tempconv"
 )
 
 func main() {
