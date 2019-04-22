@@ -28,4 +28,6 @@ func main() {
 	//--delete mid
 	c = c[:2+copy(c[2:], c[2+1:])]
 	fmt.Printf("%#v\t cap(c):%d\n", c, cap(c))
+
+
 }
