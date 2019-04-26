@@ -1,10 +1,10 @@
 package main
 
 import (
-	"sync"
-	"time"
 	"fmt"
 	"strings"
+	"sync"
+	"time"
 )
 
 type (
@@ -31,10 +31,10 @@ func (p *Publisher) Subscribe() chan interface{} {
 	return p.SubscribeTopic(nil)
 }
 
-func(p *Publisher)SubscribeTopic(topic topicFunc)chan interface{}{
-	ch:=make(chan interface{},p.buffer)
+func (p *Publisher) SubscribeTopic(topic topicFunc) chan interface{} {
+	ch := make(chan interface{}, p.buffer)
 	p.m.Lock()
-	p.subscribers[ch]=topic
+	p.subscribers[ch] = topic
 	p.m.Unlock()
 	return ch
 }
@@ -58,54 +58,53 @@ func (p *Publisher) Publish(v interface{}) {
 	wg.Wait()
 }
 
-func (p *Publisher)Close(){
+func (p *Publisher) sendTopic(
+	sub subscriber, topic topicFunc, v interface{}, wg *sync.WaitGroup,
+) {
+	defer wg.Done()
+	if topic != nil && !topic(v) {
+		return
+	}
+	select {
+	case sub <- v:
+	case <-time.After(p.timeout):
+	}
+}
+func (p *Publisher) Close() {
 	p.m.Lock()
 	defer p.m.Unlock()
-	for sub:=range p.subscribers{
-		delete(p.subscribers,sub)
+	for sub := range p.subscribers {
+		delete(p.subscribers, sub)
 		close(sub)
 	}
 }
 
-func (p *Publisher) sendTopic(
-	sub subscriber,topic topicFunc,v interface{},wg *sync.WaitGroup,
-){
-	defer wg.Done()
-	if topic!=nil && !topic(v){
-		return
-	}
-	select{
-	case sub<-v:
-	case <-time.After(p.timeout):
-	}
-}
-
-func main(){
-	p:= NewPublisher(100*time.Millisecond,10)
+func main() {
+	p := NewPublisher(100*time.Millisecond, 10)
 	defer p.Close()
 
-	all:=p.Subscribe()
-	golang:= p.SubscribeTopic(func(v interface{})bool{
-		if s,ok:=v.(string);ok{
-			return strings.Contains(s,"golang")
+	all := p.Subscribe()
+	golang := p.SubscribeTopic(func(v interface{}) bool {
+		if s, ok := v.(string); ok {
+			return strings.Contains(s, "golang")
 		}
-return false
+		return false
 	})
 
 	p.Publish("hello world")
 	p.Publish("hello golang")
 
-	go func(){
-		for msg:=range all{
-			fmt.Println("all: ",msg)
+	go func() {
+		for msg := range all {
+			fmt.Println("all: ", msg)
 		}
 	}()
 
-	go func(){
-		for msg:=range golang{
-			fmt.Println("golang: ",msg)
+	go func() {
+		for msg := range golang {
+			fmt.Println("golang: ", msg)
 		}
 	}()
 
-	time.Sleep(3*time.Second)
+	time.Sleep(3 * time.Second)
 }
