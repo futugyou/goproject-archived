@@ -11,8 +11,21 @@ import (
 	grpc "google.golang.org/grpc"
 )
 
+type Authentication struct {
+	Key   string
+	Value string
+}
+
+func (a *Authentication) GetRequestMetadata(context.Context, ...string) (map[string]string, error) {
+	return map[string]string{"key": a.Key, "Value": a.Value}, nil
+}
+
+func (a *Authentication) RequireTransportSecurity() bool {
+	return false
+}
 func main() {
-	conn, err := grpc.Dial("localhost:1234", grpc.WithInsecure())
+	auth := Authentication{Key: "aaaaa", Value: "bbbbb"}
+	conn, err := grpc.Dial("localhost:1234", grpc.WithInsecure(), grpc.WithPerRPCCredentials(&auth))
 	if err != nil {
 		log.Fatal(err)
 	}
