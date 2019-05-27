@@ -13,7 +13,7 @@ func main() {
 		panic(err)
 	}
 	l := zk.NewLock(c, "/lock", zk.WorldACL(zk.PermAll))
-	err := l.Lock()
+	err = l.Lock()
 	if err != nil {
 		panic(err)
 	}
