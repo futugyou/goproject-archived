@@ -11,7 +11,8 @@
         <option value="apple">apple</option>
         <option value="pear">pear</option>
         <option value="banana">banana</option>
-    </select>
+    </select> 
+    <input type="hidden" name="token" value="{{.}}">
 	<input type="submit" value="登录">
 </form>
 </body>
