@@ -38,7 +38,7 @@ func main() {
 	src := []byte(`
 	call hello alice
 	hello bob
-	call hello eve	
+	call hello eve
 	`)
 
 	pat := regexp.MustCompile(`(?m)(call)\s+(?P<cmd>\w+)\s+(?P<arg>.+)\s*$`)
