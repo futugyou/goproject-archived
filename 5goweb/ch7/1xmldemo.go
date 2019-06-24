@@ -8,14 +8,14 @@ import (
 )
 
 type RecurlyServers struct {
-	XmlName     xml.Name `xml:"servers"`
+	XMLName     xml.Name `xml:"servers"`
 	Version     string   `xml:"version,attr"`
 	Svs         []server `xml:"server"`
 	Description string   `xml:",innerxml"`
 }
 
 type server struct {
-	XmlName    xml.Name `xml:"server"`
+	XMLName    xml.Name `xml:"server"`
 	ServerName string   `xml:"serverName"`
 	ServerIP   string   `xml:"serverIP"`
 }
