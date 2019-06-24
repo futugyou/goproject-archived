@@ -40,4 +40,17 @@ func main() {
 		return
 	}
 	fmt.Println(v)
+
+	fmt.Println("----------------------------")
+
+	d := &RecurlyServers{Version: "1.0"}
+	d.Svs = append(v.Svs, server{ServerName:"shanghai_vpn", ServerIP:"127.0.0.1"})
+	d.Svs = append(v.Svs, server{ServerName:"beijing_vpn",ServerIP: "127.0.0.2"})
+	output, err := xml.MarshalIndent(d, " ", " ")
+	if err != nil {
+		fmt.Printf("error: %v\n", err)
+		return
+	}
+	os.Stdout.Write([]byte(xml.Header))
+	os.Stdout.Write(output)
 }
