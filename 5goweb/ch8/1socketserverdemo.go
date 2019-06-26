@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net"
 	"os"
+	"strings"
 	"time"
 )
 
@@ -31,8 +32,28 @@ func main() {
 }
 
 func WriteResponse(conn net.Conn) {
-	daytime := time.Now().String()
-	fmt.Println(daytime)
-	conn.Write([]byte(daytime))
+	conn.SetReadDeadline(time.Now().Add(2 * time.Minute))
+	request := make([]byte, 128)
 	defer conn.Close()
+
+	for {
+		read_len, err := conn.Read(request)
+		if err != nil {
+			fmt.Println("this is err : ",err)
+			break
+		}
+		if read_len == 0 {
+			break
+		} else if strings.TrimSpace(string(request[:read_len])) == "timestamp" {
+			daytime := time.Now().String()
+			fmt.Println(daytime)
+			conn.Write([]byte(daytime))
+		} else {
+			daytime := time.Now().Add(time.Hour).String()
+			fmt.Println(daytime)
+			conn.Write([]byte(daytime))
+		}
+		request = make([]byte, 128) // clear last read content
+	}
+
 }
