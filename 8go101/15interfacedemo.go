@@ -57,4 +57,11 @@ func main() {
 	for _, filter := range filters {
 		n = filterAndPrint(filter, n)
 	}
+	words := []string{
+		"Go", "is", "a", "high",
+		"efficient", "language.",
+	}
+	fmt.Println(words)
+	//fmt.Println(words...)cannot use words (type []string) as type []interface {}
+
 }
