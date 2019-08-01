@@ -19,4 +19,15 @@ func main() {
 	fmt.Println(unsafe.Offsetof(x.a))
 	fmt.Println(unsafe.Offsetof(x.b))
 	fmt.Println(unsafe.Offsetof(x.c))
+
+	xx := 123
+	fmt.Println(&xx)
+	p := unsafe.Pointer(&xx)
+	fmt.Println(p)
+	pp := &p
+	fmt.Println(pp)
+	p = unsafe.Pointer(pp)
+	fmt.Println(p)
+	pp = (*unsafe.Pointer)(p)
+	fmt.Println(pp)
 }
