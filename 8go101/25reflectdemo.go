@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	_ "math/rand"
 	"reflect"
 )
 
@@ -25,4 +26,8 @@ func main() {
 	selIndex, vRecv, closed = reflect.Select(branches[:2])
 	fmt.Println(selIndex, vRecv.Int(), closed)
 
+	s := []int{0, 1, 2, 3, 4, 5, 6, 7, 8}
+	index := 9 //10
+	fmt.Println(s[:index])
+	fmt.Println(s[index:])
 }
