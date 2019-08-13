@@ -11,14 +11,14 @@ func main() {
 		b bool
 		c int64
 	}
-	const M, N = unsafe.Sizeof(x.a), unsafe.Sizeof(x)
-	fmt.Println(M, N)
+	const M, N, NN, MM = unsafe.Sizeof(x.a), unsafe.Sizeof(x.b), unsafe.Sizeof(x.c), unsafe.Sizeof(x)
+	fmt.Println(M, N, NN, MM)
 	fmt.Println(unsafe.Alignof(x.a))
 	fmt.Println(unsafe.Alignof(x.b))
 	fmt.Println(unsafe.Alignof(x.c))
 	fmt.Println(unsafe.Offsetof(x.a))
 	fmt.Println(unsafe.Offsetof(x.b))
-	fmt.Println(unsafe.Offsetof(x.c))
+	fmt.Println(unsafe.Offsetof(x.c)) 
 
 	xx := 123
 	fmt.Println(&xx)
