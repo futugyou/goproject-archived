@@ -25,7 +25,7 @@ func main() {
 		SerialNumber: serialNumber,
 		Subject:      subject,
 		NotBefore:    time.Now(),
-		NotAfter:     time.Now(),
+		NotAfter:     time.Now().Add(365 * 24 * time.Hour),
 		KeyUsage:     x509.KeyUsageKeyEncipherment | x509.KeyUsageDigitalSignature,
 		ExtKeyUsage:  []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
 		IPAddresses:  []net.IP{net.ParseIP("127.0.0.1")},
