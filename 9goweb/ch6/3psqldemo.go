@@ -17,7 +17,7 @@ var db *sql.DB
 
 func init() {
 	var err error
-	db, err = sql.Open("postgres", "user=gwp dbname=gwp password=qwp sslmode=disable")
+	db, err = sql.Open("postgres", "user=postgres dbname=postgres password=1qaz2wsx sslmode=disable")
 	if err != nil {
 		panic(err)
 	}
@@ -56,10 +56,28 @@ func (post *Post) Create() (err error) {
 	err = stmt.QueryRow(post.Content, post.Author).Scan(&post.Id)
 	return
 }
+
+func (post *Post) Update() (err error) {
+	_, err = db.Exec("update posts set content = $2 ,author = $3 where id = $1", post.Id, post.Content, post.Author)
+	return
+}
+
+func (post *Post) Delete() (err error) {
+	_, err = db.Exec("delete from posts where id = $1", post.Id)
+	return
+}
+
 func main() {
 	post := Post{Content: "hello 1", Author: "bb"}
 	fmt.Println(post.Create())
 	fmt.Println(post)
 	readPost, _ := GetPost(post.Id)
-	fmt.Println(readPost)
+	readPost.Content = "like"
+	readPost.Author = "user"
+	readPost.Update()
+
+	posts, _ := Posts(5)
+	fmt.Println(posts)
+
+	readPost.Delete()
 }
