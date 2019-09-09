@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
+	"os"
 )
 
 type Post struct {
@@ -46,6 +47,7 @@ func main() {
 		},
 	}
 
+	//1
 	output, err := json.MarshalIndent(&post, "", "\t\t")
 	if err != nil {
 		fmt.Println(err)
@@ -55,5 +57,18 @@ func main() {
 	err = ioutil.WriteFile("post.json", output, 0644)
 	if err != nil {
 		fmt.Println(err)
+	}
+
+	//2
+	jsonFile, err := os.Create("post1.json")
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+	encoder := json.NewEncoder(jsonFile)
+	err = encoder.Encode(&post)
+	if err != nil {
+		fmt.Println(err)
+		return
 	}
 }
