@@ -1,5 +1,3 @@
-# golang-test
-golang-test
-1 gobyexample  
-2 golangpro    https://docs.hacknode.org
-3 advancedgolang https://books.studygolang.com/advanced-go-programming-book/
+# archived goproject
+
+Move the archived project from the [goproject](https://github.com/futugyou/goproject) repository to [here](https://github.com/futugyou/goproject-archived)

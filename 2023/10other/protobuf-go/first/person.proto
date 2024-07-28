@@ -1,0 +1,12 @@
+syntax = "proto3";
+
+package person.first;
+
+option go_package = "first";
+
+message PersonMessage {
+    int32 id = 1;
+    bool is_Adult = 2;
+    string name = 3;
+    repeated int32 lucky_numbers = 4;
+}
