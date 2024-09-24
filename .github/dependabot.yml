@@ -9,7 +9,8 @@ updates:
     directory: "/"
     schedule:
       interval: "weekly"
-  - package-ecosystem: "gomod" # See documentation for possible values
-    directory: "/" # Location of package manifests
+  - package-ecosystem: "gomod"
+    directories:
+      - "**/*"
     schedule:
       interval: "weekly"
