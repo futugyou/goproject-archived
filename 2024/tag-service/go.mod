@@ -14,7 +14,7 @@ require (
 	golang.org/x/net v0.33.0
 	google.golang.org/genproto v0.0.0-20230410155749-daa745c078e1
 	google.golang.org/grpc v1.56.3
-	google.golang.org/protobuf v1.36.0
+	google.golang.org/protobuf v1.36.1
 )
 
 //replace google.golang.org/grpc => google.golang.org/grpc v1.26.0
