@@ -5,7 +5,7 @@ go 1.20
 require (
 	github.com/bitfield/script v0.24.0
 	github.com/google/go-github/v53 v53.2.0
-	golang.org/x/oauth2 v0.24.0
+	golang.org/x/oauth2 v0.25.0
 )
 
 require (
