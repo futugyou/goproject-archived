@@ -16,7 +16,7 @@ require (
 	github.com/jinzhu/gorm v1.9.16
 	github.com/juju/ratelimit v1.0.2
 	github.com/opentracing/opentracing-go v1.2.0
-	github.com/spf13/viper v1.20.0
+	github.com/spf13/viper v1.20.1
 	github.com/swaggo/gin-swagger v1.2.0
 	github.com/swaggo/swag v1.16.4
 	github.com/uber/jaeger-client-go v2.30.0+incompatible
