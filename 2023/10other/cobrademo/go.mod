@@ -1,12 +1,13 @@
 module myadd
 
-go 1.13
+go 1.21.1
+
 toolchain go1.24.1
 
 require (
 	github.com/mitchellh/go-homedir v1.1.0
 	github.com/spf13/cobra v1.9.1
-	github.com/spf13/viper v1.20.0
+	github.com/spf13/viper v1.20.1
 )
 
 require (
