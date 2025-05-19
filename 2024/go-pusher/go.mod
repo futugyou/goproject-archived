@@ -1,6 +1,6 @@
 module go-pusher
 
-go 1.20
+go 1.23.0
 
 require (
 	github.com/joho/godotenv v1.5.1
@@ -15,6 +15,6 @@ require (
 
 require (
 	github.com/pusher/push-notifications-go v0.0.0-20200210154345-764224c311b8
-	golang.org/x/crypto v0.31.0 // indirect
-	golang.org/x/sys v0.28.0 // indirect
+	golang.org/x/crypto v0.35.0 // indirect
+	golang.org/x/sys v0.30.0 // indirect
 )
