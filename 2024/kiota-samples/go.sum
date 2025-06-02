@@ -43,8 +43,8 @@ github.com/microsoft/kiota-authentication-azure-go v1.0.1 h1:F4HH+2QQHSecQg50gVE
 github.com/microsoft/kiota-authentication-azure-go v1.0.1/go.mod h1:IbifJeoi+sULI0vjnsWYSmDu5atFo/4FZ6WCoAkPjsc=
 github.com/microsoft/kiota-http-go v1.1.1 h1:W4Olo7Z/MwNZCfkcvH/5eLhnn7koRBMMRhLEnf5MPKo=
 github.com/microsoft/kiota-http-go v1.1.1/go.mod h1:QzhhfW5xkoUuT+/ohflpHJvumWeXIxa/Xl0GmQ2M6mY=
-github.com/microsoft/kiota-serialization-form-go v1.0.0 h1:UNdrkMnLFqUCccQZerKjblsyVgifS11b3WCx+eFEsAI=
-github.com/microsoft/kiota-serialization-form-go v1.0.0/go.mod h1:h4mQOO6KVTNciMF6azi1J9QB19ujSw3ULKcSNyXXOMA=
+github.com/microsoft/kiota-serialization-form-go v1.1.2 h1:SD6MATqNw+Dc5beILlsb/D87C36HKC/Zw7l+N9+HY2A=
+github.com/microsoft/kiota-serialization-form-go v1.1.2/go.mod h1:m4tY2JT42jAZmgbqFwPy3zGDF+NPJACuyzmjNXeuHio=
 github.com/microsoft/kiota-serialization-json-go v1.0.4 h1:5TaISWwd2Me8clrK7SqNATo0tv9seOq59y4I5953egQ=
 github.com/microsoft/kiota-serialization-json-go v1.0.4/go.mod h1:rM4+FsAY+9AEpBsBzkFFis+b/LZLlNKKewuLwK9Q6Mg=
 github.com/microsoft/kiota-serialization-multipart-go v1.0.0 h1:3O5sb5Zj+moLBiJympbXNaeV07K0d46IfuEd5v9+pBs=
@@ -57,8 +57,8 @@ github.com/pmezard/go-difflib v1.0.0 h1:4DBwDE0NGyQoBHbLQYPwSUPoCMWR5BEzIk/f1lZb
 github.com/pmezard/go-difflib v1.0.0/go.mod h1:iKH77koFhYxTK1pcRnkKkqfTogsbg7gZNVY4sRDYZ/4=
 github.com/redis/go-redis/v9 v9.8.0 h1:q3nRvjrlge/6UD7eTu/DSg2uYiU2mCL0G/uzBWqhicI=
 github.com/redis/go-redis/v9 v9.8.0/go.mod h1:huWgSWd8mW6+m0VPhJjSSQ+d6Nh1VICQ6Q5lHuCH/Iw=
-github.com/rogpeppe/go-internal v1.13.1 h1:KvO1DLK/DRN07sQ1LQKScxyZJuNnedQ5/wKSR38lUII=
-github.com/rogpeppe/go-internal v1.13.1/go.mod h1:uMEvuHeurkdAXX61udpOXGD/AzZDWNMNyH2VO9fmH0o=
+github.com/rogpeppe/go-internal v1.14.1 h1:UQB4HGPB6osV0SQTLymcB4TgvyWu6ZyliaW0tI/otEQ=
+github.com/rogpeppe/go-internal v1.14.1/go.mod h1:MaRKkUm5W0goXpeCfT7UZI6fk/L7L7so1lCWt35ZSgc=
 github.com/std-uritemplate/std-uritemplate/go/v2 v2.0.3 h1:7hth9376EoQEd1hH4lAp3vnaLP2UMyxuMMghLKzDHyU=
 github.com/std-uritemplate/std-uritemplate/go/v2 v2.0.3/go.mod h1:Z5KcoM0YLC7INlNhEezeIZ0TZNYf7WSNO0Lvah4DSeQ=
 github.com/stretchr/testify v1.10.0 h1:Xv5erBjTwe/5IxqUQTdXv5kgmIvbHo3QQyRwhJsOfJA=
