@@ -13,7 +13,7 @@ require (
 	github.com/microsoft/kiota-serialization-form-go v1.1.2
 	github.com/microsoft/kiota-serialization-json-go v1.1.1
 	github.com/microsoft/kiota-serialization-multipart-go v1.1.2
-	github.com/microsoft/kiota-serialization-text-go v1.0.0
+	github.com/microsoft/kiota-serialization-text-go v1.1.2
 )
 
 require (
