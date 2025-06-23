@@ -6,7 +6,7 @@ toolchain go1.24.1
 
 require (
 	k8s.io/api v0.33.1
-	k8s.io/apimachinery v0.33.1
+	k8s.io/apimachinery v0.33.2
 	k8s.io/client-go v0.33.1
 	k8s.io/klog v1.0.0
 	k8s.io/klog/v2 v2.130.1
