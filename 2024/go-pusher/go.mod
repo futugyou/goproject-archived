@@ -15,6 +15,6 @@ require (
 
 require (
 	github.com/pusher/push-notifications-go v0.0.0-20200210154345-764224c311b8
-	golang.org/x/crypto v0.35.0 // indirect
-	golang.org/x/sys v0.30.0 // indirect
+	golang.org/x/crypto v0.39.0 // indirect
+	golang.org/x/sys v0.33.0 // indirect
 )
