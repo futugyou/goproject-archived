@@ -3,7 +3,7 @@ module github.com/goproject/tools
 go 1.23.0
 
 require (
-	github.com/gin-gonic/gin v1.10.0
+	github.com/gin-gonic/gin v1.10.1
 	github.com/google/gops v0.3.28
 	github.com/prometheus/client_golang v1.22.0
 )
