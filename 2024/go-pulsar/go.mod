@@ -1,6 +1,6 @@
 module go-pulsar-demo
 
-go 1.23.0
+go 1.24.0
 
 toolchain go1.24.1
 
@@ -16,7 +16,7 @@ require (
 	github.com/bits-and-blooms/bitset v1.13.0 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
 	github.com/danieljoos/wincred v1.2.1 // indirect
-	github.com/dvsekhvalnov/jose2go v1.6.0 // indirect
+	github.com/dvsekhvalnov/jose2go v1.7.0 // indirect
 	github.com/fxamacker/cbor/v2 v2.7.0 // indirect
 	github.com/go-jose/go-jose/v4 v4.0.5 // indirect
 	github.com/go-logr/logr v1.4.2 // indirect
@@ -45,13 +45,13 @@ require (
 	github.com/spaolacci/murmur3 v1.1.0 // indirect
 	github.com/x448/float16 v0.8.4 // indirect
 	go.uber.org/atomic v1.11.0 // indirect
-	golang.org/x/crypto v0.39.0 // indirect
-	golang.org/x/mod v0.25.0 // indirect
-	golang.org/x/net v0.41.0 // indirect
+	golang.org/x/crypto v0.45.0 // indirect
+	golang.org/x/mod v0.29.0 // indirect
+	golang.org/x/net v0.47.0 // indirect
 	golang.org/x/oauth2 v0.28.0 // indirect
-	golang.org/x/sys v0.33.0 // indirect
-	golang.org/x/term v0.32.0 // indirect
-	golang.org/x/text v0.26.0 // indirect
+	golang.org/x/sys v0.38.0 // indirect
+	golang.org/x/term v0.37.0 // indirect
+	golang.org/x/text v0.31.0 // indirect
 	google.golang.org/protobuf v1.36.6 // indirect
 	gopkg.in/inf.v0 v0.9.1 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect

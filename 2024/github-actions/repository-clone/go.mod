@@ -14,7 +14,7 @@ require (
 	github.com/google/go-querystring v1.1.0 // indirect
 	github.com/itchyny/gojq v0.12.13 // indirect
 	github.com/itchyny/timefmt-go v0.1.5 // indirect
-	golang.org/x/crypto v0.35.0 // indirect
-	golang.org/x/sys v0.30.0 // indirect
+	golang.org/x/crypto v0.45.0 // indirect
+	golang.org/x/sys v0.38.0 // indirect
 	mvdan.cc/sh/v3 v3.7.0 // indirect
 )
