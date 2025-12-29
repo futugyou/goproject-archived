@@ -4,7 +4,7 @@ go 1.24.0
 
 require (
 	github.com/PuerkitoBio/goquery v1.11.0
-	github.com/beevik/etree v1.4.0
+	github.com/beevik/etree v1.6.0
 	github.com/google/uuid v1.6.0
 	github.com/nguyenthenguyen/docx v0.0.0-20230621112118-9c8e795a11db
 	github.com/openai/openai-go/v3 v3.15.0
