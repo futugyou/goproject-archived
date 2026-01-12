@@ -4,7 +4,7 @@ go 1.24.0
 
 require (
 	github.com/gin-gonic/gin v1.11.0
-	github.com/google/gops v0.3.28
+	github.com/google/gops v0.3.29
 	github.com/prometheus/client_golang v1.23.2
 )
 
