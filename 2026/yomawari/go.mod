@@ -10,9 +10,9 @@ require (
 	github.com/openai/openai-go/v3 v3.16.0
 	github.com/pkoukk/tiktoken-go v0.1.8
 	github.com/xuri/excelize/v2 v2.10.0
-	go.opentelemetry.io/otel v1.39.0
-	go.opentelemetry.io/otel/metric v1.39.0
-	go.opentelemetry.io/otel/trace v1.39.0
+	go.opentelemetry.io/otel v1.40.0
+	go.opentelemetry.io/otel/metric v1.40.0
+	go.opentelemetry.io/otel/trace v1.40.0
 	golang.org/x/net v0.49.0
 )
 
