@@ -1,6 +1,6 @@
 module github.com/futugyou/yomawari
 
-go 1.24.0
+go 1.25.0
 
 require (
 	github.com/PuerkitoBio/goquery v1.11.0
@@ -13,7 +13,7 @@ require (
 	go.opentelemetry.io/otel v1.40.0
 	go.opentelemetry.io/otel/metric v1.40.0
 	go.opentelemetry.io/otel/trace v1.40.0
-	golang.org/x/net v0.50.0
+	golang.org/x/net v0.51.0
 )
 
 require (
