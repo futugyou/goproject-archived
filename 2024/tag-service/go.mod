@@ -1,6 +1,6 @@
 module github.com/goproject/tag-service
 
-go 1.24.0
+go 1.25.0
 
 require (
 	github.com/elazarl/go-bindata-assetfs v1.0.1
@@ -9,7 +9,7 @@ require (
 	github.com/grpc-ecosystem/grpc-gateway v1.16.0
 	github.com/opentracing/opentracing-go v1.2.0
 	github.com/uber/jaeger-client-go v2.30.0+incompatible
-	golang.org/x/net v0.50.0
+	golang.org/x/net v0.51.0
 	google.golang.org/genproto v0.0.0-20230410155749-daa745c078e1
 	google.golang.org/grpc v1.79.1
 	google.golang.org/protobuf v1.36.11
