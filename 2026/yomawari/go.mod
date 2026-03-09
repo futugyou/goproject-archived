@@ -36,6 +36,6 @@ require (
 	github.com/tidwall/match v1.2.0 // indirect
 	github.com/tidwall/pretty v1.2.1 // indirect
 	github.com/tidwall/sjson v1.2.5 // indirect
-	golang.org/x/sync v0.19.0
+	golang.org/x/sync v0.20.0
 	golang.org/x/text v0.34.0
 )
