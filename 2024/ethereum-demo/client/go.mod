@@ -3,7 +3,7 @@ module github.com/futugyousuzu/ethereum-demo
 go 1.25.0
 
 require (
-	github.com/ethereum/go-ethereum v1.17.1
+	github.com/ethereum/go-ethereum v1.17.2
 	golang.org/x/crypto v0.49.0
 )
 
@@ -24,7 +24,7 @@ require (
 	github.com/cockroachdb/tokenbucket v0.0.0-20230807174530-cc333fc44b06 // indirect
 	github.com/consensys/gnark-crypto v0.18.1 // indirect
 	github.com/cpuguy83/go-md2man/v2 v2.0.5 // indirect
-	github.com/crate-crypto/go-eth-kzg v1.4.0 // indirect
+	github.com/crate-crypto/go-eth-kzg v1.5.0 // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/dchest/siphash v1.2.3 // indirect
 	github.com/deckarep/golang-set/v2 v2.6.0 // indirect
@@ -84,9 +84,9 @@ require (
 	github.com/urfave/cli/v2 v2.27.5 // indirect
 	github.com/xrash/smetrics v0.0.0-20240521201337-686a1a2994c1 // indirect
 	go.opentelemetry.io/auto/sdk v1.2.1 // indirect
-	go.opentelemetry.io/otel v1.39.0 // indirect
-	go.opentelemetry.io/otel/metric v1.39.0 // indirect
-	go.opentelemetry.io/otel/trace v1.39.0 // indirect
+	go.opentelemetry.io/otel v1.40.0 // indirect
+	go.opentelemetry.io/otel/metric v1.40.0 // indirect
+	go.opentelemetry.io/otel/trace v1.40.0 // indirect
 	golang.org/x/exp v0.0.0-20231110203233-9a3e6036ecaa // indirect
 	golang.org/x/sync v0.20.0 // indirect
 	golang.org/x/sys v0.42.0 // indirect
