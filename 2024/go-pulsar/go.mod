@@ -4,7 +4,7 @@ go 1.24.0
 
 toolchain go1.24.1
 
-require github.com/apache/pulsar-client-go v0.18.0
+require github.com/apache/pulsar-client-go v0.19.0
 
 require (
 	github.com/AthenZ/athenz v1.12.13 // indirect
