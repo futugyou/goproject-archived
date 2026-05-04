@@ -5,7 +5,7 @@ go 1.23.0
 toolchain go1.24.1
 
 require (
-	github.com/fsnotify/fsnotify v1.9.0
+	github.com/fsnotify/fsnotify v1.10.0
 	github.com/spf13/cast v1.10.0
 	github.com/spf13/viper v1.21.0
 	nhooyr.io/websocket v1.8.17
