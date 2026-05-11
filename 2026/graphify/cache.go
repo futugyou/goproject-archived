@@ -20,15 +20,15 @@ type CacheEntry struct {
 	ResultFilePath string
 }
 
-type ICacheProviderT[T any] interface {
-	Get(ctx context.Context, key string) (*T, error)
-	Set(ctx context.Context, key string, value T) error
+type ICacheProvider interface {
+	Get(ctx context.Context, key string) ([]byte, error)
+	Set(ctx context.Context, key string, value any) error
 	Exists(ctx context.Context, key string) bool
 	Invalidate(ctx context.Context, key string) error
 	Clear(ctx context.Context) error
 }
 
-type SemanticCacheT[T any] struct {
+type SemanticCache struct {
 	cacheDir   string
 	indexFile  string
 	index      map[string]CacheEntry
@@ -36,16 +36,16 @@ type SemanticCacheT[T any] struct {
 	jsonIndent bool
 }
 
-var _ ICacheProviderT[CacheEntry] = (*SemanticCacheT[CacheEntry])(nil)
+var _ ICacheProvider = (*SemanticCache)(nil)
 
-func NewSemanticCacheT[T any](projectRoot string) (*SemanticCacheT[T], error) {
+func NewSemanticCacheT[T any](projectRoot string) (*SemanticCache, error) {
 	if projectRoot == "" {
 		projectRoot = "."
 	}
 	cacheDir := filepath.Join(projectRoot, ".graphify", "cache")
 	indexFile := filepath.Join(cacheDir, "index.json")
 
-	sc := &SemanticCacheT[T]{
+	sc := &SemanticCache{
 		cacheDir:   cacheDir,
 		indexFile:  indexFile,
 		index:      make(map[string]CacheEntry),
@@ -63,7 +63,7 @@ func NewSemanticCacheT[T any](projectRoot string) (*SemanticCacheT[T], error) {
 	return sc, nil
 }
 
-func (sc *SemanticCacheT[T]) ensureCacheDir() error {
+func (sc *SemanticCache) ensureCacheDir() error {
 	if _, err := os.Stat(sc.cacheDir); errors.Is(err, os.ErrNotExist) {
 		if err := os.MkdirAll(sc.cacheDir, 0700); err != nil {
 			return err
@@ -72,7 +72,7 @@ func (sc *SemanticCacheT[T]) ensureCacheDir() error {
 	return nil
 }
 
-func (sc *SemanticCacheT[T]) ComputeHash(ctx context.Context, filePath string) (string, error) {
+func (sc *SemanticCache) ComputeHash(ctx context.Context, filePath string) (string, error) {
 	f, err := os.Open(filePath)
 	if err != nil {
 		return "", err
@@ -87,7 +87,7 @@ func (sc *SemanticCacheT[T]) ComputeHash(ctx context.Context, filePath string) (
 	return hex.EncodeToString(h.Sum(nil)), nil
 }
 
-func (sc *SemanticCacheT[T]) IsChanged(ctx context.Context, filePath string) (bool, error) {
+func (sc *SemanticCache) IsChanged(ctx context.Context, filePath string) (bool, error) {
 	sc.indexLock.RLock()
 	entry, ok := sc.index[filePath]
 	sc.indexLock.RUnlock()
@@ -108,7 +108,7 @@ func (sc *SemanticCacheT[T]) IsChanged(ctx context.Context, filePath string) (bo
 	return currentHash != entry.ContentHash, nil
 }
 
-func (sc *SemanticCacheT[T]) Get(ctx context.Context, key string) (*T, error) {
+func (sc *SemanticCache) Get(ctx context.Context, key string) ([]byte, error) {
 	sc.indexLock.RLock()
 	entry, ok := sc.index[key]
 	sc.indexLock.RUnlock()
@@ -127,21 +127,10 @@ func (sc *SemanticCacheT[T]) Get(ctx context.Context, key string) (*T, error) {
 		return nil, nil
 	}
 
-	data, err := os.ReadFile(entry.ResultFilePath)
-	if err != nil {
-		return nil, err
-	}
-
-	var result T
-	if err := json.Unmarshal(data, &result); err != nil {
-		_ = sc.Invalidate(ctx, key)
-		return nil, nil
-	}
-
-	return &result, nil
+	return os.ReadFile(entry.ResultFilePath)
 }
 
-func (sc *SemanticCacheT[T]) Set(ctx context.Context, key string, value T) error {
+func (sc *SemanticCache) Set(ctx context.Context, key string, value any) error {
 	h := sha256.Sum256([]byte(key))
 	hashStr := hex.EncodeToString(h[:])
 
@@ -169,40 +158,35 @@ func (sc *SemanticCacheT[T]) Set(ctx context.Context, key string, value T) error
 	return sc.saveIndex(ctx)
 }
 
-func (sc *SemanticCacheT[T]) GetCachedResult(ctx context.Context, filePath string, result interface{}) (bool, error) {
+func (sc *SemanticCache) GetCachedResult(ctx context.Context, filePath string) ([]byte, error) {
 	sc.indexLock.RLock()
 	entry, ok := sc.index[filePath]
 	sc.indexLock.RUnlock()
 	if !ok {
-		return false, nil
+		return nil, nil
 	}
 
 	changed, err := sc.IsChanged(ctx, filePath)
 	if err != nil || changed {
-		return false, err
+		return nil, err
 	}
 
 	data, err := os.ReadFile(entry.ResultFilePath)
 	if err != nil {
 		_ = sc.Invalidate(ctx, filePath)
-		return false, err
+		return nil, err
 	}
 
 	select {
 	case <-ctx.Done():
-		return false, ctx.Err()
+		return nil, ctx.Err()
 	default:
 	}
 
-	if err := json.Unmarshal(data, result); err != nil {
-		_ = sc.Invalidate(ctx, filePath)
-		return false, err
-	}
-
-	return true, nil
+	return data, nil
 }
 
-func (sc *SemanticCacheT[T]) CacheResult(ctx context.Context, filePath string, result interface{}) error {
+func (sc *SemanticCache) CacheResult(ctx context.Context, filePath string, result any) error {
 	hash, err := sc.ComputeHash(ctx, filePath)
 	if err != nil {
 		return err
@@ -243,7 +227,7 @@ func (sc *SemanticCacheT[T]) CacheResult(ctx context.Context, filePath string, r
 	return sc.saveIndex(ctx)
 }
 
-func (sc *SemanticCacheT[T]) Invalidate(ctx context.Context, key string) error {
+func (sc *SemanticCache) Invalidate(ctx context.Context, key string) error {
 	sc.indexLock.Lock()
 	entry, ok := sc.index[key]
 	if ok {
@@ -255,7 +239,7 @@ func (sc *SemanticCacheT[T]) Invalidate(ctx context.Context, key string) error {
 	return sc.saveIndex(ctx)
 }
 
-func (sc *SemanticCacheT[T]) Clear(ctx context.Context) error {
+func (sc *SemanticCache) Clear(ctx context.Context) error {
 	sc.indexLock.Lock()
 	defer sc.indexLock.Unlock()
 
@@ -267,7 +251,7 @@ func (sc *SemanticCacheT[T]) Clear(ctx context.Context) error {
 	return sc.saveIndex(ctx)
 }
 
-func (sc *SemanticCacheT[T]) loadIndex(ctx context.Context) error {
+func (sc *SemanticCache) loadIndex(ctx context.Context) error {
 	if _, err := os.Stat(sc.indexFile); errors.Is(err, os.ErrNotExist) {
 		return nil
 	}
@@ -295,7 +279,7 @@ func (sc *SemanticCacheT[T]) loadIndex(ctx context.Context) error {
 	return nil
 }
 
-func (sc *SemanticCacheT[T]) saveIndex(ctx context.Context) error {
+func (sc *SemanticCache) saveIndex(context.Context) error {
 	sc.indexLock.RLock()
 	data, err := json.MarshalIndent(sc.index, "", "  ")
 	sc.indexLock.RUnlock()
@@ -311,7 +295,7 @@ func (sc *SemanticCacheT[T]) saveIndex(ctx context.Context) error {
 	return os.Rename(tmpFile, sc.indexFile)
 }
 
-func (sc *SemanticCacheT[T]) Exists(ctx context.Context, key string) bool {
+func (sc *SemanticCache) Exists(ctx context.Context, key string) bool {
 	sc.indexLock.RLock()
 	defer sc.indexLock.RUnlock()
 	_, ok := sc.index[key]
