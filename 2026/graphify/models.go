@@ -139,6 +139,58 @@ func (g GraphEdge) ToEdgeProperties() []func(*graph.EdgeProperties) {
 	return result
 }
 
+type ViEdge struct {
+	From       string    `json:"from"`
+	To         string    `json:"to"`
+	Label      string    `json:"label"`
+	Title      string    `json:"title"`
+	Dashes     bool      `json:"dashes"`
+	Width      int       `json:"width"`
+	Color      EdgeColor `json:"color"`
+	Confidence string    `json:"confidence"`
+}
+
+type EdgeColor struct {
+	Opacity float64 `json:"opacity"`
+}
+
+type VisNode struct {
+	ID            string      `json:"id"`
+	Label         string      `json:"label"`
+	Color         ColorConfig `json:"color"`
+	Size          float64     `json:"size"`
+	Font          FontConfig  `json:"font"`
+	Title         string      `json:"title"`
+	Community     int         `json:"community"`
+	CommunityName string      `json:"community_name"`
+	SourceFile    string      `json:"source_file"`
+	FileType      string      `json:"file_type"`
+	Degree        int         `json:"degree"`
+}
+
+type ColorConfig struct {
+	Background string         `json:"background"`
+	Border     string         `json:"border"`
+	Highlight  HighlightColor `json:"highlight"`
+}
+
+type FontConfig struct {
+	Size  int    `json:"size"`
+	Color string `json:"color"`
+}
+
+type HighlightColor struct {
+	Background string `json:"background"`
+	Border     string `json:"border"`
+}
+
+type LegendData struct {
+	Cid   int    `json:"cid"`
+	Color string `json:"color"`
+	Label string `json:"label"`
+	Count int    `json:"count"`
+}
+
 type GraphNode struct {
 	Id           string
 	Label        string
