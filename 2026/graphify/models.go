@@ -1,6 +1,11 @@
 package graphify
 
-import "time"
+import (
+	"fmt"
+	"time"
+
+	"github.com/dominikbraun/graph"
+)
 
 type AnalysisResult struct {
 	GodNodes              []GodNode
@@ -114,9 +119,24 @@ type GraphEdge struct {
 	Source       GraphNode
 	Target       GraphNode
 	Relationship string
-	Weight       float32
+	Weight       int
 	Confidence   Confidence
 	Metadata     map[string]string
+}
+
+func (g GraphEdge) ToEdgeProperties() []func(*graph.EdgeProperties) {
+	result := []func(*graph.EdgeProperties){
+		graph.EdgeData(g),
+		graph.EdgeAttribute("Relationship", g.Relationship),
+		graph.EdgeAttribute("Confidence", string(g.Confidence)),
+		graph.EdgeWeight(g.Weight),
+	}
+
+	for k, v := range g.Metadata {
+		result = append(result, graph.EdgeAttribute(k, v))
+	}
+
+	return result
 }
 
 type GraphNode struct {
@@ -129,6 +149,25 @@ type GraphNode struct {
 	Confidence   Confidence
 	Community    int
 	Metadata     map[string]string
+}
+
+func (g *GraphNode) ToVertexProperties() []func(*graph.VertexProperties) {
+	result := []func(*graph.VertexProperties){
+		graph.VertexAttribute("Id", g.Id),
+		graph.VertexAttribute("Label", g.Label),
+		graph.VertexAttribute("Type", g.Type),
+		graph.VertexAttribute("FilePath", g.FilePath),
+		graph.VertexAttribute("RelativePath", g.RelativePath),
+		graph.VertexAttribute("Language", g.Language),
+		graph.VertexAttribute("Confidence", string(g.Confidence)),
+		graph.VertexAttribute("Community", fmt.Sprintf("%d", g.Community)),
+	}
+
+	for k, v := range g.Metadata {
+		result = append(result, graph.VertexAttribute(k, v))
+	}
+
+	return result
 }
 
 type GraphReport struct {
