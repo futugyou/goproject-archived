@@ -1,7 +1,9 @@
 package graphify
 
 import (
+	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 	"unicode"
 )
@@ -45,4 +47,27 @@ func SanitizeLabel(input string, maxLength int) string {
 	}
 
 	return result
+}
+
+func ForEachSorted[V any](m map[int]V, action func(key int, value V)) {
+	if len(m) == 0 {
+		return
+	}
+
+	keys := make([]int, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+
+	slices.Sort(keys)
+
+	for _, k := range keys {
+		action(k, m[k])
+	}
+}
+
+func GetFileName(outputPath string) string {
+	fileName := filepath.Base(outputPath)
+	ext := filepath.Ext(fileName)
+	return strings.TrimSuffix(fileName, ext)
 }
