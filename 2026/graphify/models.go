@@ -186,3 +186,144 @@ type Community struct {
 	Members       []string
 	CohesionScore float32
 }
+
+type KnowledgeGraph struct {
+	graph     graph.Graph[string, GraphNode]
+	nodeIndex map[string]GraphNode
+}
+
+var nodeHash = func(n GraphNode) string { return n.Id }
+
+func NewKnowledgeGraph() *KnowledgeGraph {
+	return &KnowledgeGraph{
+		graph:     graph.New(nodeHash, graph.Directed()),
+		nodeIndex: map[string]GraphNode{},
+	}
+}
+
+func (k *KnowledgeGraph) NodeCount() int {
+	count, _ := k.graph.Order()
+	return count
+}
+
+func (k *KnowledgeGraph) EdgeCount() int {
+	count, _ := k.graph.Size()
+	return count
+}
+
+func (k *KnowledgeGraph) AddNode(node GraphNode) {
+	k.graph.AddVertex(node, node.ToVertexProperties()...)
+}
+
+func (k *KnowledgeGraph) AddEdge(edge GraphEdge) {
+	k.graph.AddEdge(edge.Source.Id, edge.Target.Id, edge.ToEdgeProperties()...)
+}
+
+func (k *KnowledgeGraph) GetNeighbors(id string) []GraphNode {
+	result := []GraphNode{}
+	amap, _ := k.graph.AdjacencyMap()
+	if outEdges, ok := amap[id]; ok {
+		for targetID := range outEdges {
+			n, _ := k.graph.Vertex(targetID)
+			result = append(result, n)
+		}
+	}
+
+	return result
+}
+
+func (k *KnowledgeGraph) GetEdges() []GraphEdge {
+	result := []GraphEdge{}
+	edges, _ := k.graph.Edges()
+
+	for _, v := range edges {
+		if e, ok := v.Properties.Data.(GraphEdge); ok {
+			result = append(result, e)
+		}
+	}
+
+	return result
+}
+
+func (k *KnowledgeGraph) GetNodes() []GraphNode {
+	amap, err := k.graph.AdjacencyMap()
+	if err != nil {
+		return []GraphNode{}
+	}
+
+	nodes := make([]GraphNode, 0, len(amap))
+
+	for id := range amap {
+		node, err := k.graph.Vertex(id)
+		if err == nil {
+			nodes = append(nodes, node)
+		}
+	}
+
+	return nodes
+}
+
+func (k *KnowledgeGraph) GetDegree(id string) int {
+	amap, _ := k.graph.AdjacencyMap()
+	pmap, _ := k.graph.PredecessorMap()
+
+	return len(amap[id]) + len(pmap[id])
+}
+
+func (k *KnowledgeGraph) AssignCommunities(communities map[int][]string) error {
+	if communities == nil {
+		return fmt.Errorf("communities map is nil")
+	}
+
+	for communityID, nodeIDs := range communities {
+		for _, nodeID := range nodeIDs {
+			oldNode, err := k.graph.Vertex(nodeID)
+			if err != nil {
+				continue
+			}
+
+			updatedNode := oldNode
+			updatedNode.Community = communityID
+
+			err = k.graph.AddVertex(updatedNode)
+			if err != nil {
+				return fmt.Errorf("failed to update node %s: %w", nodeID, err)
+			}
+
+			if k.nodeIndex != nil {
+				k.nodeIndex[nodeID] = updatedNode
+			}
+		}
+	}
+
+	return nil
+}
+
+func (k *KnowledgeGraph) GetNodesByCommunity(communityId int) []GraphNode {
+	amap, err := k.graph.AdjacencyMap()
+	if err != nil {
+		return []GraphNode{}
+	}
+
+	nodes := make([]GraphNode, 0, len(amap))
+
+	for id := range amap {
+		node, err := k.graph.Vertex(id)
+		if err == nil || node.Community == communityId {
+			nodes = append(nodes, node)
+		}
+	}
+
+	return nodes
+}
+
+func (k *KnowledgeGraph) MergeGraph(other KnowledgeGraph) error {
+	for _, node := range other.GetNodes() {
+		k.AddNode(node)
+	}
+	for _, edge := range other.GetEdges() {
+		k.AddEdge(edge)
+	}
+
+	return nil
+}
