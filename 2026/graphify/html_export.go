@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 )
 
@@ -57,7 +58,10 @@ func (h *HtmlExporter) ExportWIthLabels(ctx context.Context, graph KnowledgeGrap
 
 	stats := fmt.Sprintf("%d nodes &middot; %d edges &middot; %d communities", graph.NodeCount(), graph.EdgeCount(), len(communities))
 	title := SanitizeLabel(GetFileName(outputPath), -1)
-
+	dir := filepath.Dir(outputPath)
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		return err
+	}
 	f, err := os.OpenFile(outputPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644)
 	if err != nil {
 		return err

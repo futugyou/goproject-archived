@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 )
@@ -67,7 +68,10 @@ func (j *JsonExporter) Export(ctx context.Context, graph KnowledgeGraph, outputP
 	if err != nil {
 		return err
 	}
-
+	dir := filepath.Dir(outputPath)
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		return err
+	}
 	return os.WriteFile(outputPath, data, 0644)
 }
 
