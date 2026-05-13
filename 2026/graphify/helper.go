@@ -1,6 +1,7 @@
 package graphify
 
 import (
+	"cmp"
 	"path/filepath"
 	"regexp"
 	"slices"
@@ -49,17 +50,32 @@ func SanitizeLabel(input string, maxLength int) string {
 	return result
 }
 
-func ForEachSorted[V any](m map[int]V, action func(key int, value V)) {
+func ForEachSorted[K cmp.Ordered, V any](m map[K]V, action func(key K, value V)) {
 	if len(m) == 0 {
 		return
 	}
 
-	keys := make([]int, 0, len(m))
+	keys := make([]K, 0, len(m))
 	for k := range m {
 		keys = append(keys, k)
 	}
 
 	slices.Sort(keys)
+
+	for _, k := range keys {
+		action(k, m[k])
+	}
+}
+
+func ForEachOrderBy[K comparable, V any, T cmp.Ordered](m map[K]V, action func(K, V), keySelector func(K) T) {
+	keys := make([]K, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+
+	slices.SortFunc(keys, func(a, b K) int {
+		return cmp.Compare(keySelector(a), keySelector(b))
+	})
 
 	for _, k := range keys {
 		action(k, m[k])
