@@ -379,3 +379,36 @@ func (k *KnowledgeGraph) MergeGraph(other KnowledgeGraph) error {
 
 	return nil
 }
+
+type GraphExportDto struct {
+	Nodes    []NodeDto         `json:"nodes"`
+	Edges    []EdgeDto         `json:"edges"`
+	Metadata ExportMetadataDto `json:"metadata"`
+}
+
+type NodeDto struct {
+	Id         string            `json:"id"`
+	Label      string            `json:"label"`
+	Type       string            `json:"type"`
+	Community  int               `json:"community"`
+	FilePath   string            `json:"file_path"`
+	Language   string            `json:"language"`
+	Confidence string            `json:"confidence"`
+	Metadata   map[string]string `json:"metadata,omitempty"`
+}
+
+type EdgeDto struct {
+	Source       string            `json:"source"`
+	Target       string            `json:"target"`
+	Relationship string            `json:"relationship"`
+	Weight       float64           `json:"weight"`
+	Confidence   string            `json:"confidence"`
+	Metadata     map[string]string `json:"metadata,omitempty"`
+}
+
+type ExportMetadataDto struct {
+	NodeCount      int       `json:"node_count"`
+	EdgeCount      int       `json:"edge_count"`
+	CommunityCount int       `json:"community_count"`
+	GeneratedAt    time.Time `json:"generated_at"`
+}
