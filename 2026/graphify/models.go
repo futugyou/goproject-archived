@@ -381,6 +381,10 @@ func (k *KnowledgeGraph) GetNodes() []GraphNode {
 	return nodes
 }
 
+func (k *KnowledgeGraph) GetNodesById(id string) (GraphNode, error) {
+	return k.graph.Vertex(id)
+}
+
 func (k *KnowledgeGraph) GetDegree(id string) int {
 	amap, _ := k.graph.AdjacencyMap()
 	pmap, _ := k.graph.PredecessorMap()
