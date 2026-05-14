@@ -2,6 +2,7 @@ package graphify
 
 import (
 	"fmt"
+	"sort"
 	"time"
 
 	"github.com/dominikbraun/graph"
@@ -203,6 +204,14 @@ type GraphNode struct {
 	Metadata     map[string]string
 }
 
+func (k *GraphNode) LabelOrID() string {
+	if len(k.Label) > 0 {
+		return k.Label
+	}
+
+	return k.Id
+}
+
 func (g *GraphNode) ToVertexProperties() []func(*graph.VertexProperties) {
 	result := []func(*graph.VertexProperties){
 		graph.VertexAttribute("Id", g.Id),
@@ -242,6 +251,44 @@ type Community struct {
 type KnowledgeGraph struct {
 	graph     graph.Graph[string, GraphNode]
 	nodeIndex map[string]GraphNode
+}
+
+type NodeDegree struct {
+	Node   GraphNode
+	Degree int
+}
+
+func (k *KnowledgeGraph) GetHighestDegreeNodes(topN int) []NodeDegree {
+	amap, err := k.graph.AdjacencyMap()
+	if err != nil {
+		return []NodeDegree{}
+	}
+
+	results := make([]NodeDegree, 0, len(amap))
+
+	for id := range amap {
+		d := k.GetDegree(id)
+
+		node, err := k.graph.Vertex(id)
+		if err != nil {
+			continue
+		}
+
+		results = append(results, NodeDegree{
+			Node:   node,
+			Degree: d,
+		})
+	}
+
+	sort.Slice(results, func(i, j int) bool {
+		return results[i].Degree > results[j].Degree
+	})
+
+	if len(results) > topN {
+		results = results[:topN]
+	}
+
+	return results
 }
 
 var nodeHash = func(n GraphNode) string { return n.Id }
@@ -290,6 +337,25 @@ func (k *KnowledgeGraph) GetEdges() []GraphEdge {
 
 	for _, v := range edges {
 		if e, ok := v.Properties.Data.(GraphEdge); ok {
+			result = append(result, e)
+		}
+	}
+
+	return result
+}
+
+func (k *KnowledgeGraph) GetEdgesById(id string) []GraphEdge {
+	result := []GraphEdge{}
+	targets, _ := k.graph.AdjacencyMap()
+	for _, target := range targets[id] {
+		if e, ok := target.Properties.Data.(GraphEdge); ok {
+			result = append(result, e)
+		}
+	}
+
+	sources, _ := k.graph.PredecessorMap()
+	for _, source := range sources[id] {
+		if e, ok := source.Properties.Data.(GraphEdge); ok {
 			result = append(result, e)
 		}
 	}
@@ -411,4 +477,9 @@ type ExportMetadataDto struct {
 	EdgeCount      int       `json:"edge_count"`
 	CommunityCount int       `json:"community_count"`
 	GeneratedAt    time.Time `json:"generated_at"`
+}
+
+type ConnectionEntry struct {
+	LinkedNode GraphNode
+	Confidence Confidence
 }
