@@ -42,3 +42,61 @@ func DefaultClusterOptions() *ClusterOptions {
 		MinSplitSize:         10,
 	}
 }
+
+type FileDetectorOptions struct {
+	RootPath          string
+	MaxFileSizeBytes  int64
+	ExcludePatterns   []string
+	IncludeExtensions []string
+	RespectGitIgnore  bool
+}
+
+func DefaultFileDetectorOptions() *FileDetectorOptions {
+	return &FileDetectorOptions{
+		MaxFileSizeBytes: 1_048_576,
+		RespectGitIgnore: true,
+	}
+}
+
+type MergeStrategy string
+
+const MergeStrategyHighestConfidence MergeStrategy = "HighestConfidence"
+const MergeStrategyMostRecent MergeStrategy = "MostRecent"
+const MergeStrategyAggregate MergeStrategy = "Aggregate"
+
+type GraphBuilderOptions struct {
+	MergeStrategy   MergeStrategy
+	CreateFileNodes bool
+	MinEdgeWeight   float32
+}
+
+func DefaultGraphBuilderOptions() *GraphBuilderOptions {
+	return &GraphBuilderOptions{
+		MergeStrategy:   MergeStrategyHighestConfidence,
+		CreateFileNodes: true,
+		MinEdgeWeight:   0,
+	}
+}
+
+type SemanticExtractorOptions struct {
+	ModelId          string
+	MaxTokens        int
+	Temperature      float32
+	ExtractFromCode  bool
+	ExtractFromDocs  bool
+	ExtractFromMedia bool
+	MaxNodesPerFile  int
+	MaxFileSizeBytes int64
+}
+
+func DefaultSemanticExtractorOptions() *SemanticExtractorOptions {
+	return &SemanticExtractorOptions{
+		MaxTokens:        4096,
+		Temperature:      0.1,
+		ExtractFromCode:  true,
+		ExtractFromDocs:  true,
+		ExtractFromMedia: true,
+		MaxNodesPerFile:  15,
+		MaxFileSizeBytes: 1024 * 1024,
+	}
+}
