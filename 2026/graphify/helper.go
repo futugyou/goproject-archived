@@ -9,6 +9,25 @@ import (
 	"unicode"
 )
 
+func Where[T any](slice []T, predicate func(T) bool) []T {
+	var result []T
+	for _, v := range slice {
+		if predicate(v) {
+			result = append(result, v)
+		}
+	}
+	return result
+}
+
+func GroupBy[T any, K comparable](slice []T, keySelector func(T) K) map[K][]T {
+	groups := make(map[K][]T)
+	for _, v := range slice {
+		key := keySelector(v)
+		groups[key] = append(groups[key], v)
+	}
+	return groups
+}
+
 func ToDictionary[T any, K comparable, V any](
 	source []T,
 	keySelector func(T) K,
