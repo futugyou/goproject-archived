@@ -19,6 +19,14 @@ func Where[T any](slice []T, predicate func(T) bool) []T {
 	return result
 }
 
+func Select[T any, P any](slice []T, predicate func(T) P) []P {
+	var result []P
+	for _, v := range slice {
+		result = append(result, predicate(v))
+	}
+	return result
+}
+
 func GroupBy[T any, K comparable](slice []T, keySelector func(T) K) map[K][]T {
 	groups := make(map[K][]T)
 	for _, v := range slice {
@@ -86,6 +94,13 @@ func ForEachSorted[K cmp.Ordered, V any](m map[K]V, action func(key K, value V))
 	}
 }
 
+func Take[T any](s []T, n int) []T {
+	if n > len(s) {
+		return s
+	}
+	return s[:n]
+}
+
 func ForEachOrderBy[K comparable, V any, T cmp.Ordered](m map[K]V, action func(K, V), keySelector func(K) T) {
 	keys := make([]K, 0, len(m))
 	for k := range m {
@@ -94,6 +109,21 @@ func ForEachOrderBy[K comparable, V any, T cmp.Ordered](m map[K]V, action func(K
 
 	slices.SortFunc(keys, func(a, b K) int {
 		return cmp.Compare(keySelector(a), keySelector(b))
+	})
+
+	for _, k := range keys {
+		action(k, m[k])
+	}
+}
+
+func ForEachOrderByDescending[K comparable, V any, T cmp.Ordered](m map[K]V, action func(K, V), keySelector func(K) T) {
+	keys := make([]K, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+
+	slices.SortFunc(keys, func(a, b K) int {
+		return cmp.Compare(keySelector(b), keySelector(a))
 	})
 
 	for _, k := range keys {

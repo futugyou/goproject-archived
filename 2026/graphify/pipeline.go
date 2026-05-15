@@ -7,6 +7,7 @@ type IPipelineStage[TInput, TOutput any] interface {
 }
 
 var AnalyzerCodeExtensions = []string{"cs", "py", "ts", "tsx", "js", "go", "rs", "java", "rb", "cpp", "c", "h", "kt", "scala", "php"}
+var AnalyzerImageExtensions = []string{"png", "jpg", "jpeg", "webp", "gif", "svg"}
 var AnalyzerStructuralRelations = []string{"imports", "imports_from", "contains", "method"}
 
 type AnalyzerOptions struct {
