@@ -43,7 +43,7 @@ func (j *JsonExporter) Export(ctx context.Context, graph KnowledgeGraph, outputP
 			Source:       edge.Source.Id,
 			Target:       edge.Target.Id,
 			Relationship: edge.Relationship,
-			Weight:       float64(edge.Weight),
+			Weight:       edge.Weight,
 			Confidence:   strings.ToUpper(string(edge.Confidence)),
 			Metadata:     edge.Metadata,
 		}

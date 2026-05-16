@@ -151,8 +151,54 @@ func EstimateQueryTokens(graph KnowledgeGraph, question string, depth *int) int 
 func CharactersToTokens(text string) int {
 	return max(1, len(text)/CharsPerToken)
 }
+func EstimateCorpusWords(graph KnowledgeGraph) int {
+	// Rough estimate: each node label is ~3 words, plus source context
+	return graph.NodeCount() * 50
+}
+
+func WordsToTokens(words int) int {
+	// Approximate conversion: 100 words ≈ 133 tokens
+	return words * 100 / 75
+}
 
 type ScoredNode struct {
 	Score int
 	Id    string
+}
+
+func LoadGraphFromJson(data GraphJsonDto) KnowledgeGraph {
+	var graph = KnowledgeGraph{}
+
+	for _, nodeDto := range data.Nodes {
+		var node = GraphNode{
+			Id:        nodeDto.Id,
+			Label:     nodeDto.Label,
+			Type:      nodeDto.Type,
+			FilePath:  nodeDto.FilePath,
+			Community: nodeDto.Community,
+			Metadata:  nodeDto.Metadata,
+		}
+		if len(node.Type) == 0 {
+			node.Type = "Entity"
+		}
+		graph.AddNode(node)
+	}
+
+	for _, edgeDto := range data.Edges {
+		sourceNode, err := graph.GetNodesById(edgeDto.Source)
+		targetNode, err1 := graph.GetNodesById(edgeDto.Target)
+
+		if err != nil && err1 != nil {
+			var edge = GraphEdge{
+				Source:       sourceNode,
+				Target:       targetNode,
+				Relationship: edgeDto.Relationship,
+				Weight:       edgeDto.Weight,
+				Metadata:     edgeDto.Metadata,
+			}
+			graph.AddEdge(edge)
+		}
+	}
+
+	return graph
 }

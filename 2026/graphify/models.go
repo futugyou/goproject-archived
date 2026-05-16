@@ -471,7 +471,7 @@ type EdgeDto struct {
 	Source       string            `json:"source"`
 	Target       string            `json:"target"`
 	Relationship string            `json:"relationship"`
-	Weight       float64           `json:"weight"`
+	Weight       int               `json:"weight"`
 	Confidence   string            `json:"confidence"`
 	Metadata     map[string]string `json:"metadata,omitempty"`
 }
