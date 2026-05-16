@@ -1,7 +1,12 @@
 package graphify
 
 import (
+	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
+	"math"
+	"os"
 	"sort"
 	"strings"
 )
@@ -26,7 +31,7 @@ type BenchmarkResult struct {
 	NodeCount      int
 	EdgeCount      int
 	AvgQueryTokens int
-	ReductionRatio float32
+	ReductionRatio float64
 	PerQuestion    []QuestionBenchmark
 }
 
@@ -201,4 +206,113 @@ func LoadGraphFromJson(data GraphJsonDto) KnowledgeGraph {
 	}
 
 	return graph
+}
+
+func PrintBenchmark(result *BenchmarkResult, output io.Writer) error {
+	if result == nil || output == nil {
+		return fmt.Errorf("nil argument passed to PrintBenchmark")
+	}
+
+	if result.Error != "" {
+		fmt.Fprintf(output, "Benchmark error: %s\n", result.Error)
+		return fmt.Errorf("Benchmark error: %s\n", result.Error)
+	}
+
+	fmt.Fprintln(output)
+	fmt.Fprintln(output, "graphify token reduction benchmark")
+	fmt.Fprintln(output, strings.Repeat("─", 50))
+	fmt.Fprintf(output, "  Corpus:          %d words → ~%d tokens (naive)\n", result.CorpusWords, result.CorpusTokens)
+	fmt.Fprintf(output, "  Graph:           %d nodes, %d edges\n", result.NodeCount, result.EdgeCount)
+	fmt.Fprintf(output, "  Avg query cost:  ~%d tokens\n", result.AvgQueryTokens)
+	fmt.Fprintf(output, "  Reduction:       %.1fx fewer tokens per query\n", result.ReductionRatio)
+	fmt.Fprintln(output)
+
+	fmt.Fprintln(output, "  Per question:")
+	for _, q := range result.PerQuestion {
+		runes := []rune(q.Question)
+		truncated := q.Question
+		if len(runes) > 55 {
+			truncated = string(runes[:52]) + "..."
+		}
+
+		fmt.Fprintf(output, "    [%.1fx] %s\n", q.Reduction, truncated)
+	}
+	fmt.Fprintln(output)
+	return nil
+}
+
+func BenchmarkRun(graphPath string, corpusWords int, questions []string) (*BenchmarkResult, error) {
+	if _, err := os.Stat(graphPath); errors.Is(err, os.ErrNotExist) {
+		return &BenchmarkResult{
+			Error: "Graph file not found:  " + graphPath,
+		}, nil
+	}
+
+	// Load graph
+	var graph KnowledgeGraph
+
+	data, err := os.ReadFile(graphPath)
+	if err != nil {
+		return &BenchmarkResult{
+			Error: "Failed to load graph:  " + err.Error(),
+		}, nil
+	}
+
+	var dto GraphJsonDto
+	err = json.Unmarshal(data, &dto)
+	if err != nil {
+		return &BenchmarkResult{
+			Error: "Invalid graph JSON format",
+		}, nil
+	}
+	graph = LoadGraphFromJson(dto)
+
+	// Estimate corpus size
+	estimatedCorpusWords := corpusWords
+	if estimatedCorpusWords == -1 {
+		estimatedCorpusWords = EstimateCorpusWords(graph)
+	}
+	corpusTokens := WordsToTokens(estimatedCorpusWords)
+
+	// Run queries
+	var questionList = questions
+	if len(questionList) == 0 {
+		questionList = SampleQuestions
+	}
+	perQuestionResults := []QuestionBenchmark{}
+
+	for _, question := range questionList {
+		queryTokens := EstimateQueryTokens(graph, question, nil)
+		if queryTokens > 0 {
+			reduction := float32(corpusTokens) / float32(queryTokens)
+			perQuestionResults = append(perQuestionResults, QuestionBenchmark{
+				Question:    question,
+				QueryTokens: queryTokens,
+				Reduction:   reduction,
+			})
+
+		}
+	}
+
+	if len(perQuestionResults) == 0 {
+		return &BenchmarkResult{
+			Error: "No matching nodes found for sample questions. Build the graph first.",
+		}, nil
+	}
+	queryTokens := 0
+	for _, v := range perQuestionResults {
+		queryTokens += v.QueryTokens
+	}
+	avgQueryTokens := queryTokens / len(perQuestionResults)
+	reductionRatio := corpusTokens / avgQueryTokens
+
+	return &BenchmarkResult{
+		CorpusTokens:   corpusTokens,
+		CorpusWords:    estimatedCorpusWords,
+		NodeCount:      graph.NodeCount(),
+		EdgeCount:      graph.EdgeCount(),
+		AvgQueryTokens: avgQueryTokens,
+		ReductionRatio: math.Round(float64(reductionRatio*10)) / 10,
+		PerQuestion:    perQuestionResults,
+	}, nil
 }
