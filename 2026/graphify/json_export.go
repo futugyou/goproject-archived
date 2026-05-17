@@ -56,7 +56,7 @@ func (j *JsonExporter) Export(ctx context.Context, graph KnowledgeGraph, outputP
 	exportData := GraphExportDto{
 		Nodes: nodes,
 		Edges: edges,
-		Metadata: ExportMetadataDto{
+		Metadata: &ExportMetadataDto{
 			NodeCount:      len(nodes),
 			EdgeCount:      len(edges),
 			CommunityCount: len(communities),

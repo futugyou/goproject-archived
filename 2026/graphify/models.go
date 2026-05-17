@@ -451,9 +451,9 @@ func (k *KnowledgeGraph) MergeGraph(other KnowledgeGraph) error {
 }
 
 type GraphExportDto struct {
-	Nodes    []NodeDto         `json:"nodes"`
-	Edges    []EdgeDto         `json:"edges"`
-	Metadata ExportMetadataDto `json:"metadata"`
+	Nodes    []NodeDto          `json:"nodes,omitempty"`
+	Edges    []EdgeDto          `json:"edges,omitempty"`
+	Metadata *ExportMetadataDto `json:"metadata,omitempty"`
 }
 
 type NodeDto struct {
