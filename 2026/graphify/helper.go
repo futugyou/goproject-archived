@@ -136,3 +136,13 @@ func GetFileName(outputPath string) string {
 	ext := filepath.Ext(fileName)
 	return strings.TrimSuffix(fileName, ext)
 }
+
+func MathClamp[T int | float32 | float64](val, min, max T) T {
+	if val < min {
+		return min
+	}
+	if val > max {
+		return max
+	}
+	return val
+}
