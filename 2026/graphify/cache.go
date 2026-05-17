@@ -38,7 +38,7 @@ type SemanticCache struct {
 
 var _ ICacheProvider = (*SemanticCache)(nil)
 
-func NewSemanticCacheT[T any](projectRoot string) (*SemanticCache, error) {
+func NewSemanticCache(projectRoot string) (*SemanticCache, error) {
 	if projectRoot == "" {
 		projectRoot = "."
 	}
