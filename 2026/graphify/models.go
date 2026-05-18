@@ -85,7 +85,7 @@ type ExtractedNode struct {
 	FileType       FileType
 	SourceFile     string
 	SourceLocation string
-	Metadata       map[string]any
+	Metadata       map[string]string
 }
 
 type FileType string

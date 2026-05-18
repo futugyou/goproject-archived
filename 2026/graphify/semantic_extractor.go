@@ -3,6 +3,7 @@ package graphify
 import (
 	"context"
 	"fmt"
+	"maps"
 	"os"
 	"strings"
 
@@ -91,10 +92,8 @@ func (s *SemanticExtractor) convertToExtractionResult(data *LlmExtractionData, s
 			fileType = FileTypeImage
 		}
 
-		var metadata = map[string]any{}
-		for key, value := range node.Metadata {
-			metadata[key] = value
-		}
+		var metadata = map[string]string{}
+		maps.Copy(metadata, node.Metadata)
 		n := ExtractedNode{
 			Id:         node.Id,
 			Label:      node.Label,
