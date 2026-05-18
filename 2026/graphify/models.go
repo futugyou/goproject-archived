@@ -204,6 +204,11 @@ type GraphNode struct {
 	Metadata     map[string]string
 }
 
+type CommunityGroup struct {
+	CommunityID int
+	Nodes       []GraphNode
+}
+
 func (k *GraphNode) LabelOrID() string {
 	if len(k.Label) > 0 {
 		return k.Label
@@ -379,6 +384,30 @@ func (k *KnowledgeGraph) GetNodes() []GraphNode {
 	}
 
 	return nodes
+}
+
+func (k *KnowledgeGraph) SortNodeByCommunityDesc() []CommunityGroup {
+	groupMap := map[int][]GraphNode{}
+	for _, node := range k.GetNodes() {
+		if node.Community == -1 {
+			continue
+		}
+		groupMap[node.Community] = append(groupMap[node.Community], node)
+	}
+
+	var communitiesById []CommunityGroup
+	for commID, nodes := range groupMap {
+		communitiesById = append(communitiesById, CommunityGroup{
+			CommunityID: commID,
+			Nodes:       nodes,
+		})
+	}
+
+	sort.Slice(communitiesById, func(i, j int) bool {
+		return len(communitiesById[i].Nodes) > len(communitiesById[j].Nodes)
+	})
+
+	return communitiesById
 }
 
 func (k *KnowledgeGraph) GetNodesById(id string) (GraphNode, error) {
