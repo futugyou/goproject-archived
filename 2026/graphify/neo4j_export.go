@@ -64,12 +64,12 @@ func (n *Neo4jExporter) generateCypher(graph KnowledgeGraph) string {
 	sb.WriteString("// Knowledge Graph Export to Neo4j")
 	sb.WriteString("// Generated: {DateTimeOffset.Now:yyyy-MM-dd HH:mm:ss}")
 	sb.WriteString("// Nodes: {graph.NodeCount}, Edges: {graph.EdgeCount}")
-	sb.WriteString("")
+	sb.WriteByte('\n')
 	sb.WriteString("// Clear existing data (optional - uncomment if needed)")
 	sb.WriteString("// MATCH (n) DETACH DELETE n;")
-	sb.WriteString("")
+	sb.WriteByte('\n')
 	sb.WriteString("// Create nodes")
-	sb.WriteString("")
+	sb.WriteByte('\n')
 
 	var nodes = graph.GetNodes()
 	var nodeIdMap = map[string]string{}
@@ -106,9 +106,9 @@ func (n *Neo4jExporter) generateCypher(graph KnowledgeGraph) string {
 		sb.WriteString("});")
 	}
 
-	sb.WriteString("")
+	sb.WriteByte('\n')
 	sb.WriteString("// Create relationships")
-	sb.WriteString("")
+	sb.WriteByte('\n')
 
 	// Generate CREATE statements for edges
 	var edgeCount = 0
@@ -137,7 +137,7 @@ func (n *Neo4jExporter) generateCypher(graph KnowledgeGraph) string {
 			for i := 0; i < len(edgesBatch); i++ {
 				sb.WriteString(edgesBatch[i])
 			}
-			sb.WriteString("")
+			sb.WriteByte('\n')
 			edgesBatch = []string{}
 		}
 	}
@@ -147,9 +147,9 @@ func (n *Neo4jExporter) generateCypher(graph KnowledgeGraph) string {
 		sb.WriteString(edgesBatch[i])
 	}
 
-	sb.WriteString("")
+	sb.WriteByte('\n')
 	sb.WriteString("// Create indexes for better query performance")
-	sb.WriteString("")
+	sb.WriteByte('\n')
 
 	// Get unique node types for index creation
 	nodeTypes := map[string]struct{}{}
@@ -164,7 +164,7 @@ func (n *Neo4jExporter) generateCypher(graph KnowledgeGraph) string {
 
 	for _, no := range nodes {
 		if no.Community != -1 {
-			sb.WriteString("")
+			sb.WriteByte('\n')
 			sb.WriteString("// Index for community-based queries")
 			ForEachSorted(nodeTypes, func(key string, value struct{}) {
 				fmt.Fprintf(&sb, "CREATE INDEX IF NOT EXISTS FOR (n:%s) ON (n.community);", nodeTypes)
@@ -173,7 +173,7 @@ func (n *Neo4jExporter) generateCypher(graph KnowledgeGraph) string {
 		}
 	}
 
-	sb.WriteString("")
+	sb.WriteByte('\n')
 	sb.WriteString("// Query examples:")
 	sb.WriteString("// - Find all nodes: MATCH (n) RETURN n LIMIT 25;")
 	sb.WriteString("// - Find nodes by type: MATCH (n:Class) RETURN n LIMIT 25;")

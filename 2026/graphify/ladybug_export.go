@@ -34,7 +34,7 @@ func (l *LadybugExporter) generateLadybugCypher(graph KnowledgeGraph) string {
 	sb.WriteString("// Ladybug Knowledge Graph Export")
 	sb.WriteString("// Generated: {DateTimeOffset.Now:yyyy-MM-dd HH:mm:ss}")
 	sb.WriteString("// Nodes: {graph.NodeCount}, Edges: {graph.EdgeCount}")
-	sb.WriteString("")
+	sb.WriteByte('\n')
 
 	// DDL — Node table
 	sb.WriteString("// Create node table")
@@ -49,7 +49,7 @@ func (l *LadybugExporter) generateLadybugCypher(graph KnowledgeGraph) string {
 	sb.WriteString("    confidence STRING,")
 	sb.WriteString("    metadata MAP(STRING, STRING)")
 	sb.WriteString(");")
-	sb.WriteString("")
+	sb.WriteByte('\n')
 
 	// DDL — Relationship table
 	sb.WriteString("// Create relationship table")
@@ -61,7 +61,7 @@ func (l *LadybugExporter) generateLadybugCypher(graph KnowledgeGraph) string {
 	sb.WriteString("    confidence STRING,")
 	sb.WriteString("    MANY_MANY")
 	sb.WriteString(");")
-	sb.WriteString("")
+	sb.WriteByte('\n')
 
 	// DML — Nodes
 	sb.WriteString("// Create nodes")
@@ -71,7 +71,7 @@ func (l *LadybugExporter) generateLadybugCypher(graph KnowledgeGraph) string {
 		nodeIds[node.Id] = struct{}{}
 	}
 
-	sb.WriteString("")
+	sb.WriteByte('\n')
 
 	// DML — Edges (using MATCH to link existing nodes)
 	sb.WriteString("// Create edges")
