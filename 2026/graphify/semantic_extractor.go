@@ -17,6 +17,17 @@ type SemanticExtractor struct {
 	options    SemanticExtractorOptions
 }
 
+func NewSemanticExtractor(options *SemanticExtractorOptions, chatClient chatcompletion.IChatClient) *SemanticExtractor {
+	if options == nil {
+		options = DefaultSemanticExtractorOptions()
+	}
+
+	return &SemanticExtractor{
+		options:    *options,
+		chatClient: chatClient,
+	}
+}
+
 // Execute implements [IPipelineStage].
 func (s *SemanticExtractor) Execute(ctx context.Context, input DetectedFile) (*ExtractionResult, error) {
 	// Graceful degradation: if no AI client configured, return empty results
