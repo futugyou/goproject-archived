@@ -108,36 +108,66 @@ func (f *FileDetector) Execute(ctx context.Context, input FileDetectorOptions) (
 
 	fileCh := f.enumerateFiles(ctx, rootPath, input, gitTrackedFiles)
 
-	const workerCount = 5
+	workerCount := input.WorkerCount
+	batchSize := input.BatchSize
+
+	if workerCount <= 0 {
+		workerCount = 5
+	}
+
+	if batchSize <= 0 {
+		batchSize = 10
+	}
+
 	type result struct {
 		file DetectedFile
 		err  error
 	}
 
+	batchCh := make(chan []string)
 	resultCh := make(chan result)
+
 	var wg sync.WaitGroup
 
-	for i := 0; i < workerCount; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			for filePath := range fileCh {
-				df, err := f.processFile(ctx, filePath, rootPath, input)
-				if err != nil {
+	go func() {
+		defer close(batchCh)
+		batch := make([]string, 0, batchSize)
+		for filePath := range fileCh {
+			batch = append(batch, filePath)
+			if len(batch) >= batchSize {
+				batchCh <- batch
+				batch = make([]string, 0, batchSize)
+			}
+		}
+		if len(batch) > 0 {
+			batchCh <- batch
+		}
+	}()
+
+	for range workerCount {
+		wg.Go(func() {
+			for batch := range batchCh {
+				fmt.Println("Processing batch:", batch)
+
+				for _, filePath := range batch {
+					df, err := f.processFile(ctx, filePath, rootPath, input)
+					if err != nil {
+						select {
+						case resultCh <- result{err: err}:
+						case <-ctx.Done():
+							return
+						}
+						continue
+					}
+
 					select {
-					case resultCh <- result{err: err}:
+					case resultCh <- result{file: *df}:
 					case <-ctx.Done():
 						return
 					}
-					continue
-				}
-				select {
-				case resultCh <- result{file: *df}:
-				case <-ctx.Done():
-					return
 				}
 			}
-		}()
+		})
 	}
 
 	go func() {

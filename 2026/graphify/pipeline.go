@@ -50,12 +50,16 @@ type FileDetectorOptions struct {
 	ExcludePatterns   []string
 	IncludeExtensions []string
 	RespectGitIgnore  bool
+	WorkerCount       int
+	BatchSize         int
 }
 
 func DefaultFileDetectorOptions() *FileDetectorOptions {
 	return &FileDetectorOptions{
 		MaxFileSizeBytes: 1_048_576,
 		RespectGitIgnore: true,
+		WorkerCount:      5,
+		BatchSize:        10,
 	}
 }
 
