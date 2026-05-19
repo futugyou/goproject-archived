@@ -15,19 +15,15 @@ func NewClusterEngine(options *ClusterOptions) *ClusterEngine {
 	if options == nil {
 		options = DefaultClusterOptions()
 	}
-
-	return &ClusterEngine{
-		options: *options,
-	}
+	return &ClusterEngine{options: *options}
 }
 
-// Execute implements [IPipelineStage].
 func (c *ClusterEngine) Execute(ctx context.Context, graph KnowledgeGraph) (*KnowledgeGraph, error) {
 	if graph.NodeCount() == 0 {
 		return &graph, nil
 	}
 
-	var communities = c.detectCommunities(graph)
+	communities := c.detectCommunities(graph)
 	g := &graph
 	if err := g.AssignCommunities(communities); err != nil {
 		return nil, err
@@ -36,111 +32,109 @@ func (c *ClusterEngine) Execute(ctx context.Context, graph KnowledgeGraph) (*Kno
 	return g, nil
 }
 
-func (c *ClusterEngine) splitCommunity(graph KnowledgeGraph, nodeIds []string, maxSize int) [][]string {
-	if len(nodeIds) <= maxSize {
-		return [][]string{nodeIds}
-	}
-	nodeSet := map[string]struct{}{}
-	for _, v := range nodeIds {
-		nodeSet[v] = struct{}{}
-	}
+type graphContext struct {
+	adjacency            map[string]map[string]float32
+	nodeDegree           map[string]float32
+	communityTotalDegree map[int]float32
+	nodeToCommunity      map[string]int
+	m2                   float32
+	m2Sq                 float32
+}
 
-	// Build sub-adjacency: only edges that stay inside nodeSet.
-	subAdjacency := map[string]map[string]float32{}
-	subNodeDegree := map[string]float32{}
-	var subTotalWeightDoubled float32 = 0.0
+// Consolidate the logic for extracting and constructing local/global adjacency lists and degree information.
+func (c *ClusterEngine) buildGraphContext(graph KnowledgeGraph, nodeIds []string, filterSet map[string]struct{}) *graphContext {
+	adj := map[string]map[string]float32{}
+	degrees := map[string]float32{}
+	var totalWeightDoubled float32 = 0.0
 
 	for _, nodeId := range nodeIds {
 		neighborWeights := map[string]float32{}
 		var degree float32 = 0.0
+
 		for _, edge := range graph.GetEdgesById(nodeId) {
-			var neighborId = edge.Source.Id
+			neighborId := edge.Source.Id
 			if edge.Source.Id == nodeId {
 				neighborId = edge.Target.Id
 			}
 
-			if _, ok := nodeSet[neighborId]; !ok {
-				continue
+			// If a restricted set is provided (Split scenario), filter out external nodes.
+			if filterSet != nil {
+				if _, ok := filterSet[neighborId]; !ok {
+					continue
+				}
 			}
 
-			if existing, ok := neighborWeights[neighborId]; ok {
-				neighborWeights[neighborId] = existing + float32(edge.Weight)
-			} else {
-				neighborWeights[neighborId] = float32(edge.Weight)
-			}
+			neighborWeights[neighborId] += float32(edge.Weight)
 			degree += float32(edge.Weight)
 		}
-		subAdjacency[nodeId] = neighborWeights
-		subNodeDegree[nodeId] = degree
-		subTotalWeightDoubled += degree
+
+		adj[nodeId] = neighborWeights
+		degrees[nodeId] = degree
+		totalWeightDoubled += degree
 	}
 
-	var subTotalWeight float32 = subTotalWeightDoubled / 2.0
-	if subTotalWeight == 0.0 {
-		return [][]string{nodeIds}
+	m2 := totalWeightDoubled // If it is an undirected graph, the global accumulation of bidirectional edges is 2m.
+	nodeToComm := map[string]int{}
+	commTotalDegree := map[int]float32{}
+	for i, id := range nodeIds {
+		nodeToComm[id] = i
+		commTotalDegree[i] = degrees[id]
 	}
 
-	subNodeToCommunity := map[string]int{}
-	subCommunityTotalDegree := map[int]float32{}
-	for i := range nodeIds {
-		id := nodeIds[i]
-		subNodeToCommunity[id] = i
-		subCommunityTotalDegree[i] = subNodeDegree[id]
+	return &graphContext{
+		adjacency:            adj,
+		nodeDegree:           degrees,
+		communityTotalDegree: commTotalDegree,
+		nodeToCommunity:      nodeToComm,
+		m2:                   m2,
+		m2Sq:                 m2 * m2,
 	}
+}
 
-	var m2 float32 = 2.0 * subTotalWeight
-	var m2Sq float32 = m2 * m2
+// Core Greedy Node Movement Algorithm (Merged Single-Layer Louvain Iteration Loop)
+func (c *ClusterEngine) optimizeModularity(nodeIds []string, gCtx *graphContext, maxIter int) {
+	if gCtx.m2 == 0.0 {
+		return
+	}
 
 	improved := true
 	iteration := 0
-	maxIter := min(50, c.options.MaxIterations)
 	edgesToCommunity := map[int]float32{}
 
-	for {
-		if !improved || iteration >= maxIter {
-			break
-		}
-
+	for improved && iteration < maxIter {
 		improved = false
 		iteration++
 
 		for _, nodeId := range nodeIds {
-			var currentCommunity = subNodeToCommunity[nodeId]
-			var nDegree = subNodeDegree[nodeId]
-			var neighbors = subAdjacency[nodeId]
+			currentCommunity := gCtx.nodeToCommunity[nodeId]
+			nDegree := gCtx.nodeDegree[nodeId]
+			neighbors := gCtx.adjacency[nodeId]
 
-			edgesToCommunity = map[int]float32{}
+			// Clear and recalculate the weights of the current node to each community.
+			clear(edgesToCommunity)
 			for neighborId, weight := range neighbors {
 				if neighborId == nodeId {
 					continue
 				}
-				var neighborCommunity = subNodeToCommunity[neighborId]
-				if w, ok := edgesToCommunity[neighborCommunity]; ok {
-
-					edgesToCommunity[neighborCommunity] = w + weight
-				} else {
-					edgesToCommunity[neighborCommunity] = weight
-				}
+				neighborCommunity := gCtx.nodeToCommunity[neighborId]
+				edgesToCommunity[neighborCommunity] += weight
 			}
 
-			var edgesToCurrent float32 = 0
-			if ec, ok := edgesToCommunity[currentCommunity]; ok {
-				edgesToCurrent = ec
-			}
-			var currentTotal float32 = subCommunityTotalDegree[currentCommunity]
+			edgesToCurrent := edgesToCommunity[currentCommunity]
+			currentTotal := gCtx.communityTotalDegree[currentCommunity]
 
 			bestCommunity := currentCommunity
 			var bestGain float32 = 0.0
 
 			for targetCommunity, edgesToTarget := range edgesToCommunity {
-
 				if targetCommunity == currentCommunity {
 					continue
 				}
 
-				var targetTotal float32 = subCommunityTotalDegree[targetCommunity]
-				var deltaQ float32 = c.options.Resolution * ((edgesToTarget-edgesToCurrent)/m2 +
-					(currentTotal-targetTotal-nDegree)*nDegree/m2Sq)
+				targetTotal := gCtx.communityTotalDegree[targetCommunity]
+				// Incremental Modularity Formula (Delta Q)
+				deltaQ := c.options.Resolution * ((edgesToTarget-edgesToCurrent)/gCtx.m2 +
+					(currentTotal-targetTotal-nDegree)*nDegree/gCtx.m2Sq)
 
 				if deltaQ > bestGain {
 					bestGain = deltaQ
@@ -149,24 +143,36 @@ func (c *ClusterEngine) splitCommunity(graph KnowledgeGraph, nodeIds []string, m
 			}
 
 			if bestCommunity != currentCommunity {
-				subCommunityTotalDegree[currentCommunity] -= nDegree
-				subCommunityTotalDegree[bestCommunity] += nDegree
-				subNodeToCommunity[nodeId] = bestCommunity
+				gCtx.communityTotalDegree[currentCommunity] -= nDegree
+				gCtx.communityTotalDegree[bestCommunity] += nDegree
+				gCtx.nodeToCommunity[nodeId] = bestCommunity
 				improved = true
 			}
 		}
 	}
+}
+
+// Perform subgraph re-aggregation using the refactored helper functions.
+func (c *ClusterEngine) splitCommunity(graph KnowledgeGraph, nodeIds []string, maxSize int) [][]string {
+	if len(nodeIds) <= maxSize {
+		return [][]string{nodeIds}
+	}
+
+	nodeSet := map[string]struct{}{}
+	for _, v := range nodeIds {
+		nodeSet[v] = struct{}{}
+	}
+
+	gCtx := c.buildGraphContext(graph, nodeIds, nodeSet)
+	maxIter := min(50, c.options.MaxIterations)
+	c.optimizeModularity(nodeIds, gCtx, maxIter)
 
 	subCommunities := map[int][]string{}
-	for nodeId, communityId := range subNodeToCommunity {
-
-		if _, ok := subCommunities[communityId]; !ok {
-			subCommunities[communityId] = []string{}
-		}
+	for nodeId, communityId := range gCtx.nodeToCommunity {
 		subCommunities[communityId] = append(subCommunities[communityId], nodeId)
 	}
 
-	result := [][]string{}
+	result := make([][]string, 0, len(subCommunities))
 	for _, v := range subCommunities {
 		result = append(result, v)
 	}
@@ -174,159 +180,57 @@ func (c *ClusterEngine) splitCommunity(graph KnowledgeGraph, nodeIds []string, m
 }
 
 func (c *ClusterEngine) detectCommunities(graph KnowledgeGraph) map[int][]string {
-	if graph.EdgeCount() == 0 {
-		// No edges - each node is its own community
-		isolatedCommunities := map[int][]string{}
-		isolatedNodeIds := []string{}
-		for _, v := range graph.GetNodes() {
-			isolatedNodeIds = append(isolatedNodeIds, v.Id)
-		}
+	nodes := graph.GetNodes()
 
+	// Handling Edgeless Isolated Graphs
+	if graph.EdgeCount() == 0 {
+		isolatedNodeIds := make([]string, len(nodes))
+		for i, v := range nodes {
+			isolatedNodeIds[i] = v.Id
+		}
 		slices.Sort(isolatedNodeIds)
 
-		for i := 0; i < len(isolatedNodeIds); i++ {
-			isolatedCommunities[i] = []string{isolatedNodeIds[i]}
+		isolatedCommunities := map[int][]string{}
+		for i, id := range isolatedNodeIds {
+			isolatedCommunities[i] = []string{id}
 		}
 		return isolatedCommunities
 	}
 
-	// Phase 1: Initialize - each node is its own community
-	nodes := graph.GetNodes()
-	nodeCount := len(nodes)
-
-	// Precompute weighted adjacency (neighbor -> aggregated edge weight) and per-node degree.
-	// This collapses parallel edges and lets the Louvain main loop run in O(E) per iteration
-	// instead of re-walking the whole graph for each gain evaluation.
-	adjacency := map[string]map[string]float32{}
-	nodeDegree := map[string]float32{}
-	var totalEdgeWeight float32 = 0
-	for _, node := range nodes {
-		neighborWeights := map[string]float32{}
-		var degree float32 = 0.0
-		for _, edge := range graph.GetEdgesById(node.Id) {
-			var neighborId = edge.Source.Id
-			if edge.Source.Id == node.Id {
-				neighborId = edge.Target.Id
-			}
-
-			if existing, ok := neighborWeights[neighborId]; ok {
-				neighborWeights[neighborId] = existing + float32(edge.Weight)
-			} else {
-				neighborWeights[neighborId] = float32(edge.Weight)
-			}
-		}
-		adjacency[node.Id] = neighborWeights
-		nodeDegree[node.Id] = degree
-		totalEdgeWeight += degree
+	nodeIds := make([]string, len(nodes))
+	for i, v := range nodes {
+		nodeIds[i] = v.Id
 	}
 
-	var m2 float32 = totalEdgeWeight
-	var m2Sq float32 = m2 * m2
+	// 1. Global Re-aggregation (Phase 1)
+	gCtx := c.buildGraphContext(graph, nodeIds, nil)
+	c.optimizeModularity(nodeIds, gCtx, c.options.MaxIterations)
 
-	nodeToCommunity := map[string]int{}
-	communityTotalDegree := map[int]float32{}
-	for i := range nodeCount {
-		id := nodes[i].Id
-		nodeToCommunity[id] = i
-		communityTotalDegree[i] = nodeDegree[id]
-	}
-
-	improved := true
-	iteration := 0
-	edgesToCommunity := map[int]float32{}
-
-	for {
-		if !improved || iteration >= c.options.MaxIterations {
-			break
-		}
-		improved = false
-		iteration++
-
-		for _, node := range nodes {
-			nodeId := node.Id
-			currentCommunity := nodeToCommunity[nodeId]
-			nDegree := nodeDegree[nodeId]
-			neighbors := adjacency[nodeId]
-
-			// Aggregate edge weight from this node into each neighboring community in one pass.
-			edgesToCommunity = map[int]float32{}
-			for neighborId, weight := range neighbors {
-				if neighborId == nodeId {
-					continue
-				}
-				var neighborCommunity = nodeToCommunity[neighborId]
-				if w, ok := edgesToCommunity[neighborCommunity]; ok {
-
-					edgesToCommunity[neighborCommunity] = w + weight
-				} else {
-					edgesToCommunity[neighborCommunity] = weight
-				}
-			}
-
-			var edgesToCurrent float32 = 0
-			if ec, ok := edgesToCommunity[currentCommunity]; ok {
-				edgesToCurrent = ec
-			}
-			var currentTotal float32 = edgesToCommunity[currentCommunity]
-
-			bestCommunity := currentCommunity
-			var bestGain float32 = 0.0
-
-			for targetCommunity, edgesToTarget := range edgesToCommunity {
-				if targetCommunity == currentCommunity {
-					continue
-				}
-
-				var targetTotal float32 = communityTotalDegree[targetCommunity]
-				var deltaQ float32 = c.options.Resolution * ((edgesToTarget-edgesToCurrent)/m2 +
-					(currentTotal-targetTotal-nDegree)*nDegree/m2Sq)
-
-				if deltaQ > bestGain {
-					bestGain = deltaQ
-					bestCommunity = targetCommunity
-				}
-			}
-
-			if bestCommunity != currentCommunity {
-				communityTotalDegree[currentCommunity] -= nDegree
-				communityTotalDegree[bestCommunity] += nDegree
-				nodeToCommunity[nodeId] = bestCommunity
-				improved = true
-			}
-		}
-	}
-
-	// Group nodes by community
+	// Grouped Aggregation Results
 	rawCommunities := map[int][]string{}
-	for nodeId, communityId := range nodeToCommunity {
-		if _, ok := rawCommunities[communityId]; !ok {
-			rawCommunities[communityId] = []string{}
-		}
+	for nodeId, communityId := range gCtx.nodeToCommunity {
 		rawCommunities[communityId] = append(rawCommunities[communityId], nodeId)
 	}
 
-	// Split oversized communities
+	// 2. Carving Up a Massive Community
 	finalCommunities := [][]string{}
-
 	maxSize := max(c.options.MinSplitSize, graph.NodeCount()*int(c.options.MaxCommunityFraction))
 
 	for _, communityNodes := range rawCommunities {
 		if len(communityNodes) > maxSize {
-			a := c.splitCommunity(graph, communityNodes, maxSize)
-			finalCommunities = append(finalCommunities, a...)
+			finalCommunities = append(finalCommunities, c.splitCommunity(graph, communityNodes, maxSize)...)
 		} else {
 			finalCommunities = append(finalCommunities, communityNodes)
 		}
 	}
 
-	// Sort by size descending and re-index
-	slices.SortFunc(finalCommunities, func(a []string, b []string) int {
+	// 3. Sort and Output in the Specified Format
+	slices.SortFunc(finalCommunities, func(a, b []string) int {
 		return len(b) - len(a)
 	})
 
 	result := map[int][]string{}
-	for i := 0; i < len(finalCommunities); i++ {
-		t := finalCommunities[i]
+	for i, t := range finalCommunities {
 		slices.Sort(t)
 		result[i] = t
 	}
