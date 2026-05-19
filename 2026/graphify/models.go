@@ -67,6 +67,7 @@ const (
 	FileCategoryCode          FileCategory = "Code"
 	FileCategoryDocumentation FileCategory = "Documentation"
 	FileCategoryMedia         FileCategory = "Media"
+	FileCategoryUnkwon        FileCategory = "Unkwon"
 )
 
 type ExtractedEdge struct {
