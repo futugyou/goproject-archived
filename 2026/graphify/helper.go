@@ -2,6 +2,7 @@ package graphify
 
 import (
 	"cmp"
+	"math"
 	"path/filepath"
 	"regexp"
 	"slices"
@@ -145,4 +146,38 @@ func MathClamp[T int | float32 | float64](val, min, max T) T {
 		return max
 	}
 	return val
+}
+
+func CalculateCohesion(graph KnowledgeGraph, communityId int) float32 {
+	var nodes = graph.GetNodesByCommunity(communityId)
+	n := len(nodes)
+
+	if n <= 1 {
+		return 1.0
+	}
+
+	nodeSet := map[string]struct{}{}
+	for _, n := range nodes {
+		nodeSet[n.Id] = struct{}{}
+	}
+
+	var actualEdges float32 = 0
+
+	for _, node := range nodes {
+		for _, edge := range graph.GetEdgesById(node.Id) {
+			var otherId = edge.Source.Id
+			if edge.Source.Id == node.Id {
+				otherId = edge.Target.Id
+			}
+			if _, ok := nodeSet[otherId]; ok && cmp.Compare(edge.Source.Id, edge.Target.Id) < 0 {
+				actualEdges++
+			}
+		}
+	}
+
+	possibleEdges := float32(n*(n-1)) / 2.0
+	if possibleEdges > 0 {
+		return float32(math.Round(float64(actualEdges / possibleEdges)))
+	}
+	return 0.0
 }

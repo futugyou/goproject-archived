@@ -242,7 +242,7 @@ func (f *FileDetector) classifyFile(extension string) FileCategory {
 	return FileCategoryUnkwon
 }
 
-func (f *FileDetector) processFile(ctx context.Context, filePath, rootPath string, options FileDetectorOptions) (*DetectedFile, error) {
+func (f *FileDetector) processFile(_ context.Context, filePath, rootPath string, options FileDetectorOptions) (*DetectedFile, error) {
 	var fileInfo os.FileInfo
 	var err error
 	if fileInfo, err = os.Stat(filePath); err != nil {
@@ -296,7 +296,7 @@ func (f *FileDetector) processFile(ctx context.Context, filePath, rootPath strin
 	}, nil
 }
 
-func (f *FileDetector) enumerateFiles(ctx context.Context, rootPath string, options FileDetectorOptions, gitTrackedFiles map[string]struct{}) <-chan string {
+func (f *FileDetector) enumerateFiles(ctx context.Context, rootPath string, _ FileDetectorOptions, gitTrackedFiles map[string]struct{}) <-chan string {
 	out := make(chan string)
 
 	go func() {
