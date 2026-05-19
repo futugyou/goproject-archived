@@ -2,6 +2,7 @@ package graphify
 
 import (
 	"fmt"
+	"math"
 	"sort"
 	"time"
 
@@ -314,6 +315,65 @@ func (k *KnowledgeGraph) NodeCount() int {
 func (k *KnowledgeGraph) EdgeCount() int {
 	count, _ := k.graph.Size()
 	return count
+}
+
+func (graph *KnowledgeGraph) CalculateModularity() float32 {
+	if graph.EdgeCount() == 0 {
+		return 0.0
+	}
+
+	totalEdgeWeight := 0.0
+	for _, v := range graph.GetEdges() {
+		totalEdgeWeight += float64(v.Weight)
+	}
+
+	if totalEdgeWeight == 0 {
+		return 0.0
+	}
+
+	m2 := 2.0 * totalEdgeWeight
+	modularity := 0.0
+
+	// Group nodes by community
+	communities := map[int][]GraphNode{}
+	for _, node := range graph.GetNodes() {
+		if node.Community != -1 {
+			if _, ok := communities[node.Community]; !ok {
+				communities[node.Community] = []GraphNode{}
+			}
+			communities[node.Community] = append(communities[node.Community], node)
+		}
+	}
+
+	for _, nodes := range communities {
+		edgesInside := 0.0
+		degreesSum := 0.0
+
+		nodeSet := map[string]struct{}{}
+		for _, v := range nodes {
+			nodeSet[v.Id] = struct{}{}
+		}
+
+		for _, node := range nodes {
+
+			for _, edge := range graph.GetEdgesById(node.Id) {
+				degreesSum += float64(edge.Weight)
+				otherId := edge.Source.Id
+				if edge.Source.Id == node.Id {
+					otherId = edge.Target.Id
+				}
+
+				if _, ok := nodeSet[otherId]; ok {
+					edgesInside += float64(edge.Weight)
+				}
+			}
+		}
+
+		edgesInside /= 2.0 // Each edge counted twice
+		modularity += (edgesInside / totalEdgeWeight) - math.Pow(degreesSum/m2, 2)
+	}
+
+	return float32(modularity)
 }
 
 func (k *KnowledgeGraph) AddNode(node GraphNode) {
