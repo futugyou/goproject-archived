@@ -16,7 +16,7 @@ type Neo4jExporter struct {
 }
 
 // Export implements [IGraphExporter].
-func (n *Neo4jExporter) Export(ctx context.Context, graph KnowledgeGraph, outputPath string) error {
+func (n *Neo4jExporter) Export(ctx context.Context, graph *KnowledgeGraph, outputPath string) error {
 	var cypher = n.generateCypher(graph)
 
 	data, err := json.Marshal(cypher)
@@ -57,7 +57,7 @@ func (n *Neo4jExporter) generateVariableName(nodeId string) string {
 	return result
 }
 
-func (n *Neo4jExporter) generateCypher(graph KnowledgeGraph) string {
+func (n *Neo4jExporter) generateCypher(graph *KnowledgeGraph) string {
 	var sb strings.Builder
 
 	// Header comment

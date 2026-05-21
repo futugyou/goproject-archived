@@ -16,7 +16,7 @@ type ObsidianExporter struct {
 }
 
 // Export implements [IGraphExporter].
-func (e *ObsidianExporter) Export(ctx context.Context, graph KnowledgeGraph, outputPath string) error {
+func (e *ObsidianExporter) Export(ctx context.Context, graph *KnowledgeGraph, outputPath string) error {
 	if strings.TrimSpace(outputPath) == "" {
 		return fmt.Errorf("outputPath cannot be empty")
 	}
@@ -51,7 +51,7 @@ func (e *ObsidianExporter) Export(ctx context.Context, graph KnowledgeGraph, out
 	return nil
 }
 
-func (e *ObsidianExporter) generateNodeFile(g KnowledgeGraph, node GraphNode, communities map[int]string) string {
+func (e *ObsidianExporter) generateNodeFile(g *KnowledgeGraph, node GraphNode, communities map[int]string) string {
 	var sb strings.Builder
 	nodeLabel := node.LabelOrID()
 
@@ -137,7 +137,7 @@ func (e *ObsidianExporter) generateNodeFile(g KnowledgeGraph, node GraphNode, co
 	return sb.String()
 }
 
-func (e *ObsidianExporter) generateIndexFile(g KnowledgeGraph, nodes []GraphNode, communities map[int]string) string {
+func (e *ObsidianExporter) generateIndexFile(g *KnowledgeGraph, nodes []GraphNode, communities map[int]string) string {
 	var sb strings.Builder
 
 	sb.WriteString("---\n")
@@ -221,7 +221,7 @@ func (e *ObsidianExporter) generateIndexFile(g KnowledgeGraph, nodes []GraphNode
 	return sb.String()
 }
 
-func (e *ObsidianExporter) getConnectionsByRelationship(g KnowledgeGraph, node GraphNode) map[string][]ConnectionEntry {
+func (e *ObsidianExporter) getConnectionsByRelationship(g *KnowledgeGraph, node GraphNode) map[string][]ConnectionEntry {
 	result := make(map[string][]ConnectionEntry)
 
 	edges := g.GetEdgesById(node.Id)

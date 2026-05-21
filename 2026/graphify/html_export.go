@@ -15,11 +15,11 @@ type HtmlExporter struct {
 }
 
 // ExportAsync implements [IGraphExporter].
-func (h *HtmlExporter) Export(ctx context.Context, graph KnowledgeGraph, outputPath string) error {
+func (h *HtmlExporter) Export(ctx context.Context, graph *KnowledgeGraph, outputPath string) error {
 	return h.ExportWIthLabels(ctx, graph, outputPath, nil)
 }
 
-func (h *HtmlExporter) ExportWIthLabels(ctx context.Context, graph KnowledgeGraph, outputPath string, communityLabels map[int]string) error {
+func (h *HtmlExporter) ExportWIthLabels(ctx context.Context, graph *KnowledgeGraph, outputPath string, communityLabels map[int]string) error {
 	if graph.NodeCount() > MaxNodesForVisualization {
 		return fmt.Errorf("Graph has %d nodes - too large for HTML visualization.Maximum is %d nodes ", graph.NodeCount(), MaxNodesForVisualization)
 	}
@@ -70,7 +70,7 @@ func (h *HtmlExporter) ExportWIthLabels(ctx context.Context, graph KnowledgeGrap
 	return HtmlTemplateGenerate(title, string(nodesJson), string(edgesJson), string(legendJson), stats, f)
 }
 
-func (h *HtmlExporter) buildCommunityMap(graph KnowledgeGraph) map[int][]string {
+func (h *HtmlExporter) buildCommunityMap(graph *KnowledgeGraph) map[int][]string {
 	communities := map[int][]string{}
 	for _, node := range graph.GetNodes() {
 		var communityId = node.Community
@@ -84,7 +84,7 @@ func (h *HtmlExporter) buildCommunityMap(graph KnowledgeGraph) map[int][]string 
 	return communities
 }
 
-func (h *HtmlExporter) buildVisNodes(graph KnowledgeGraph, degrees map[string]int, maxDegree int, communityLabels map[int]string) []VisNode {
+func (h *HtmlExporter) buildVisNodes(graph *KnowledgeGraph, degrees map[string]int, maxDegree int, communityLabels map[int]string) []VisNode {
 	visNodes := []VisNode{}
 	var safeDegree = maxDegree
 	for _, node := range graph.GetNodes() {
@@ -162,7 +162,7 @@ func (h *HtmlExporter) buildLegend(communities map[int][]string, communityLabels
 	return legendData
 }
 
-func (h *HtmlExporter) buildVisEdges(graph KnowledgeGraph) []ViEdge {
+func (h *HtmlExporter) buildVisEdges(graph *KnowledgeGraph) []ViEdge {
 	legendData := []ViEdge{}
 
 	for _, edge := range graph.GetEdges() {

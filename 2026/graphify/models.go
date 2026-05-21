@@ -50,6 +50,7 @@ const (
 	ConfidenceExtracted Confidence = "Extracted"
 	ConfidenceInferred  Confidence = "Inferred"
 	ConfidenceAmbiguous Confidence = "Ambiguous"
+	ConfidenceUnkown    Confidence = "Unkown"
 )
 
 type DetectedFile struct {

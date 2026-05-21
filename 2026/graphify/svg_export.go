@@ -28,7 +28,7 @@ func NewSvgExporter() *SvgExporter {
 }
 
 // Export implements [IGraphExporter].
-func (s *SvgExporter) Export(ctx context.Context, graph KnowledgeGraph, outputPath string) error {
+func (s *SvgExporter) Export(ctx context.Context, graph *KnowledgeGraph, outputPath string) error {
 	nodes := graph.GetNodes()
 	var svg string
 
@@ -42,7 +42,7 @@ func (s *SvgExporter) Export(ctx context.Context, graph KnowledgeGraph, outputPa
 	return os.WriteFile(outputPath, []byte(svg), 0644)
 }
 
-func (s *SvgExporter) calculateLayout(graph KnowledgeGraph, nodes []GraphNode) map[string][2]float64 {
+func (s *SvgExporter) calculateLayout(graph *KnowledgeGraph, nodes []GraphNode) map[string][2]float64 {
 	positions := make(map[string][2]float64)
 	r := rand.New(rand.NewSource(42)) // Fixed seed for reproducibility
 	// Initialize with random positions
@@ -133,7 +133,7 @@ func (s *SvgExporter) calculateLayout(graph KnowledgeGraph, nodes []GraphNode) m
 	return positions
 }
 
-func (s *SvgExporter) generateSvg(graph KnowledgeGraph, nodes []GraphNode, positions map[string][2]float64) string {
+func (s *SvgExporter) generateSvg(graph *KnowledgeGraph, nodes []GraphNode, positions map[string][2]float64) string {
 	var sb strings.Builder
 
 	sb.WriteString("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n")

@@ -6,7 +6,7 @@ import (
 )
 
 type louvainAdapter struct {
-	graph KnowledgeGraph
+	graph *KnowledgeGraph
 }
 
 func (a louvainAdapter) Nodes() []string {
@@ -31,7 +31,7 @@ func (a louvainAdapter) EdgesFrom(id string) []LouvainEdge[string] {
 	return res
 }
 
-var _ IPipelineStage[KnowledgeGraph, KnowledgeGraph] = (*ClusterEngine2)(nil)
+var _ IPipelineStage[*KnowledgeGraph, KnowledgeGraph] = (*ClusterEngine2)(nil)
 
 type ClusterEngine2 struct {
 	options ClusterOptions
@@ -44,20 +44,20 @@ func NewClusterEngine2(options *ClusterOptions) *ClusterEngine2 {
 	return &ClusterEngine2{options: *options}
 }
 
-func (c *ClusterEngine2) Execute(ctx context.Context, graph KnowledgeGraph) (*KnowledgeGraph, error) {
+func (c *ClusterEngine2) Execute(ctx context.Context, graph *KnowledgeGraph) (*KnowledgeGraph, error) {
 	if graph.NodeCount() == 0 {
-		return &graph, nil
+		return graph, nil
 	}
 
 	communities := c.detectCommunities(graph)
-	g := &graph
-	if err := g.AssignCommunities(communities); err != nil {
+	if err := graph.AssignCommunities(communities); err != nil {
 		return nil, err
 	}
 
-	return g, nil
+	return graph, nil
 }
-func (c *ClusterEngine2) detectCommunities(graph KnowledgeGraph) map[int][]string {
+
+func (c *ClusterEngine2) detectCommunities(graph *KnowledgeGraph) map[int][]string {
 	nodes := graph.GetNodes()
 
 	// Handling Edgeless Isolated Graphs

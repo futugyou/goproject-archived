@@ -15,7 +15,7 @@ type LadybugExporter struct {
 }
 
 // Export implements [IGraphExporter].
-func (l *LadybugExporter) Export(ctx context.Context, graph KnowledgeGraph, outputPath string) error {
+func (l *LadybugExporter) Export(ctx context.Context, graph *KnowledgeGraph, outputPath string) error {
 	var cypher = l.generateLadybugCypher(graph)
 
 	data, err := json.Marshal(cypher)
@@ -29,7 +29,7 @@ func (l *LadybugExporter) Export(ctx context.Context, graph KnowledgeGraph, outp
 	return os.WriteFile(outputPath, data, 0644)
 }
 
-func (l *LadybugExporter) generateLadybugCypher(graph KnowledgeGraph) string {
+func (l *LadybugExporter) generateLadybugCypher(graph *KnowledgeGraph) string {
 	var sb strings.Builder
 	sb.WriteString("// Ladybug Knowledge Graph Export")
 	sb.WriteString("// Generated: {DateTimeOffset.Now:yyyy-MM-dd HH:mm:ss}")

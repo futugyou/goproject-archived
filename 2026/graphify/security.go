@@ -5,6 +5,7 @@ import (
 	"html"
 	"net"
 	"net/url"
+	"os"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -192,7 +193,11 @@ func (v *InputValidator) isPrivateIp(ip net.IP) bool {
 	return false
 }
 
-func (v *InputValidator) dirExists(path string) bool {
+func (v *InputValidator) dirExists(fullPath string) bool {
+	if _, err := os.Stat(fullPath); os.IsNotExist(err) {
+		return false
+	}
+
 	return true
 }
 

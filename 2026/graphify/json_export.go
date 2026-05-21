@@ -15,7 +15,7 @@ type JsonExporter struct {
 }
 
 // Export implements [IGraphExporter].
-func (j *JsonExporter) Export(ctx context.Context, graph KnowledgeGraph, outputPath string) error {
+func (j *JsonExporter) Export(ctx context.Context, graph *KnowledgeGraph, outputPath string) error {
 	nodes := []NodeDto{}
 	communities := map[int]struct{}{}
 	for _, node := range graph.GetNodes() {

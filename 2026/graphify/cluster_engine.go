@@ -5,7 +5,7 @@ import (
 	"slices"
 )
 
-var _ IPipelineStage[KnowledgeGraph, KnowledgeGraph] = (*ClusterEngine)(nil)
+var _ IPipelineStage[*KnowledgeGraph, KnowledgeGraph] = (*ClusterEngine)(nil)
 
 type ClusterEngine struct {
 	options ClusterOptions
@@ -18,18 +18,17 @@ func NewClusterEngine(options *ClusterOptions) *ClusterEngine {
 	return &ClusterEngine{options: *options}
 }
 
-func (c *ClusterEngine) Execute(ctx context.Context, graph KnowledgeGraph) (*KnowledgeGraph, error) {
+func (c *ClusterEngine) Execute(ctx context.Context, graph *KnowledgeGraph) (*KnowledgeGraph, error) {
 	if graph.NodeCount() == 0 {
-		return &graph, nil
+		return graph, nil
 	}
 
 	communities := c.detectCommunities(graph)
-	g := &graph
-	if err := g.AssignCommunities(communities); err != nil {
+	if err := graph.AssignCommunities(communities); err != nil {
 		return nil, err
 	}
 
-	return g, nil
+	return graph, nil
 }
 
 type graphContext struct {
@@ -42,7 +41,7 @@ type graphContext struct {
 }
 
 // Consolidate the logic for extracting and constructing local/global adjacency lists and degree information.
-func (c *ClusterEngine) buildGraphContext(graph KnowledgeGraph, nodeIds []string, filterSet map[string]struct{}) *graphContext {
+func (c *ClusterEngine) buildGraphContext(graph *KnowledgeGraph, nodeIds []string, filterSet map[string]struct{}) *graphContext {
 	adj := map[string]map[string]float32{}
 	degrees := map[string]float32{}
 	var totalWeightDoubled float32 = 0.0
@@ -153,7 +152,7 @@ func (c *ClusterEngine) optimizeModularity(nodeIds []string, gCtx *graphContext,
 }
 
 // Perform subgraph re-aggregation using the refactored helper functions.
-func (c *ClusterEngine) splitCommunity(graph KnowledgeGraph, nodeIds []string, maxSize int) [][]string {
+func (c *ClusterEngine) splitCommunity(graph *KnowledgeGraph, nodeIds []string, maxSize int) [][]string {
 	if len(nodeIds) <= maxSize {
 		return [][]string{nodeIds}
 	}
@@ -179,7 +178,7 @@ func (c *ClusterEngine) splitCommunity(graph KnowledgeGraph, nodeIds []string, m
 	return result
 }
 
-func (c *ClusterEngine) detectCommunities(graph KnowledgeGraph) map[int][]string {
+func (c *ClusterEngine) detectCommunities(graph *KnowledgeGraph) map[int][]string {
 	nodes := graph.GetNodes()
 
 	// Handling Edgeless Isolated Graphs
