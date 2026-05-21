@@ -212,17 +212,108 @@ func (wm *WatchMode) processChanges(ctx context.Context, changedPaths []string, 
 		fmt.Fprintf(wm.output, "  %s %s\n", status, rel)
 	}
 
-	// TODO: wait for other PipelineStage implement
-	// The remaining functionality needs to be completed later.
-	incrementalGraph := &KnowledgeGraph{}
+	// Re-detect and extract only changed files
+	var fileDetector = &FileDetector{}
+	var options = DefaultFileDetectorOptions()
+
+	allDetected, err := fileDetector.Execute(ctx, *options)
+	if err != nil {
+		fmt.Fprintf(wm.output, "%s", err.Error())
+		return
+	}
+
+	changedSet := map[string]struct{}{}
+	for _, v := range trulyChanged {
+		changedSet[v] = struct{}{}
+	}
+	filesToProcess := []DetectedFile{}
+	for _, v := range *allDetected {
+		if _, ok := changedSet[v.FilePath]; ok {
+			filesToProcess = append(filesToProcess, v)
+		}
+	}
+
+	if len(filesToProcess) == 0 {
+		fmt.Fprintln(wm.output, "  (no processable files in change set)")
+		return
+	}
+
+	// Extract
+	var extractor = NewSourceExtractor()
+	var newResults = []ExtractionResult{}
+	for _, file := range filesToProcess {
+		if ctx.Err() != nil {
+			fmt.Fprintf(wm.output, "%s", ctx.Err().Error())
+			return
+		}
+
+		result, err := extractor.Execute(ctx, file)
+		if err != nil {
+			fmt.Fprintf(wm.output, "  Warning: extraction failed for %s: %s", file.RelativePath, err.Error())
+		} else if len(result.Nodes) > 0 || len(result.Edges) > 0 {
+			newResults = append(newResults, *result)
+		}
+	}
+
+	if len(newResults) == 0 {
+		fmt.Fprintln(wm.output, "  (no extractable content)")
+		return
+	}
+
+	// Rebuild graph by merging new extraction results into a fresh build
+	var graphBuilder = NewGraphBuilder(&GraphBuilderOptions{
+		CreateFileNodes: true,
+		MinEdgeWeight:   0.1,
+		MergeStrategy:   MergeStrategyMostRecent,
+	})
+
+	incrementalGraph, err := graphBuilder.Execute(ctx, newResults)
+	if err != nil {
+		fmt.Fprintf(wm.output, "%s", err.Error())
+		return
+	}
 	wm.currentGraph.MergeGraph(*incrementalGraph)
+
+	// Re-cluster
+	clusterEngine := NewClusterEngine(&ClusterOptions{
+		MaxIterations:        100,
+		Resolution:           1.0,
+		MinSplitSize:         5,
+		MaxCommunityFraction: 0.2,
+	})
+	currentGraph, err := clusterEngine.Execute(ctx, wm.currentGraph)
+	if err != nil {
+		fmt.Fprintf(wm.output, "%s", err.Error())
+		return
+	}
+	wm.currentGraph = currentGraph
+
 	nodeCount := wm.currentGraph.NodeCount()
 	edgeCount := wm.currentGraph.EdgeCount()
 	wm.graphMu.Unlock()
 
-	_ = os.MkdirAll(outputDir, os.ModePerm)
+	err = os.MkdirAll(outputDir, os.ModePerm)
+	if err != nil {
+		fmt.Fprintf(wm.output, "%s", err.Error())
+		return
+	}
 	for _, format := range formats {
-		_ = format //
+		outputPath := filepath.Join(outputDir, "graph.", format)
+		var exporter IGraphExporter
+		switch strings.ToLower(format) {
+		case "json":
+			exporter = &JsonExporter{}
+		case "html":
+			exporter = &HtmlExporter{}
+		}
+
+		if exporter != nil {
+			err = exporter.Export(ctx, wm.currentGraph, outputPath)
+			if err != nil {
+				fmt.Fprintf(wm.output, "exporter error: %s", err.Error())
+				return
+			}
+		}
 	}
 
 	fmt.Fprintf(wm.output, "  Re-processed %d file(s) -> %d nodes, %d edges\n", len(trulyChanged), nodeCount, edgeCount)
