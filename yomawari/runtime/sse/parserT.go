@@ -140,7 +140,7 @@ func (s *SseParser[T]) processLine(advance *int) (*SseItem[T], bool) {
 		*advance = s.getNewLineLength()
 		if s.dataAppended {
 			data := s.itemParser(s.eventType, s.dataBuffer[:s.dataLength])
-			sseItem := NewSseItem[T](data, s.eventType)
+			sseItem := NewSseItem(data, s.eventType)
 			sseItem.EventId = s.eventId
 			if s.nextReconnectionInterval != 0 {
 				sseItem.ReconnectionInterval = s.nextReconnectionInterval
@@ -156,12 +156,12 @@ func (s *SseParser[T]) processLine(advance *int) (*SseItem[T], bool) {
 		return &SseItem[T]{}, false
 	}
 
-	colonPos := bytes.IndexByte(line, ':')
+	before, after, ok := bytes.Cut(line, []byte{':'})
 	var fieldName []byte
 	var fieldValue []byte
-	if colonPos >= 0 {
-		fieldName = line[:colonPos]
-		fieldValue = line[colonPos+1:]
+	if ok {
+		fieldName = before
+		fieldValue = after
 		if len(fieldValue) > 0 && fieldValue[0] == ' ' {
 			fieldValue = fieldValue[1:]
 		}
@@ -186,7 +186,7 @@ func (s *SseParser[T]) processLine(advance *int) (*SseItem[T], bool) {
 				}
 
 				data := s.itemParser(s.eventType, fieldValue)
-				sseItem := NewSseItem[T](data, s.eventType)
+				sseItem := NewSseItem(data, s.eventType)
 				sseItem.EventId = s.eventId
 				if s.nextReconnectionInterval != 0 {
 					sseItem.ReconnectionInterval = s.nextReconnectionInterval

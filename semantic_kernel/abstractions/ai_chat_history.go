@@ -1,11 +1,11 @@
 package abstractions
 
 import (
+	"context"
 	"encoding/base64"
 
 	"github.com/futugyou/extensions_ai/abstractions/chatcompletion"
 	"github.com/futugyou/yomawari/core"
-	"golang.org/x/net/context"
 )
 
 type ChatHistory struct {

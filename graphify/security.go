@@ -186,7 +186,7 @@ func (v *InputValidator) isPrivateIp(ip net.IP) bool {
 
 	// IPv6
 	// fc00::/7 (Unique Local) 和 fe80::/10 (Link Local)
-	if ip.IsLinkLocalUnicast() || ip.IsGlobalUnicast() == false {
+	if ip.IsLinkLocalUnicast() || !ip.IsGlobalUnicast() {
 		return true
 	}
 

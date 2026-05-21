@@ -328,10 +328,6 @@ func ToChatResponseUpdate(response *rawopenai.ChatCompletionChunk) *chatcompleti
 		CreatedAt:            &created,
 	}
 
-	if len(response.SystemFingerprint) > 0 {
-		result.AdditionalProperties["SystemFingerprint"] = response.SystemFingerprint
-	}
-
 	if response.Usage.CompletionTokens > 0 {
 		result.Contents = append(result.Contents, contents.UsageContent{
 			AIContent: contents.NewAIContent(nil, nil),
@@ -381,10 +377,6 @@ func ToChatResponseUpdateWithFunctions(response *rawopenai.ChatCompletionChunk, 
 		AdditionalProperties: map[string]interface{}{},
 		Contents:             []contents.IAIContent{},
 		CreatedAt:            &created,
-	}
-
-	if len(response.SystemFingerprint) > 0 {
-		result.AdditionalProperties["SystemFingerprint"] = response.SystemFingerprint
 	}
 
 	finishReason := chatcompletion.ChatFinishReason((string)(response.Choices[len(response.Choices)-1].FinishReason))

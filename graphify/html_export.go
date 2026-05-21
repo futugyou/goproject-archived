@@ -21,7 +21,7 @@ func (h *HtmlExporter) Export(ctx context.Context, graph *KnowledgeGraph, output
 
 func (h *HtmlExporter) ExportWIthLabels(ctx context.Context, graph *KnowledgeGraph, outputPath string, communityLabels map[int]string) error {
 	if graph.NodeCount() > MaxNodesForVisualization {
-		return fmt.Errorf("Graph has %d nodes - too large for HTML visualization.Maximum is %d nodes ", graph.NodeCount(), MaxNodesForVisualization)
+		return fmt.Errorf("graph has %d nodes - too large for HTML visualization.Maximum is %d nodes ", graph.NodeCount(), MaxNodesForVisualization)
 	}
 
 	communities := h.buildCommunityMap(graph)

@@ -73,11 +73,7 @@ func (a *Analyzer) isConceptNode(node GraphNode) bool {
 
 	// Or source file has no extension (not a real file)
 	fileName := filepath.Base(node.FilePath)
-	if strings.Contains(fileName, ".") {
-		return true
-	}
-
-	return false
+	return strings.Contains(fileName, ".")
 }
 
 func (a *Analyzer) isFileNode(node GraphNode) bool {
@@ -228,18 +224,16 @@ func (a *Analyzer) generateSuggestedQuestions(graph KnowledgeGraph) []SuggestedQ
 				commLabel = fmt.Sprintf("Community %d", nodeCommunity)
 			}
 			otherLabels := []string{}
-			otherLabels2 := []string{}
 			for _, c := range neighborCommunities {
 				if otherLabel, ok = communityLabels[c]; !ok {
-					otherLabel = fmt.Sprintf("Community %d", c)
+					otherLabel = fmt.Sprintf("`Community %d`", c)
 				}
 				otherLabels = append(otherLabels, otherLabel)
-				otherLabels2 = append(otherLabels2, fmt.Sprintf("`%s`", otherLabel))
 			}
 
 			questions = append(questions, SuggestedQuestion{
 				Type:     "bridge_node",
-				Question: fmt.Sprintf("Why does `%s` connect `%s` to %s?", node.Label, commLabel, strings.Join(otherLabels2, ", ")),
+				Question: fmt.Sprintf("Why does `%s` connect `%s` to %s?", node.Label, commLabel, strings.Join(otherLabels, ", ")),
 				Why:      "This node bridges multiple communities - it's a cross-cutting concern.",
 			})
 		}

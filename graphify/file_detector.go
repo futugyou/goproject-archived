@@ -95,7 +95,7 @@ func (f *FileDetector) Execute(ctx context.Context, input FileDetectorOptions) (
 	validator := NewInputValidator()
 	pathValidation := validator.ValidatePath(rootPath, "")
 	if !pathValidation.IsValid {
-		return &detectedFiles, fmt.Errorf("Invalid root path: %s", strings.Join(pathValidation.Errors, "; "))
+		return &detectedFiles, fmt.Errorf("invalid root path: %s", strings.Join(pathValidation.Errors, "; "))
 	}
 
 	var gitTrackedFiles map[string]struct{}
@@ -275,7 +275,7 @@ func (f *FileDetector) processFile(_ context.Context, filePath, rootPath string,
 			patternLower := strings.ToLower(pattern)
 			matched, err := filepath.Match(patternLower, relativePathLower)
 			if err == nil && matched {
-				return nil, fmt.Errorf("include the excluded directory.")
+				return nil, fmt.Errorf("include the excluded directory")
 			}
 		}
 	}

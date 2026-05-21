@@ -85,11 +85,9 @@ func EstimateQueryTokens(graph KnowledgeGraph, question string, depth *int) int 
 
 	visited := make(map[string]struct{})
 	frontier := make(map[string]struct{})
-	var startNodes []string
 
 	for i := range limit {
 		id := scored[i].Id
-		startNodes = append(startNodes, id)
 		visited[id] = struct{}{}
 		frontier[id] = struct{}{}
 	}
@@ -215,7 +213,7 @@ func PrintBenchmark(result *BenchmarkResult, output io.Writer) error {
 
 	if result.Error != "" {
 		fmt.Fprintf(output, "Benchmark error: %s\n", result.Error)
-		return fmt.Errorf("Benchmark error: %s\n", result.Error)
+		return fmt.Errorf("benchmark error: %s", result.Error)
 	}
 
 	fmt.Fprintln(output)
