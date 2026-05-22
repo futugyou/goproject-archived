@@ -102,21 +102,21 @@ func (p *PipelineRunner) buildCommunityLabels(graph *KnowledgeGraph) map[int]str
 		for _, v := range nodes {
 			ts[v.Type] = append(ts[v.Type], v)
 		}
-		tss := []commonType{}
+		commonTypes := []commonType{}
 		for k, v := range ts {
-			tss = append(tss, commonType{
+			commonTypes = append(commonTypes, commonType{
 				t:     k,
 				nodes: v,
 			})
 		}
 
-		slices.SortFunc(tss, func(a, b commonType) int {
+		slices.SortFunc(commonTypes, func(a, b commonType) int {
 			return cmp.Compare(len(b.nodes), len(a.nodes))
 		})
 
 		commonType := "Mixed"
-		if len(tss) > 0 && len(tss[0].t) > 0 {
-			commonType = tss[0].t
+		if len(commonTypes) > 0 && len(commonTypes[0].t) > 0 {
+			commonType = commonTypes[0].t
 		}
 
 		result[commId] = fmt.Sprintf("%s (Community %d)", commonType, commId)
@@ -255,25 +255,47 @@ func (p *PipelineRunner) Run(ctx context.Context, inputPath, outputDir string, f
 	if p.chatClient != nil {
 		p.writeLine("[2b/6] Running AI-enhanced semantic extraction...")
 		semanticExtractor := NewSemanticExtractor(nil, p.chatClient)
-		semanticProcessed := 0
+
+		var semanticProcessed int32 = 0
+		aiSem := make(chan struct{}, runtime.NumCPU())
+		var aiWg sync.WaitGroup
 
 		for _, file := range detectedFiles {
 			if ctx.Err() != nil {
-				p.writeLine(ctx.Err().Error())
-				return nil, ctx.Err()
+				break
 			}
 
-			if result, err := semanticExtractor.Execute(ctx, file); err != nil {
-				if p.verbose {
-					p.writeLine(fmt.Sprintf("      Warning: Semantic extraction failed for %s: %s", file.RelativePath, err.Error()))
+			aiSem <- struct{}{}
+			aiWg.Add(1)
+
+			go func(f DetectedFile) {
+				defer func() {
+					<-aiSem
+					aiWg.Done()
+				}()
+
+				result, err := semanticExtractor.Execute(ctx, f)
+				if err != nil {
+					if p.verbose {
+						p.writeLine(fmt.Sprintf("      Warning: Semantic extraction failed for %s: %s", f.RelativePath, err.Error()))
+					}
+					return
 				}
-			} else if len(result.Nodes) > 0 || len(result.Edges) > 0 {
-				extractionResults = append(extractionResults, *result)
-				semanticProcessed++
-			}
+
+				if len(result.Nodes) > 0 || len(result.Edges) > 0 {
+					bagMu.Lock()
+					extractionResults = append(extractionResults, *result)
+					bagMu.Unlock()
+
+					atomic.AddInt32(&semanticProcessed, 1)
+				}
+			}(file)
 		}
 
-		p.writeLine("      AI extracted from {semanticProcessed} files")
+		aiWg.Wait()
+		p.writeLine(fmt.Sprintf("      AI extracted from %d files", semanticProcessed))
+		totalNodes = 0
+		totalEdges = 0
 		for _, v := range extractionResults {
 			totalNodes += len(v.Nodes)
 			totalEdges += len(v.Edges)
@@ -281,7 +303,7 @@ func (p *PipelineRunner) Run(ctx context.Context, inputPath, outputDir string, f
 		p.writeLine(fmt.Sprintf("      Total: %d nodes, %d edges (AST + AI)", totalNodes, totalEdges))
 		p.writeLine("")
 	} else {
-		p.writeLine("      \u2139 No AI provider configured. Using AST-only extraction.")
+		p.writeLine("      ℹ No AI provider configured. Using AST-only extraction.")
 		p.writeLine("        Use --provider to enable AI-enhanced semantic extraction.")
 		p.writeLine("")
 	}
