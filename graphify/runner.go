@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -21,6 +22,7 @@ type PipelineRunner struct {
 	output     io.Writer
 	verbose    bool
 	chatClient chatcompletion.IChatClient
+	logger     *slog.Logger
 }
 
 func NewPipelineRunner(output io.Writer, verbose *bool, chatClient chatcompletion.IChatClient) *PipelineRunner {
@@ -28,10 +30,19 @@ func NewPipelineRunner(output io.Writer, verbose *bool, chatClient chatcompletio
 	if verbose != nil {
 		v = *verbose
 	}
+	level := slog.LevelInfo
+	if v {
+		level = slog.LevelDebug
+	}
+	handler := slog.NewTextHandler(output, &slog.HandlerOptions{
+		Level: level,
+	})
+	logger := slog.New(handler)
 	return &PipelineRunner{
 		output:     output,
 		verbose:    v,
 		chatClient: chatClient,
+		logger:     logger,
 	}
 }
 
@@ -120,12 +131,27 @@ type commonType struct {
 }
 
 func (p *PipelineRunner) writeLine(m string) {
-	p.output.Write([]byte(m + "\n"))
+	if strings.TrimSpace(m) == "" {
+		p.output.Write([]byte("\n"))
+		return
+	}
+
+	switch {
+	case strings.Contains(m, "Warning"):
+		p.logger.Warn(m)
+	case strings.Contains(m, "Debug") || strings.Contains(m, "- "):
+		p.logger.Debug(m)
+	default:
+		p.logger.Info(m)
+	}
 }
 
 func (p *PipelineRunner) writeErrorLine(err error) {
-	p.writeLine("")
-	p.writeLine("Error" + err.Error())
+	if err == nil {
+		return
+	}
+
+	p.logger.Error("Pipeline execution failed", "error", err)
 }
 
 func (p *PipelineRunner) Run(ctx context.Context, inputPath, outputDir string, formats []string, useCache bool) (*KnowledgeGraph, error) {
