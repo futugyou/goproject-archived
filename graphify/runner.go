@@ -72,32 +72,18 @@ func (p *PipelineRunner) calculateCohesion(graph *KnowledgeGraph, nodeIds []stri
 	return float32(internalEdges) / float32(possibleEdges)
 }
 
-func (p *PipelineRunner) calculateCohesionScores(graph *KnowledgeGraph) map[int]float32 {
-	communities := make(map[int][]string)
-	for _, node := range graph.GetNodes() {
-		if node.Community != -1 {
-			communities[node.Community] = append(communities[node.Community], node.Id)
-		}
-	}
-
+func (p *PipelineRunner) calculateCohesionScores(graph *KnowledgeGraph, communities map[int][]string) map[int]float32 {
 	result := map[int]float32{}
 	for commId, nodeIds := range communities {
 		result[commId] = p.calculateCohesion(graph, nodeIds)
 	}
-
 	return result
 }
 
-func (p *PipelineRunner) buildCommunityLabels(graph *KnowledgeGraph) map[int]string {
+func (p *PipelineRunner) buildCommunityLabels(communityNodes map[int][]GraphNode) map[int]string {
 	result := make(map[int]string)
-	communities := make(map[int][]GraphNode)
-	for _, node := range graph.GetNodes() {
-		if node.Community != -1 {
-			communities[node.Community] = append(communities[node.Community], node)
-		}
-	}
 
-	for commId, nodes := range communities {
+	for commId, nodes := range communityNodes {
 		ts := make(map[string][]GraphNode)
 		for _, v := range nodes {
 			ts[v.Type] = append(ts[v.Type], v)
@@ -367,8 +353,17 @@ func (p *PipelineRunner) Run(ctx context.Context, inputPath, outputDir string, f
 	p.writeLine("")
 
 	// Prepare community labels and cohesion scores for report and exports
-	var communityLabels = p.buildCommunityLabels(graph)
-	var cohesionScores = p.calculateCohesionScores(graph)
+	communityNodes := make(map[int][]GraphNode)
+	communitiesIds := make(map[int][]string)
+
+	for _, node := range graph.GetNodes() {
+		if node.Community != -1 {
+			communityNodes[node.Community] = append(communityNodes[node.Community], node)
+			communitiesIds[node.Community] = append(communitiesIds[node.Community], node.Id)
+		}
+	}
+	var communityLabels = p.buildCommunityLabels(communityNodes)
+	var cohesionScores = p.calculateCohesionScores(graph, communitiesIds)
 
 	// Stage 6: Export
 	p.writeLine("[6/6] Exporting results...")
