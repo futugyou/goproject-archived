@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"maps"
-	"path/filepath"
 	"strings"
 )
 
@@ -78,7 +77,7 @@ func (g *GraphBuilder) Execute(ctx context.Context, input []ExtractionResult) (*
 
 				var fileNode = GraphNode{
 					Id:           fileNodeId,
-					Label:        filepath.Base(filePath),
+					Label:        GetFileName(filePath),
 					Type:         "File",
 					FilePath:     filePath,
 					RelativePath: relativePath,

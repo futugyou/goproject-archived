@@ -11,7 +11,7 @@ import (
 type ReportGenerator struct {
 }
 
-func (r *ReportGenerator) appendKnowledgeGaps(sb *strings.Builder, graph KnowledgeGraph) {
+func (r *ReportGenerator) appendKnowledgeGaps(sb *strings.Builder, graph *KnowledgeGraph) {
 	isolatedNodes := []GraphNode{}
 	for _, node := range graph.GetNodes() {
 		if graph.GetDegree(node.Id) > 1 {
@@ -91,7 +91,7 @@ func (r *ReportGenerator) appendSuggestedQuestions(sb *strings.Builder, question
 	sb.WriteByte('\n')
 }
 
-func (r *ReportGenerator) appendCommunities(sb *strings.Builder, graph KnowledgeGraph, communityLabels map[int]string, cohesionScores map[int]float32) {
+func (r *ReportGenerator) appendCommunities(sb *strings.Builder, graph *KnowledgeGraph, communityLabels map[int]string, cohesionScores map[int]float32) {
 	sb.WriteString("## Communities")
 
 	communitiesById := graph.SortNodeByCommunityDesc()
@@ -180,7 +180,7 @@ func (r *ReportGenerator) appendGodNodes(sb *strings.Builder, godNodes []GodNode
 	sb.WriteByte('\n')
 }
 
-func (r *ReportGenerator) appendSummary(sb *strings.Builder, graph KnowledgeGraph, analysis AnalysisResult) {
+func (r *ReportGenerator) appendSummary(sb *strings.Builder, graph *KnowledgeGraph, analysis AnalysisResult) {
 	sb.WriteString("## Summary")
 
 	// Calculate confidence distribution
@@ -221,7 +221,7 @@ func (r *ReportGenerator) appendSummary(sb *strings.Builder, graph KnowledgeGrap
 	sb.WriteByte('\n')
 }
 
-func (r *ReportGenerator) Generate(graph KnowledgeGraph, analysis AnalysisResult, communityLabels map[int]string, cohesionScores map[int]float32, projectName string) string {
+func (r *ReportGenerator) Generate(graph *KnowledgeGraph, analysis AnalysisResult, communityLabels map[int]string, cohesionScores map[int]float32, projectName string) string {
 	var sb strings.Builder
 	var today = time.Now().Format("2006-01-02 15:04:05")
 

@@ -7,7 +7,6 @@ require (
 	github.com/futugyou/extensions_ai v0.0.1
 	github.com/futugyou/kernel_memory v0.0.1
 	github.com/futugyou/yomawari v0.0.1
-	golang.org/x/net v0.54.0
 )
 
 replace github.com/futugyou/yomawari v0.0.1 => ../yomawari
