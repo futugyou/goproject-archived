@@ -40,24 +40,25 @@ func (p *PipelineRunner) calculateCohesion(graph *KnowledgeGraph, nodeIds []stri
 		return 0
 	}
 
-	// Count internal edges (edges within community)
+	nodeMap := make(map[string]struct{}, len(nodeIds))
+	for _, id := range nodeIds {
+		nodeMap[id] = struct{}{}
+	}
+
 	internalEdges := 0
 	for _, nodeId := range nodeIds {
-		var edges = graph.GetEdgesById(nodeId)
+		edges := graph.GetEdgesById(nodeId)
 		for _, edge := range edges {
-			if slices.Contains(nodeIds, edge.Source.Id) || slices.Contains(nodeIds, edge.Target.Id) {
-				internalEdges += 1
+			_, sourceExists := nodeMap[edge.Source.Id]
+			_, targetExists := nodeMap[edge.Target.Id]
+			if sourceExists || targetExists {
+				internalEdges++
 			}
 		}
 	}
 
-	// Cohesion = internal edges / possible edges
 	possibleEdges := len(nodeIds) * (len(nodeIds) - 1)
-	if possibleEdges > 0 {
-		return float32(internalEdges) / float32(possibleEdges)
-	}
-
-	return 0.0
+	return float32(internalEdges) / float32(possibleEdges)
 }
 
 func (p *PipelineRunner) calculateCohesionScores(graph *KnowledgeGraph) map[int]float32 {
@@ -103,7 +104,7 @@ func (p *PipelineRunner) buildCommunityLabels(graph *KnowledgeGraph) map[int]str
 		})
 
 		commonType := "Mixed"
-		if len(tss) >= 0 && len(tss[0].t) > 0 {
+		if len(tss) > 0 && len(tss[0].t) > 0 {
 			commonType = tss[0].t
 		}
 
@@ -165,7 +166,7 @@ func (p *PipelineRunner) Run(ctx context.Context, inputPath, outputDir string, f
 	extractor := NewSourceExtractor()
 	var processed int32 = 0
 	var skipped int32 = 0
-	var extractionBag []ExtractionResult
+	var extractionResults []ExtractionResult
 	var bagMu sync.Mutex
 
 	var verboseWarnings []string
@@ -202,7 +203,7 @@ func (p *PipelineRunner) Run(ctx context.Context, inputPath, outputDir string, f
 
 			if len(result.Nodes) > 0 || len(result.Edges) > 0 {
 				bagMu.Lock()
-				extractionBag = append(extractionBag, *result)
+				extractionResults = append(extractionResults, *result)
 				bagMu.Unlock()
 
 				atomic.AddInt32(&processed, 1)
@@ -213,8 +214,6 @@ func (p *PipelineRunner) Run(ctx context.Context, inputPath, outputDir string, f
 	}
 
 	wg.Wait()
-
-	var extractionResults = []ExtractionResult{}
 
 	p.writeLine(fmt.Sprintf("      Processed %d files, skipped %d", processed, skipped))
 	totalNodes := 0
@@ -273,7 +272,7 @@ func (p *PipelineRunner) Run(ctx context.Context, inputPath, outputDir string, f
 		p.writeErrorLine(err)
 		return nil, err
 	}
-	p.writeLine("      Graph: {graph.NodeCount} nodes, {graph.EdgeCount} edges")
+	p.writeLine(fmt.Sprintf("      Graph: %d nodes, %d edges", graph.NodeCount(), graph.EdgeCount()))
 	p.writeLine("")
 
 	// Stage 4: Detect communities (clustering)
