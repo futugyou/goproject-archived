@@ -3,7 +3,7 @@ package graphify
 import "context"
 
 type IPipelineStage[TInput, TOutput any] interface {
-	Execute(ctx context.Context, input TInput) (*TOutput, error)
+	Execute(ctx context.Context, input *TInput) (*TOutput, error)
 }
 
 var AnalyzerCodeExtensions = []string{"cs", "py", "ts", "tsx", "js", "go", "rs", "java", "rb", "cpp", "c", "h", "kt", "scala", "php"}

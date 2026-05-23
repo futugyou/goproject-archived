@@ -53,6 +53,10 @@ const (
 	ConfidenceUnkown    Confidence = "Unkown"
 )
 
+type FileDetectorResult struct {
+	Files []DetectedFile
+}
+
 type DetectedFile struct {
 	FilePath     string
 	FileName     string
@@ -107,6 +111,10 @@ const (
 	ExtractionMethodSemantic ExtractionMethod = "Semantic"
 	ExtractionMethodHybrid   ExtractionMethod = "Hybrid"
 )
+
+type GraphExtractionInput struct {
+	Datas []ExtractionResult
+}
 
 type ExtractionResult struct {
 	Nodes                  []ExtractedNode

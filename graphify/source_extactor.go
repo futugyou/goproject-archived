@@ -3,6 +3,7 @@ package graphify
 import (
 	"context"
 	"fmt"
+	"os"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -31,8 +32,37 @@ func NewSourceExtractor() *SourceExtractor {
 }
 
 // Execute implements [IPipelineStage].
-func (e *SourceExtractor) Execute(ctx context.Context, input DetectedFile) (*ExtractionResult, error) {
-	panic("unimplemented")
+func (e *SourceExtractor) Execute(ctx context.Context, input *DetectedFile) (*ExtractionResult, error) {
+	if extractor, ok := e.extractors[input.Language]; ok {
+		return e.defaultExtractionResult(input), nil
+	} else {
+		data, err := os.ReadFile(input.FilePath)
+		if err != nil {
+			return e.defaultExtractionResult(input), nil
+		}
+		model, err := extractor.Extract(string(data), input.FilePath, input.FileName)
+		if err != nil {
+			return e.defaultExtractionResult(input), nil
+		}
+
+		return &ExtractionResult{
+			Nodes:                  model.Nodes,
+			Edges:                  model.Edges,
+			SourceFilePath:         input.FilePath,
+			RelativeSourceFilePath: input.RelativePath,
+			Method:                 ExtractionMethodAst,
+		}, nil
+	}
+}
+
+func (*SourceExtractor) defaultExtractionResult(input *DetectedFile) *ExtractionResult {
+	return &ExtractionResult{
+		Nodes:                  []ExtractedNode{},
+		Edges:                  []ExtractedEdge{},
+		SourceFilePath:         input.FilePath,
+		RelativeSourceFilePath: input.RelativePath,
+		Method:                 ExtractionMethodAst,
+	}
 }
 
 type LanguageExtractorModel struct {

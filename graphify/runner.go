@@ -148,7 +148,7 @@ func (p *PipelineRunner) Run(ctx context.Context, inputPath, outputDir string, f
 	// Stage 1: Detect files
 	p.writeLine("[1/6] Detecting files...")
 	fileDetector := &FileDetector{}
-	detectorOptions := FileDetectorOptions{
+	detectorOptions := &FileDetectorOptions{
 		RootPath:         inputPath,
 		MaxFileSizeBytes: 1024 * 1024,
 		RespectGitIgnore: true,
@@ -159,7 +159,7 @@ func (p *PipelineRunner) Run(ctx context.Context, inputPath, outputDir string, f
 		p.writeErrorLine(err)
 		return nil, err
 	}
-	detectedFiles := *dfs
+	detectedFiles := dfs.Files
 	p.writeLine(fmt.Sprintf("      Found %d files to process", len(detectedFiles)))
 
 	if p.verbose {
@@ -178,7 +178,9 @@ func (p *PipelineRunner) Run(ctx context.Context, inputPath, outputDir string, f
 	extractor := NewSourceExtractor()
 	var processed int32 = 0
 	var skipped int32 = 0
-	var extractionResults []ExtractionResult
+	var graphExtractionInput = &GraphExtractionInput{
+		Datas: []ExtractionResult{},
+	}
 	var bagMu sync.Mutex
 
 	var verboseWarnings []string
@@ -202,7 +204,7 @@ func (p *PipelineRunner) Run(ctx context.Context, inputPath, outputDir string, f
 				wg.Done()
 			}()
 
-			result, err := extractor.Execute(ctx, f)
+			result, err := extractor.Execute(ctx, &f)
 			if err != nil {
 				atomic.AddInt32(&skipped, 1)
 				if p.verbose {
@@ -215,7 +217,7 @@ func (p *PipelineRunner) Run(ctx context.Context, inputPath, outputDir string, f
 
 			if len(result.Nodes) > 0 || len(result.Edges) > 0 {
 				bagMu.Lock()
-				extractionResults = append(extractionResults, *result)
+				graphExtractionInput.Datas = append(graphExtractionInput.Datas, *result)
 				bagMu.Unlock()
 
 				atomic.AddInt32(&processed, 1)
@@ -230,7 +232,7 @@ func (p *PipelineRunner) Run(ctx context.Context, inputPath, outputDir string, f
 	p.writeLine(fmt.Sprintf("      Processed %d files, skipped %d", processed, skipped))
 	totalNodes := 0
 	totalEdges := 0
-	for _, v := range extractionResults {
+	for _, v := range graphExtractionInput.Datas {
 		totalNodes += len(v.Nodes)
 		totalEdges += len(v.Edges)
 	}
@@ -260,7 +262,7 @@ func (p *PipelineRunner) Run(ctx context.Context, inputPath, outputDir string, f
 					aiWg.Done()
 				}()
 
-				result, err := semanticExtractor.Execute(ctx, f)
+				result, err := semanticExtractor.Execute(ctx, &f)
 				if err != nil {
 					if p.verbose {
 						p.writeLine(fmt.Sprintf("      Warning: Semantic extraction failed for %s: %s", f.RelativePath, err.Error()))
@@ -270,7 +272,7 @@ func (p *PipelineRunner) Run(ctx context.Context, inputPath, outputDir string, f
 
 				if len(result.Nodes) > 0 || len(result.Edges) > 0 {
 					bagMu.Lock()
-					extractionResults = append(extractionResults, *result)
+					graphExtractionInput.Datas = append(graphExtractionInput.Datas, *result)
 					bagMu.Unlock()
 
 					atomic.AddInt32(&semanticProcessed, 1)
@@ -282,7 +284,7 @@ func (p *PipelineRunner) Run(ctx context.Context, inputPath, outputDir string, f
 		p.writeLine(fmt.Sprintf("      AI extracted from %d files", semanticProcessed))
 		totalNodes = 0
 		totalEdges = 0
-		for _, v := range extractionResults {
+		for _, v := range graphExtractionInput.Datas {
 			totalNodes += len(v.Nodes)
 			totalEdges += len(v.Edges)
 		}
@@ -301,7 +303,7 @@ func (p *PipelineRunner) Run(ctx context.Context, inputPath, outputDir string, f
 		MinEdgeWeight:   0.1,
 		MergeStrategy:   MergeStrategyMostRecent,
 	})
-	graph, err := graphBuilder.Execute(ctx, extractionResults)
+	graph, err := graphBuilder.Execute(ctx, graphExtractionInput)
 	if err != nil {
 		p.writeErrorLine(err)
 		return nil, err
@@ -342,7 +344,7 @@ func (p *PipelineRunner) Run(ctx context.Context, inputPath, outputDir string, f
 		TopSurprisingConnections: 5,
 		MaxSuggestedQuestions:    10,
 	})
-	analysis, err := analyzer.Execute(ctx, *graph)
+	analysis, err := analyzer.Execute(ctx, graph)
 	if err != nil {
 		p.writeErrorLine(err)
 		return nil, err
@@ -449,7 +451,7 @@ func (p *PipelineRunner) Run(ctx context.Context, inputPath, outputDir string, f
 		case "report":
 			var reportGenerator = &ReportGenerator{}
 			var projectName = GetFileName(inputPath)
-			var reportMarkdown = reportGenerator.Generate(graph, *analysis, communityLabels, cohesionScores, projectName)
+			var reportMarkdown = reportGenerator.Generate(graph, analysis, communityLabels, cohesionScores, projectName)
 			var reportPath = filepath.Join(outputDir, "GRAPH_REPORT.md")
 			if err := os.WriteFile(reportPath, []byte(reportMarkdown), 0644); err != nil {
 				p.writeErrorLine(err)

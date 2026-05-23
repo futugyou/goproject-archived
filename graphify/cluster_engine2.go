@@ -31,17 +31,17 @@ func (a louvainAdapter) EdgesFrom(id string) []LouvainEdge[string] {
 	return res
 }
 
-var _ IPipelineStage[*KnowledgeGraph, KnowledgeGraph] = (*ClusterEngine2)(nil)
+var _ IPipelineStage[KnowledgeGraph, KnowledgeGraph] = (*ClusterEngine2)(nil)
 
 type ClusterEngine2 struct {
-	options ClusterOptions
+	options *ClusterOptions
 }
 
 func NewClusterEngine2(options *ClusterOptions) *ClusterEngine2 {
 	if options == nil {
 		options = DefaultClusterOptions()
 	}
-	return &ClusterEngine2{options: *options}
+	return &ClusterEngine2{options: options}
 }
 
 func (c *ClusterEngine2) Execute(ctx context.Context, graph *KnowledgeGraph) (*KnowledgeGraph, error) {

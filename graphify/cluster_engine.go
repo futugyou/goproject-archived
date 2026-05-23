@@ -5,17 +5,17 @@ import (
 	"slices"
 )
 
-var _ IPipelineStage[*KnowledgeGraph, KnowledgeGraph] = (*ClusterEngine)(nil)
+var _ IPipelineStage[KnowledgeGraph, KnowledgeGraph] = (*ClusterEngine)(nil)
 
 type ClusterEngine struct {
-	options ClusterOptions
+	options *ClusterOptions
 }
 
 func NewClusterEngine(options *ClusterOptions) *ClusterEngine {
 	if options == nil {
 		options = DefaultClusterOptions()
 	}
-	return &ClusterEngine{options: *options}
+	return &ClusterEngine{options: options}
 }
 
 func (c *ClusterEngine) Execute(ctx context.Context, graph *KnowledgeGraph) (*KnowledgeGraph, error) {

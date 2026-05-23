@@ -25,7 +25,7 @@ func NewAnalyzer(options *AnalyzerOptions) *Analyzer {
 }
 
 // Execute implements [IPipelineStage].
-func (a *Analyzer) Execute(ctx context.Context, graph KnowledgeGraph) (*AnalysisResult, error) {
+func (a *Analyzer) Execute(ctx context.Context, graph *KnowledgeGraph) (*AnalysisResult, error) {
 	var godNodes = a.findGodNodes(graph)
 	var surprisingConnections = a.findSurprisingConnections(graph)
 	var suggestedQuestions = a.generateSuggestedQuestions(graph)
@@ -105,7 +105,7 @@ func (a *Analyzer) isFileNode(node GraphNode) bool {
 	return false
 }
 
-func (a *Analyzer) buildCommunityLabels(graph KnowledgeGraph) map[int]string {
+func (a *Analyzer) buildCommunityLabels(graph *KnowledgeGraph) map[int]string {
 	result := make(map[int]string)
 
 	nodesWithCommunity := Where(graph.GetNodes(), func(n GraphNode) bool {
@@ -137,7 +137,7 @@ func (a *Analyzer) buildCommunityLabels(graph KnowledgeGraph) map[int]string {
 	return result
 }
 
-func (a *Analyzer) calculateStatistics(graph KnowledgeGraph) GraphStatistics {
+func (a *Analyzer) calculateStatistics(graph *KnowledgeGraph) GraphStatistics {
 	var nodes = graph.GetNodes()
 	var edges = graph.GetEdges()
 
@@ -173,7 +173,7 @@ func (a *Analyzer) calculateStatistics(graph KnowledgeGraph) GraphStatistics {
 	}
 }
 
-func (a *Analyzer) generateSuggestedQuestions(graph KnowledgeGraph) []SuggestedQuestion {
+func (a *Analyzer) generateSuggestedQuestions(graph *KnowledgeGraph) []SuggestedQuestion {
 	var questions = []SuggestedQuestion{}
 
 	// 1. AMBIGUOUS edges
@@ -327,7 +327,7 @@ type inferredEdgesNode struct {
 	InferredEdges int
 }
 
-func (a *Analyzer) findCrossCommunityBridges(graph KnowledgeGraph) []SurprisingConnection {
+func (a *Analyzer) findCrossCommunityBridges(graph *KnowledgeGraph) []SurprisingConnection {
 	var result = []SurprisingConnection{}
 
 	// Build community map
@@ -404,7 +404,7 @@ func (a *Analyzer) findCrossCommunityBridges(graph KnowledgeGraph) []SurprisingC
 	return result[:min(len(result), a.options.TopSurprisingConnections)]
 }
 
-func (a *Analyzer) calculateSurpriseScore(graph KnowledgeGraph, edge GraphEdge, sourceFile, targetFile string) calculateSurpriseScoreType {
+func (a *Analyzer) calculateSurpriseScore(graph *KnowledgeGraph, edge GraphEdge, sourceFile, targetFile string) calculateSurpriseScoreType {
 	score := 0
 	var reasons = []string{}
 
@@ -474,7 +474,7 @@ type calculateSurpriseScoreType struct {
 	Reasons []string
 }
 
-func (a *Analyzer) findCrossFileSurprises(graph KnowledgeGraph) []SurprisingConnection {
+func (a *Analyzer) findCrossFileSurprises(graph *KnowledgeGraph) []SurprisingConnection {
 	var candidates = []findCrossFileSurprises{}
 
 	for _, edge := range graph.GetEdges() {
@@ -538,7 +538,7 @@ type findCrossFileSurprises struct {
 	Connection SurprisingConnection
 }
 
-func (a *Analyzer) findSurprisingConnections(graph KnowledgeGraph) []SurprisingConnection {
+func (a *Analyzer) findSurprisingConnections(graph *KnowledgeGraph) []SurprisingConnection {
 	// Identify unique source files
 	sourceFiles := []string{}
 	for _, node := range graph.GetNodes() {
@@ -559,7 +559,7 @@ func (a *Analyzer) findSurprisingConnections(graph KnowledgeGraph) []SurprisingC
 	}
 }
 
-func (a *Analyzer) findGodNodes(graph KnowledgeGraph) []GodNode {
+func (a *Analyzer) findGodNodes(graph *KnowledgeGraph) []GodNode {
 	var result = []GodNode{}
 	var allNodes = graph.GetNodes()
 

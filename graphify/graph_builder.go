@@ -7,10 +7,10 @@ import (
 	"strings"
 )
 
-var _ IPipelineStage[[]ExtractionResult, KnowledgeGraph] = (*GraphBuilder)(nil)
+var _ IPipelineStage[GraphExtractionInput, KnowledgeGraph] = (*GraphBuilder)(nil)
 
 type GraphBuilder struct {
-	options GraphBuilderOptions
+	options *GraphBuilderOptions
 }
 
 func NewGraphBuilder(options *GraphBuilderOptions) *GraphBuilder {
@@ -19,12 +19,12 @@ func NewGraphBuilder(options *GraphBuilderOptions) *GraphBuilder {
 	}
 
 	return &GraphBuilder{
-		options: *options,
+		options: options,
 	}
 }
 
 // Execute implements [IPipelineStage].
-func (g *GraphBuilder) Execute(ctx context.Context, input []ExtractionResult) (*KnowledgeGraph, error) {
+func (g *GraphBuilder) Execute(ctx context.Context, input *GraphExtractionInput) (*KnowledgeGraph, error) {
 	graph := &KnowledgeGraph{}
 	nodeMetadataAggregator := map[string][]ExtractedNode{}
 	edgeWeightTracker := map[edgeKey]edgeData{}
@@ -33,7 +33,7 @@ func (g *GraphBuilder) Execute(ctx context.Context, input []ExtractionResult) (*
 	relativePathMap := map[string]string{}
 
 	// Phase 1: Collect all nodes and track duplicates for merging
-	for _, extraction := range input {
+	for _, extraction := range input.Datas {
 
 		// Track file for file-level node creation
 		if g.options.CreateFileNodes && len(extraction.SourceFilePath) > 0 {
@@ -90,7 +90,7 @@ func (g *GraphBuilder) Execute(ctx context.Context, input []ExtractionResult) (*
 	}
 
 	// Phase 4: Collect and merge edges
-	for _, extraction := range input {
+	for _, extraction := range input.Datas {
 		for _, edge := range extraction.Edges {
 			// Skip edges to nodes that don't exist (external/stdlib imports)
 			_, err1 := graph.GetNodesById(edge.Source)

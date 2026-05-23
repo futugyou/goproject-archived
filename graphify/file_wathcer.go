@@ -216,7 +216,7 @@ func (wm *WatchMode) processChanges(ctx context.Context, changedPaths []string, 
 	var fileDetector = &FileDetector{}
 	var options = DefaultFileDetectorOptions()
 
-	allDetected, err := fileDetector.Execute(ctx, *options)
+	allDetected, err := fileDetector.Execute(ctx, options)
 	if err != nil {
 		fmt.Fprintf(wm.output, "%s", err.Error())
 		return
@@ -227,7 +227,7 @@ func (wm *WatchMode) processChanges(ctx context.Context, changedPaths []string, 
 		changedSet[v] = struct{}{}
 	}
 	filesToProcess := []DetectedFile{}
-	for _, v := range *allDetected {
+	for _, v := range allDetected.Files {
 		if _, ok := changedSet[v.FilePath]; ok {
 			filesToProcess = append(filesToProcess, v)
 		}
@@ -240,22 +240,24 @@ func (wm *WatchMode) processChanges(ctx context.Context, changedPaths []string, 
 
 	// Extract
 	var extractor = NewSourceExtractor()
-	var newResults = []ExtractionResult{}
+	var graphExtractionInput = &GraphExtractionInput{
+		Datas: []ExtractionResult{},
+	}
 	for _, file := range filesToProcess {
 		if ctx.Err() != nil {
 			fmt.Fprintf(wm.output, "%s", ctx.Err().Error())
 			return
 		}
 
-		result, err := extractor.Execute(ctx, file)
+		result, err := extractor.Execute(ctx, &file)
 		if err != nil {
 			fmt.Fprintf(wm.output, "  Warning: extraction failed for %s: %s", file.RelativePath, err.Error())
 		} else if len(result.Nodes) > 0 || len(result.Edges) > 0 {
-			newResults = append(newResults, *result)
+			graphExtractionInput.Datas = append(graphExtractionInput.Datas, *result)
 		}
 	}
 
-	if len(newResults) == 0 {
+	if len(graphExtractionInput.Datas) == 0 {
 		fmt.Fprintln(wm.output, "  (no extractable content)")
 		return
 	}
@@ -267,7 +269,7 @@ func (wm *WatchMode) processChanges(ctx context.Context, changedPaths []string, 
 		MergeStrategy:   MergeStrategyMostRecent,
 	})
 
-	incrementalGraph, err := graphBuilder.Execute(ctx, newResults)
+	incrementalGraph, err := graphBuilder.Execute(ctx, graphExtractionInput)
 	if err != nil {
 		fmt.Fprintf(wm.output, "%s", err.Error())
 		return

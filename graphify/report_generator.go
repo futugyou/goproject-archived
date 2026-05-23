@@ -180,7 +180,7 @@ func (r *ReportGenerator) appendGodNodes(sb *strings.Builder, godNodes []GodNode
 	sb.WriteByte('\n')
 }
 
-func (r *ReportGenerator) appendSummary(sb *strings.Builder, graph *KnowledgeGraph, analysis AnalysisResult) {
+func (r *ReportGenerator) appendSummary(sb *strings.Builder, graph *KnowledgeGraph, analysis *AnalysisResult) {
 	sb.WriteString("## Summary")
 
 	// Calculate confidence distribution
@@ -221,7 +221,7 @@ func (r *ReportGenerator) appendSummary(sb *strings.Builder, graph *KnowledgeGra
 	sb.WriteByte('\n')
 }
 
-func (r *ReportGenerator) Generate(graph *KnowledgeGraph, analysis AnalysisResult, communityLabels map[int]string, cohesionScores map[int]float32, projectName string) string {
+func (r *ReportGenerator) Generate(graph *KnowledgeGraph, analysis *AnalysisResult, communityLabels map[int]string, cohesionScores map[int]float32, projectName string) string {
 	var sb strings.Builder
 	var today = time.Now().Format("2006-01-02 15:04:05")
 

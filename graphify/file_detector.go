@@ -12,7 +12,7 @@ import (
 	"sync"
 )
 
-var _ IPipelineStage[FileDetectorOptions, []DetectedFile] = (*FileDetector)(nil)
+var _ IPipelineStage[FileDetectorOptions, FileDetectorResult] = (*FileDetector)(nil)
 
 var (
 	FileDetectorCodeExtensions = map[string]struct{}{
@@ -82,11 +82,11 @@ type FileDetector struct {
 }
 
 // Execute implements [IPipelineStage].
-func (f *FileDetector) Execute(ctx context.Context, input FileDetectorOptions) (*[]DetectedFile, error) {
-	detectedFiles := []DetectedFile{}
+func (f *FileDetector) Execute(ctx context.Context, input *FileDetectorOptions) (*FileDetectorResult, error) {
+	detectedResult := &FileDetectorResult{Files: []DetectedFile{}}
 
 	if _, err := os.Stat(input.RootPath); err != nil {
-		return &detectedFiles, err
+		return detectedResult, err
 	}
 
 	rootPath := filepath.Dir(input.RootPath)
@@ -95,18 +95,18 @@ func (f *FileDetector) Execute(ctx context.Context, input FileDetectorOptions) (
 	validator := NewInputValidator()
 	pathValidation := validator.ValidatePath(rootPath, "")
 	if !pathValidation.IsValid {
-		return &detectedFiles, fmt.Errorf("invalid root path: %s", strings.Join(pathValidation.Errors, "; "))
+		return detectedResult, fmt.Errorf("invalid root path: %s", strings.Join(pathValidation.Errors, "; "))
 	}
 
 	var gitTrackedFiles map[string]struct{}
 	var err error
 	if input.RespectGitIgnore {
 		if gitTrackedFiles, err = f.getGitTrackedFiles(ctx, rootPath); err != nil {
-			return &detectedFiles, err
+			return detectedResult, err
 		}
 	}
 
-	fileCh := f.enumerateFiles(ctx, rootPath, input, gitTrackedFiles)
+	fileCh := f.enumerateFiles(ctx, rootPath, gitTrackedFiles)
 
 	workerCount := input.WorkerCount
 	batchSize := input.BatchSize
@@ -177,16 +177,16 @@ func (f *FileDetector) Execute(ctx context.Context, input FileDetectorOptions) (
 
 	for r := range resultCh {
 		if r.err != nil {
-			return &detectedFiles, r.err
+			return detectedResult, r.err
 		}
-		detectedFiles = append(detectedFiles, r.file)
+		detectedResult.Files = append(detectedResult.Files, r.file)
 	}
 
-	slices.SortFunc(detectedFiles, func(a, b DetectedFile) int {
+	slices.SortFunc(detectedResult.Files, func(a, b DetectedFile) int {
 		return cmp.Compare(a.RelativePath, b.RelativePath)
 	})
 
-	return &detectedFiles, nil
+	return detectedResult, nil
 }
 
 func (f *FileDetector) getGitTrackedFiles(ctx context.Context, rootPath string) (map[string]struct{}, error) {
@@ -242,7 +242,7 @@ func (f *FileDetector) classifyFile(extension string) FileCategory {
 	return FileCategoryUnkwon
 }
 
-func (f *FileDetector) processFile(_ context.Context, filePath, rootPath string, options FileDetectorOptions) (*DetectedFile, error) {
+func (f *FileDetector) processFile(_ context.Context, filePath, rootPath string, options *FileDetectorOptions) (*DetectedFile, error) {
 	var fileInfo os.FileInfo
 	var err error
 	if fileInfo, err = os.Stat(filePath); err != nil {
@@ -296,7 +296,7 @@ func (f *FileDetector) processFile(_ context.Context, filePath, rootPath string,
 	}, nil
 }
 
-func (f *FileDetector) enumerateFiles(ctx context.Context, rootPath string, _ FileDetectorOptions, gitTrackedFiles map[string]struct{}) <-chan string {
+func (f *FileDetector) enumerateFiles(ctx context.Context, rootPath string, gitTrackedFiles map[string]struct{}) <-chan string {
 	out := make(chan string)
 
 	go func() {

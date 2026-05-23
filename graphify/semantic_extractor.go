@@ -15,7 +15,7 @@ var _ IPipelineStage[DetectedFile, ExtractionResult] = (*SemanticExtractor)(nil)
 
 type SemanticExtractor struct {
 	chatClient chatcompletion.IChatClient
-	options    SemanticExtractorOptions
+	options    *SemanticExtractorOptions
 }
 
 func NewSemanticExtractor(options *SemanticExtractorOptions, chatClient chatcompletion.IChatClient) *SemanticExtractor {
@@ -24,13 +24,13 @@ func NewSemanticExtractor(options *SemanticExtractorOptions, chatClient chatcomp
 	}
 
 	return &SemanticExtractor{
-		options:    *options,
+		options:    options,
 		chatClient: chatClient,
 	}
 }
 
 // Execute implements [IPipelineStage].
-func (s *SemanticExtractor) Execute(ctx context.Context, input DetectedFile) (*ExtractionResult, error) {
+func (s *SemanticExtractor) Execute(ctx context.Context, input *DetectedFile) (*ExtractionResult, error) {
 	// Graceful degradation: if no AI client configured, return empty results
 	if s.chatClient == nil {
 		return s.createEmptyResult(input), nil
@@ -66,7 +66,7 @@ func (s *SemanticExtractor) Execute(ctx context.Context, input DetectedFile) (*E
 	return extractedData, nil
 }
 
-func (s *SemanticExtractor) createEmptyResult(file DetectedFile) *ExtractionResult {
+func (s *SemanticExtractor) createEmptyResult(file *DetectedFile) *ExtractionResult {
 	return &ExtractionResult{
 		Nodes:                  []ExtractedNode{},
 		Edges:                  []ExtractedEdge{},
@@ -76,7 +76,7 @@ func (s *SemanticExtractor) createEmptyResult(file DetectedFile) *ExtractionResu
 	}
 }
 
-func (s *SemanticExtractor) convertToExtractionResult(data *LlmExtractionData, sourceFile DetectedFile) *ExtractionResult {
+func (s *SemanticExtractor) convertToExtractionResult(data *LlmExtractionData, sourceFile *DetectedFile) *ExtractionResult {
 	var nodes = []ExtractedNode{}
 	var edges = []ExtractedEdge{}
 
@@ -158,7 +158,7 @@ func (s *SemanticExtractor) convertToExtractionResult(data *LlmExtractionData, s
 	}
 }
 
-func (s *SemanticExtractor) buildPrompt(file DetectedFile, fileContent string) string {
+func (s *SemanticExtractor) buildPrompt(file *DetectedFile, fileContent string) string {
 	mexNodes := s.options.MaxNodesPerFile
 	switch file.Category {
 	case FileCategoryCode:
@@ -177,7 +177,7 @@ func (s *SemanticExtractor) buildPrompt(file DetectedFile, fileContent string) s
 	return ""
 }
 
-func (s *SemanticExtractor) extractFromFileAsync(ctx context.Context, file DetectedFile) (*ExtractionResult, error) {
+func (s *SemanticExtractor) extractFromFileAsync(ctx context.Context, file *DetectedFile) (*ExtractionResult, error) {
 	// Read file content
 	fileContent, err := os.ReadFile(file.FilePath)
 	if err != nil {
