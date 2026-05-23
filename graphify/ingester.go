@@ -158,7 +158,8 @@ func (u *UrlIngester) fetchArxivPaperAsync(ctx context.Context, rawUrl string) (
 	}
 	fmt.Fprintf(&sb, "**arXiv:** %s\n\n", arxivId)
 	sb.WriteString("## Abstract\n\n")
-	sb.WriteString(abstract + "\n\n")
+	sb.WriteString(abstract)
+	sb.WriteString("\n\n")
 	fmt.Fprintf(&sb, "Source: %s", rawUrl)
 
 	return sb.String(), nil
@@ -318,17 +319,20 @@ func (u *UrlIngester) addContributorMetadata(content, author string) string {
 		if trimmed == "---" {
 			if !inFrontmatter {
 				inFrontmatter = true
-				result.WriteString(line + "\n")
+				result.WriteString(line)
+				result.WriteString("\n")
 			} else {
 				if !added {
 					fmt.Fprintf(&result, "contributor: \"%s\"\n", u.escapeYaml(author))
 					added = true
 				}
-				result.WriteString(line + "\n")
+				result.WriteString(line)
+				result.WriteString("\n")
 				inFrontmatter = false
 			}
 		} else {
-			result.WriteString(line + "\n")
+			result.WriteString(line)
+			result.WriteString("\n")
 		}
 	}
 	return result.String()
