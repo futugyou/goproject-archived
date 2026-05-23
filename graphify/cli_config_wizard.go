@@ -25,9 +25,9 @@ func (cw ConfigWizard) Run(existing *GraphifyConfig) *GraphifyConfig {
 		}).
 		Show("Select AI provider")
 
-	switch providerChoice {
-	case "OpenAI":
-		config.Provider = "OpenAI"
+	switch strings.ToLower(providerChoice) {
+	case "openai":
+		config.Provider = "openai"
 		cw.promptOpenAI(config)
 	case "None (AST-only mode)":
 		config.Provider = ""
@@ -147,7 +147,7 @@ func (cw ConfigWizard) showSummary(config *GraphifyConfig) {
 	tableData = append(tableData, []string{"Provider", pterm.LightGreen(provider)})
 
 	switch strings.ToLower(config.Provider) {
-	case "OpenAI":
+	case "openai":
 		tableData = append(tableData, []string{"Endpoint", config.OpenAI.Endpoint})
 		tableData = append(tableData, []string{"API Key", cw.maskSecret(config.OpenAI.ApiKey)})
 		tableData = append(tableData, []string{"Model", config.OpenAI.ModelId})
