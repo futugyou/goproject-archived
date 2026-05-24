@@ -2,15 +2,49 @@ package openai
 
 import (
 	"context"
+	"os"
+
+	_ "github.com/joho/godotenv/autoload"
 
 	"github.com/futugyou/extensions_ai/abstractions/chatcompletion"
+	"github.com/openai/openai-go/v3"
 	rawopenai "github.com/openai/openai-go/v3"
+	"github.com/openai/openai-go/v3/option"
 )
+
+type OpenAIOption struct {
+	ModelId  string
+	ApiKey   string
+	Endpoint string
+}
 
 type OpenAIChatClient struct {
 	metadata     chatcompletion.ChatClientMetadata
 	openAIClient *rawopenai.Client
 	modelId      *string
+}
+
+func DefaultOpenAIChatClient(opt *OpenAIOption) *OpenAIChatClient {
+	if opt == nil {
+		opt = &OpenAIOption{
+			ModelId:  os.Getenv("OpenAIModelId"),
+			ApiKey:   os.Getenv("OpenAIApiKey"),
+			Endpoint: os.Getenv("OpenAIEndpoint"),
+		}
+	}
+	name := "openai"
+
+	op := []option.RequestOption{option.WithAPIKey(opt.ApiKey), option.WithBaseURL(opt.Endpoint)}
+	client := openai.NewClient(op...)
+
+	return &OpenAIChatClient{
+		metadata: chatcompletion.ChatClientMetadata{
+			ProviderName:   &name,
+			DefaultModelId: &opt.ModelId,
+		},
+		openAIClient: &client,
+		modelId:      &opt.ModelId,
+	}
 }
 
 func NewOpenAIChatClient(openAIClient *rawopenai.Client, modelId *string) *OpenAIChatClient {
