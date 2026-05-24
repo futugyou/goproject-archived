@@ -28,6 +28,7 @@ func main() {
 		Short: "graphify: AI-powered knowledge graph builder for codebases",
 	}
 
+	cp := &graphify.ConfigPersistence{}
 	var useConfigWizard bool
 	var runCmd = &cobra.Command{
 		Use:   "run [path]",
@@ -43,7 +44,7 @@ func main() {
 			format := formatOpt
 			formats := strings.Split(format, ",")
 
-			savedConfig := graphify.ConfigPersistence.Load()
+			savedConfig := cp.Load()
 			if savedConfig != nil {
 				if path == "." && savedConfig.WorkingFolder != "" {
 					path = savedConfig.WorkingFolder
@@ -58,10 +59,10 @@ func main() {
 			}
 
 			if useConfigWizard {
-				existingConfig := graphify.ConfigPersistence.Load()
+				existingConfig := cp.Load()
 				wizzard := &graphify.ConfigWizard{}
 				wizardConfig := wizzard.Run(existingConfig)
-				graphify.ConfigPersistence.Save(wizardConfig)
+				cp.Save(wizardConfig)
 				fmt.Println()
 			}
 
@@ -120,17 +121,17 @@ func main() {
 			selected, _ := pterm.DefaultInteractiveSelect.WithOptions(options).WithDefaultText("What would you like to do?").Show()
 
 			if strings.HasPrefix(selected, "📋") {
-				showStyledConfig()
+				showStyledConfig(cp)
 			} else if strings.HasPrefix(selected, "📂") {
-				existingConfig := graphify.ConfigPersistence.Load()
+				existingConfig := cp.Load()
 				wizzard := &graphify.ConfigWizard{}
 				wizardConfig := wizzard.Run(existingConfig)
-				graphify.ConfigPersistence.Save(wizardConfig)
+				cp.Save(wizardConfig)
 			} else {
-				existingConfig := graphify.ConfigPersistence.Load()
+				existingConfig := cp.Load()
 				wizzard := &graphify.ConfigWizard{}
 				wizardConfig := wizzard.Run(existingConfig)
-				graphify.ConfigPersistence.Save(wizardConfig)
+				cp.Save(wizardConfig)
 			}
 			return nil
 		},
@@ -140,7 +141,7 @@ func main() {
 		Use:   "show",
 		Short: "Display resolved provider settings",
 		Run: func(cmd *cobra.Command, args []string) {
-			showStyledConfig()
+			showStyledConfig(cp)
 		},
 	}
 
@@ -148,10 +149,10 @@ func main() {
 		Use:   "set",
 		Short: "Set up AI provider interactively",
 		Run: func(cmd *cobra.Command, args []string) {
-			existingConfig := graphify.ConfigPersistence.Load()
+			existingConfig := cp.Load()
 			wizzard := &graphify.ConfigWizard{}
 			wizardConfig := wizzard.Run(existingConfig)
-			graphify.ConfigPersistence.Save(wizardConfig)
+			cp.Save(wizardConfig)
 		},
 	}
 
@@ -159,10 +160,10 @@ func main() {
 		Use:   "folder",
 		Short: "Set the default project folder to analyze",
 		Run: func(cmd *cobra.Command, args []string) {
-			existingConfig := graphify.ConfigPersistence.Load()
+			existingConfig := cp.Load()
 			wizzard := &graphify.ConfigWizard{}
 			wizardConfig := wizzard.Run(existingConfig)
-			graphify.ConfigPersistence.Save(wizardConfig)
+			cp.Save(wizardConfig)
 		},
 	}
 
@@ -207,7 +208,7 @@ func resolveProvider(verbose bool, provider, endpoint, apiKey, model string) (ch
 	return chatClient, verbose
 }
 
-func showStyledConfig() {
+func showStyledConfig(cp *graphify.ConfigPersistence) {
 	config := &graphify.GraphifyConfig{
 		Provider: "openai",
 		OpenAI: &graphify.OpenAIConfig{
@@ -216,7 +217,7 @@ func showStyledConfig() {
 			ApiKey:   "sk-1234567890abcdef",
 		},
 	}
-	savedConfig := graphify.ConfigPersistence.Load()
+	savedConfig := cp.Load()
 
 	pterm.DefaultSection.WithLevel(1).Println("Graphify Configuration (resolved)")
 
