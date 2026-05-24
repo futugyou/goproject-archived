@@ -23,121 +23,177 @@ var (
 )
 
 func main() {
-	var rootCmd = &cobra.Command{
+	rootCmd := &cobra.Command{
 		Use:   "graphify-dotnet",
 		Short: "graphify: AI-powered knowledge graph builder for codebases",
 	}
 
 	cp := &graphify.ConfigPersistence{}
+
 	var useConfigWizard bool
-	var runCmd = &cobra.Command{
+
+	runCmd := &cobra.Command{
 		Use:   "run [path]",
 		Short: "Run the full extraction and graph-building pipeline",
 		Args:  cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			path := "."
-			if len(args) > 0 {
-				path = args[0]
-			}
+			path := resolvePath(args)
 
 			output := outputOpt
 			format := formatOpt
-			formats := strings.Split(format, ",")
 
 			savedConfig := cp.Load()
 			if savedConfig != nil {
 				if path == "." && savedConfig.WorkingFolder != "" {
 					path = savedConfig.WorkingFolder
 				}
+
 				if output == "graphify-out" && savedConfig.OutputFolder != "" {
 					output = savedConfig.OutputFolder
 				}
+
 				if format == "json,html,report" && savedConfig.ExportFormats != "" {
 					format = savedConfig.ExportFormats
-					formats = strings.Split(format, ",")
 				}
 			}
 
 			if useConfigWizard {
-				existingConfig := cp.Load()
-				wizzard := &graphify.ConfigWizard{}
-				wizardConfig := wizzard.Run(existingConfig)
-				cp.Save(wizardConfig)
+				if err := runConfigWizard(cp); err != nil {
+					return err
+				}
 				fmt.Println()
 			}
 
-			chatClient, verbose := resolveProvider(verboseOpt, providerOpt, endpointOpt, apiKeyOpt, modelOpt)
+			formats := parseFormats(format)
 
-			runner := graphify.NewPipelineRunner(os.Stdout, &verbose, chatClient)
-			_, err := runner.Run(cmd.Context(), path, output, formats, verbose)
+			chatClient, err := resolveProvider(
+				providerOpt,
+				endpointOpt,
+				apiKeyOpt,
+				modelOpt,
+			)
 			if err != nil {
-				os.Exit(1)
+				return err
 			}
-			return nil
+
+			runner := graphify.NewPipelineRunner(
+				os.Stdout,
+				&verboseOpt,
+				chatClient,
+			)
+
+			_, err = runner.Run(
+				cmd.Context(),
+				path,
+				output,
+				formats,
+				verboseOpt,
+			)
+
+			return err
 		},
 	}
-	runCmd.Flags().BoolVarP(&useConfigWizard, "config", "c", false, "Launch interactive configuration wizard before running")
+
+	runCmd.Flags().BoolVarP(
+		&useConfigWizard,
+		"config",
+		"c",
+		false,
+		"Launch interactive configuration wizard before running",
+	)
+
 	addPipelineOptions(runCmd)
 	rootCmd.AddCommand(runCmd)
 
-	var watchCmd = &cobra.Command{
+	watchCmd := &cobra.Command{
 		Use:   "watch [path]",
 		Short: "Watch for changes and re-process",
 		Args:  cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			path := "."
-			if len(args) > 0 {
-				path = args[0]
-			}
-			formats := strings.Split(formatOpt, ",")
+			path := resolvePath(args)
+			formats := parseFormats(formatOpt)
 
-			chatClient, verbose := resolveProvider(verboseOpt, providerOpt, endpointOpt, apiKeyOpt, modelOpt)
+			chatClient, err := resolveProvider(
+				providerOpt,
+				endpointOpt,
+				apiKeyOpt,
+				modelOpt,
+			)
+			if err != nil {
+				return err
+			}
 
 			pterm.Info.Println("Running initial pipeline...")
 			fmt.Println()
 
-			runner := graphify.NewPipelineRunner(os.Stdout, &verbose, chatClient)
-			var graph *graphify.KnowledgeGraph
-			var err error
-			if graph, err = runner.Run(cmd.Context(), path, outputOpt, formats, verbose); err != nil {
+			runner := graphify.NewPipelineRunner(
+				os.Stdout,
+				&verboseOpt,
+				chatClient,
+			)
+
+			graph, err := runner.Run(
+				cmd.Context(),
+				path,
+				outputOpt,
+				formats,
+				verboseOpt,
+			)
+			if err != nil {
 				pterm.Error.Println("Initial pipeline failed. Aborting watch.")
-				os.Exit(1)
+				return err
 			}
 
-			watcher := graphify.NewWatchMode(os.Stdout, verbose)
+			watcher := graphify.NewWatchMode(os.Stdout, verboseOpt)
 			watcher.SetInitialGraph(graph)
-			watcher.Watch(cmd.Context(), path, outputOpt, formats)
+
+			watcher.Watch(
+				cmd.Context(),
+				path,
+				outputOpt,
+				formats,
+			)
+
 			return nil
 		},
 	}
+
 	addPipelineOptions(watchCmd)
 	rootCmd.AddCommand(watchCmd)
 
-	var configCmd = &cobra.Command{
+	configCmd := &cobra.Command{
 		Use:   "config",
 		Short: "Configuration management",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			options := []string{"📋 View current configuration", "🔧 Set up AI provider", "📂 Set folder to analyze"}
-			selected, _ := pterm.DefaultInteractiveSelect.WithOptions(options).WithDefaultText("What would you like to do?").Show()
-
-			if strings.HasPrefix(selected, "📋") {
-				showStyledConfig(cp)
-			} else if strings.HasPrefix(selected, "📂") {
-				existingConfig := cp.Load()
-				wizzard := &graphify.ConfigWizard{}
-				wizardConfig := wizzard.Run(existingConfig)
-				cp.Save(wizardConfig)
-			} else {
-				existingConfig := cp.Load()
-				wizzard := &graphify.ConfigWizard{}
-				wizardConfig := wizzard.Run(existingConfig)
-				cp.Save(wizardConfig)
+			options := []string{
+				"📋 View current configuration",
+				"🔧 Set up AI provider",
+				"📂 Set folder to analyze",
 			}
+
+			selected, err := pterm.DefaultInteractiveSelect.
+				WithOptions(options).
+				WithDefaultText("What would you like to do?").
+				Show()
+
+			if err != nil {
+				return err
+			}
+
+			switch {
+			case strings.HasPrefix(selected, "📋"):
+				showStyledConfig(cp)
+
+			case strings.HasPrefix(selected, "🔧"),
+				strings.HasPrefix(selected, "📂"):
+				return runConfigWizard(cp)
+			}
+
 			return nil
 		},
 	}
 
-	var configShowCmd = &cobra.Command{
+	configShowCmd := &cobra.Command{
 		Use:   "show",
 		Short: "Display resolved provider settings",
 		Run: func(cmd *cobra.Command, args []string) {
@@ -145,47 +201,97 @@ func main() {
 		},
 	}
 
-	var configSetCmd = &cobra.Command{
+	configSetCmd := &cobra.Command{
 		Use:   "set",
 		Short: "Set up AI provider interactively",
-		Run: func(cmd *cobra.Command, args []string) {
-			existingConfig := cp.Load()
-			wizzard := &graphify.ConfigWizard{}
-			wizardConfig := wizzard.Run(existingConfig)
-			cp.Save(wizardConfig)
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runConfigWizard(cp)
 		},
 	}
 
-	var configFolderCmd = &cobra.Command{
+	configFolderCmd := &cobra.Command{
 		Use:   "folder",
 		Short: "Set the default project folder to analyze",
-		Run: func(cmd *cobra.Command, args []string) {
-			existingConfig := cp.Load()
-			wizzard := &graphify.ConfigWizard{}
-			wizardConfig := wizzard.Run(existingConfig)
-			cp.Save(wizardConfig)
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runConfigWizard(cp)
 		},
 	}
 
-	configCmd.AddCommand(configShowCmd, configSetCmd, configFolderCmd)
+	configCmd.AddCommand(
+		configShowCmd,
+		configSetCmd,
+		configFolderCmd,
+	)
+
 	rootCmd.AddCommand(configCmd)
 
 	if err := rootCmd.Execute(); err != nil {
+		pterm.Error.Println(err)
 		os.Exit(1)
 	}
 }
 
 func addPipelineOptions(cmd *cobra.Command) {
-	cmd.Flags().StringVarP(&outputOpt, "output", "o", "graphify-out", "Output directory")
-	cmd.Flags().StringVarP(&formatOpt, "format", "f", "json,html,report", "Export formats (comma-separated): json, html, svg, neo4j, ladybug, obsidian, wiki, report")
-	cmd.Flags().BoolVarP(&verboseOpt, "verbose", "v", false, "Enable verbose output")
-	cmd.Flags().StringVarP(&providerOpt, "provider", "p", "", "AI provider: azureopenai")
-	cmd.Flags().StringVar(&endpointOpt, "endpoint", "", "AI service endpoint URL")
-	cmd.Flags().StringVar(&apiKeyOpt, "api-key", "", "API key for the AI provider")
-	cmd.Flags().StringVar(&modelOpt, "model", "", "Model ID (e.g., gpt-4o)")
+	cmd.Flags().StringVarP(
+		&outputOpt,
+		"output",
+		"o",
+		"graphify-out",
+		"Output directory",
+	)
+
+	cmd.Flags().StringVarP(
+		&formatOpt,
+		"format",
+		"f",
+		"json,html,report",
+		"Export formats (comma-separated): json, html, svg, neo4j, ladybug, obsidian, wiki, report",
+	)
+
+	cmd.Flags().BoolVarP(
+		&verboseOpt,
+		"verbose",
+		"v",
+		false,
+		"Enable verbose output",
+	)
+
+	cmd.Flags().StringVarP(
+		&providerOpt,
+		"provider",
+		"p",
+		"",
+		"AI provider: openai",
+	)
+
+	cmd.Flags().StringVar(
+		&endpointOpt,
+		"endpoint",
+		"",
+		"AI service endpoint URL",
+	)
+
+	cmd.Flags().StringVar(
+		&apiKeyOpt,
+		"api-key",
+		"",
+		"API key for the AI provider",
+	)
+
+	cmd.Flags().StringVar(
+		&modelOpt,
+		"model",
+		"",
+		"Model ID (e.g., gpt-4o)",
+	)
 }
 
-func resolveProvider(verbose bool, provider, endpoint, apiKey, model string) (chatcompletion.IChatClient, bool) {
+func resolveProvider(
+	provider,
+	endpoint,
+	apiKey,
+	model string,
+) (chatcompletion.IChatClient, error) {
 	graphifyConfig := &graphify.GraphifyConfig{
 		Provider: provider,
 		OpenAI: &graphify.OpenAIConfig{
@@ -195,20 +301,70 @@ func resolveProvider(verbose bool, provider, endpoint, apiKey, model string) (ch
 		},
 	}
 
-	pterm.Success.Printf("AI provider: %s\n", graphifyConfig.Provider)
-
-	var chatClient chatcompletion.IChatClient
-
-	prov := strings.ToLower(graphifyConfig.Provider)
-	if prov == "openai" {
-		chatClient = graphify.ChatClientResolver(graphifyConfig)
-		pterm.Warning.Printf("Note: Source code contents will be sent to %s for semantic analysis. Use AST-only mode for local-only analysis.\n", graphifyConfig.Provider)
+	if graphifyConfig.Provider == "" {
+		pterm.Warning.Println("No AI provider configured. Running in AST-only mode.")
+		return nil, nil
 	}
 
-	return chatClient, verbose
+	pterm.Success.Printf(
+		"AI provider: %s\n",
+		graphifyConfig.Provider,
+	)
+
+	switch strings.ToLower(graphifyConfig.Provider) {
+	case "openai":
+		pterm.Warning.Printf(
+			"Note: Source code contents will be sent to %s for semantic analysis. Use AST-only mode for local-only analysis.\n",
+			graphifyConfig.Provider,
+		)
+
+		return graphify.ChatClientResolver(graphifyConfig), nil
+
+	default:
+		return nil, fmt.Errorf(
+			"unsupported provider: %s",
+			graphifyConfig.Provider,
+		)
+	}
+}
+
+func runConfigWizard(cp *graphify.ConfigPersistence) error {
+	existingConfig := cp.Load()
+
+	wizard := &graphify.ConfigWizard{}
+	wizardConfig := wizard.Run(existingConfig)
+
+	cp.Save(wizardConfig)
+
+	return nil
+}
+
+func resolvePath(args []string) string {
+	if len(args) > 0 {
+		return args[0]
+	}
+
+	return "."
+}
+
+func parseFormats(format string) []string {
+	parts := strings.Split(format, ",")
+
+	var result []string
+
+	for _, part := range parts {
+		part = strings.TrimSpace(strings.ToLower(part))
+
+		if part != "" {
+			result = append(result, part)
+		}
+	}
+
+	return result
 }
 
 func showStyledConfig(cp *graphify.ConfigPersistence) {
+	// Intentionally demo/fake configuration for showcase purposes.
 	config := &graphify.GraphifyConfig{
 		Provider: "openai",
 		OpenAI: &graphify.OpenAIConfig{
@@ -217,17 +373,25 @@ func showStyledConfig(cp *graphify.ConfigPersistence) {
 			ApiKey:   "sk-1234567890abcdef",
 		},
 	}
+
 	savedConfig := cp.Load()
 
-	pterm.DefaultSection.WithLevel(1).Println("Graphify Configuration (resolved)")
+	pterm.DefaultSection.
+		WithLevel(1).
+		Println("Graphify Configuration (resolved)")
 
 	var providerText string
+
 	if config.Provider != "" {
 		providerText = pterm.Green(config.Provider)
 	} else {
 		providerText = pterm.Gray("(not set — AST-only mode)")
 	}
-	pterm.Println(pterm.Bold.Sprint("Provider: ") + providerText)
+
+	pterm.Println(
+		pterm.Bold.Sprint("Provider: ") + providerText,
+	)
+
 	fmt.Println()
 
 	projectData := pterm.TableData{
@@ -236,8 +400,16 @@ func showStyledConfig(cp *graphify.ConfigPersistence) {
 		{"Output Folder", formatValue(savedConfig.OutputFolder)},
 		{"Export Formats", formatValue(savedConfig.ExportFormats)},
 	}
-	projectTableStr, _ := pterm.DefaultTable.WithHasHeader().WithBoxed().WithData(projectData).Srender()
-	pterm.DefaultBox.WithTitle("Project Settings").Println(projectTableStr)
+
+	projectTableStr, _ := pterm.DefaultTable.
+		WithHasHeader().
+		WithBoxed().
+		WithData(projectData).
+		Srender()
+
+	pterm.DefaultBox.
+		WithTitle("Project Settings").
+		Println(projectTableStr)
 
 	openaiData := pterm.TableData{
 		{"Setting", "Value"},
@@ -245,20 +417,35 @@ func showStyledConfig(cp *graphify.ConfigPersistence) {
 		{"Model", formatValue(config.OpenAI.ModelId)},
 		{"API Key", maskSecret(config.OpenAI.ApiKey)},
 	}
-	openaiTableStr, _ := pterm.DefaultTable.WithHasHeader().WithBoxed().WithData(openaiData).Srender()
-	pterm.DefaultBox.WithTitle("OpenAI / Azure OpenAI").Println(openaiTableStr)
+
+	openaiTableStr, _ := pterm.DefaultTable.
+		WithHasHeader().
+		WithBoxed().
+		WithData(openaiData).
+		Srender()
+
+	pterm.DefaultBox.
+		WithTitle("OpenAI / Azure OpenAI").
+		Println(openaiTableStr)
+
 	fmt.Println()
 
-	panelContent := pterm.FgLightCyan.Sprint("1. ") + "CLI arguments (--provider, --endpoint, etc.)\n" +
-		pterm.FgGray.Sprint("2. ") + "Environment variables (GRAPHIFY__*)\n"
+	panelContent :=
+		pterm.FgLightCyan.Sprint("1. ") +
+			"CLI arguments (--provider, --endpoint, etc.)\n" +
+			pterm.FgGray.Sprint("2. ") +
+			"Environment variables (GRAPHIFY__*)\n"
 
-	pterm.DefaultBox.WithTitle("Configuration sources (highest priority first)").Println(panelContent)
+	pterm.DefaultBox.
+		WithTitle("Configuration sources (highest priority first)").
+		Println(panelContent)
 }
 
 func formatValue(val string) string {
 	if val != "" {
 		return pterm.Green(val)
 	}
+
 	return pterm.Gray("(not set)")
 }
 
@@ -266,8 +453,10 @@ func maskSecret(val string) string {
 	if val == "" {
 		return pterm.Gray("(not set)")
 	}
+
 	if len(val) <= 4 {
 		return pterm.Yellow("****")
 	}
+
 	return pterm.Yellow("****" + val[len(val)-4:])
 }
