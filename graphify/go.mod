@@ -7,6 +7,7 @@ require (
 	github.com/fsnotify/fsnotify v1.10.1
 	github.com/futugyou/extensions_ai v0.0.1
 	github.com/google/uuid v1.6.0
+	github.com/joho/godotenv v1.5.1
 	github.com/openai/openai-go/v3 v3.36.0
 	github.com/pterm/pterm v0.12.83
 	github.com/spf13/cobra v1.10.2

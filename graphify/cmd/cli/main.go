@@ -5,11 +5,12 @@ import (
 	"os"
 	"strings"
 
-	"github.com/futugyou/extensions_ai/abstractions/chatcompletion"
-	"github.com/futugyousuzu/graphify"
-
+	_ "github.com/joho/godotenv/autoload"
 	"github.com/pterm/pterm"
 	"github.com/spf13/cobra"
+
+	"github.com/futugyou/extensions_ai/abstractions/chatcompletion"
+	"github.com/futugyousuzu/graphify"
 )
 
 var (
@@ -363,17 +364,26 @@ func parseFormats(format string) []string {
 	return result
 }
 
-func showStyledConfig(cp *graphify.ConfigPersistence) {
-	// Intentionally demo/fake configuration for showcase purposes.
-	config := &graphify.GraphifyConfig{
-		Provider: "openai",
-		OpenAI: &graphify.OpenAIConfig{
-			Endpoint: "https://my-azure-openai.openai.azure.com/",
-			ModelId:  "gpt-4o",
-			ApiKey:   "sk-1234567890abcdef",
-		},
+func readEnv() *graphify.GraphifyConfig {
+	c := &graphify.GraphifyConfig{
+		Provider:      os.Getenv("Provider"),
+		WorkingFolder: os.Getenv("WorkingFolder"),
+		OutputFolder:  os.Getenv("OutputFolder"),
+		ExportFormats: os.Getenv("Formats"),
 	}
 
+	if c.Provider == "openai" {
+		c.OpenAI = &graphify.OpenAIConfig{
+			Endpoint: os.Getenv("Endpoint"),
+			ModelId:  os.Getenv("ModelId"),
+			ApiKey:   os.Getenv("ApiKey"),
+		}
+	}
+	return c
+}
+
+func showStyledConfig(cp *graphify.ConfigPersistence) {
+	config := readEnv()
 	savedConfig := cp.Load()
 
 	pterm.DefaultSection.
