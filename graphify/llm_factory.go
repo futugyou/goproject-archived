@@ -4,27 +4,27 @@ import (
 	"strings"
 
 	"github.com/futugyou/extensions_ai/abstractions/chatcompletion"
-	openaiex "github.com/futugyou/extensions_ai/openai"
-	"github.com/openai/openai-go/v3"
-	"github.com/openai/openai-go/v3/option"
+	"github.com/futugyou/extensions_ai/openai"
 )
 
 func ChatClientResolver(config *GraphifyConfig) chatcompletion.IChatClient {
+	if config == nil {
+		return nil
+	}
+
 	switch strings.ToLower(config.Provider) {
 	case "openai":
-		op := []option.RequestOption{}
-		if config != nil && len(config.OpenAI.ApiKey) > 0 {
-			op = append(op, option.WithAPIKey(config.OpenAI.ApiKey))
+		opt := &openai.OpenAIOption{}
+		if len(config.OpenAI.ApiKey) > 0 {
+			opt.ApiKey = config.OpenAI.ApiKey
 		}
-		if config != nil && len(config.OpenAI.Endpoint) > 0 {
-			op = append(op, option.WithBaseURL(config.OpenAI.Endpoint))
+		if len(config.OpenAI.Endpoint) > 0 {
+			opt.Endpoint = config.OpenAI.Endpoint
 		}
-		var modelId *string = nil
-		if config != nil && len(config.OpenAI.ModelId) > 0 {
-			modelId = &config.OpenAI.ModelId
+		if len(config.OpenAI.ModelId) > 0 {
+			opt.ModelId = config.OpenAI.ModelId
 		}
-		c := openai.NewClient(op...)
-		return openaiex.NewOpenAIChatClient(&c, modelId)
+		return openai.DefaultOpenAIChatClient(opt)
 	}
 	return nil
 }

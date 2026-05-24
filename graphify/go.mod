@@ -8,7 +8,6 @@ require (
 	github.com/futugyou/extensions_ai v0.0.1
 	github.com/google/uuid v1.6.0
 	github.com/joho/godotenv v1.5.1
-	github.com/openai/openai-go/v3 v3.36.0
 	github.com/pterm/pterm v0.12.83
 	github.com/spf13/cobra v1.10.2
 )
@@ -24,6 +23,7 @@ require (
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
 	github.com/lithammer/fuzzysearch v1.1.8 // indirect
 	github.com/mattn/go-runewidth v0.0.20 // indirect
+	github.com/openai/openai-go/v3 v3.36.0 // indirect
 	github.com/spf13/pflag v1.0.9 // indirect
 	github.com/tidwall/gjson v1.18.0 // indirect
 	github.com/tidwall/match v1.2.0 // indirect
