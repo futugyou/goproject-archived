@@ -4,7 +4,7 @@ go 1.25.0
 
 require (
 	github.com/ethereum/go-ethereum v1.17.3
-	golang.org/x/crypto v0.51.0
+	golang.org/x/crypto v0.52.0
 )
 
 require (
@@ -89,7 +89,7 @@ require (
 	go.opentelemetry.io/otel/trace v1.41.0 // indirect
 	golang.org/x/exp v0.0.0-20231110203233-9a3e6036ecaa // indirect
 	golang.org/x/sync v0.20.0 // indirect
-	golang.org/x/sys v0.44.0 // indirect
+	golang.org/x/sys v0.45.0 // indirect
 	golang.org/x/text v0.37.0 // indirect
 	golang.org/x/time v0.9.0 // indirect
 	golang.org/x/xerrors v0.0.0-20220517211312-f3a8303e98df // indirect
