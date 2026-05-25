@@ -32,3 +32,32 @@ type ToolCall struct {
 	Name      string
 	Arguments string
 }
+
+type ChatRequest struct {
+	Model       string
+	Messages    []ChatMessage
+	Tools       []ToolDefinition
+	Temperature float32
+	MaxTokens   int
+}
+
+type ChatResponse struct {
+	Content      string
+	Role         ChatMessageRole
+	ToolCalls    []ToolCall
+	Model        string
+	Usage        UsageInfo
+	FinishReason string
+}
+
+type ChatResponseChunk struct {
+	Content      string
+	ToolCalls    []ToolCall
+	FinishReason string
+}
+
+type UsageInfo struct {
+	PromptTokens     int
+	CompletionTokens int
+	TotalTokens      int
+}
