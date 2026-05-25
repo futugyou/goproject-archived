@@ -1,5 +1,7 @@
 package models
 
+import "encoding/json"
+
 type ChatMessage struct {
 	Role       ChatMessageRole
 	Content    string
@@ -24,7 +26,7 @@ func (c ChatMessageRole) Name() string {
 type ToolDefinition struct {
 	Name        string
 	Description string
-	Parameters  any
+	Parameters  *json.RawMessage
 }
 
 type ToolCall struct {
