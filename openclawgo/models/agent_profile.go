@@ -1,6 +1,10 @@
 package models
 
-import "time"
+import (
+	"strconv"
+	"strings"
+	"time"
+)
 
 type RetrievalLevel uint32
 
@@ -25,6 +29,24 @@ func (r RetrievalLevel) Name() string {
 
 	return "Unkown"
 }
+func StringToRetrievalLevel(value string) RetrievalLevel {
+	value = strings.ToLower(value)
+	switch value {
+	case "off":
+		return RetrievalLevelOff
+	case "memoryonly":
+		return RetrievalLevelMemoryOnly
+	case "Vectordb":
+		return RetrievalLevelVectorDb
+	case "hybrid":
+		return RetrievalLevelHybrid
+	default:
+		if n, err := strconv.Atoi(value); err == nil {
+			return RetrievalLevel(n)
+		}
+		return 0
+	}
+}
 
 type ProfileKind uint32
 
@@ -45,6 +67,23 @@ func (r ProfileKind) Name() string {
 	}
 
 	return "Unkown"
+}
+
+func StringToProfileKind(value string) ProfileKind {
+	value = strings.ToLower(value)
+	switch value {
+	case "standard":
+		return ProfileKindStandard
+	case "system":
+		return ProfileKindSystem
+	case "tooltester":
+		return ProfileKindToolTester
+	default:
+		if n, err := strconv.Atoi(value); err == nil {
+			return ProfileKind(n)
+		}
+		return 0
+	}
 }
 
 type AgentProfile struct {
