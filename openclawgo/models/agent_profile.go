@@ -29,6 +29,7 @@ func (r RetrievalLevel) Name() string {
 
 	return "Unkown"
 }
+
 func StringToRetrievalLevel(value string) RetrievalLevel {
 	value = strings.ToLower(value)
 	switch value {
