@@ -80,3 +80,25 @@ type JobRun struct {
 	ExecutedByAgentProfile string
 	Job                    *ScheduledJob
 }
+
+type AgentInvocationLog struct {
+	Id               string
+	Kind             AgentInvocationKind
+	SourceId         string
+	AgentProfileName string
+	Provider         string
+	Model            string
+	TokensIn         int
+	TokensOut        int
+	LatencyMs        int
+	StartedAt        time.Time
+	CompletedAt      *time.Time
+	Error            string
+}
+
+type AgentInvocationKind uint
+
+const (
+	AgentInvocationKindChat   AgentInvocationKind = 0
+	AgentInvocationKindJobRun AgentInvocationKind = 1
+)
