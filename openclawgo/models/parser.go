@@ -13,16 +13,18 @@ var (
 	slugMultiDashRegex    = regexp.MustCompile(`-{2,}`)
 )
 
-func MarkdownParse(markdown string, fallbackName *string) AgentProfile {
+type AgentProfileMarkdownParser struct{}
+
+func (p *AgentProfileMarkdownParser) Parse(markdown string, fallbackName *string) AgentProfile {
 	profile := AgentProfile{
 		Name: "",
 	}
 
 	var body string
 
-	if hasFrontMatter(markdown) {
-		frontMatter, rest := extractFrontMatter(markdown)
-		applyFrontMatter(&profile, frontMatter)
+	if p.hasFrontMatter(markdown) {
+		frontMatter, rest := p.extractFrontMatter(markdown)
+		p.applyFrontMatter(&profile, frontMatter)
 		body = rest
 	} else {
 		body = markdown
@@ -32,10 +34,10 @@ func MarkdownParse(markdown string, fallbackName *string) AgentProfile {
 
 	// Derive name from heading if not set via front-matter
 	if strings.TrimSpace(profile.Name) == "" {
-		heading := extractFirstHeading(body)
+		heading := p.extractFirstHeading(body)
 
 		if strings.TrimSpace(heading) != "" {
-			profile.Name = slugify(heading)
+			profile.Name = p.slugify(heading)
 		} else if fallbackName != nil && strings.TrimSpace(*fallbackName) != "" {
 			profile.Name = *fallbackName
 		} else {
@@ -46,7 +48,7 @@ func MarkdownParse(markdown string, fallbackName *string) AgentProfile {
 	return profile
 }
 
-func hasFrontMatter(markdown string) bool {
+func (p *AgentProfileMarkdownParser) hasFrontMatter(markdown string) bool {
 	if !strings.HasPrefix(markdown, "---") {
 		return false
 	}
@@ -54,7 +56,7 @@ func hasFrontMatter(markdown string) bool {
 	return strings.Contains(markdown[3:], "---")
 }
 
-func extractFrontMatter(markdown string) (frontMatter string, body string) {
+func (p *AgentProfileMarkdownParser) extractFrontMatter(markdown string) (frontMatter string, body string) {
 	// Skip opening "---" line
 	startIndex := strings.Index(markdown, "\n")
 	if startIndex < 0 {
@@ -83,7 +85,7 @@ func extractFrontMatter(markdown string) (frontMatter string, body string) {
 	return frontMatter, body
 }
 
-func applyFrontMatter(profile *AgentProfile, frontMatter string) {
+func (p *AgentProfileMarkdownParser) applyFrontMatter(profile *AgentProfile, frontMatter string) {
 	lines := strings.Split(frontMatter, "\n")
 
 	for _, rawLine := range lines {
@@ -115,7 +117,7 @@ func applyFrontMatter(profile *AgentProfile, frontMatter string) {
 			// Legacy field ignored intentionally
 
 		case "tools":
-			profile.EnabledTools = parseToolsList(value)
+			profile.EnabledTools = p.parseToolsList(value)
 
 		case "temperature":
 			if temp, err := strconv.ParseFloat(value, 32); err == nil {
@@ -136,7 +138,7 @@ func applyFrontMatter(profile *AgentProfile, frontMatter string) {
 	}
 }
 
-func parseToolsList(value string) string {
+func (p *AgentProfileMarkdownParser) parseToolsList(value string) string {
 	trimmed := strings.TrimSpace(value)
 
 	// Handle [tool1, tool2]
@@ -161,7 +163,7 @@ func parseToolsList(value string) string {
 	return strings.Join(tools, ",")
 }
 
-func extractFirstHeading(body string) string {
+func (p *AgentProfileMarkdownParser) extractFirstHeading(body string) string {
 	lines := strings.Split(body, "\n")
 
 	for _, rawLine := range lines {
@@ -175,7 +177,7 @@ func extractFirstHeading(body string) string {
 	return ""
 }
 
-func slugify(text string) string {
+func (p *AgentProfileMarkdownParser) slugify(text string) string {
 	slug := strings.ToLower(strings.TrimSpace(text))
 
 	slug = slugInvalidCharsRegex.ReplaceAllString(slug, "")
