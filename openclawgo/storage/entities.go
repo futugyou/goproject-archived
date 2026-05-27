@@ -1,6 +1,10 @@
 package storage
 
-import "time"
+import (
+	"time"
+
+	"github.com/futugyou/openclawgo/models"
+)
 
 type AdapterDeliveryLog struct {
 	Id            string
@@ -102,3 +106,68 @@ const (
 	AgentInvocationKindChat   AgentInvocationKind = 0
 	AgentInvocationKindJobRun AgentInvocationKind = 1
 )
+
+type AgentProfileEntity struct {
+	Name                string
+	DisplayName         string
+	Provider            string
+	Model               string
+	Endpoint            string
+	ApiKey              string
+	DeploymentName      string
+	AuthMode            string
+	Instructions        string
+	EnabledTools        string
+	Temperature         float32
+	MaxTokens           int
+	IsDefault           bool
+	RetrievalLevel      models.RetrievalLevel
+	Kind                models.ProfileKind
+	RequireToolApproval bool
+	IsEnabled           bool
+	LastTestedAt        *time.Time
+	LastTestSucceeded   bool
+	LastTestError       string
+	CreatedAt           time.Time
+	UpdatedAt           time.Time
+}
+
+type ChatMessageEntity struct {
+	Id            string
+	SessionId     string
+	Role          string
+	Content       string
+	Name          string
+	ToolCallId    string
+	ToolCallsJson string
+	CreatedAt     time.Time
+	OrderIndex    int
+	MessageType   string
+	ToolName      string
+	ToolArgsJson  string
+	ToolDecision  string
+	ToolDecidedBy string
+	ToolDecidedAt *time.Time
+	Session       *ChatSession
+}
+
+type ChatSession struct {
+	Id               string
+	Title            string
+	Provider         string
+	Model            string
+	AgentProfileName string
+	CreatedAt        time.Time
+	UpdatedAt        time.Time
+	Messages         []ChatMessageEntity
+	Summaries        []SessionSummary
+}
+
+type SessionSummary struct {
+	Id                  string
+	SessionId           string
+	Summary             string
+	CoveredMessageCount int
+	CreatedAt           time.Time
+	Session             *ChatSession
+}
