@@ -266,3 +266,62 @@ func JobRunEventTruncate(value string) string {
 	var dropped = len(runes) - JobRunEventMaxPayloadBytes
 	return string(runes[:JobRunEventMaxPayloadBytes]) + fmt.Sprintf("...[truncated %d chars]", dropped)
 }
+
+const (
+	JobRunEventKindAgentStarted   string = "agent_started"
+	JobRunEventKindToolCall       string = "tool_call"
+	JobRunEventKindAgentCompleted string = "agent_completed"
+	JobRunEventKindAgentFailed    string = "agent_failed"
+	JobRunEventKindProfileRefused string = "profile_refused"
+)
+
+type statusTransition struct {
+	From JobStatus
+	To   JobStatus
+}
+
+var allowedTransitions = map[statusTransition]struct{}{
+	{JobStatusDraft, JobStatusActive}:       {},
+	{JobStatusDraft, JobStatusCancelled}:    {},
+	{JobStatusActive, JobStatusPaused}:      {},
+	{JobStatusActive, JobStatusCancelled}:   {},
+	{JobStatusActive, JobStatusCompleted}:   {},
+	{JobStatusPaused, JobStatusActive}:      {},
+	{JobStatusPaused, JobStatusCancelled}:   {},
+	{JobStatusCompleted, JobStatusArchived}: {},
+	{JobStatusCancelled, JobStatusArchived}: {},
+}
+
+func IsJobStatusTransitionAllowed(from, to JobStatus) bool {
+	_, ok := allowedTransitions[statusTransition{
+		From: from,
+		To:   to,
+	}]
+	return ok
+}
+
+func IsJobStatusTerminal(status JobStatus) bool {
+	switch status {
+	case JobStatusCompleted,
+		JobStatusCancelled,
+		JobStatusArchived:
+		return true
+	default:
+		return false
+	}
+}
+
+func IsJobStatusEditable(status JobStatus) bool {
+	switch status {
+	case JobStatusDraft,
+		JobStatusPaused:
+		return true
+	default:
+		return false
+	}
+}
+
+// Whether a job in this status should be hidden from default UI lists.
+func IsJobStatusHiddenByDefault(status JobStatus) bool {
+	return status == JobStatusArchived
+}
