@@ -325,3 +325,83 @@ func IsJobStatusEditable(status JobStatus) bool {
 func IsJobStatusHiddenByDefault(status JobStatus) bool {
 	return status == JobStatusArchived
 }
+
+type McpServerDefinitionEntity struct {
+	Id                     string
+	Name                   string
+	Transport              string
+	Command                string
+	ArgsJson               string
+	EnvJson                string
+	Url                    string
+	HeadersJson            string
+	Enabled                bool
+	DefaultRequireApproval bool
+	IsBuiltIn              bool
+	LastError              string
+	LastSeenUtc            *time.Time
+	CreatedAt              time.Time
+	UpdatedAt              time.Time
+}
+
+type McpToolOverrideEntity struct {
+	ServerId        string
+	ToolName        string
+	RequireApproval bool
+	Disabled        bool
+	UpdatedAt       time.Time
+}
+
+type ModelProviderDefinition struct {
+	Name              string
+	ProviderType      string
+	DisplayName       string
+	Endpoint          string
+	Model             string
+	ApiKey            string
+	DeploymentName    string
+	AuthMode          string
+	IsSupported       bool
+	LastTestedAt      *time.Time
+	LastTestSucceeded bool
+	LastTestError     string
+	CreatedAt         time.Time
+	UpdatedAt         time.Time
+}
+
+type OAuthTokenEntity struct {
+	Id                     int
+	Provider               string
+	UserId                 string
+	AccessTokenCiphertext  string
+	RefreshTokenCiphertext string
+	ExpiresAtUtc           string
+	Scopes                 string
+	CreatedAt              time.Time
+	UpdatedAt              time.Time
+}
+
+type ProviderSetting struct {
+	Key       string
+	Value     string
+	UpdatedAt time.Time
+}
+
+type SchemaVersionEntity struct {
+	Key       string
+	Value     string
+	AppliedAt time.Time
+}
+
+type SecretAccessAuditEntity struct {
+	Id              string
+	Sequence        int64
+	SecretName      string
+	CallerType      string
+	CallerId        string
+	SessionId       string
+	AccessedAt      time.Time
+	Success         bool
+	PreviousRowHash string
+	RowHash         string
+}
