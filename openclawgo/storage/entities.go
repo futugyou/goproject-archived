@@ -1,6 +1,7 @@
 package storage
 
 import (
+	"fmt"
 	"time"
 
 	"github.com/futugyou/openclawgo/models"
@@ -170,4 +171,98 @@ type SessionSummary struct {
 	CoveredMessageCount int
 	CreatedAt           time.Time
 	Session             *ChatSession
+}
+
+type ChatSessionArtifact struct {
+	Id               string
+	SessionId        string
+	Sequence         int
+	ArtifactType     JobRunArtifactKind
+	Title            string
+	ContentInline    string
+	ContentPath      string
+	ContentSizeBytes int64
+	MimeType         string
+	CreatedAt        time.Time
+	Metadata         string
+	Session          *ChatSession
+}
+
+type JobRunArtifactKind uint
+
+const (
+	JobRunArtifactKindText     JobRunArtifactKind = 0
+	JobRunArtifactKindMarkdown JobRunArtifactKind = 1
+	JobRunArtifactKindJson     JobRunArtifactKind = 2
+	JobRunArtifactKindFile     JobRunArtifactKind = 3
+	JobRunArtifactKindLink     JobRunArtifactKind = 4
+	JobRunArtifactKindError    JobRunArtifactKind = 5
+)
+
+type JobChannelConfiguration struct {
+	Id            string
+	JobId         string
+	ChannelType   string
+	ChannelConfig string
+	IsEnabled     bool
+	CreatedAt     time.Time
+	UpdatedAt     time.Time
+	Job           *ScheduledJob
+}
+
+type JobDefinitionStateChange struct {
+	Id         string
+	JobId      string
+	FromStatus JobStatus
+	ToStatus   JobStatus
+	Reason     string
+	ChangedBy  string
+	ChangedAt  *time.Time
+	Job        *ScheduledJob
+}
+
+type JobRunArtifact struct {
+	Id               string
+	JobRunId         string
+	JobId            string
+	Sequence         int
+	ArtifactType     JobRunArtifactKind
+	Title            string
+	ContentInline    string
+	ContentPath      string
+	ContentSizeBytes int64
+	MimeType         string
+	CreatedAt        time.Time
+	Metadata         string
+	Run              *JobRun
+}
+
+const JobRunEventMaxPayloadBytes int = 4 * 1024
+
+type JobRunEvent struct {
+	Id            string
+	JobRunId      string
+	Sequence      int
+	Timestamp     time.Time
+	Kind          string
+	ToolName      string
+	ArgumentsJson string
+	ResultJson    string
+	Message       string
+	DurationMs    int
+	TokensUsed    int
+	Run           *JobRun
+}
+
+func JobRunEventTruncate(value string) string {
+	if len(value) == 0 {
+		return value
+	}
+	runes := []rune(value)
+	if len(runes) <= JobRunEventMaxPayloadBytes {
+		return value
+	}
+
+	var dropped = len(runes) - JobRunEventMaxPayloadBytes
+	return string(runes[:JobRunEventMaxPayloadBytes]) + fmt.Sprintf("...[truncated %d chars]", dropped)
 }
