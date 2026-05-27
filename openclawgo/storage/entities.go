@@ -405,3 +405,72 @@ type SecretAccessAuditEntity struct {
 	PreviousRowHash string
 	RowHash         string
 }
+
+type SecretEntity struct {
+	Name           string
+	EncryptedValue string
+	Description    string
+	CreatedAt      time.Time
+	UpdatedAt      time.Time
+	DeletedAt      *time.Time
+	PurgeAfter     *time.Time
+	Versions       []SecretVersionEntity
+}
+
+type SecretVersionEntity struct {
+	Id             string
+	SecretName     string
+	Version        int
+	EncryptedValue string
+	CreatedAt      time.Time
+	IsCurrent      bool
+	SupersededAt   *time.Time
+	Secret         *SecretEntity
+}
+
+type SkillVector struct {
+	Id        string
+	SkillName string
+	Embedding []byte
+	CreatedAt time.Time
+}
+
+type ToolApprovalLog struct {
+	Id                 string
+	RequestId          string
+	SessionId          string
+	ToolName           string
+	AgentProfileName   string
+	Approved           bool
+	RememberForSession bool
+	Source             ApprovalDecisionSource
+	DecidedAt          time.Time
+}
+
+type ApprovalDecisionSource uint
+
+const (
+	ApprovalDecisionSourceUser          ApprovalDecisionSource = 0
+	ApprovalDecisionSourceTimeout       ApprovalDecisionSource = 1
+	ApprovalDecisionSourceSessionMemory ApprovalDecisionSource = 2
+)
+
+type ToolCallRecord struct {
+	Id         string
+	SessionId  string
+	MessageId  string
+	ToolName   string
+	Arguments  string
+	Result     string
+	Success    bool
+	DurationMs float32
+	ExecutedAt time.Time
+}
+
+type ToolTestRecord struct {
+	Name              string
+	LastTestedAt      *time.Time
+	LastTestSucceeded bool
+	LastTestError     string
+	LastTestMode      string
+}
