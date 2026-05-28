@@ -217,7 +217,7 @@ type JobDefinitionStateChange struct {
 	ToStatus   JobStatus
 	Reason     string
 	ChangedBy  string
-	ChangedAt  *time.Time
+	ChangedAt  time.Time
 	Job        *ScheduledJob
 }
 
