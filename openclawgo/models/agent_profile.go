@@ -101,7 +101,7 @@ type AgentProfile struct {
 	Temperature         float32
 	MaxTokens           int
 	IsDefault           bool
-	LastTestedAt        time.Time
+	LastTestedAt        *time.Time
 	LastTestSucceeded   bool
 	LastTestError       string
 	RetrievalLevel      RetrievalLevel
