@@ -11,15 +11,16 @@ type ArtifactRetentionWork struct {
 	artifactStorage *ArtifactStorageService
 	maxRunsPerJob   int
 	maxAgeDays      int
+	cleanupInterval int
 }
 
-func NewArtifactRetentionWork(artifactStorage *ArtifactStorageService, maxRunsPerJob int, maxAgeDays int) *ArtifactRetentionWork {
-	return &ArtifactRetentionWork{artifactStorage: artifactStorage, maxRunsPerJob: maxRunsPerJob, maxAgeDays: maxAgeDays}
+func NewArtifactRetentionWork(artifactStorage *ArtifactStorageService, maxRunsPerJob int, maxAgeDays int, cleanupInterval int) *ArtifactRetentionWork {
+	return &ArtifactRetentionWork{artifactStorage: artifactStorage, maxRunsPerJob: maxRunsPerJob, maxAgeDays: maxAgeDays, cleanupInterval: cleanupInterval}
 }
 
 func (w *ArtifactRetentionWork) Start(ctx context.Context, wg *sync.WaitGroup) {
 	wg.Go(func() {
-		ticker := time.NewTicker(60 * time.Second)
+		ticker := time.NewTicker(time.Duration(w.cleanupInterval) * time.Second)
 		defer ticker.Stop()
 		for {
 			select {
