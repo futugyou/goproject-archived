@@ -148,3 +148,66 @@ func (p *AgentProfileStore) toEntity(entity *models.AgentProfile) *AgentProfileE
 		UpdatedAt:           entity.UpdatedAt,
 	}
 }
+
+func (p *AgentProfileStore) GetDefault(ctx context.Context) (*models.AgentProfile, error) {
+	entity, err := gorm.G[*AgentProfileEntity](p.db).Where("is_default = ? and is_enabled and kind ", true, true, models.ProfileKindStandard).First(ctx)
+	if err != nil {
+		if !errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, err
+		}
+
+	}
+
+	if entity != nil {
+		return p.toModel(entity), nil
+	}
+
+	var defaultProfile = &models.AgentProfile{
+		Name:         "openclawnet-agent",
+		DisplayName:  "OpenClawNet Agent",
+		IsDefault:    true,
+		IsEnabled:    true,
+		Provider:     "ollama-default",
+		Instructions: "You are OpenClawNet, a helpful AI assistant built with .NET. You help users with tasks using the tools available to you. Be concise, accurate, and proactive in using tools when they can help answer questions.",
+		CreatedAt:    time.Now(),
+		UpdatedAt:    time.Now(),
+	}
+
+	if err = p.Save(ctx, defaultProfile); err != nil {
+		return nil, err
+	}
+	return defaultProfile, nil
+}
+
+func (p *AgentProfileStore) List(ctx context.Context) ([]models.AgentProfile, error) {
+	result := []models.AgentProfile{}
+	entities, err := gorm.G[AgentProfileEntity](p.db).Find(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	for _, entity := range entities {
+		result = append(result, *p.toModel(&entity))
+	}
+	return result, err
+}
+
+func (p *AgentProfileStore) Delete(ctx context.Context, name string) error {
+	_, err := gorm.G[AgentProfileEntity](p.db).Where("name = ?", name).Delete(ctx)
+	return err
+}
+
+func (p *AgentProfileStore) GetEntityAsync(ctx context.Context, name string) (*AgentProfileEntity, error) {
+	return gorm.G[*AgentProfileEntity](p.db).Where("name = ?", name).First(ctx)
+}
+
+func (p *AgentProfileStore) SaveEntityAsync(ctx context.Context, entity *AgentProfileEntity) error {
+	_, err := gorm.G[AgentProfileEntity](p.db).Where("ame = ?", entity.Name).
+		Updates(ctx, AgentProfileEntity{
+			LastTestedAt:      entity.LastTestedAt,
+			LastTestSucceeded: entity.LastTestSucceeded,
+			LastTestError:     entity.LastTestError,
+			UpdatedAt:         entity.UpdatedAt,
+		})
+	return err
+}
