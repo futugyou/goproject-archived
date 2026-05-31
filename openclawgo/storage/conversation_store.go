@@ -7,6 +7,7 @@ import (
 
 	"github.com/google/uuid"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 type IConversationStore interface {
@@ -101,9 +102,9 @@ func (c *ConversationStore) GetMessages(ctx context.Context, sessionId string) (
 
 // GetSession implements [IConversationStore].
 func (c *ConversationStore) GetSession(ctx context.Context, sessionId string) (*ChatSession, error) {
-	var session *ChatSession
+	var session ChatSession
 	err := c.db.Model(&ChatSession{}).Where("id = ", sessionId).Preload("Messages").First(&session).Error
-	return session, err
+	return &session, err
 }
 
 // ListSessions implements [IConversationStore].
@@ -156,25 +157,15 @@ func (c *ConversationStore) PruneOldMessages(ctx context.Context, sessionId stri
 
 // UpdateSessionTitle implements [IConversationStore].
 func (c *ConversationStore) UpdateSessionTitle(ctx context.Context, sessionId string, title string) (*ChatSession, error) {
-	if err := c.db.WithContext(ctx).
-		Model(&ChatSession{}).
+	var updatedSession ChatSession
+	err := c.db.WithContext(ctx).
+		Model(&updatedSession).
 		Where("id = ?", sessionId).
-		Updates(ChatSession{
-			Title:     title,
-			UpdatedAt: time.Now().UTC(),
-		}).
-		Error; err != nil {
+		Clauses(clause.Returning{}).
+		Updates(map[string]any{"title": title, "updated_at": time.Now().UTC()}).Error
+
+	if err != nil {
 		return nil, err
 	}
-
-	var data ChatSession
-
-	if err := c.db.WithContext(ctx).
-		Where("id = ?", sessionId).
-		First(&data).
-		Error; err != nil {
-		return nil, err
-	}
-
-	return &data, nil
+	return &updatedSession, nil
 }

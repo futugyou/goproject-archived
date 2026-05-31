@@ -158,16 +158,19 @@ func (s *SecretsStore) Delete(ctx context.Context, name string) (bool, error) {
 
 // Get implements [ISecretsStore].
 func (s *SecretsStore) Get(ctx context.Context, name string, version int) (string, error) {
-	var entity *SecretEntity
+	var entity SecretEntity
 	var err error
 	if version == -1 {
-		entity, err = gorm.G[*SecretEntity](s.db).Where("deleted_at is null AND name = ?", name).Order("version desc").First(ctx)
+		entity, err = gorm.G[SecretEntity](s.db).Where("deleted_at is null AND name = ?", name).Order("version desc").First(ctx)
 	} else {
-		entity, err = gorm.G[*SecretEntity](s.db).Where("deleted_at is null AND version = ? AND name = ?", version, name).First(ctx)
+		entity, err = gorm.G[SecretEntity](s.db).Where("deleted_at is null AND version = ? AND name = ?", version, name).First(ctx)
 	}
 
 	if err != nil {
 		return "", err
+	}
+	if len(entity.Name) == 0 {
+		return "", errors.New("no secret found")
 	}
 	return entity.EncryptedValue, nil
 }
@@ -218,12 +221,12 @@ func (s *SecretsStore) Recover(ctx context.Context, name string) (bool, error) {
 
 // Rotate implements [ISecretsStore].
 func (s *SecretsStore) Rotate(ctx context.Context, name string, newValue string) error {
-	existing, err := gorm.G[*SecretEntity](s.db).Where("name = ?", name).First(ctx)
+	existing, err := gorm.G[SecretEntity](s.db).Where("name = ?", name).First(ctx)
 	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
 		return err
 	}
 
-	if existing == nil {
+	if len(existing.Name) == 0 {
 		return s.Set(ctx, name, newValue, "")
 	}
 
@@ -233,12 +236,12 @@ func (s *SecretsStore) Rotate(ctx context.Context, name string, newValue string)
 
 	now := time.Now().UTC()
 	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		secret := &SecretEntity{
+		secret := SecretEntity{
 			EncryptedValue: newValue,
 			UpdatedAt:      now,
 		}
 
-		_, err := gorm.G[*SecretEntity](tx).Where("id = ?", 111).Updates(ctx, secret)
+		_, err := gorm.G[SecretEntity](tx).Where("id = ?", 111).Updates(ctx, secret)
 		if err != nil {
 			return err
 		}

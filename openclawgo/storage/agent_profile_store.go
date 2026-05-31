@@ -20,11 +20,11 @@ func NewAgentProfileStore(db *gorm.DB) *AgentProfileStore {
 }
 
 func (p *AgentProfileStore) Get(ctx context.Context, name string) (*models.AgentProfile, error) {
-	entity, err := gorm.G[*AgentProfileEntity](p.db).Where("name = ?", name).First(ctx)
+	entity, err := gorm.G[AgentProfileEntity](p.db).Where("name = ?", name).First(ctx)
 	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, err
 	}
-	return p.toModel(entity), nil
+	return p.toModel(&entity), nil
 }
 
 func (p *AgentProfileStore) Save(ctx context.Context, profile *models.AgentProfile) error {
@@ -103,7 +103,7 @@ func (p *AgentProfileStore) toEntity(entity *models.AgentProfile) *AgentProfileE
 }
 
 func (p *AgentProfileStore) GetDefault(ctx context.Context) (*models.AgentProfile, error) {
-	entity, err := gorm.G[*AgentProfileEntity](p.db).Where("is_default = ? and is_enabled and kind ", true, true, models.ProfileKindStandard).First(ctx)
+	entity, err := gorm.G[AgentProfileEntity](p.db).Where("is_default = ? and is_enabled and kind ", true, true, models.ProfileKindStandard).First(ctx)
 	if err != nil {
 		if !errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, err
@@ -111,8 +111,8 @@ func (p *AgentProfileStore) GetDefault(ctx context.Context) (*models.AgentProfil
 
 	}
 
-	if entity != nil {
-		return p.toModel(entity), nil
+	if len(entity.Name) > 0 {
+		return p.toModel(&entity), nil
 	}
 
 	var defaultProfile = &models.AgentProfile{
@@ -151,7 +151,8 @@ func (p *AgentProfileStore) Delete(ctx context.Context, name string) error {
 }
 
 func (p *AgentProfileStore) GetEntityAsync(ctx context.Context, name string) (*AgentProfileEntity, error) {
-	return gorm.G[*AgentProfileEntity](p.db).Where("name = ?", name).First(ctx)
+	d, err := gorm.G[AgentProfileEntity](p.db).Where("name = ?", name).First(ctx)
+	return &d, err
 }
 
 func (p *AgentProfileStore) SaveEntityAsync(ctx context.Context, entity *AgentProfileEntity) error {
