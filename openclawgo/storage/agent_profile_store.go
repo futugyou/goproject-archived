@@ -9,6 +9,18 @@ import (
 	"gorm.io/gorm"
 )
 
+type IAgentProfileStore interface {
+	Get(ctx context.Context, name string) (*models.AgentProfile, error)
+	Save(ctx context.Context, profile *models.AgentProfile) error
+	GetDefault(ctx context.Context) (*models.AgentProfile, error)
+	List(ctx context.Context) ([]models.AgentProfile, error)
+	Delete(ctx context.Context, name string) error
+	GetEntityAsync(ctx context.Context, name string) (*AgentProfileEntity, error)
+	SaveEntityAsync(ctx context.Context, entity *AgentProfileEntity) error
+}
+
+var _ IAgentProfileStore = (*AgentProfileStore)(nil)
+
 type AgentProfileStore struct {
 	db *gorm.DB
 }
