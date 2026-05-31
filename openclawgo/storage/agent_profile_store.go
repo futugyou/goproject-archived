@@ -155,7 +155,7 @@ func (p *AgentProfileStore) GetEntityAsync(ctx context.Context, name string) (*A
 }
 
 func (p *AgentProfileStore) SaveEntityAsync(ctx context.Context, entity *AgentProfileEntity) error {
-	_, err := gorm.G[AgentProfileEntity](p.db).Where("ame = ?", entity.Name).
+	_, err := gorm.G[AgentProfileEntity](p.db).Where("name = ?", entity.Name).
 		Updates(ctx, AgentProfileEntity{
 			LastTestedAt:      entity.LastTestedAt,
 			LastTestSucceeded: entity.LastTestSucceeded,
