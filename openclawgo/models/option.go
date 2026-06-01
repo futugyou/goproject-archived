@@ -25,10 +25,10 @@ const (
 	OllamaDisplayName  = "Ollama (Local)"
 	OllamaTemperature  = 0.7
 	OllamaMaxTokens    = 4096
-	OpenAIProviderType = "azure-openai"
+	OpenAIProviderType = "openai"
 	OpenAIModel        = "gpt-5-mini"
 	OpenAIAuthMode     = "api-key"
-	OpenAIDisplayName  = "Azure OpenAI"
+	OpenAIDisplayName  = "OpenAI"
 )
 
 type ResolvedProviderConfig struct {

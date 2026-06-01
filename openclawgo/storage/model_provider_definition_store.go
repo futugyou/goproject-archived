@@ -4,38 +4,8 @@ import (
 	"context"
 	"errors"
 
+	"github.com/futugyou/openclawgo/models"
 	"gorm.io/gorm"
-)
-
-const (
-	ProviderTypeDefaultsOllamaProviderType = "ollama"
-	ProviderTypeDefaultsOllamaEndpoint     = "http://localhost:11434"
-	ProviderTypeDefaultsOllamaModel        = "gemma4:e2b"
-	ProviderTypeDefaultsOllamaDisplayName  = "Ollama (Local)"
-	ProviderTypeDefaultsOllamaTemperature  = 0.7
-	ProviderTypeDefaultsOllamaMaxTokens    = 4096
-
-	ProviderTypeDefaultsAzureOpenAIProviderType   = "azure-openai"
-	ProviderTypeDefaultsAzureOpenAIDeploymentName = "gpt-5-mini"
-	ProviderTypeDefaultsAzureOpenAIAuthMode       = "api-key"
-	ProviderTypeDefaultsAzureOpenAIDisplayName    = "Azure OpenAI"
-
-	ProviderTypeDefaultsGitHubCopilotProviderType = "github-copilot"
-	ProviderTypeDefaultsGitHubCopilotModel        = "gpt-5-mini"
-	ProviderTypeDefaultsGitHubCopilotDisplayName  = "GitHub Copilot SDK"
-
-	ProviderTypeDefaultsFoundryProviderType = "foundry"
-	ProviderTypeDefaultsFoundryModel        = "gpt-4o-mini"
-	ProviderTypeDefaultsFoundryAuthMode     = "api-key"
-	ProviderTypeDefaultsFoundryDisplayName  = "Microsoft Foundry"
-
-	ProviderTypeDefaultsFoundryLocalProviderType = "foundry-local"
-	ProviderTypeDefaultsFoundryLocalModel        = "phi-4"
-	ProviderTypeDefaultsFoundryLocalDisplayName  = "Foundry Local"
-
-	ProviderTypeDefaultsLMStudioProviderType = "lm-studio"
-	ProviderTypeDefaultsLMStudioEndpoint     = "http://localhost:1234"
-	ProviderTypeDefaultsLMStudioDisplayName  = "LM Studio"
 )
 
 type IModelProviderDefinitionStore interface {
@@ -102,46 +72,17 @@ func (m *ModelProviderDefinitionStore) SeedDefaults(ctx context.Context) error {
 	var defaults = []ModelProviderDefinition{
 		{
 			Name:         "ollama-default",
-			ProviderType: ProviderTypeDefaultsOllamaProviderType,
-			DisplayName:  ProviderTypeDefaultsOllamaDisplayName,
-			Endpoint:     ProviderTypeDefaultsOllamaEndpoint,
-			Model:        ProviderTypeDefaultsOllamaModel,
+			ProviderType: models.OllamaProviderType,
+			DisplayName:  models.OllamaDisplayName,
+			Endpoint:     models.OllamaEndpoint,
+			Model:        models.OllamaModel,
 			IsSupported:  false,
 		},
 		{
-			Name:           "azure-openai-default",
-			ProviderType:   ProviderTypeDefaultsAzureOpenAIProviderType,
-			DisplayName:    ProviderTypeDefaultsAzureOpenAIDisplayName,
-			DeploymentName: ProviderTypeDefaultsAzureOpenAIDeploymentName,
-			AuthMode:       ProviderTypeDefaultsAzureOpenAIAuthMode,
-			IsSupported:    false,
-		},
-		{
-			Name:         "github-copilot-default",
-			ProviderType: ProviderTypeDefaultsGitHubCopilotProviderType,
-			DisplayName:  ProviderTypeDefaultsGitHubCopilotDisplayName,
-			IsSupported:  false,
-		},
-		{
-			Name:         "foundry-default",
-			ProviderType: ProviderTypeDefaultsFoundryProviderType,
-			DisplayName:  ProviderTypeDefaultsFoundryDisplayName,
-			Model:        ProviderTypeDefaultsFoundryModel,
-			AuthMode:     ProviderTypeDefaultsFoundryAuthMode,
-			IsSupported:  false,
-		},
-		{
-			Name:         "foundry-local-default",
-			ProviderType: ProviderTypeDefaultsFoundryLocalProviderType,
-			DisplayName:  ProviderTypeDefaultsFoundryLocalDisplayName,
-			Model:        ProviderTypeDefaultsFoundryLocalModel,
-			IsSupported:  false,
-		},
-		{
-			Name:         "lm-studio-default",
-			ProviderType: ProviderTypeDefaultsLMStudioProviderType,
-			DisplayName:  ProviderTypeDefaultsLMStudioDisplayName,
-			Endpoint:     ProviderTypeDefaultsLMStudioEndpoint,
+			Name:         "openai-default",
+			ProviderType: models.OpenAIProviderType,
+			DisplayName:  models.OpenAIDisplayName,
+			AuthMode:     models.OpenAIAuthMode,
 			IsSupported:  false,
 		},
 	}
