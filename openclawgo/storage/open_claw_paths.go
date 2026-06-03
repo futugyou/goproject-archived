@@ -259,3 +259,14 @@ func moveCrossDevice(src, dest string) error {
 
 	return os.Remove(src)
 }
+
+func TryParseVaultReference(value string) (string, bool) {
+	prefix := "vault://"
+
+	if len(value) == 0 || !strings.HasPrefix(value, prefix) {
+		return "", false
+	}
+
+	name := strings.TrimSpace(value[:min(len(prefix), len(value))])
+	return name, len(name) > 0
+}
