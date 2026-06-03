@@ -1,8 +1,11 @@
 package storage
 
 import (
+	"bufio"
+	"context"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"os/user"
@@ -171,4 +174,88 @@ func ResolveSafeModelPath(fileName string) (string, error) {
 	}
 
 	return combined, nil
+}
+
+func readerWithContext(ctx context.Context, r io.Reader) io.Reader {
+	return readerFunc(func(p []byte) (int, error) {
+		if err := ctx.Err(); err != nil {
+			return 0, err
+		}
+		return r.Read(p)
+	})
+}
+
+type readerFunc func([]byte) (int, error)
+
+func (f readerFunc) Read(p []byte) (int, error) { return f(p) }
+
+func copyToWithContext(ctx context.Context, destPath string, sourceStream io.Reader, bufferSize int) (int64, error) {
+	dest, err := os.OpenFile(destPath, os.O_RDWR|os.O_CREATE|os.O_TRUNC, 0666)
+	if err != nil {
+		return 0, err
+	}
+
+	defer dest.Close()
+
+	buf := make([]byte, bufferSize)
+
+	cancelableSource := io.NopCloser(struct{ io.Reader }{
+		Reader: readerWithContext(ctx, sourceStream),
+	})
+
+	bytesWritten, err := io.CopyBuffer(dest, cancelableSource, buf)
+	if err != nil {
+
+		if ctx.Err() != nil {
+
+			return bytesWritten, nil
+		}
+		return bytesWritten, err
+	}
+
+	return bytesWritten, nil
+}
+
+func openFileForRead(tempPath string) (*bufio.Reader, *os.File, error) {
+	file, err := os.Open(tempPath)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	bufferSize := 64 * 1024
+	bufferedReader := bufio.NewReaderSize(file, bufferSize)
+
+	return bufferedReader, file, nil
+}
+
+func MoveFile(src, dest string) error {
+	err := os.Rename(src, dest)
+	if err == nil {
+		return nil
+	}
+	return moveCrossDevice(src, dest)
+}
+
+func moveCrossDevice(src, dest string) error {
+	inputFile, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+	defer inputFile.Close()
+
+	outputFile, err := os.OpenFile(dest, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0666)
+	if err != nil {
+		return err
+	}
+	defer outputFile.Close()
+
+	_, err = io.Copy(outputFile, inputFile)
+	if err != nil {
+		return err
+	}
+
+	inputFile.Close()
+	outputFile.Close()
+
+	return os.Remove(src)
 }
