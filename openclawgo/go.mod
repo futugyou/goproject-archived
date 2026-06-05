@@ -4,6 +4,7 @@ go 1.26.2
 
 require (
 	github.com/futugyou/extensions_ai v0.0.1
+	github.com/futugyou/mcp v0.0.1
 	github.com/google/uuid v1.6.0
 	github.com/shirou/gopsutil/v4 v4.26.5
 	gorm.io/gorm v1.31.1
@@ -21,3 +22,5 @@ require (
 )
 
 replace github.com/futugyou/extensions_ai v0.0.1 => ../extensions_ai
+
+replace github.com/futugyou/mcp v0.0.1 => ../mcp
