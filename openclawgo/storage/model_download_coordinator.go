@@ -33,7 +33,7 @@ func (m *ModelDownloadCoordinator) safeDelete(path string) {
 	}
 }
 
-func (m *ModelDownloadCoordinator) DownloadAsync(ctx context.Context, fileName string, sourceStream io.Reader, expectedSha256Hex string, expectedBytes int64) (*ModelDownloadResult, error) {
+func (m *ModelDownloadCoordinator) Download(ctx context.Context, fileName string, sourceStream io.Reader, expectedSha256Hex string, expectedBytes int64) (*ModelDownloadResult, error) {
 	if sourceStream == nil {
 		return nil, errors.New("stream can not be nil")
 	}

@@ -15,8 +15,8 @@ type IAgentProfileStore interface {
 	GetDefault(ctx context.Context) (*models.AgentProfile, error)
 	List(ctx context.Context) ([]models.AgentProfile, error)
 	Delete(ctx context.Context, name string) error
-	GetEntityAsync(ctx context.Context, name string) (*AgentProfileEntity, error)
-	SaveEntityAsync(ctx context.Context, entity *AgentProfileEntity) error
+	GetEntity(ctx context.Context, name string) (*AgentProfileEntity, error)
+	SaveEntity(ctx context.Context, entity *AgentProfileEntity) error
 }
 
 var _ IAgentProfileStore = (*AgentProfileStore)(nil)
@@ -162,12 +162,12 @@ func (p *AgentProfileStore) Delete(ctx context.Context, name string) error {
 	return err
 }
 
-func (p *AgentProfileStore) GetEntityAsync(ctx context.Context, name string) (*AgentProfileEntity, error) {
+func (p *AgentProfileStore) GetEntity(ctx context.Context, name string) (*AgentProfileEntity, error) {
 	d, err := gorm.G[AgentProfileEntity](p.db).Where("name = ?", name).First(ctx)
 	return &d, err
 }
 
-func (p *AgentProfileStore) SaveEntityAsync(ctx context.Context, entity *AgentProfileEntity) error {
+func (p *AgentProfileStore) SaveEntity(ctx context.Context, entity *AgentProfileEntity) error {
 	_, err := gorm.G[AgentProfileEntity](p.db).Where("name = ?", entity.Name).
 		Updates(ctx, AgentProfileEntity{
 			LastTestedAt:      entity.LastTestedAt,

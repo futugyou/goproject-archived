@@ -149,7 +149,7 @@ func (s *SkillImportService) ImportSingleFile(ctx context.Context, fileName stri
 	return skillName, nil
 }
 
-func (si *SkillImportService) ImportFolderAsync(zipData []byte) (string, error) {
+func (si *SkillImportService) ImportFolder(zipData []byte) (string, error) {
 	reader := bytes.NewReader(zipData)
 	size := int64(len(zipData))
 
