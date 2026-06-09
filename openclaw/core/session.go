@@ -1,0 +1,408 @@
+package core
+
+import (
+	"sync/atomic"
+	"time"
+)
+
+type SessionState uint8
+
+const (
+	SessionStateActive SessionState = iota
+	SessionStatePaused
+	SessionStateExpired
+)
+
+const (
+	SessionCheckpointKindsToolBatch = "tool_batch"
+)
+
+const (
+	SessionCheckpointStatesReadyToResume = "ready_to_resume"
+	SessionCheckpointStatesCompleted     = "completed"
+	SessionCheckpointStatesFailed        = "failed"
+)
+
+// ============================================================================
+// Structs & Factories
+// ============================================================================
+
+type Session struct {
+	totalInputTokens      *int64
+	totalOutputTokens     *int64
+	totalCacheReadTokens  *int64
+	totalCacheWriteTokens *int64
+
+	Id                           string                          `json:"id"`
+	ChannelId                    string                          `json:"channel_id"`
+	SenderId                     string                          `json:"sender_id"`
+	StableSessionBinding         *StableSessionBindingInfo       `json:"stable_session_binding,omitempty"`
+	CreatedAt                    time.Time                       `json:"created_at"`
+	LastActiveAt                 time.Time                       `json:"last_active_at"`
+	History                      []ChatTurn                      `json:"history"`
+	State                        SessionState                    `json:"state"`
+	ModelOverride                *string                         `json:"model_override,omitempty"`
+	ModelProfileId               *string                         `json:"model_profile_id,omitempty"`
+	PreferredModelTags           []string                        `json:"preferred_model_tags"`
+	FallbackModelProfileIds      []string                        `json:"fallback_model_profile_ids"`
+	ModelRequirements            ModelSelectionRequirements      `json:"model_requirements"`
+	SystemPromptOverride         *string                         `json:"system_prompt_override,omitempty"`
+	RoutePresetId                *string                         `json:"route_preset_id,omitempty"`
+	RouteAllowedTools            []string                        `json:"route_allowed_tools"`
+	ReasoningEffort              *string                         `json:"reasoning_effort,omitempty"`
+	VerboseMode                  bool                            `json:"verbose_mode"`
+	ResponseMode                 string                          `json:"response_mode"`
+	ContractPolicy               *ContractPolicy                 `json:"contract_policy,omitempty"`
+	Delegation                   *SessionDelegationMetadata      `json:"delegation,omitempty"`
+	DelegatedSessions            []SessionDelegationChildSummary `json:"delegated_sessions"`
+	ContractAttachedAtUtc        *time.Time                      `json:"contract_attached_at_utc,omitempty"`
+	ContractBaselineInputTokens  int64                           `json:"contract_baseline_input_tokens"`
+	ContractBaselineOutputTokens int64                           `json:"contract_baseline_output_tokens"`
+	ContractBaselineToolCalls    int                             `json:"contract_baseline_tool_calls"`
+	ContractAccumulatedCostUsd   float64                         `json:"contract_accumulated_cost_usd"`
+	ExecutionCheckpoint          *SessionExecutionCheckpoint     `json:"execution_checkpoint,omitempty"`
+}
+
+func DefaultSession() *Session {
+	now := time.Now().UTC()
+	return &Session{
+		totalInputTokens:        new(int64),
+		totalOutputTokens:       new(int64),
+		totalCacheReadTokens:    new(int64),
+		totalCacheWriteTokens:   new(int64),
+		CreatedAt:               now,
+		LastActiveAt:            now,
+		History:                 []ChatTurn{},
+		State:                   SessionStateActive,
+		PreferredModelTags:      []string{},
+		FallbackModelProfileIds: []string{},
+		RouteAllowedTools:       []string{},
+		ResponseMode:            SessionResponseModesDefault,
+		DelegatedSessions:       []SessionDelegationChildSummary{},
+	}
+}
+
+type StableSessionBindingInfo struct {
+	ExternalSessionId string    `json:"external_session_id"`
+	Namespace         string    `json:"namespace"`
+	OwnerKey          string    `json:"owner_key"`
+	BoundAtUtc        time.Time `json:"bound_at_utc"`
+}
+
+func DefaultStableSessionBindingInfo() *StableSessionBindingInfo {
+	return &StableSessionBindingInfo{
+		ExternalSessionId: "",
+		Namespace:         "",
+		OwnerKey:          "",
+		BoundAtUtc:        time.Now().UTC(),
+	}
+}
+
+type ChatTurn struct {
+	Role      string           `json:"role"`
+	Content   string           `json:"content"`
+	Timestamp time.Time        `json:"timestamp"`
+	ToolCalls []ToolInvocation `json:"tool_calls,omitempty"`
+}
+
+func DefaultChatTurn() *ChatTurn {
+	return &ChatTurn{
+		Timestamp: time.Now().UTC(),
+	}
+}
+
+type ToolInvocation struct {
+	CallId                 *string       `json:"call_id,omitempty"`
+	ToolName               string        `json:"tool_name"`
+	Arguments              string        `json:"arguments"`
+	Result                 *string       `json:"result,omitempty"`
+	Duration               time.Duration `json:"duration"`
+	ResultStatus           *string       `json:"result_status,omitempty"`
+	FailureCode            *string       `json:"failure_code,omitempty"`
+	FailureMessage         *string       `json:"failure_message,omitempty"`
+	NextStep               *string       `json:"next_step,omitempty"`
+	GovernanceAllowed      *bool         `json:"governance_allowed,omitempty"`
+	GovernanceAction       *string       `json:"governance_action,omitempty"`
+	GovernanceReason       *string       `json:"governance_reason,omitempty"`
+	GovernancePolicyId     *string       `json:"governance_policy_id,omitempty"`
+	GovernanceRuleId       *string       `json:"governance_rule_id,omitempty"`
+	GovernanceTrustScore   *float64      `json:"governance_trust_score,omitempty"`
+	GovernanceEvaluationMs *float64      `json:"governance_evaluation_ms,omitempty"`
+	GovernanceUnavailable  *bool         `json:"governance_unavailable,omitempty"`
+}
+
+type SessionExecutionCheckpoint struct {
+	CheckpointId           string                      `json:"checkpoint_id"`
+	Kind                   string                      `json:"kind"`
+	State                  string                      `json:"state"`
+	Sequence               int                         `json:"sequence"`
+	Iteration              int                         `json:"iteration"`
+	HistoryCount           int                         `json:"history_count"`
+	CorrelationId          *string                     `json:"correlation_id,omitempty"`
+	CreatedAtUtc           time.Time                   `json:"created_at_utc"`
+	PersistedAtUtc         *time.Time                  `json:"persisted_at_utc,omitempty"`
+	LastResumeAttemptAtUtc *time.Time                  `json:"last_resume_attempt_at_utc,omitempty"`
+	CompletedAtUtc         *time.Time                  `json:"completed_at_utc,omitempty"`
+	CompletionReason       *string                     `json:"completion_reason,omitempty"`
+	ToolCalls              []SessionCheckpointToolCall `json:"tool_calls"`
+}
+
+func DefaultSessionExecutionCheckpoint() *SessionExecutionCheckpoint {
+	return &SessionExecutionCheckpoint{
+		Kind:         SessionCheckpointKindsToolBatch,
+		State:        SessionCheckpointStatesReadyToResume,
+		CreatedAtUtc: time.Now().UTC(),
+		ToolCalls:    []SessionCheckpointToolCall{},
+	}
+}
+
+func (s *Session) GetTotalInputTokens() int64 {
+	return atomic.LoadInt64(s.totalInputTokens)
+}
+
+func (s *Session) SetTotalInputTokens(val int64) {
+	atomic.StoreInt64(s.totalInputTokens, val)
+}
+
+func (s *Session) GetTotalOutputTokens() int64 {
+	return atomic.LoadInt64(s.totalOutputTokens)
+}
+
+func (s *Session) SetTotalOutputTokens(val int64) {
+	atomic.StoreInt64(s.totalOutputTokens, val)
+}
+
+func (s *Session) GetTotalCacheReadTokens() int64 {
+	return atomic.LoadInt64(s.totalCacheReadTokens)
+}
+
+func (s *Session) SetTotalCacheReadTokens(val int64) {
+	atomic.StoreInt64(s.totalCacheReadTokens, val)
+}
+
+func (s *Session) GetTotalCacheWriteTokens() int64 {
+	return atomic.LoadInt64(s.totalCacheWriteTokens)
+}
+
+func (s *Session) SetTotalCacheWriteTokens(val int64) {
+	atomic.StoreInt64(s.totalCacheWriteTokens, val)
+}
+
+func (s *Session) AddTokenUsage(inputTokens int64, outputTokens int64) {
+	if inputTokens != 0 {
+		atomic.AddInt64(s.totalInputTokens, inputTokens)
+	}
+	if outputTokens != 0 {
+		atomic.AddInt64(s.totalOutputTokens, outputTokens)
+	}
+}
+
+func (s *Session) AddCacheUsage(cacheReadTokens int64, cacheWriteTokens int64) {
+	if cacheReadTokens != 0 {
+		atomic.AddInt64(s.totalCacheReadTokens, cacheReadTokens)
+	}
+	if cacheWriteTokens != 0 {
+		atomic.AddInt64(s.totalCacheWriteTokens, cacheWriteTokens)
+	}
+}
+
+func (s *Session) GetTotalTokens() int64 {
+	return s.GetTotalInputTokens() + s.GetTotalOutputTokens()
+}
+
+// Constants for SessionCheckpointToolCall
+const (
+	SessionCheckpointToolCallDefaultResultStatus = "Completed"
+)
+
+type SessionCheckpointToolCall struct {
+	CallId         *string `json:"call_id,omitempty"`
+	ToolName       string  `json:"tool_name"`
+	ResultStatus   string  `json:"result_status"`
+	FailureCode    *string `json:"failure_code,omitempty"`
+	DurationMs     int64   `json:"duration_ms"`
+	ArgumentsBytes int     `json:"arguments_bytes"`
+	ResultBytes    int     `json:"result_bytes"`
+}
+
+func NewDefaultSessionCheckpointToolCall() SessionCheckpointToolCall {
+	return SessionCheckpointToolCall{
+		ResultStatus: SessionCheckpointToolCallDefaultResultStatus,
+	}
+}
+
+// -----------------------------------------------------------------------------
+
+// Constants for SessionDelegationMetadata
+const (
+	SessionDelegationMetadataDefaultStatus = "running"
+)
+
+type SessionDelegationMetadata struct {
+	ParentSessionId      *string                          `json:"parent_session_id,omitempty"`
+	ParentChannelId      *string                          `json:"parent_channel_id,omitempty"`
+	ParentSenderId       *string                          `json:"parent_sender_id,omitempty"`
+	Profile              string                           `json:"profile"`
+	RequestedTask        string                           `json:"requested_task"`
+	AllowedTools         []string                         `json:"allowed_tools"`
+	Depth                int                              `json:"depth"`
+	StartedAtUtc         time.Time                        `json:"started_at_utc"`
+	CompletedAtUtc       *time.Time                       `json:"completed_at_utc,omitempty"`
+	Status               string                           `json:"status"`
+	FinalResponsePreview *string                          `json:"final_response_preview,omitempty"`
+	ToolUsage            []SessionDelegationToolUsage     `json:"tool_usage"`
+	ProposedChanges      []SessionDelegationChangeSummary `json:"proposed_changes"`
+}
+
+func NewDefaultSessionDelegationMetadata() SessionDelegationMetadata {
+	return SessionDelegationMetadata{
+		Profile:         "",
+		RequestedTask:   "",
+		AllowedTools:    []string{},
+		StartedAtUtc:    time.Now().UTC(),
+		Status:          SessionDelegationMetadataDefaultStatus,
+		ToolUsage:       []SessionDelegationToolUsage{},
+		ProposedChanges: []SessionDelegationChangeSummary{},
+	}
+}
+
+// -----------------------------------------------------------------------------
+
+type SessionDelegationToolUsage struct {
+	ToolName   string `json:"tool_name"`
+	Action     string `json:"action"`
+	Summary    string `json:"summary"`
+	IsMutation bool   `json:"is_mutation"`
+	Count      int    `json:"count"`
+}
+
+// -----------------------------------------------------------------------------
+
+type SessionDelegationChangeSummary struct {
+	ToolName string `json:"tool_name"`
+	Action   string `json:"action"`
+	Summary  string `json:"summary"`
+}
+
+// -----------------------------------------------------------------------------
+
+// Constants for SessionDelegationChildSummary
+const (
+	SessionDelegationChildSummaryDefaultStatus = "running"
+)
+
+type SessionDelegationChildSummary struct {
+	SessionId            string                           `json:"session_id"`
+	Profile              string                           `json:"profile"`
+	TaskPreview          string                           `json:"task_preview"`
+	StartedAtUtc         time.Time                        `json:"started_at_utc"`
+	CompletedAtUtc       *time.Time                       `json:"completed_at_utc,omitempty"`
+	Status               string                           `json:"status"`
+	ToolUsage            []SessionDelegationToolUsage     `json:"tool_usage"`
+	ProposedChanges      []SessionDelegationChangeSummary `json:"proposed_changes"`
+	FinalResponsePreview *string                          `json:"final_response_preview,omitempty"`
+}
+
+func NewDefaultSessionDelegationChildSummary() SessionDelegationChildSummary {
+	return SessionDelegationChildSummary{
+		Profile:         "",
+		TaskPreview:     "",
+		StartedAtUtc:    time.Now().UTC(),
+		Status:          SessionDelegationChildSummaryDefaultStatus,
+		ToolUsage:       []SessionDelegationToolUsage{},
+		ProposedChanges: []SessionDelegationChangeSummary{},
+	}
+}
+
+// -----------------------------------------------------------------------------
+
+type SessionSummary struct {
+	Id                     string       `json:"id"`
+	ChannelId              string       `json:"channel_id"`
+	SenderId               string       `json:"sender_id"`
+	StableSessionId        *string      `json:"stable_session_id,omitempty"`
+	StableSessionNamespace *string      `json:"stable_session_namespace,omitempty"`
+	StableSessionOwnerKey  *string      `json:"stable_session_owner_key,omitempty"`
+	CreatedAt              time.Time    `json:"created_at"`
+	LastActiveAt           time.Time    `json:"last_active_at"`
+	State                  SessionState `json:"state"`
+	HistoryTurns           int          `json:"history_turns"`
+	TotalInputTokens       int64        `json:"total_input_tokens"`
+	TotalOutputTokens      int64        `json:"total_output_tokens"`
+	IsActive               bool         `json:"is_active"`
+}
+
+// -----------------------------------------------------------------------------
+
+type PagedSessionList struct {
+	Page          int              `json:"page"`
+	PageSize      int              `json:"page_size"`
+	HasMore       bool             `json:"has_more"`
+	ReturnedCount int              `json:"returned_count"`
+	Items         []SessionSummary `json:"items"`
+}
+
+func NewDefaultPagedSessionList() PagedSessionList {
+	return PagedSessionList{
+		Items: []SessionSummary{},
+	}
+}
+func (p *PagedSessionList) GetReturnedCount() int {
+	return len(p.Items)
+}
+
+type SessionListQuery struct {
+	Search    *string       `json:"search,omitempty"`
+	ChannelId *string       `json:"channel_id,omitempty"`
+	SenderId  *string       `json:"sender_id,omitempty"`
+	FromUtc   *time.Time    `json:"from_utc,omitempty"`
+	ToUtc     *time.Time    `json:"to_utc,omitempty"`
+	State     *SessionState `json:"state,omitempty"`
+	Starred   *bool         `json:"starred,omitempty"`
+	Tag       *string       `json:"tag,omitempty"`
+}
+
+type SessionBranch struct {
+	BranchId  string     `json:"branch_id"`
+	SessionId string     `json:"session_id"`
+	Name      string     `json:"name"`
+	CreatedAt time.Time  `json:"created_at"`
+	History   []ChatTurn `json:"history"`
+}
+
+const (
+	SessionSearchQueryDefaultLimit         = 25
+	SessionSearchQueryDefaultSnippetLength = 180
+)
+
+type SessionSearchQuery struct {
+	Text          string     `json:"text"`
+	ChannelID     *string    `json:"channel_id"`
+	SenderID      *string    `json:"sender_id"`
+	FromUtc       *time.Time `json:"from_utc"`
+	ToUtc         *time.Time `json:"to_utc"`
+	Limit         int        `json:"limit"`
+	SnippetLength int        `json:"snippet_length"`
+}
+
+func DefaultSessionSearchQuery() SessionSearchQuery {
+	return SessionSearchQuery{
+		Limit:         SessionSearchQueryDefaultLimit,
+		SnippetLength: SessionSearchQueryDefaultSnippetLength,
+	}
+}
+
+type SessionSearchHit struct {
+	SessionID string    `json:"session_id"`
+	ChannelID string    `json:"channel_id"`
+	SenderID  string    `json:"sender_id"`
+	Role      string    `json:"role"`
+	Timestamp time.Time `json:"timestamp"`
+	Snippet   string    `json:"snippet"`
+	Score     float32   `json:"score"`
+}
+
+type SessionSearchResult struct {
+	Query SessionSearchQuery `json:"query"`
+	Items []SessionSearchHit `json:"items"`
+}
