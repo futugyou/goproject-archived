@@ -1,16 +1,16 @@
 package core
 
 type CompatibilityCatalogResponse struct {
-	Version int                          `json:"version"`
-	Source  string                       `json:"source"`
-	Items   []*CompatibilityCatalogEntry `json:"items"`
+	Version int                         `json:"version"`
+	Source  string                      `json:"source"`
+	Items   []CompatibilityCatalogEntry `json:"items"`
 }
 
 func DefaultCompatibilityCatalogResponse() *CompatibilityCatalogResponse {
 	return &CompatibilityCatalogResponse{
 		Version: 0,
-		Source:  "compat/public-smoke.json",
-		Items:   make([]*CompatibilityCatalogEntry, 0),
+		Source:  "public-smoke.json",
+		Items:   make([]CompatibilityCatalogEntry, 0),
 	}
 }
 
