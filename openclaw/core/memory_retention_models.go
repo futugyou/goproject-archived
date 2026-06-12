@@ -109,3 +109,16 @@ type RetentionRunStatus struct {
 	LastResult             *RetentionSweepResult `json:"last_result,omitempty"`
 	StoreStats             *RetentionStoreStats  `json:"store_stats,omitempty"`
 }
+
+type MemoryNoteHit struct {
+	Key       string    `json:"key"`
+	Content   string    `json:"content"`
+	UpdatedAt time.Time `json:"updated_at"`
+	Score     float64   `json:"score"`
+}
+
+type MemoryNoteCatalogEntry struct {
+	Key            string    `json:"key"`
+	PreviewContent string    `json:"preview_content"`
+	UpdatedAt      time.Time `json:"updated_at"`
+}

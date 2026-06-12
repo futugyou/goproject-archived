@@ -1,6 +1,10 @@
 package core
 
-import "time"
+import (
+	"time"
+
+	"github.com/futugyou/extensions_ai/abstractions/chatcompletion"
+)
 
 type ModelsConfig struct {
 	DefaultProfile *string              `json:"default_profile,omitempty"`
@@ -317,4 +321,30 @@ func DefaultModelEvaluationReport() ModelEvaluationReport {
 		ScenarioIds: make([]string, 0),
 		Profiles:    make([]ModelEvaluationProfileReport, 0),
 	}
+}
+
+type ModelSelectionRequest struct {
+	ExplicitProfileId    string                       `json:"explicit_profile_id"`
+	Session              *Session                     `json:"session"`
+	Messages             []chatcompletion.ChatMessage `json:"messages"`
+	Options              *chatcompletion.ChatOptions  `json:"options"`
+	Streaming            bool                         `json:"streaming"`
+	EstimatedInputTokens int64                        `json:"estimated_input_tokens"`
+	ReservedOutputTokens int                          `json:"reserved_output_tokens"`
+}
+
+type ModelSelectionCandidate struct {
+	Profile        *ModelProfile `json:"profile"`
+	FallbackModels []string      `json:"fallback_models"`
+}
+
+type ModelSelectionResult struct {
+	RequestedProfileId string                      `json:"requested_profile_id"`
+	SelectedProfileId  string                      `json:"selected_profile_id"`
+	ProviderId         string                      `json:"provider_id"`
+	ModelId            string                      `json:"mode_id"`
+	Requirements       *ModelSelectionRequirements `json:"requirements"`
+	Candidates         []ModelSelectionCandidate   `json:"candidates"`
+	PreferredTags      []string                    `json:"preferred_tags"`
+	Explanation        string                      `json:"explanation"`
 }
