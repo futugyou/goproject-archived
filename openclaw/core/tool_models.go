@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"time"
 )
 
 type GovernanceAction int
@@ -341,4 +342,22 @@ type ToolActionDescriptor struct {
 	ApprovalFingerprint *string `json:"approval_fingerprint,omitempty"`
 	RiskLevel           *string `json:"risk_level,omitempty"`
 	ReadOnly            *bool   `json:"read_only,omitempty"`
+}
+
+type ToolApprovalRequest struct {
+	ApprovalId string    `json:"approval_id"`
+	SessionId  string    `json:"session_id"`
+	ChannelId  string    `json:"channel_id"`
+	SenderId   string    `json:"sender_id"`
+	ToolName   string    `json:"tool_name"`
+	Arguments  string    `json:"arguments"`
+	Action     string    `json:"action"`
+	IsMutation bool      `json:"is_mutation"`
+	Summary    string    `json:"summary"`
+	CreatedAt  time.Time `json:"created_at"`
+}
+
+type ToolExecutionContext struct {
+	Session     *Session     `json:"session"`
+	TurnContext *TurnContext `json:"turn_context"`
 }
