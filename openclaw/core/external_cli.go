@@ -396,3 +396,11 @@ func DefaultExternalCliRuntimeEvent() ExternalCliRuntimeEvent {
 		Metadata: make(map[string]string),
 	}
 }
+
+const (
+	ExternalCliPresetCatalogRepoPattern       = "^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$"
+	ExternalCliPresetCatalogNumberPattern     = "^[0-9]+$"
+	ExternalCliPresetCatalogSimpleNamePattern = "^[A-Za-z0-9_.:-]+$"
+)
+
+type ExternalCliPresetCatalog struct{}

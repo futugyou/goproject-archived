@@ -34,9 +34,9 @@ func MediaMarkerExtract(text string) ([]MediaMarker, string) {
 	var remainingLines []string
 
 	normalizedText := strings.ReplaceAll(text, "\r\n", "\n")
-	lines := strings.Split(normalizedText, "\n")
+	lines := strings.SplitSeq(normalizedText, "\n")
 
-	for _, line := range lines {
+	for line := range lines {
 		trimmed := strings.TrimSpace(line)
 		if marker, ok := TryParseMarker(trimmed); ok {
 			markers = append(markers, marker)

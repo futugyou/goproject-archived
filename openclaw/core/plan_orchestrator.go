@@ -25,10 +25,10 @@ func NewPlanExecuteVerifyToolContext() *PlanExecuteVerifyToolContext {
 
 // PlanExecuteVerifyOrchestrator 接口
 type IPlanExecuteVerifyOrchestrator interface {
-	EvaluateToolAsync(ctx context.Context, toolCtx *PlanExecuteVerifyToolContext) (*PlanExecuteVerifyDecision, error)
-	RecordApprovalDecisionAsync(ctx context.Context, run *PlanExecuteVerifyRun, approved bool) error
-	CompleteToolAsync(ctx context.Context, run *PlanExecuteVerifyRun, invocation ToolInvocation) (*PlanExecuteVerifyRun, error)
-	VerifyRunAsync(ctx context.Context, runID string) (*PlanExecuteVerifyRun, error)
+	EvaluateTool(ctx context.Context, toolCtx *PlanExecuteVerifyToolContext) (*PlanExecuteVerifyDecision, error)
+	RecordApprovalDecision(ctx context.Context, run *PlanExecuteVerifyRun, approved bool) error
+	CompleteTool(ctx context.Context, run *PlanExecuteVerifyRun, invocation ToolInvocation) (*PlanExecuteVerifyRun, error)
+	VerifyRun(ctx context.Context, runID string) (*PlanExecuteVerifyRun, error)
 	GetRun(id string) *PlanExecuteVerifyRun
 	ListRuns(limit int) []PlanExecuteVerifyRun
 }
@@ -38,7 +38,7 @@ var NoopPlanExecuteVerifyOrchestratorInstance = &NoopPlanExecuteVerifyOrchestrat
 
 var _ IPlanExecuteVerifyOrchestrator = (*NoopPlanExecuteVerifyOrchestrator)(nil)
 
-func (n *NoopPlanExecuteVerifyOrchestrator) EvaluateToolAsync(ctx context.Context, toolCtx *PlanExecuteVerifyToolContext) (*PlanExecuteVerifyDecision, error) {
+func (n *NoopPlanExecuteVerifyOrchestrator) EvaluateTool(ctx context.Context, toolCtx *PlanExecuteVerifyToolContext) (*PlanExecuteVerifyDecision, error) {
 	return &PlanExecuteVerifyDecision{
 		Decision:                  PlanExecuteVerifyDecisionKindsProceed,
 		RequiresPlanExecuteVerify: false,
@@ -48,15 +48,15 @@ func (n *NoopPlanExecuteVerifyOrchestrator) EvaluateToolAsync(ctx context.Contex
 	}, nil
 }
 
-func (n *NoopPlanExecuteVerifyOrchestrator) RecordApprovalDecisionAsync(ctx context.Context, run *PlanExecuteVerifyRun, approved bool) error {
+func (n *NoopPlanExecuteVerifyOrchestrator) RecordApprovalDecision(ctx context.Context, run *PlanExecuteVerifyRun, approved bool) error {
 	return nil
 }
 
-func (n *NoopPlanExecuteVerifyOrchestrator) CompleteToolAsync(ctx context.Context, run *PlanExecuteVerifyRun, invocation ToolInvocation) (*PlanExecuteVerifyRun, error) {
+func (n *NoopPlanExecuteVerifyOrchestrator) CompleteTool(ctx context.Context, run *PlanExecuteVerifyRun, invocation ToolInvocation) (*PlanExecuteVerifyRun, error) {
 	return run, nil
 }
 
-func (n *NoopPlanExecuteVerifyOrchestrator) VerifyRunAsync(ctx context.Context, runID string) (*PlanExecuteVerifyRun, error) {
+func (n *NoopPlanExecuteVerifyOrchestrator) VerifyRun(ctx context.Context, runID string) (*PlanExecuteVerifyRun, error) {
 	return nil, nil
 }
 

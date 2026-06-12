@@ -361,3 +361,13 @@ type ToolExecutionContext struct {
 	Session     *Session     `json:"session"`
 	TurnContext *TurnContext `json:"turn_context"`
 }
+
+type ToolHookContext struct {
+	SessionId     string `json:"session_id"`
+	ChannelId     string `json:"channel_id"`
+	SenderId      string `json:"sender_id"`
+	CorrelationId string `json:"correlation_id"`
+	ToolName      string `json:"tool_name"`
+	ArgumentsJson string `json:"arguments_json"`
+	IsStreaming   bool   `json:"is_streaming"`
+}
