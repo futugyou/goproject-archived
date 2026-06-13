@@ -35,13 +35,13 @@ type AutomationDefinition struct {
 	DeliveryChannelId           string                `json:"delivery_channel_id"`
 	DeliveryRecipientId         *string               `json:"delivery_recipient_id,omitempty"`
 	DeliverySubject             *string               `json:"delivery_subject,omitempty"`
-	Tags                        []string              `json:"tags"`
+	Tags                        []string              `json:"tags" gorm:"type:text[];not null;default:'{}'"`
 	IsDraft                     bool                  `json:"is_draft"`
 	Source                      string                `json:"source"`
 	TemplateKey                 *string               `json:"template_key,omitempty"`
 	CreatedByLearningProposalId *string               `json:"created_by_learning_proposal_id,omitempty"`
-	Verification                *VerificationPolicy   `json:"verification,omitempty"`
-	RetryPolicy                 AutomationRetryPolicy `json:"retry_policy"`
+	Verification                *VerificationPolicy   `json:"verification,omitempty" gorm:"serializer:json"`
+	RetryPolicy                 AutomationRetryPolicy `json:"retry_policy" gorm:"serializer:json"`
 	CreatedAtUtc                time.Time             `json:"created_at_utc"`
 	UpdatedAtUtc                time.Time             `json:"updated_at_utc"`
 }

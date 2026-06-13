@@ -38,7 +38,7 @@ type IAutomationStore interface {
 	SaveRunState(ctx context.Context, runState AutomationRunState) error
 	ListRunRecords(ctx context.Context, automationId string, limit int) ([]AutomationRunRecord, error)
 	GetRunRecord(ctx context.Context, automationId string, runId string) (*AutomationRunRecord, error)
-	SaveRunRecord(ctx context.Context, runRecord AutomationRunRecord)
+	SaveRunRecord(ctx context.Context, runRecord AutomationRunRecord) error
 	PruneRunRecords(ctx context.Context, automationId string, retainCount int) error
 }
 
