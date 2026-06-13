@@ -23,15 +23,6 @@ func NewPlanExecuteVerifyToolContext() *PlanExecuteVerifyToolContext {
 	}
 }
 
-// PlanExecuteVerifyOrchestrator 接口
-type IPlanExecuteVerifyOrchestrator interface {
-	EvaluateTool(ctx context.Context, toolCtx *PlanExecuteVerifyToolContext) (*PlanExecuteVerifyDecision, error)
-	RecordApprovalDecision(ctx context.Context, run *PlanExecuteVerifyRun, approved bool) error
-	CompleteTool(ctx context.Context, run *PlanExecuteVerifyRun, invocation ToolInvocation) (*PlanExecuteVerifyRun, error)
-	VerifyRun(ctx context.Context, runID string) (*PlanExecuteVerifyRun, error)
-	GetRun(id string) *PlanExecuteVerifyRun
-	ListRuns(limit int) []PlanExecuteVerifyRun
-}
 type NoopPlanExecuteVerifyOrchestrator struct{}
 
 var NoopPlanExecuteVerifyOrchestratorInstance = &NoopPlanExecuteVerifyOrchestrator{}

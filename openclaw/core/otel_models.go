@@ -144,3 +144,24 @@ func (c *TurnContext) String() string {
 		c.TotalToolDuration().Milliseconds(),
 	)
 }
+
+type TurnTokenUsageRecord struct {
+	SessionId                       string                      `json:"session_id"`
+	ChannelId                       string                      `json:"channel_id"`
+	ProviderId                      string                      `json:"provider_id"`
+	ModelId                         string                      `json:"model_id"`
+	InputTokens                     int64                       `json:"input_tokens"`
+	OutputTokens                    int64                       `json:"output_tokens"`
+	CacheReadTokens                 int64                       `json:"cache_read_tokens"`
+	CacheWriteTokens                int64                       `json:"cache_write_tokens"`
+	EstimatedInputTokensByComponent InputTokenComponentEstimate `json:"estimated_input_tokens_by_component"`
+	IsEstimated                     bool                        `json:"is_estimated"`
+	TimestampUtc                    time.Time                   `json:"timestamp_utc"`
+}
+
+// DefaultTurnTokenUsageRecord 创建一个带有默认 UTC 时间的结构体实例
+func DefaultTurnTokenUsageRecord() *TurnTokenUsageRecord {
+	return &TurnTokenUsageRecord{
+		TimestampUtc: time.Now().UTC(),
+	}
+}

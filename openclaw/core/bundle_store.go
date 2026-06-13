@@ -17,13 +17,6 @@ import (
 	"github.com/google/uuid"
 )
 
-type IEvidenceBundleStore interface {
-	Save(ctx context.Context, bundle EvidenceBundle) error
-	Get(ctx context.Context, id string) (*EvidenceBundle, error)
-	List(ctx context.Context, query EvidenceBundleListQuery) ([]EvidenceBundle, error)
-	Delete(ctx context.Context, id string) error
-}
-
 var _ IEvidenceBundleStore = (*FileEvidenceBundleStore)(nil)
 
 type FileEvidenceBundleStore struct {
