@@ -47,14 +47,14 @@ func (t *ToolTestRecordStore) Save(ctx context.Context, toolName string, succeed
 		message = message[:1000]
 	}
 	now := time.Now().UTC()
-	data := ToolTestRecord{
-		Name:              toolName,
-		LastTestSucceeded: succeeded,
-		LastTestedAt:      &now,
-		LastTestError:     message,
-		LastTestMode:      mode,
-	}
+	data := &ToolTestRecord{}
 	return t.db.Where(ToolTestRecord{Name: toolName}).
-		Assign(data).
+		Assign(map[string]any{
+			"name":                toolName,
+			"last_test_succeeded": succeeded,
+			"last_tested_at":      now,
+			"last_test_error":     message,
+			"last_test_mode":      mode,
+		}).
 		FirstOrCreate(data).Error
 }

@@ -54,7 +54,6 @@ func (p *AgentProfileStore) Save(ctx context.Context, profile *models.AgentProfi
 		updateData.UpdatedAt = time.Now().UTC()
 
 		return tx.Where(AgentProfileEntity{Name: entity.Name}).
-			Attrs(models.AgentProfile{UpdatedAt: entity.UpdatedAt}).
 			Assign(updateData).
 			FirstOrCreate(entity).Error
 	})
@@ -115,12 +114,11 @@ func (p *AgentProfileStore) toEntity(entity *models.AgentProfile) *AgentProfileE
 }
 
 func (p *AgentProfileStore) GetDefault(ctx context.Context) (*models.AgentProfile, error) {
-	entity, err := gorm.G[AgentProfileEntity](p.db).Where("is_default = ? and is_enabled and kind ", true, true, models.ProfileKindStandard).First(ctx)
+	entity, err := gorm.G[AgentProfileEntity](p.db).Where("is_default = ? and is_enabled = ? and kind = ?", true, true, models.ProfileKindStandard).First(ctx)
 	if err != nil {
 		if !errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, err
 		}
-
 	}
 
 	if len(entity.Name) > 0 {

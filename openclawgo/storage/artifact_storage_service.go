@@ -117,7 +117,6 @@ func (a *ArtifactStorageService) CreateArtifact(ctx context.Context, jobId, jobR
 
 	a.storeContent(artifact, content)
 	a.db.Save(&artifact)
-	a.db.Save(&artifact)
 
 	if a.notifier != nil {
 		a.notifier.NotifyArtifactCreated(artifact.JobId, artifact.JobRunId, artifact.Id)
