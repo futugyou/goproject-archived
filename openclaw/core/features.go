@@ -13,6 +13,36 @@ type PostgresFeatureStore struct {
 	db *gorm.DB
 }
 
+// DeleteProfile implements [IUserProfileStore].
+func (s *PostgresFeatureStore) DeleteProfile(ctx context.Context, actorId string) error {
+	_, err := gorm.G[UserProfile](s.db).Where("actor_id = ?", actorId).Delete(ctx)
+	return err
+}
+
+// GetProfile implements [IUserProfileStore].
+func (s *PostgresFeatureStore) GetProfile(ctx context.Context, actorId string) (*UserProfile, error) {
+	ad, err := gorm.G[UserProfile](s.db).Where("actor_id = ?", actorId).First(ctx)
+	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, err
+	}
+	return &ad, err
+}
+
+// ListProfiles implements [IUserProfileStore].
+func (s *PostgresFeatureStore) ListProfiles(ctx context.Context) ([]UserProfile, error) {
+	return gorm.G[UserProfile](s.db).Find(ctx)
+}
+
+// SaveProfile implements [IUserProfileStore].
+func (s *PostgresFeatureStore) SaveProfile(ctx context.Context, profile UserProfile) error {
+	return s.db.WithContext(ctx).
+		Clauses(clause.OnConflict{
+			Columns:   []clause.Column{{Name: "actor_id"}},
+			UpdateAll: true,
+		}).
+		Create(&profile).Error
+}
+
 func NewPostgresFeatureStore(db *gorm.DB) (*PostgresFeatureStore, error) {
 	store := &PostgresFeatureStore{db: db}
 	if err := store.initialize(); err != nil {
@@ -124,3 +154,4 @@ func (p *PostgresFeatureStore) SaveRunState(ctx context.Context, runState Automa
 }
 
 var _ IAutomationStore = (*PostgresFeatureStore)(nil)
+var _ IUserProfileStore = (*PostgresFeatureStore)(nil)
