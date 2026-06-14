@@ -13,6 +13,60 @@ type PostgresFeatureStore struct {
 	db *gorm.DB
 }
 
+// DeleteAccount implements [IConnectedAccountStore].
+func (s *PostgresFeatureStore) DeleteAccount(ctx context.Context, accountID string) error {
+	_, err := gorm.G[ConnectedAccount](s.db).Where("id = ?", accountID).Delete(ctx)
+	return err
+}
+
+// GetAccount implements [IConnectedAccountStore].
+func (s *PostgresFeatureStore) GetAccount(ctx context.Context, accountID string) (*ConnectedAccount, error) {
+	ad, err := gorm.G[ConnectedAccount](s.db).Where("id = ?", accountID).First(ctx)
+	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, err
+	}
+	return &ad, err
+}
+
+// ListAccounts implements [IConnectedAccountStore].
+func (s *PostgresFeatureStore) ListAccounts(ctx context.Context) ([]ConnectedAccount, error) {
+	return gorm.G[ConnectedAccount](s.db).Find(ctx)
+}
+
+// SaveAccount implements [IConnectedAccountStore].
+func (s *PostgresFeatureStore) SaveAccount(ctx context.Context, account ConnectedAccount) error {
+	return s.db.WithContext(ctx).
+		Clauses(clause.OnConflict{
+			Columns:   []clause.Column{{Name: "id"}},
+			UpdateAll: true,
+		}).
+		Create(&account).Error
+}
+
+// GetProposal implements [ILearningProposalStore].
+func (s *PostgresFeatureStore) GetProposal(ctx context.Context, proposalId string) (*LearningProposal, error) {
+	ad, err := gorm.G[LearningProposal](s.db).Where("id = ?", proposalId).First(ctx)
+	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, err
+	}
+	return &ad, err
+}
+
+// ListProposals implements [ILearningProposalStore].
+func (s *PostgresFeatureStore) ListProposals(ctx context.Context, status *string, kind *string) ([]LearningProposal, error) {
+	return gorm.G[LearningProposal](s.db).Find(ctx)
+}
+
+// SaveProposal implements [ILearningProposalStore].
+func (s *PostgresFeatureStore) SaveProposal(ctx context.Context, proposal *LearningProposal) error {
+	return s.db.WithContext(ctx).
+		Clauses(clause.OnConflict{
+			Columns:   []clause.Column{{Name: "id"}},
+			UpdateAll: true,
+		}).
+		Create(proposal).Error
+}
+
 // DeleteProfile implements [IUserProfileStore].
 func (s *PostgresFeatureStore) DeleteProfile(ctx context.Context, actorId string) error {
 	_, err := gorm.G[UserProfile](s.db).Where("actor_id = ?", actorId).Delete(ctx)
@@ -155,3 +209,5 @@ func (p *PostgresFeatureStore) SaveRunState(ctx context.Context, runState Automa
 
 var _ IAutomationStore = (*PostgresFeatureStore)(nil)
 var _ IUserProfileStore = (*PostgresFeatureStore)(nil)
+var _ ILearningProposalStore = (*PostgresFeatureStore)(nil)
+var _ IConnectedAccountStore = (*PostgresFeatureStore)(nil)
