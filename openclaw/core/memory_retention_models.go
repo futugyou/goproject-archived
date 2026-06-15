@@ -122,3 +122,10 @@ type MemoryNoteCatalogEntry struct {
 	PreviewContent string    `json:"preview_content"`
 	UpdatedAt      time.Time `json:"updated_at"`
 }
+
+type Note struct {
+	Key       string `gorm:"primaryKey"`
+	Content   string `gorm:"type:text"`
+	UpdatedAt int64  `gorm:"index"`
+	Embedding string `gorm:"type:vector(1536)"`
+}

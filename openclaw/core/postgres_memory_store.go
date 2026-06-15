@@ -5,17 +5,25 @@ import (
 	"errors"
 	"time"
 
+	"github.com/futugyou/extensions_ai/abstractions/embeddings"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
 
 type PostgresMemoryStore struct {
-	db            *gorm.DB
-	enableVectors bool
+	db                 *gorm.DB
+	enableVectors      bool
+	ftsEnabled         bool
+	embeddingGenerator embeddings.IEmbeddingGenerator[string, embeddings.EmbeddingT[float64]]
 }
 
-func NewPostgresMemoryStore(db *gorm.DB, enableVectors bool) (*PostgresMemoryStore, error) {
-	store := &PostgresMemoryStore{db: db, enableVectors: enableVectors}
+func NewPostgresMemoryStore(db *gorm.DB, enableVectors, ftsEnabled bool, embeddingGenerator embeddings.IEmbeddingGenerator[string, embeddings.EmbeddingT[float64]]) (*PostgresMemoryStore, error) {
+	store := &PostgresMemoryStore{
+		db:                 db,
+		enableVectors:      enableVectors,
+		ftsEnabled:         ftsEnabled,
+		embeddingGenerator: embeddingGenerator,
+	}
 	if err := store.initialize(); err != nil {
 		return nil, err
 	}
@@ -28,6 +36,70 @@ func (s *PostgresMemoryStore) initialize() error {
 		&SessionBranch{},
 		&MemoryNoteHit{},
 	)
+}
+
+// SearchNotes implements [IMemoryNoteSearch].
+func (s *PostgresMemoryStore) SearchNotes(ctx context.Context, query string, prefix *string, limit int) ([]MemoryNoteHit, error) {
+	prefixstr := ""
+	if prefix != nil {
+		prefixstr = *prefix
+	}
+	// Clamp 到 [1, 50]
+	if limit < 1 {
+		limit = 1
+	} else if limit > 50 {
+		limit = 50
+	}
+	var hits []MemoryNoteHit
+	tx := s.db.WithContext(ctx).Model(&Note{})
+
+	// 模式 1: 混合检索 (FTS + Vector)
+	if s.ftsEnabled && s.enableVectors {
+		emb, err := s.embeddingGenerator.Generate(ctx, []string{query}, nil)
+		if err != nil {
+			return hits, nil
+		}
+		var queryEmbedding []float64
+		if emb.Count() > 0 {
+			queryEmbedding = emb.Get(0).Vector
+		}
+
+		// Postgres 混合得分 SQL:
+		// 1. ts_rank 计算文本相关性 (0 到 1 之间)
+		// 2. (1 - (n.embedding <=> $1)) 计算余弦相似度 (1 减去余弦距离)
+		err = tx.Select(`
+            key, content, updated_at,
+            (ts_rank(to_tsvector('english', content), plainto_tsquery('english', ?)) * 0.4 + 
+            (1.0 - (embedding <=> ?)) * 0.6) AS score`, query, queryEmbedding).
+			Where("key LIKE ?", prefixstr+"%").
+			Where("to_tsvector('english', content) @@ plainto_tsquery('english', ?)", query).
+			Order("score DESC").
+			Limit(limit).
+			Find(&hits).Error
+
+		return hits, err
+	}
+
+	// 模式 2: 纯 Postgres FTS 全文检索
+	if s.ftsEnabled {
+		err := tx.Select("key, content, updated_at, ts_rank(to_tsvector('english', content), plainto_tsquery('english', ?)) AS score", query).
+			Where("key LIKE ?", prefixstr+"%").
+			Where("to_tsvector('english', content) @@ plainto_tsquery('english', ?)", query).
+			Order("score DESC, updated_at DESC").
+			Limit(limit).
+			Find(&hits).Error
+		return hits, err
+	}
+
+	// 模式 3: 基础模糊搜索 (LIKE)
+	err := tx.Select("key, content, updated_at, 1.0 AS score").
+		Where("key LIKE ?", prefixstr+"%").
+		Where("(key ILIKE ? OR content ILIKE ?)", "%"+query+"%", "%"+query+"%").
+		Order("updated_at DESC").
+		Limit(limit).
+		Find(&hits).Error
+
+	return hits, err
 }
 
 // DeleteBranch implements [IMemoryStore].
@@ -142,3 +214,4 @@ func (s *PostgresMemoryStore) SaveSession(ctx context.Context, session Session) 
 }
 
 var _ IMemoryStore = (*PostgresMemoryStore)(nil)
+var _ IMemoryNoteSearch = (*PostgresMemoryStore)(nil)
