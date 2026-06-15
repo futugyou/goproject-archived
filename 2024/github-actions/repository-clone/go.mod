@@ -3,7 +3,7 @@ module github.com/futugyou/repository-clone-action
 go 1.26.4
 
 require (
-	github.com/bitfield/script v0.24.2
+	github.com/bitfield/script v0.24.3
 	github.com/google/go-github/v53 v53.2.0
 	golang.org/x/oauth2 v0.36.0
 )
