@@ -3,6 +3,7 @@ package core
 import (
 	"context"
 	"errors"
+	"fmt"
 	"time"
 
 	"github.com/futugyou/extensions_ai/abstractions/embeddings"
@@ -57,27 +58,29 @@ func (s *PostgresMemoryStore) SearchNotes(ctx context.Context, query string, pre
 	if s.ftsEnabled && s.enableVectors {
 		emb, err := s.embeddingGenerator.Generate(ctx, []string{query}, nil)
 		if err != nil {
-			return hits, nil
+			fmt.Println(err.Error())
 		}
 		var queryEmbedding []float64
-		if emb.Count() > 0 {
+		if err == nil && emb.Count() > 0 {
 			queryEmbedding = emb.Get(0).Vector
 		}
 
-		// Postgres 混合得分 SQL:
-		// 1. ts_rank 计算文本相关性 (0 到 1 之间)
-		// 2. (1 - (n.embedding <=> $1)) 计算余弦相似度 (1 减去余弦距离)
-		err = tx.Select(`
+		if len(queryEmbedding) > 0 {
+			// Postgres 混合得分 SQL:
+			// 1. ts_rank 计算文本相关性 (0 到 1 之间)
+			// 2. (1 - (n.embedding <=> $1)) 计算余弦相似度 (1 减去余弦距离)
+			err = tx.Select(`
             key, content, updated_at,
             (ts_rank(to_tsvector('english', content), plainto_tsquery('english', ?)) * 0.4 + 
             (1.0 - (embedding <=> ?)) * 0.6) AS score`, query, queryEmbedding).
-			Where("key LIKE ?", prefixstr+"%").
-			Where("to_tsvector('english', content) @@ plainto_tsquery('english', ?)", query).
-			Order("score DESC").
-			Limit(limit).
-			Find(&hits).Error
+				Where("key LIKE ?", prefixstr+"%").
+				Where("to_tsvector('english', content) @@ plainto_tsquery('english', ?)", query).
+				Order("score DESC").
+				Limit(limit).
+				Find(&hits).Error
 
-		return hits, err
+			return hits, err
+		}
 	}
 
 	// 模式 2: 纯 Postgres FTS 全文检索
