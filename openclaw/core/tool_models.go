@@ -121,7 +121,7 @@ type ToolGovernanceConfig struct {
 	Provider                          string  `json:"provider"`
 	SidecarBaseUrl                    *string `json:"sidecar_base_url,omitempty"`
 	DecisionEndpoint                  string  `json:"decision_endpoint"`
-	ResultEndpoint                    *string `json:"result_endpoint,omitempty"`
+	ResultEndpoint                    string  `json:"result_endpoint"`
 	TimeoutMs                         int     `json:"timeout_ms"`
 	AuditResults                      bool    `json:"audit_results"`
 	FailClosed                        bool    `json:"fail_closed"`
@@ -144,7 +144,7 @@ func DefaultToolGovernanceConfig() ToolGovernanceConfig {
 
 type GovernanceDecision struct {
 	Allowed                  bool             `json:"allowed"`
-	Reason                   *string          `json:"reason,omitempty"`
+	Reason                   string           `json:"reason,omitempty"`
 	TrustScore               *float64         `json:"trust_score,omitempty"`
 	PolicyId                 *string          `json:"policy_id,omitempty"`
 	RuleId                   *string          `json:"rule_id,omitempty"`
@@ -155,14 +155,14 @@ type GovernanceDecision struct {
 	ReplacementArgumentsJson *string          `json:"replacement_arguments_json,omitempty"`
 }
 
-func DefaultGovernanceDecision() GovernanceDecision {
-	return GovernanceDecision{
+func DefaultGovernanceDecision() *GovernanceDecision {
+	return &GovernanceDecision{
 		Action: GovernanceActionAllow,
 	}
 }
 
-func NewGovernanceDecisionAllow(reason *string) GovernanceDecision {
-	return GovernanceDecision{
+func NewGovernanceDecisionAllow(reason string) *GovernanceDecision {
+	return &GovernanceDecision{
 		Allowed: true,
 		Action:  GovernanceActionAllow,
 		Reason:  reason,
@@ -235,28 +235,28 @@ type ToolGovernanceSidecarRequest struct {
 
 type ToolGovernanceSidecarResponse struct {
 	Allowed                  *bool    `json:"allowed,omitempty"`
-	Reason                   *string  `json:"reason,omitempty"`
+	Reason                   string   `json:"reason"`
 	TrustScore               *float64 `json:"trust_score,omitempty"`
 	PolicyId                 *string  `json:"policy_id,omitempty"`
 	RuleId                   *string  `json:"rule_id,omitempty"`
-	Action                   *string  `json:"action,omitempty"`
+	Action                   string   `json:"action"`
 	EvaluationMs             *float64 `json:"evaluation_ms,omitempty"`
 	RedactedArgumentsJson    *string  `json:"redacted_arguments_json,omitempty"`
 	ReplacementArgumentsJson *string  `json:"replacement_arguments_json,omitempty"`
 }
 
 type ToolGovernanceSidecarResultRequest struct {
-	AgentId        string                        `json:"agent_id"`
-	ConversationId string                        `json:"conversation_id"`
-	SessionId      string                        `json:"session_id"`
-	ChannelId      string                        `json:"channel_id"`
-	UserId         string                        `json:"user_id"`
-	TraceId        string                        `json:"trace_id"`
-	CallId         *string                       `json:"call_id,omitempty"`
-	ToolName       string                        `json:"tool_name"`
-	Descriptor     ToolGovernanceDescriptor      `json:"descriptor"`
-	Decision       GovernanceDecision            `json:"decision"`
-	Result         ToolGovernanceExecutionResult `json:"result"`
+	AgentId        string                         `json:"agent_id"`
+	ConversationId string                         `json:"conversation_id"`
+	SessionId      string                         `json:"session_id"`
+	ChannelId      string                         `json:"channel_id"`
+	UserId         string                         `json:"user_id"`
+	TraceId        string                         `json:"trace_id"`
+	CallId         *string                        `json:"call_id,omitempty"`
+	ToolName       string                         `json:"tool_name"`
+	Descriptor     ToolGovernanceDescriptor       `json:"descriptor"`
+	Decision       *GovernanceDecision            `json:"decision"`
+	Result         *ToolGovernanceExecutionResult `json:"result"`
 }
 
 type CaseInsensitiveSet map[string]struct{}
