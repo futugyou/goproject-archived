@@ -82,11 +82,11 @@ type StructuredMemoryExportResult struct {
 	Path      string                      `json:"path"`
 	Mode      string                      `json:"mode"`
 	Title     *string                     `json:"title,omitempty"`
-	Content   *string                     `json:"content,omitempty"`
+	Content   string                      `json:"content"`
 	Sources   []StructuredMemorySourceRef `json:"sources"`
 	CharCount int                         `json:"char_count"`
 	Truncated bool                        `json:"truncated"`
-	Error     *string                     `json:"error,omitempty"`
+	Error     string                      `json:"error,omitempty"`
 }
 
 func DefaultStructuredMemoryExportResult() *StructuredMemoryExportResult {
@@ -129,7 +129,7 @@ type StructuredMemorySourceRef struct {
 	Path            string     `json:"path"`
 	Title           *string    `json:"title,omitempty"`
 	FileName        *string    `json:"file_name,omitempty"`
-	SourcePath      *string    `json:"source_path,omitempty"`
+	SourcePath      string     `json:"source_path"`
 	SectionHeading  *string    `json:"section_heading,omitempty"`
 	StartLine       *int       `json:"start_line,omitempty"`
 	EndLine         *int       `json:"end_line,omitempty"`

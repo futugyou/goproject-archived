@@ -131,19 +131,19 @@ func DefaultPromptCacheTraceConfig() PromptCacheTraceConfig {
 }
 
 type MemoryConfig struct {
-	Provider             string                `json:"provider"`
-	StoragePath          string                `json:"storage_path"`
-	MaxHistoryTurns      int                   `json:"max_history_turns"`
-	MaxCachedSessions    *int                  `json:"max_cached_sessions"`
-	Sqlite               MemorySqliteConfig    `json:"sqlite"`
-	Mempalace            MemoryMempalaceConfig `json:"mempalace"`
-	Fractal              FractalMemoryConfig   `json:"fractal"`
-	Recall               MemoryRecallConfig    `json:"recall"`
-	Retention            MemoryRetentionConfig `json:"retention"`
-	EnableCompaction     bool                  `json:"enable_compaction"`
-	CompactionThreshold  int                   `json:"compaction_threshold"`
-	CompactionKeepRecent int                   `json:"compaction_keep_recent"`
-	ProjectId            *string               `json:"project_id"`
+	Provider             string                 `json:"provider"`
+	StoragePath          string                 `json:"storage_path"`
+	MaxHistoryTurns      int                    `json:"max_history_turns"`
+	MaxCachedSessions    *int                   `json:"max_cached_sessions"`
+	Sqlite               *MemorySqliteConfig    `json:"sqlite"`
+	Mempalace            *MemoryMempalaceConfig `json:"mempalace"`
+	Fractal              *FractalMemoryConfig   `json:"fractal"`
+	Recall               *MemoryRecallConfig    `json:"recall"`
+	Retention            *MemoryRetentionConfig `json:"retention"`
+	EnableCompaction     bool                   `json:"enable_compaction"`
+	CompactionThreshold  int                    `json:"compaction_threshold"`
+	CompactionKeepRecent int                    `json:"compaction_keep_recent"`
+	ProjectId            *string                `json:"project_id"`
 }
 
 func DefaultMemoryConfig() MemoryConfig {
@@ -170,8 +170,8 @@ type MemoryRetentionConfig struct {
 	MaxItemsPerSweep     int    `json:"max_items_per_sweep"`
 }
 
-func DefaultMemoryRetentionConfig() MemoryRetentionConfig {
-	return MemoryRetentionConfig{
+func DefaultMemoryRetentionConfig() *MemoryRetentionConfig {
+	return &MemoryRetentionConfig{
 		Enabled:              false,
 		RunOnStartup:         true,
 		SweepIntervalMinutes: 30,
