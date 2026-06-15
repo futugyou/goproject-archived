@@ -101,16 +101,10 @@ func (cb *ContextBudgetPlanner) BuildContext(
 		}
 
 		if contentBudget == 0 {
-			limit := len(markerRunes)
-			if maxChars < limit {
-				limit = maxChars
-			}
+			limit := min(maxChars, len(markerRunes))
 			contextStr = string(markerRunes[:limit])
 		} else {
-			limit := len(contextRunes)
-			if limit > contentBudget {
-				limit = contentBudget
-			}
+			limit := min(len(contextRunes), contentBudget)
 			trimmed := strings.TrimRight(string(contextRunes[:limit]), " \t\n\r")
 			contextStr = trimmed + marker
 		}
@@ -179,10 +173,7 @@ func (cb *ContextBudgetPlanner) buildContextBlock(export *StructuredMemoryExport
 
 	if len(export.Sources) > 0 {
 		sb.WriteString("Source labels:\n")
-		limit := len(export.Sources)
-		if limit > 20 {
-			limit = 20
-		}
+		limit := min(len(export.Sources), 20)
 		for _, source := range export.Sources[:limit] {
 			label := source.SourcePath
 			if strings.TrimSpace(label) == "" {
@@ -193,7 +184,7 @@ func (cb *ContextBudgetPlanner) buildContextBlock(export *StructuredMemoryExport
 			if source.StartLine != nil && source.EndLine != nil {
 				line = fmt.Sprintf(":%d-%d", *source.StartLine, *source.EndLine)
 			}
-			sb.WriteString(fmt.Sprintf("- %s%s\n", label, line))
+			fmt.Fprintf(&sb, "- %s%s\n", label, line)
 		}
 		sb.WriteString("\n")
 	}
@@ -209,10 +200,7 @@ func (cb *ContextBudgetPlanner) buildContextBlock(export *StructuredMemoryExport
 
 func (cb *ContextBudgetPlanner) resolveMaxChars(request *StructuredMemoryContextRequest, config *FractalMemoryConfig) int {
 	safeTokenChars := func(tokens int) int64 {
-		t := int64(tokens)
-		if t < 1 {
-			t = 1
-		}
+		t := max(int64(tokens), 1)
 		return t * TokenCharEstimate
 	}
 
@@ -230,10 +218,7 @@ func (cb *ContextBudgetPlanner) resolveMaxChars(request *StructuredMemoryContext
 	}
 	maxTokenChars := safeTokenChars(reqMaxTokens)
 
-	configMaxChars := int64(config.MaxContextChars)
-	if configMaxChars < 1 {
-		configMaxChars = 1
-	}
+	configMaxChars := max(int64(config.MaxContextChars), 1)
 	configTokenChars := safeTokenChars(config.MaxContextTokens)
 
 	// Math.Min 逻辑
