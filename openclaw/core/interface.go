@@ -292,3 +292,10 @@ type IToolWithContext interface {
 type ITurnTokenUsageObserver interface {
 	RecordTurn(record TurnTokenUsageRecord)
 }
+
+type IMessageMiddleware interface {
+	/// <summary>Display name for logging/diagnostics.</summary>
+	GetName() string
+
+	Invoke(ctx context.Context, messageContext *MessageContext, next func(context.Context) error)
+}
