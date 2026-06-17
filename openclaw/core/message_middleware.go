@@ -183,3 +183,71 @@ func (r *RateLimitMiddleware) cleanupStaleWindows(now time.Time, rateWindowCutof
 		return true // 继续迭代下一个
 	})
 }
+
+var _ IMessageMiddleware = (*TokenBudgetMiddleware)(nil)
+
+type CostCheckerFunc func(sessionID, channelID, senderID string) (maxCost, currentCost float64, exceeded bool)
+
+type TokenBudgetMiddleware struct {
+	maxTokensPerSession int64
+	costChecker         CostCheckerFunc
+	logger              *slog.Logger
+}
+
+func NewTokenBudgetMiddleware(maxTokensPerSession int64, logger *slog.Logger, costChecker CostCheckerFunc) *TokenBudgetMiddleware {
+	if logger == nil {
+		logger = slog.Default()
+	}
+	return &TokenBudgetMiddleware{
+		maxTokensPerSession: maxTokensPerSession,
+		costChecker:         costChecker,
+		logger:              logger,
+	}
+}
+
+func (m *TokenBudgetMiddleware) GetName() string {
+	return "TokenBudget"
+}
+
+func (m *TokenBudgetMiddleware) Invoke(ctx context.Context, messageContext *MessageContext, next func(context.Context) error) error {
+	// 1. Token 预算检查
+	if m.maxTokensPerSession > 0 {
+		total := messageContext.SessionInputTokens + messageContext.SessionOutputTokens
+		if total >= m.maxTokensPerSession {
+			m.logger.Warn("Token budget exceeded",
+				slog.String("Channel", messageContext.ChannelId),
+				slog.String("Sender", messageContext.SenderId),
+				slog.Int64("Total", total),
+				slog.Int64("Max", m.maxTokensPerSession),
+			)
+
+			messageContext.ShortCircuit(fmt.Sprintf(
+				"This session has reached its token budget (%d/%d tokens). Please start a new conversation.",
+				total, m.maxTokensPerSession,
+			))
+			return nil // 熔断，不再调用 next()
+		}
+	}
+
+	// 2. USD 成本预算检查
+	if m.costChecker != nil {
+		maxCost, currentCost, exceeded := m.costChecker(messageContext.SessionId, messageContext.ChannelId, messageContext.SenderId)
+		if exceeded {
+			m.logger.Warn("Cost budget exceeded",
+				slog.String("Channel", messageContext.ChannelId),
+				slog.String("Sender", messageContext.SenderId),
+				slog.Float64("Current", currentCost),
+				slog.Float64("Max", maxCost),
+			)
+
+			messageContext.ShortCircuit(fmt.Sprintf(
+				"This session has reached its cost budget ($%.2f/$%.2f USD). Please start a new conversation or adjust the contract budget.",
+				currentCost, maxCost,
+			))
+			return nil // 熔断，不再调用 next()
+		}
+	}
+
+	// 3. 继续执行下一个中间件
+	return next(ctx)
+}
