@@ -297,5 +297,5 @@ type IMessageMiddleware interface {
 	/// <summary>Display name for logging/diagnostics.</summary>
 	GetName() string
 
-	Invoke(ctx context.Context, messageContext *MessageContext, next func(context.Context) error)
+	Invoke(ctx context.Context, messageContext *MessageContext, next func(context.Context) error) error
 }
