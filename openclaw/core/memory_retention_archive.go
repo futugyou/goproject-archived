@@ -36,8 +36,8 @@ type ArchivePayloadMetadata struct {
 	Payload       json.RawMessage `json:"payload"`
 }
 
-// ArchivePayloadAsync 将 Payload 异步/安全地归档到磁盘
-func (m *MemoryRetentionArchive) ArchivePayloadAsync(
+// ArchivePayload 将 Payload 异步/安全地归档到磁盘
+func (m *MemoryRetentionArchive) ArchivePayload(
 	ctx context.Context,
 	archiveRoot string,
 	nowUtc time.Time,

@@ -57,7 +57,7 @@ func NewFileContactStore(basePath string) (*FileContactStore, error) {
 	}, nil
 }
 
-// GetAsync 获取指定电话的联系人
+// Get 获取指定电话的联系人
 func (f *FileContactStore) Get(ctx context.Context, phoneE164 string) (*Contact, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
@@ -78,7 +78,7 @@ func (f *FileContactStore) Get(ctx context.Context, phoneE164 string) (*Contact,
 	return nil, nil
 }
 
-// TouchAsync 触碰/更新联系人的活跃时间
+// Touch 触碰/更新联系人的活跃时间
 func (f *FileContactStore) Touch(ctx context.Context, phoneE164 string) (Contact, error) {
 	if err := ctx.Err(); err != nil {
 		return Contact{}, err
@@ -108,7 +108,7 @@ func (f *FileContactStore) Touch(ctx context.Context, phoneE164 string) (Contact
 	return contact, nil
 }
 
-// SetDoNotTextAsync 设置免打扰状态
+// SetDoNotText 设置免打扰状态
 func (f *FileContactStore) SetDoNotText(ctx context.Context, phoneE164 string, doNotText bool) error {
 	if err := ctx.Err(); err != nil {
 		return err
@@ -135,7 +135,7 @@ func (f *FileContactStore) SetDoNotText(ctx context.Context, phoneE164 string, d
 	return f.saveUnsafe(ctx, state)
 }
 
-// loadUnsafeAsync 内部加载方法（无锁保护，需外层加锁）
+// loadUnsafe 内部加载方法（无锁保护，需外层加锁）
 func (f *FileContactStore) loadUnsafe(ctx context.Context) (ContactStoreState, error) {
 	if err := ctx.Err(); err != nil {
 		return DefaultContactStoreState(), err
@@ -160,7 +160,7 @@ func (f *FileContactStore) loadUnsafe(ctx context.Context) (ContactStoreState, e
 	return state, nil
 }
 
-// saveUnsafeAsync 内部保存方法（无锁保护，需外层加锁）
+// saveUnsafe 内部保存方法（无锁保护，需外层加锁）
 func (f *FileContactStore) saveUnsafe(ctx context.Context, state ContactStoreState) error {
 	if err := ctx.Err(); err != nil {
 		return err
