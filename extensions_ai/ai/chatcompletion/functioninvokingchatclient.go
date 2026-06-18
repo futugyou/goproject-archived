@@ -431,7 +431,7 @@ func (c *FunctionInvokingChatClient) GetResponse(ctx context.Context, chatMessag
 		responseMessages = append(responseMessages, response.Messages...)
 
 		if response.Usage != nil {
-			totalUsage.AddUsageDetails(*response.Usage)
+			totalUsage.Add(response.Usage)
 		}
 
 		if !requiresFunctionInvocation {

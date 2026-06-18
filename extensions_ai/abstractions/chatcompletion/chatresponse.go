@@ -42,11 +42,11 @@ func (c *ChatResponse) Text() string {
 }
 
 func ConcatMessagesContents(contents []ChatMessage) string {
-	var text string
+	var text strings.Builder
 	for _, content := range contents {
-		text += content.Text()
+		text.WriteString(content.Text())
 	}
-	return text
+	return text.String()
 }
 
 func (c *ChatResponse) ToChatResponseUpdates() []ChatResponseUpdate {
@@ -191,7 +191,7 @@ func ToChatResponse(updates []ChatResponseUpdate) ChatResponse {
 		for _, con := range update.Contents {
 			switch c := con.(type) {
 			case contents.UsageContent:
-				response.Usage.AddUsageDetails(c.Details)
+				response.Usage.Add(&c.Details)
 			default:
 				message.Contents = append(message.Contents, c)
 			}

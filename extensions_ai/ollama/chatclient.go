@@ -482,10 +482,10 @@ func ParseOllamaChatResponseUsage(chatResponse OllamaChatResponse) *abstractions
 		}
 
 		return &abstractions.UsageDetails{
-			InputTokenCount:      chatResponse.PromptEvalCount,
-			OutputTokenCount:     chatResponse.EvalCount,
-			TotalTokenCount:      &p,
-			AdditionalProperties: metadata,
+			InputTokenCount:  chatResponse.PromptEvalCount,
+			OutputTokenCount: chatResponse.EvalCount,
+			TotalTokenCount:  &p,
+			AdditionalCounts: metadata,
 		}
 	}
 

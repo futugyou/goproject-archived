@@ -332,10 +332,10 @@ func ToChatResponseUpdate(response *rawopenai.ChatCompletionChunk) *chatcompleti
 		result.Contents = append(result.Contents, contents.UsageContent{
 			AIContent: contents.NewAIContent(nil, nil),
 			Details: abstractions.UsageDetails{
-				InputTokenCount:      &response.Usage.PromptTokens,
-				OutputTokenCount:     &response.Usage.CompletionTokens,
-				TotalTokenCount:      &response.Usage.TotalTokens,
-				AdditionalProperties: map[string]int64{},
+				InputTokenCount:  &response.Usage.PromptTokens,
+				OutputTokenCount: &response.Usage.CompletionTokens,
+				TotalTokenCount:  &response.Usage.TotalTokens,
+				AdditionalCounts: map[string]int64{},
 			},
 		})
 	}
@@ -536,10 +536,10 @@ func GetUsageContentStep(runUsage rawopenai.RunStepUsage) contents.UsageContent 
 	return contents.UsageContent{
 		AIContent: contents.NewAIContent(nil, nil),
 		Details: abstractions.UsageDetails{
-			InputTokenCount:      &runUsage.PromptTokens,
-			OutputTokenCount:     &runUsage.CompletionTokens,
-			TotalTokenCount:      &runUsage.TotalTokens,
-			AdditionalProperties: map[string]int64{},
+			InputTokenCount:  &runUsage.PromptTokens,
+			OutputTokenCount: &runUsage.CompletionTokens,
+			TotalTokenCount:  &runUsage.TotalTokens,
+			AdditionalCounts: map[string]int64{},
 		},
 	}
 }
@@ -548,10 +548,10 @@ func GetUsageContent(runUsage rawopenai.RunUsage) contents.UsageContent {
 	return contents.UsageContent{
 		AIContent: contents.NewAIContent(nil, nil),
 		Details: abstractions.UsageDetails{
-			InputTokenCount:      &runUsage.PromptTokens,
-			OutputTokenCount:     &runUsage.CompletionTokens,
-			TotalTokenCount:      &runUsage.TotalTokens,
-			AdditionalProperties: map[string]int64{},
+			InputTokenCount:  &runUsage.PromptTokens,
+			OutputTokenCount: &runUsage.CompletionTokens,
+			TotalTokenCount:  &runUsage.TotalTokens,
+			AdditionalCounts: map[string]int64{},
 		},
 	}
 }

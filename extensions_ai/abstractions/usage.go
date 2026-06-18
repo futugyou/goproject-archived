@@ -1,52 +1,60 @@
 package abstractions
 
 type UsageDetails struct {
-	InputTokenCount      *int64           `json:"inputTokenCount,omitempty"`
-	OutputTokenCount     *int64           `json:"outputTokenCount,omitempty"`
-	TotalTokenCount      *int64           `json:"totalTokenCount,omitempty"`
-	AdditionalProperties map[string]int64 `json:"additionalProperties,omitempty"`
+	InputTokenCount       *int64           `json:"input_token_count,omitempty"`
+	OutputTokenCount      *int64           `json:"output_token_count,omitempty"`
+	TotalTokenCount       *int64           `json:"total_token_count,omitempty"`
+	CachedInputTokenCount *int64           `json:"cached_input_token_count,omitempty"`
+	ReasoningTokenCount   *int64           `json:"reasoning_token_count,omitempty"`
+	InputAudioTokenCount  *int64           `json:"input_audio_token_count,omitempty"`
+	InputTextTokenCount   *int64           `json:"input_text_token_count,omitempty"`
+	OutputAudioTokenCount *int64           `json:"output_audio_token_count,omitempty"`
+	OutputTextTokenCount  *int64           `json:"output_text_token_count,omitempty"`
+	AdditionalCounts      map[string]int64 `json:"additional_counts,omitempty"`
 }
 
-func (u *UsageDetails) AddUsageDetails(usage UsageDetails) {
-	if u == nil {
-		u = &UsageDetails{
-			InputTokenCount:      new(int64),
-			OutputTokenCount:     new(int64),
-			TotalTokenCount:      new(int64),
-			AdditionalProperties: map[string]int64{},
-		}
+func DefaultUsageDetails() *UsageDetails {
+	return &UsageDetails{
+		AdditionalCounts: make(map[string]int64),
+	}
+}
+
+// Add 将另一个 UsageDetails 的数据累加到当前实例中
+func (u *UsageDetails) Add(usage *UsageDetails) {
+	if usage == nil {
+		return
 	}
 
-	if usage.InputTokenCount != nil {
-		if u.InputTokenCount == nil {
-			u.InputTokenCount = new(int64)
+	u.InputTokenCount = nullableSum(u.InputTokenCount, usage.InputTokenCount)
+	u.OutputTokenCount = nullableSum(u.OutputTokenCount, usage.OutputTokenCount)
+	u.TotalTokenCount = nullableSum(u.TotalTokenCount, usage.TotalTokenCount)
+	u.CachedInputTokenCount = nullableSum(u.CachedInputTokenCount, usage.CachedInputTokenCount)
+	u.ReasoningTokenCount = nullableSum(u.ReasoningTokenCount, usage.ReasoningTokenCount)
+	u.InputAudioTokenCount = nullableSum(u.InputAudioTokenCount, usage.InputAudioTokenCount)
+	u.InputTextTokenCount = nullableSum(u.InputTextTokenCount, usage.InputTextTokenCount)
+	u.OutputAudioTokenCount = nullableSum(u.OutputAudioTokenCount, usage.OutputAudioTokenCount)
+	u.OutputTextTokenCount = nullableSum(u.OutputTextTokenCount, usage.OutputTextTokenCount)
+
+	if len(usage.AdditionalCounts) > 0 {
+		if u.AdditionalCounts == nil {
+			u.AdditionalCounts = make(map[string]int64)
 		}
-		*u.InputTokenCount += *usage.InputTokenCount
-	}
-
-	if usage.OutputTokenCount != nil {
-		if u.OutputTokenCount == nil {
-			u.OutputTokenCount = new(int64)
-		}
-		*u.OutputTokenCount += *usage.OutputTokenCount
-	}
-
-	if usage.TotalTokenCount != nil {
-		if u.TotalTokenCount == nil {
-			u.TotalTokenCount = new(int64)
-		}
-		*u.TotalTokenCount += *usage.TotalTokenCount
-	}
-
-	if u.AdditionalProperties == nil {
-		u.AdditionalProperties = make(map[string]int64)
-	}
-
-	for key, value := range usage.AdditionalProperties {
-		if existingValue, exists := u.AdditionalProperties[key]; exists {
-			u.AdditionalProperties[key] = existingValue + value
-		} else {
-			u.AdditionalProperties[key] = value
+		for k, v := range usage.AdditionalCounts {
+			u.AdditionalCounts[k] += v
 		}
 	}
+}
+
+func nullableSum(a, b *int64) *int64 {
+	if a == nil && b == nil {
+		return nil
+	}
+	var sum int64
+	if a != nil {
+		sum += *a
+	}
+	if b != nil {
+		sum += *b
+	}
+	return &sum
 }

@@ -103,9 +103,9 @@ func ToGeneratedEmbeddingsResponse(embeddingResponse OllamaEmbeddingResponse, re
 	var useage abstractions.UsageDetails
 	if len(metadata) > 0 || embeddingResponse.PromptEvalCount != nil {
 		useage = abstractions.UsageDetails{
-			InputTokenCount:      embeddingResponse.PromptEvalCount,
-			TotalTokenCount:      embeddingResponse.PromptEvalCount,
-			AdditionalProperties: metadata,
+			InputTokenCount:  embeddingResponse.PromptEvalCount,
+			TotalTokenCount:  embeddingResponse.PromptEvalCount,
+			AdditionalCounts: metadata,
 		}
 	}
 	embeddinggs := []embeddings.EmbeddingT[float64]{}
