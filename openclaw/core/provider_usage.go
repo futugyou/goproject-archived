@@ -1,10 +1,15 @@
 package core
 
 import (
+	"context"
 	"slices"
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/metric"
+	"go.opentelemetry.io/otel/trace"
 )
 
 type ProviderUsageSnapshot struct {
@@ -494,4 +499,54 @@ func (m *RuntimeMetrics) Snapshot() MetricsSnapshot {
 		CircuitBreakerState:               m.CircuitBreakerState(),
 		RetainedProcesses:                 m.RetainedProcesses(),
 	}
+}
+
+var (
+	Tracer                trace.Tracer
+	Meter                 metric.Meter
+	ToolExecutionDuration metric.Float64Histogram
+	RateLimitExceeded     metric.Int64Counter
+)
+
+func init() {
+	// 初始化 Tracer 和 Meter
+	Tracer = otel.Tracer("OpenClaw.Gateway", trace.WithInstrumentationVersion("1.0.0"))
+	Meter = otel.Meter("OpenClaw.Gateway", metric.WithInstrumentationVersion("1.0.0"))
+
+	var err error
+
+	// 初始化直方图 (Histogram)
+	ToolExecutionDuration, err = Meter.Float64Histogram(
+		"openclaw.tool.execution.duration",
+		metric.WithDescription("Duration of tool executions in milliseconds"),
+		metric.WithUnit("ms"),
+	)
+	if err != nil {
+		// Go 的最佳实践：通常在启动初始化失败时 panic，或者记录日志
+		panic(err)
+	}
+
+	// 初始化计数器 (Counter)
+	RateLimitExceeded, err = Meter.Int64Counter(
+		"openclaw.ratelimit.exceeded",
+		metric.WithDescription("Number of requests blocked by rate limiting"),
+	)
+	if err != nil {
+		panic(err)
+	}
+}
+
+// RegisterApprovalQueueGauge 注册一个观察指针（Gauge），用于报告当前审批队列的深度。
+// 在启动时、ToolApprovalService 构造完成后调用一次。
+func RegisterApprovalQueueGauge(observeFunc func() int) error {
+	_, err := Meter.Int64ObservableGauge(
+		"openclaw.approval.queue.depth",
+		metric.WithDescription("Number of pending tool approval requests"),
+		metric.WithInt64Callback(func(_ context.Context, obs metric.Int64Observer) error {
+			// 调用传入的闭包函数获取最新的队列深度并上报
+			obs.Observe(int64(observeFunc()))
+			return nil
+		}),
+	)
+	return err
 }
