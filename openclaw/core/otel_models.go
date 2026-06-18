@@ -9,6 +9,8 @@ import (
 	"time"
 
 	"go.opentelemetry.io/otel/trace"
+
+	"github.com/futugyou/extensions_ai/abstractions"
 )
 
 type TurnContext struct {
@@ -163,5 +165,57 @@ type TurnTokenUsageRecord struct {
 func DefaultTurnTokenUsageRecord() *TurnTokenUsageRecord {
 	return &TurnTokenUsageRecord{
 		TimestampUtc: time.Now().UTC(),
+	}
+}
+
+type PromptCacheUsage struct {
+	CacheReadTokens  int64
+	CacheWriteTokens int64
+}
+
+var promptCacheCacheWriteKeys = []string{
+	"cache_write_tokens",
+	"cacheWriteTokens",
+	"cache_creation_input_tokens",
+	"cacheCreationInputTokens",
+}
+
+type PromptCacheUsageExtractor struct {
+}
+
+func (p *PromptCacheUsageExtractor) FromUsage(usage *abstractions.UsageDetails) *PromptCacheUsage {
+	if usage == nil {
+		return &PromptCacheUsage{}
+	}
+
+	var cacheRead = usage.CachedInputTokenCount
+	var cacheWrite int64 = 0
+	if usage.AdditionalCounts != nil {
+		for _, key := range promptCacheCacheWriteKeys {
+			if value, ok := usage.AdditionalCounts[key]; ok {
+				cacheWrite = value
+				break
+			}
+		}
+	}
+
+	return &PromptCacheUsage{
+		CacheReadTokens:  *cacheRead,
+		CacheWriteTokens: cacheWrite,
+	}
+}
+
+func (p *PromptCacheUsageExtractor) Merge(items []PromptCacheUsage) *PromptCacheUsage {
+
+	var cacheRead int64 = 0
+	var cacheWrite int64 = 0
+	for _, item := range items {
+		cacheRead += item.CacheReadTokens
+		cacheWrite += item.CacheWriteTokens
+	}
+
+	return &PromptCacheUsage{
+		CacheReadTokens:  cacheRead,
+		CacheWriteTokens: cacheWrite,
 	}
 }
