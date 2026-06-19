@@ -5,10 +5,13 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"math"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -476,8 +479,81 @@ func (t *ToolAuditLog) SnapshotRecent(limit int) []*ToolAuditEntry {
 	}
 
 	result := make([]*ToolAuditEntry, count)
-	for i := 0; i < count; i++ {
+	for i := range count {
 		result[i] = t.recent[len(t.recent)-count+1]
 	}
 	return result
+}
+
+type toolUsageCounter struct {
+	Calls           atomic.Int64
+	Failures        atomic.Int64
+	Timeouts        atomic.Int64
+	TotalDurationMs atomic.Int64
+}
+
+type ToolUsageTracker struct {
+	usage sync.Map
+}
+
+func (t *ToolUsageTracker) RecordToolCall(toolName string, duration time.Duration, failed, timedOut bool) error {
+	counter, _ := t.usage.LoadOrStore(toolName, &toolUsageCounter{})
+	tuc := counter.(*toolUsageCounter)
+	tuc.Calls.Add(1)
+	if failed {
+		tuc.Failures.Add(1)
+	}
+	if timedOut {
+		tuc.Timeouts.Add(1)
+	}
+	var rawDuration int64
+	var newRaw int64
+	for {
+		totalDurationMs := tuc.TotalDurationMs.Load()
+		if atomic.CompareAndSwapInt64(&totalDurationMs, rawDuration, newRaw) {
+			break
+		}
+
+		rawDuration := tuc.TotalDurationMs.Load()
+		current := math.Float64frombits(uint64(rawDuration))
+		updated := current + float64(duration.Microseconds())
+		newRaw = int64(math.Float64bits(updated))
+	}
+	return nil
+}
+
+func (t *ToolUsageTracker) Snapshot() []ToolUsageSnapshot {
+	var snapshots []ToolUsageSnapshot
+
+	t.usage.Range(func(key, value any) bool {
+		toolName := key.(string)
+		counter := value.(*toolUsageCounter)
+
+		calls := counter.Calls.Load()
+		failures := counter.Failures.Load()
+		timeouts := counter.Timeouts.Load()
+
+		durationBits := counter.TotalDurationMs.Load()
+		totalDurationMs := math.Float64frombits(uint64(durationBits))
+		totalDurationMs = float64(durationBits)
+
+		snapshots = append(snapshots, ToolUsageSnapshot{
+			ToolName:        toolName,
+			Calls:           calls,
+			Failures:        failures,
+			Timeouts:        timeouts,
+			TotalDurationMs: totalDurationMs,
+		})
+
+		return true
+	})
+
+	sort.Slice(snapshots, func(i, j int) bool {
+		if snapshots[i].Calls != snapshots[j].Calls {
+			return snapshots[i].Calls > snapshots[j].Calls
+		}
+		return snapshots[i].ToolName < snapshots[j].ToolName
+	})
+
+	return snapshots
 }
