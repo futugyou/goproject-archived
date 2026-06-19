@@ -563,7 +563,7 @@ type TurnTokenUsageAuditLog struct {
 	filePath                  string
 	lineQueue                 chan string
 	wg                        sync.WaitGroup
-	disposed                  int32
+	disposed                  atomic.Int32
 }
 
 func NewTurnTokenUsageAuditLog(filePath string, auditQueueCapacity int) *TurnTokenUsageAuditLog {
@@ -602,7 +602,7 @@ func NewTurnTokenUsageAuditLog(filePath string, auditQueueCapacity int) *TurnTok
 // RecordTurn implements [ITurnTokenUsageObserver].
 func (l *TurnTokenUsageAuditLog) RecordTurn(record TurnTokenUsageRecord) {
 	// 检查是否已被释放/关闭
-	if atomic.LoadInt32(&l.disposed) != 0 {
+	if l.disposed.Load() != 0 {
 		return
 	}
 
@@ -625,14 +625,14 @@ func (l *TurnTokenUsageAuditLog) RecordTurn(record TurnTokenUsageRecord) {
 		}
 	}()
 
-	if atomic.LoadInt32(&l.disposed) == 0 {
+	if l.disposed.Load() == 0 {
 		l.lineQueue <- string(jsonData)
 	}
 }
 
 func (l *TurnTokenUsageAuditLog) Close() {
 	// 使用原子操作确保只执行一次关闭
-	if !atomic.CompareAndSwapInt32(&l.disposed, 0, 1) {
+	if !l.disposed.CompareAndSwap(0, 1) {
 		return
 	}
 
@@ -667,5 +667,18 @@ func (l *TurnTokenUsageAuditLog) writeLoop() {
 		if err != nil {
 			log.Printf("Failed to append turn token usage entry to %s: %v\n", l.filePath, err)
 		}
+	}
+}
+
+var _ ITurnTokenUsageObserver = (*CompositeTurnTokenUsageObserver)(nil)
+
+type CompositeTurnTokenUsageObserver struct {
+	observers []ITurnTokenUsageObserver
+}
+
+// RecordTurn implements [ITurnTokenUsageObserver].
+func (c *CompositeTurnTokenUsageObserver) RecordTurn(record TurnTokenUsageRecord) {
+	for _, observer := range c.observers {
+		observer.RecordTurn(record)
 	}
 }
