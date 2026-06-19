@@ -1,6 +1,9 @@
 package core
 
 import (
+	"context"
+	"fmt"
+	"sync"
 	"sync/atomic"
 	"time"
 )
@@ -405,4 +408,177 @@ type SessionSearchHit struct {
 type SessionSearchResult struct {
 	Query SessionSearchQuery `json:"query"`
 	Items []SessionSearchHit `json:"items"`
+}
+
+type SessionManager struct {
+	active                    sync.Map
+	admissionGate             sync.Mutex
+	activeCount               atomic.Int64
+	store                     IMemoryStore
+	timeout                   time.Duration
+	metrics                   *RuntimeMetrics
+	backgroundPersistSequence atomic.Int64
+	maxSessions               int
+}
+
+func (s *SessionManager) SweepExpiredActiveSessions() int {
+	var removedCount = 0
+	s.active.Range(func(key, value any) bool {
+		session := value.(*Session)
+		if session.LastActiveAt.Add(s.timeout).Before(time.Now().UTC()) {
+			session.State = SessionStateExpired
+			s.active.Delete(key)
+			s.activeCount.Add(-1)
+			removedCount++
+			s.metrics.IncrementSessionEvictions()
+			s.queueBestEffortPersist(session)
+		}
+		return true
+	})
+
+	return removedCount
+}
+
+func (s *SessionManager) evictLeastRecentlyActive() {
+	if s.maxSessions <= 0 {
+		return
+	}
+	var maxAttempts = s.maxSessions + 1
+	var attempts = 0
+
+	for {
+		if s.activeCount.Load() < int64(s.maxSessions) {
+			break
+		}
+		attempts++
+		if attempts > maxAttempts {
+			return
+		}
+
+		oldestKey := ""
+		oldestAt := time.Date(9999, time.December, 31, 23, 59, 59, 999999999, time.UTC)
+
+		s.active.Range(func(key, value any) bool {
+			session := value.(*Session)
+			if session.LastActiveAt.Before(oldestAt) {
+				oldestAt = session.LastActiveAt
+				oldestKey = key.(string)
+			}
+			return true
+		})
+
+		if oldestKey == "" {
+			return
+		}
+
+		if actual, ok := s.active.Load(oldestKey); ok {
+			s.active.Delete(oldestKey)
+			session := actual.(*Session)
+			session.State = SessionStateExpired
+			s.activeCount.Add(-1)
+			s.metrics.IncrementSessionEvictions()
+			s.queueBestEffortPersist(session)
+		} else {
+			return
+		}
+	}
+}
+
+func (s *SessionManager) queueBestEffortPersist(session *Session) {
+	// opId := s.backgroundPersistSequence.Add(1)
+	// TODO
+}
+
+func (s *SessionManager) ensureCapacityForAdmission() error {
+	if s.maxSessions <= 0 {
+		return nil
+	}
+
+	if s.activeCount.Load() >= (int64)(s.maxSessions) {
+		s.SweepExpiredActiveSessions()
+	}
+
+	if s.activeCount.Load() >= (int64)(s.maxSessions) {
+		s.evictLeastRecentlyActive()
+	}
+
+	if s.activeCount.Load() >= (int64)(s.maxSessions) {
+		s.metrics.IncrementSessionCapacityRejects()
+		return fmt.Errorf("maximum concurrent sessions limit (%d) has been reached.", s.maxSessions)
+	}
+	return nil
+}
+
+func (s *SessionManager) GetOrCreateById(ctx context.Context, sessionId, channelId, senderId string) (*Session, error) {
+	if len(sessionId) == 0 {
+		return nil, fmt.Errorf("sessionId must be set")
+	}
+
+	key := sessionId
+	now := time.Now().UTC()
+
+	// 1. 第一阶段：快路径（无锁检查 TryGetValue）
+	if actual, ok := s.active.Load(key); ok {
+		session := actual.(*Session)
+		session.LastActiveAt = now
+		return session, nil
+	}
+
+	// 2. 第二阶段：慢路径（加锁，防止缓存击穿）
+	s.admissionGate.Lock()
+	defer s.admissionGate.Unlock()
+
+	// 二次检查（Double-check）：防止在等待锁期间，别的线程已经把数据放进去了
+	if actual, ok := s.active.Load(key); ok {
+		session := actual.(*Session)
+		session.LastActiveAt = now
+		return session, nil
+	}
+
+	// 3. 从底层存储加载
+	session, err := s.store.GetSession(ctx, key)
+	if err != nil {
+		return nil, err
+	}
+
+	if session != nil {
+		session.LastActiveAt = now
+		session.State = SessionStateActive
+		s.ensureCapacityForAdmission()
+
+		// LoadOrStore 如果返回 loaded == true，说明在我们读库的空窗期，别人捷足先登了
+		actual, loaded := s.active.LoadOrStore(key, session)
+		if !loaded {
+			// loaded == false，说明 TryAdd 成功！我们读到的 session 变成了正统实例
+			s.activeCount.Add(1)
+			return session, nil
+		}
+
+		// loaded == true，说明 TryAdd 失败，有人抢先占坑了。
+		canonical := actual.(*Session)
+		canonical.LastActiveAt = now
+		return canonical, nil
+	}
+
+	// 4. 数据库中没有，创建新 Session
+	s.ensureCapacityForAdmission()
+
+	created := &Session{
+		Id:           key,
+		ChannelId:    channelId,
+		SenderId:     senderId,
+		LastActiveAt: now,
+	}
+
+	actual, loaded := s.active.LoadOrStore(key, created)
+	if !loaded {
+		// TryAdd 成功
+		s.activeCount.Add(1)
+		return created, nil
+	}
+
+	// TryAdd 失败，有人在我们创建期间塞进去了，用别人的
+	canonical := actual.(*Session)
+	canonical.LastActiveAt = now
+	return canonical, nil
 }
