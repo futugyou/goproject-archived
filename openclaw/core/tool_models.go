@@ -4,7 +4,11 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"log/slog"
+	"os"
+	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -370,4 +374,110 @@ type ToolHookContext struct {
 	ToolName      string `json:"tool_name"`
 	ArgumentsJson string `json:"arguments_json"`
 	IsStreaming   bool   `json:"is_streaming"`
+}
+
+type ToolAuditEntry struct {
+	TimestampUtc           time.Time `json:"timestamp_utc"`
+	ToolName               string    `json:"tool_name"`
+	SessionId              string    `json:"session_id"`
+	ChannelId              string    `json:"channel_id"`
+	SenderId               string    `json:"sender_id"`
+	CorrelationId          string    `json:"crrelation_id"`
+	DurationMs             float64   `json:"duration_ms"`
+	Failed                 bool      `json:"failed"`
+	TimedOut               bool      `json:"timed_out"`
+	ApprovalId             string    `json:"approval_id"`
+	ArgumentsBytes         int       `json:"arguments_bytes"`
+	ResultBytes            int       `json:"result_bytes"`
+	GovernanceAllowed      bool      `json:"governance_allowed"`
+	GovernanceAction       string    `json:"governance_action"`
+	GovernanceReason       string    `json:"governance_reason"`
+	GovernancePolicyId     string    `json:"governance_policy_id"`
+	GovernanceRuleId       string    `json:"governance_rule_id"`
+	GovernanceTrustScore   float64   `json:"governance_trust_score"`
+	GovernanceEvaluationMs float64   `json:"governance_evaluation_ms"`
+	GovernanceUnavailable  bool      `json:"governance_unavailable"`
+}
+
+type ToolAuditLog struct {
+	filePath             string
+	logger               *slog.Logger
+	recent               []*ToolAuditEntry
+	recentBufferCapacity int
+	lock                 sync.Mutex
+}
+
+func NewToolAuditLog(path string, logger *slog.Logger) *ToolAuditLog {
+	if logger == nil {
+		logger = slog.Default()
+	}
+
+	if len(path) > 0 {
+		dir := filepath.Dir(path)
+		os.MkdirAll(dir, 0755)
+	}
+
+	return &ToolAuditLog{
+		filePath:             path,
+		logger:               logger,
+		recent:               []*ToolAuditEntry{},
+		recentBufferCapacity: 256,
+	}
+}
+
+func (t *ToolAuditLog) Record(entry *ToolAuditEntry) error {
+	if entry == nil {
+		return nil
+	}
+
+	var filePath string
+	t.lock.Lock()
+
+	if len(t.recent) >= t.recentBufferCapacity && len(t.recent) > 0 {
+		t.recent[0] = nil
+		t.recent = t.recent[1:]
+	}
+
+	t.recent = append(t.recent, entry)
+	filePath = t.filePath
+	t.lock.Unlock()
+
+	if filePath == "" {
+		return nil
+	}
+
+	d, err := json.Marshal(entry)
+	if err != nil {
+		return fmt.Errorf("json marshal failed: %w", err)
+	}
+	d = append(d, '\n')
+
+	// O_CREATE: 不存在则创建 | O_WRONLY: 只写 | O_APPEND: 追加
+	f, err := os.OpenFile(filePath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0666)
+	if err != nil {
+		return fmt.Errorf("open file failed: %w", err)
+	}
+	defer f.Close()
+
+	if _, err := f.Write(d); err != nil {
+		return fmt.Errorf("write file failed: %w", err)
+	}
+
+	return nil
+}
+
+func (t *ToolAuditLog) SnapshotRecent(limit int) []*ToolAuditEntry {
+	t.lock.Lock()
+	defer t.lock.Unlock()
+
+	count := min(limit, len(t.recent))
+	if count <= 0 {
+		return []*ToolAuditEntry{}
+	}
+
+	result := make([]*ToolAuditEntry, count)
+	for i := 0; i < count; i++ {
+		result[i] = t.recent[len(t.recent)-count+1]
+	}
+	return result
 }
