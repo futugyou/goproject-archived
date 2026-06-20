@@ -420,6 +420,7 @@ type SessionManager struct {
 	store                     IMemoryStore
 	timeout                   time.Duration
 	metrics                   *RuntimeMetrics
+	backgroundPersists        sync.Map
 	backgroundPersistSequence atomic.Int64
 	maxSessions               int
 }
@@ -488,8 +489,27 @@ func (s *SessionManager) evictLeastRecentlyActive() {
 }
 
 func (s *SessionManager) queueBestEffortPersist(session *Session) {
-	// opId := s.backgroundPersistSequence.Add(1)
-	// TODO
+	opId := s.backgroundPersistSequence.Add(1)
+	taskDone := make(chan struct{})
+	s.backgroundPersists.Store(opId, taskDone)
+
+	go func() {
+		defer func() {
+			close(taskDone)
+			s.backgroundPersists.Delete(opId)
+		}()
+
+		s.Persist(context.Background(), session, false)
+	}()
+}
+
+func (sm *SessionManager) Close() {
+	// 遍历所有还在后台运行的任务，并等待它们结束
+	sm.backgroundPersists.Range(func(key, value any) bool {
+		taskDone := value.(chan struct{})
+		<-taskDone // 阻塞等待该后台任务结束
+		return true
+	})
 }
 
 func (s *SessionManager) ensureCapacityForAdmission() error {
@@ -641,6 +661,43 @@ func (s *SessionManager) Persist(ctx context.Context, session *Session, sessionL
 	}
 
 	return nil
+}
+
+func (s *SessionManager) Branch(ctx context.Context, session *Session, branchName string) (string, error) {
+	sessionLock, err := s.AcquireSessionLock(ctx, session.Id)
+	if err != nil {
+		return "", err
+	}
+	defer sessionLock.Dispose()
+
+	var branchId = fmt.Sprintf("%s:branch:%s:%d", session.Id, branchName, time.Now().UTC().Unix())
+	var branch = SessionBranch{
+		BranchId:  branchId,
+		SessionId: session.Id,
+		Name:      branchName,
+		History:   session.History,
+	}
+	return branchId, s.store.SaveBranch(ctx, branch)
+}
+
+func (s *SessionManager) RestoreBranch(ctx context.Context, session *Session, branchId string) bool {
+	sessionLock, err := s.AcquireSessionLock(ctx, session.Id)
+	if err != nil {
+		return false
+	}
+	defer sessionLock.Dispose()
+
+	branch, err := s.store.LoadBranch(ctx, branchId)
+	if err != nil {
+		return false
+	}
+	if branch.SessionId != session.Id {
+		return false
+	}
+
+	session.History = branch.History
+	session.LastActiveAt = time.Now().UTC()
+	return true
 }
 
 type SessionLockLease struct {
