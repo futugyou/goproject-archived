@@ -771,7 +771,107 @@ func (s *SessionManager) summarizeTurn(turn ChatTurn) string {
 }
 
 func (s *SessionManager) turnsEqual(left ChatTurn, right ChatTurn) bool {
-	panic("unimplemented")
+	if left.Role != right.Role || left.Content != right.Content {
+		return false
+	}
+
+	leftCalls := left.ToolCalls
+	rightCalls := right.ToolCalls
+
+	if len(leftCalls) == 0 && len(rightCalls) == 0 {
+		return true
+	}
+
+	if len(leftCalls) != len(rightCalls) {
+		return false
+	}
+
+	for i := range leftCalls {
+		l := leftCalls[i]
+		r := rightCalls[i]
+
+		if l.ToolName != r.ToolName || l.Arguments != r.Arguments || l.Result != r.Result {
+			return false
+		}
+	}
+
+	return true
+}
+
+func (s *SessionManager) ListActive(ctx context.Context) ([]Session, error) {
+	sessions := []Session{}
+	s.active.Range(func(key, value any) bool {
+		session := value.(*Session)
+		sessions = append(sessions, *session)
+		return true
+	})
+	return sessions, nil
+}
+
+func (s *SessionManager) TryGetActive(channelId, senderId string) (*Session, error) {
+	var key = fmt.Sprintf("%s:%s", channelId, senderId)
+	value, ok := s.active.Load(key)
+	if !ok {
+		return nil, errors.New("data no exists")
+	}
+	return value.(*Session), nil
+}
+
+func (s *SessionManager) TryGetActiveById(sessionId string) (*Session, error) {
+	sessions := []*Session{}
+	s.active.Range(func(key, value any) bool {
+		session := value.(*Session)
+		if session.Id == sessionId {
+			sessions = append(sessions, session)
+			return false
+		}
+		return true
+	})
+
+	if len(sessions) > 0 {
+		return sessions[0], nil
+	}
+	return nil, errors.New("data no exists")
+}
+
+func (s *SessionManager) TryGetActiveByContractId(contractId string) (*Session, error) {
+	sessions := []*Session{}
+	s.active.Range(func(key, value any) bool {
+		session := value.(*Session)
+		if session.ContractPolicy != nil && session.ContractPolicy.ID == contractId {
+			sessions = append(sessions, session)
+			return false
+		}
+		return true
+	})
+
+	if len(sessions) > 0 {
+		return sessions[0], nil
+	}
+	return nil, errors.New("data no exists")
+}
+
+func (s *SessionManager) Load(ctx context.Context, sessionId string) (*Session, error) {
+	value, ok := s.active.Load(sessionId)
+	if ok {
+		return value.(*Session), nil
+	}
+
+	return s.store.GetSession(ctx, sessionId)
+}
+
+func (s *SessionManager) RemoveActive(sessionId string) bool {
+	if len(sessionId) == 0 {
+		return false
+	}
+
+	if _, ok := s.active.Load(sessionId); ok {
+		s.active.Delete(sessionId)
+		s.activeCount.Add(-1)
+		return true
+	}
+
+	return false
 }
 
 type SessionLockLease struct {
