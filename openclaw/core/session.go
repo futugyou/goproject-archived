@@ -424,6 +424,7 @@ type SessionManager struct {
 	backgroundPersists        sync.Map
 	backgroundPersistSequence atomic.Int64
 	maxSessions               int
+	disposeStarted            atomic.Int32
 }
 
 func (s *SessionManager) SweepExpiredActiveSessions() int {
@@ -505,12 +506,18 @@ func (s *SessionManager) queueBestEffortPersist(session *Session) {
 }
 
 func (sm *SessionManager) Close() {
+	if !sm.disposeStarted.CompareAndSwap(0, 1) {
+		return
+	}
+
 	// 遍历所有还在后台运行的任务，并等待它们结束
 	sm.backgroundPersists.Range(func(key, value any) bool {
 		taskDone := value.(chan struct{})
 		<-taskDone // 阻塞等待该后台任务结束
 		return true
 	})
+
+	sm.DisposeSessionLocks()
 }
 
 func (s *SessionManager) ensureCapacityForAdmission() error {
@@ -872,6 +879,88 @@ func (s *SessionManager) RemoveActive(sessionId string) bool {
 	}
 
 	return false
+}
+
+func (s *SessionManager) IsActive(sessionKey string) bool {
+	_, ok := s.active.Load(sessionKey)
+	return ok
+}
+
+func (s *SessionManager) ActiveCount() int64 {
+	return s.activeCount.Load()
+}
+
+func (s *SessionManager) CleanupSessionLocksOnce(now time.Time, orphanThreshold time.Duration) {
+	s.sessionLocks.Range(func(key, value any) bool {
+		sessionKey := key.(string)
+		ch := value.(chan struct{})
+		s.lockLastUsed.Store(sessionKey, now)
+
+		if s.IsActive(sessionKey) {
+			s.lockLastUsed.Store(sessionKey, now)
+			return true
+		}
+		var lastUsed time.Time
+		if val, ok := s.lockLastUsed.Load(sessionKey); ok {
+			lastUsed = val.(time.Time)
+		} else {
+			lastUsed = now
+		}
+
+		isOrphaned := now.Sub(lastUsed) > orphanThreshold
+		if !isOrphaned {
+			return true
+		}
+
+		select {
+		case ch <- struct{}{}:
+		default:
+			return true
+		}
+
+		removed := false
+		defer func() {
+			if !removed {
+				select {
+				case <-ch:
+				default:
+				}
+			}
+		}()
+
+		if s.IsActive(sessionKey) {
+			s.lockLastUsed.Store(sessionKey, now)
+			return true
+		}
+
+		if actualVal, loaded := s.sessionLocks.LoadAndDelete(sessionKey); loaded {
+			removed = true
+			s.lockLastUsed.Delete(sessionKey)
+			close(actualVal.(chan struct{}))
+		}
+
+		return true
+	})
+}
+
+func (s *SessionManager) DisposeSessionLocks() {
+	s.sessionLocks.Range(func(key, value any) bool {
+		sessionKey := key.(string)
+		if actualVal, loaded := s.sessionLocks.LoadAndDelete(sessionKey); loaded {
+			ch := actualVal.(chan struct{})
+			func() {
+				defer func() {
+					if r := recover(); r != nil {
+					}
+				}()
+				close(ch)
+			}()
+		}
+
+		return true
+	})
+
+	s.lockLastUsed.Clear()
 }
 
 type SessionLockLease struct {
