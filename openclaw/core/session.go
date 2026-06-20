@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sync"
 	"sync/atomic"
@@ -412,6 +413,8 @@ type SessionSearchResult struct {
 
 type SessionManager struct {
 	active                    sync.Map
+	lockLastUsed              sync.Map
+	sessionLocks              sync.Map
 	admissionGate             sync.Mutex
 	activeCount               atomic.Int64
 	store                     IMemoryStore
@@ -581,4 +584,78 @@ func (s *SessionManager) GetOrCreateById(ctx context.Context, sessionId, channel
 	canonical := actual.(*Session)
 	canonical.LastActiveAt = now
 	return canonical, nil
+}
+
+func (s *SessionManager) AcquireSessionLock(ctx context.Context, sessionId string) (*SessionLockLease, error) {
+	if len(sessionId) == 0 {
+		return nil, errors.New("sessionId must be set")
+	}
+
+	actual, _ := s.sessionLocks.LoadOrStore(sessionId, make(chan struct{}, 1))
+	gate := actual.(chan struct{})
+
+	select {
+	case gate <- struct{}{}:
+		// 成功把数据塞进去了，代表成功拿到锁
+	case <-ctx.Done():
+		// 如果外面取消了上下文（超时或取消），直接返回错误
+		return nil, ctx.Err()
+	}
+
+	s.lockLastUsed.Store(sessionId, time.Now().UTC())
+
+	lease := &SessionLockLease{
+		owner:     s,
+		sessionID: sessionId,
+		gate:      gate,
+	}
+	return lease, nil
+}
+
+func (s *SessionManager) Persist(ctx context.Context, session *Session, sessionLockHeld bool) error {
+	if session == nil {
+		return errors.New("session can not be nil")
+	}
+
+	if sessionLockHeld {
+		if l, err := s.AcquireSessionLock(ctx, session.Id); err == nil {
+			l.Dispose()
+		}
+	}
+
+	MaxRetries := 3
+	delay := time.Duration(100) * time.Millisecond
+
+	for i := 0; i <= MaxRetries; i++ {
+		if err := s.store.SaveSession(ctx, *session); err != nil {
+			if i < MaxRetries {
+				time.Sleep(delay)
+				delay *= 2
+				continue
+			} else {
+				return err
+			}
+		}
+
+		return nil
+	}
+
+	return nil
+}
+
+type SessionLockLease struct {
+	owner     *SessionManager
+	sessionID string
+	gate      chan struct{}
+	once      sync.Once
+}
+
+func (s *SessionLockLease) Dispose() {
+	s.once.Do(func() {
+		s.owner.lockLastUsed.Store(s.sessionID, time.Now().UTC())
+		select {
+		case <-s.gate:
+		default:
+		}
+	})
 }
