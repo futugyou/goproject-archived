@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -698,6 +699,79 @@ func (s *SessionManager) RestoreBranch(ctx context.Context, session *Session, br
 	session.History = branch.History
 	session.LastActiveAt = time.Now().UTC()
 	return true
+}
+
+func (s *SessionManager) ListBranches(ctx context.Context, sessionId string) ([]SessionBranch, error) {
+	return s.store.ListBranches(ctx, sessionId)
+}
+
+func (s *SessionManager) BuildBranchDiff(ctx context.Context, session *Session, branchId string, metadata *SessionMetadataSnapshot) (*SessionDiffResponse, error) {
+	sessionLock, err := s.AcquireSessionLock(ctx, session.Id)
+	if err != nil {
+		return nil, err
+	}
+	defer sessionLock.Dispose()
+
+	branch, err := s.store.LoadBranch(ctx, branchId)
+	if err != nil {
+		return nil, err
+	}
+	if branch.SessionId != session.Id {
+		return nil, errors.New("session data error")
+	}
+
+	var sharedPrefix = 0
+	maxPrefix := min(len(session.History), len(branch.History))
+
+	for {
+		if sharedPrefix >= maxPrefix || !s.turnsEqual(session.History[sharedPrefix], branch.History[sharedPrefix]) {
+			break
+		}
+		sharedPrefix++
+	}
+
+	currentOnlyTurnSummaries := []string{}
+	branchOnlyTurnSummaries := []string{}
+	for i := 0; i < len(session.History); i++ {
+		if i < sharedPrefix {
+			continue
+		}
+		currentOnlyTurnSummaries = append(currentOnlyTurnSummaries, s.summarizeTurn(session.History[i]))
+	}
+	for i := 0; i < len(branch.History); i++ {
+		if i < sharedPrefix {
+			continue
+		}
+		branchOnlyTurnSummaries = append(branchOnlyTurnSummaries, s.summarizeTurn(branch.History[i]))
+	}
+	return &SessionDiffResponse{
+		SessionId:                session.Id,
+		BranchId:                 branch.BranchId,
+		BranchName:               &branch.Name,
+		SharedPrefixTurns:        sharedPrefix,
+		CurrentTurnCount:         len(session.History),
+		BranchTurnCount:          len(branch.History),
+		CurrentOnlyTurnSummaries: currentOnlyTurnSummaries,
+		BranchOnlyTurnSummaries:  branchOnlyTurnSummaries,
+		Metadata:                 metadata,
+	}, nil
+}
+
+func (s *SessionManager) summarizeTurn(turn ChatTurn) string {
+	content := strings.TrimSpace(turn.Content)
+	if len(content) == 0 {
+		content = turn.Role
+	}
+
+	if len(content) > 180 {
+		content = content[:180] + "…"
+	}
+
+	return fmt.Sprintf("%s: %s", turn.Role, content)
+}
+
+func (s *SessionManager) turnsEqual(left ChatTurn, right ChatTurn) bool {
+	panic("unimplemented")
 }
 
 type SessionLockLease struct {
