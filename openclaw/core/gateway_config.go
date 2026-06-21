@@ -28,7 +28,7 @@ type LlmProviderConfig struct {
 	Provider                      string              `json:"provider"`
 	Model                         string              `json:"model"`
 	ApiKey                        *string             `json:"api_key"`
-	Endpoint                      *string             `json:"endpoint"`
+	Endpoint                      string              `json:"endpoint"`
 	AuthMode                      string              `json:"auth_mode"`
 	SendRequestMetadata           bool                `json:"send_request_metadata"`
 	FallbackModels                []string            `json:"fallback_models"`
@@ -187,7 +187,7 @@ func DefaultMemoryRetentionConfig() *MemoryRetentionConfig {
 type GatewayConfig struct {
 	BindAddress                          string                         `json:"bind_address"`
 	Port                                 int                            `json:"port"`
-	AuthToken                            *string                        `json:"auth_token"`
+	AuthToken                            string                         `json:"auth_token"`
 	Runtime                              RuntimeConfig                  `json:"runtime"`
 	Llm                                  LlmProviderConfig              `json:"llm"`
 	Models                               ModelsConfig                   `json:"models"`
@@ -217,7 +217,7 @@ type GatewayConfig struct {
 	Learning                             LearningConfig                 `json:"learning"`
 	Webhooks                             WebhooksConfig                 `json:"webhooks"`
 	Routing                              RoutingConfig                  `json:"routing"`
-	Deployment                           DeploymentConfig               `json:"deployment"`
+	Deployment                           *DeploymentConfig              `json:"deployment"`
 	Tailscale                            TailscaleConfig                `json:"tailscale"`
 	GmailPubSub                          GmailPubSubConfig              `json:"gmail_pub_sub"`
 	Mdns                                 MdnsConfig                     `json:"mdns"`
@@ -490,7 +490,7 @@ func NewDefaultCanvasConfig() *CanvasConfig {
 
 type ToolingConfig struct {
 	AutonomyMode               string                      `json:"autonomy_mode"`
-	WorkspaceRoot              *string                     `json:"workspace_root"` // Nullable string maps to *string
+	WorkspaceRoot              string                      `json:"workspace_root"`
 	WorkspaceOnly              bool                        `json:"workspace_only"`
 	AllowedShellCommandGlobs   []string                    `json:"allowed_shell_command_globs"`
 	ForbiddenPathGlobs         []string                    `json:"forbidden_path_globs"`
@@ -518,7 +518,7 @@ func NewDefaultToolingConfig() *ToolingConfig {
 
 	return &ToolingConfig{
 		AutonomyMode:               "supervised",
-		WorkspaceRoot:              &workspaceRootDefault,
+		WorkspaceRoot:              workspaceRootDefault,
 		WorkspaceOnly:              false,
 		AllowedShellCommandGlobs:   []string{"*"},
 		ForbiddenPathGlobs:         []string{},
@@ -1143,10 +1143,10 @@ func DefaultAgentRouteConfig() AgentRouteConfig {
 // ── Deployment ──────────────────────────────────────────────────
 
 type DeploymentConfig struct {
-	Mode             string  `json:"mode"`
-	PublicExposure   bool    `json:"public_exposure"`
-	ReverseProxy     *string `json:"reverse_proxy"`
-	ExpectedLocalUrl *string `json:"expected_local_url"`
+	Mode             string `json:"mode"`
+	PublicExposure   bool   `json:"public_exposure"`
+	ReverseProxy     string `json:"reverse_proxy"`
+	ExpectedLocalUrl string `json:"expected_local_url"`
 }
 
 func DefaultDeploymentConfig() DeploymentConfig {

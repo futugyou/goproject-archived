@@ -7,7 +7,7 @@ import (
 )
 
 type ModelsConfig struct {
-	DefaultProfile *string              `json:"default_profile,omitempty"`
+	DefaultProfile string               `json:"default_profile"`
 	Profiles       []ModelProfileConfig `json:"profiles"`
 }
 
@@ -26,7 +26,7 @@ type ModelProfileConfig struct {
 	PresetId            *string              `json:"preset_id,omitempty"`
 	Provider            string               `json:"provider"`
 	Model               string               `json:"model"`
-	BaseUrl             *string              `json:"base_url,omitempty"`
+	BaseUrl             string               `json:"base_url"`
 	ApiKey              *string              `json:"api_key,omitempty"`
 	AuthMode            *string              `json:"auth_mode,omitempty"`
 	SendRequestMetadata *bool                `json:"send_request_metadata,omitempty"`
