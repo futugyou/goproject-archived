@@ -125,3 +125,58 @@ func (g GatewaySetupArtifacts) BuildReachableBaseUrl(bindAddress string, port in
 
 	return fmt.Sprintf("http://%s:%s", bindAddress, portStr)
 }
+
+type GatewaySetupPaths struct{}
+
+const (
+	DefaultConfigPath              = "~/.openclaw/config/openclaw.settings.json"
+	DefaultLocalStartupStatePath   = "~/.openclaw/state/local-startup.json"
+	DefaultUpgradeSnapshotRootPath = "~/.openclaw/state/upgrade-snapshots"
+)
+
+func (g GatewaySetupPaths) ExpandPath(path string) string {
+	if strings.HasPrefix(path, "~/") || path == "~" {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return path
+		}
+
+		if len(path) == 1 {
+			return home
+		}
+		return filepath.Join(home, path[2:])
+	}
+
+	return path
+}
+
+func (g GatewaySetupPaths) QuoteIfNeeded(path string) string {
+	if strings.Contains(path, " ") {
+		return "\"" + path + "\""
+	}
+	return path
+}
+
+func (g GatewaySetupPaths) ResolveDefaultConfigPath() string {
+	abs, err := filepath.Abs(g.ExpandPath(DefaultConfigPath))
+	if err != nil {
+		return g.ExpandPath(DefaultConfigPath)
+	}
+	return abs
+}
+
+func (g GatewaySetupPaths) ResolveDefaultLocalStartupStatePath() string {
+	abs, err := filepath.Abs(g.ExpandPath(DefaultLocalStartupStatePath))
+	if err != nil {
+		return g.ExpandPath(DefaultLocalStartupStatePath)
+	}
+	return abs
+}
+
+func (g GatewaySetupPaths) ResolveDefaultUpgradeSnapshotRootPath() string {
+	abs, err := filepath.Abs(g.ExpandPath(DefaultUpgradeSnapshotRootPath))
+	if err != nil {
+		return g.ExpandPath(DefaultUpgradeSnapshotRootPath)
+	}
+	return abs
+}
