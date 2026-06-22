@@ -1285,26 +1285,25 @@ func copyFile(src, dst string) error {
 func (l *LocalModelCache) GetStatus(pkg *LocalModelPackageDefinition, modelsRoot string) *LocalModelPackageStatus {
 	packageFiles := l.GetPackageFiles(pkg)
 
-	var primaryFile *LocalModelPackageFileDefinition
+	var primaryFile LocalModelPackageFileDefinition
 	for _, item := range packageFiles {
 		if strings.EqualFold(item.Role, "model") {
-			primaryFile = &item
+			primaryFile = item
 			break
 		}
 	}
 
-	if primaryFile == nil {
-		return nil
-	}
-
-	modelPath := l.GetPackageFilePath(pkg, primaryFile, modelsRoot)
+	modelPath := l.GetPackageFilePath(pkg, &primaryFile, modelsRoot)
 	manifestPath := l.GetManifestPath(pkg, modelsRoot)
 
 	manifest, manifestError := l.TryReadManifest(manifestPath)
 
 	fileStatuses := make([]LocalModelPackageFileStatus, len(packageFiles))
 	for i, file := range packageFiles {
-		fileStatuses[i] = *l.GetFileStatus(pkg, &file, manifest, modelsRoot)
+		status := l.GetFileStatus(pkg, &file, manifest, modelsRoot)
+		if status != nil {
+			fileStatuses[i] = *status
+		}
 	}
 
 	installed := true
@@ -1368,4 +1367,157 @@ func (l *LocalModelCache) GetStatus(pkg *LocalModelPackageDefinition, modelsRoot
 		Issue:       issue,
 		Files:       fileStatuses,
 	}
+}
+
+func (l *LocalModelCache) ListStatuses(modelsRoot string) []LocalModelPackageStatus {
+	result := []LocalModelPackageStatus{}
+	for _, v := range LocalModelPackageDefinitionPackages {
+		statu := l.GetStatus(&v, modelsRoot)
+		if statu != nil {
+			result = append(result, *statu)
+		}
+	}
+
+	return result
+}
+
+func (l *LocalModelCache) Install(ctx context.Context, packageDef *LocalModelPackageDefinition, request *LocalModelInstallRequest) (*LocalModelInstallResult, error) {
+	// 1. 验证授权许可
+	if packageDef.RequiresLicenseAcceptance && !request.AcceptLicense {
+		return &LocalModelInstallResult{
+			Success: false,
+			Message: fmt.Sprintf("Package '%s' requires explicit license acceptance: %s", packageDef.Id, packageDef.LicenseUrl),
+		}, nil
+	}
+
+	// 2. 初始化目录与文件列表
+	packageDir := l.GetPackageDirectory(packageDef, request.ModelsRoot)
+	if err := os.MkdirAll(packageDir, os.ModePerm); err != nil {
+		return nil, err
+	}
+
+	packageFiles := l.GetPackageFiles(packageDef)
+
+	var primaryFile LocalModelPackageFileDefinition
+	for _, item := range packageFiles {
+		if strings.EqualFold(item.Role, "model") {
+			primaryFile = item
+			break
+		}
+	}
+
+	installedFiles := make([]LocalModelInstallFileManifest, 0)
+	source := request.SourcePath
+
+	// ==========================================
+	// 分支 A: 从本地路径 (SourcePath) 复制安装
+	// ==========================================
+	if strings.TrimSpace(source) != "" {
+		// 复制主模型文件
+		copyResult, err := l.CopyInstallFile(ctx, packageDef, &primaryFile, source, request.ModelsRoot)
+		if err != nil {
+			return nil, err
+		}
+		if !copyResult.Success {
+			return copyResult.Result, nil
+		}
+
+		installedFiles = append(installedFiles, *copyResult.Manifest)
+
+		// 处理其他非主模型文件
+		for _, file := range packageFiles {
+			if strings.EqualFold(file.Role, "model") {
+				continue
+			}
+
+			fileSource := l.ResolveManualSource(file.Role, request)
+			if strings.TrimSpace(fileSource) == "" {
+				if file.Required {
+					return &LocalModelInstallResult{
+						Success: false,
+						Message: fmt.Sprintf("Package '%s' requires %s file '%s'. Pass --%s-path or install from the package download.", packageDef.Id, file.Role, file.FileName, file.Role),
+					}, nil
+				}
+				continue
+			}
+
+			copyResult, err = l.CopyInstallFile(ctx, packageDef, &file, fileSource, request.ModelsRoot)
+			if err != nil {
+				return nil, err
+			}
+			if !copyResult.Success {
+				return copyResult.Result, nil
+			}
+			installedFiles = append(installedFiles, *copyResult.Manifest)
+		}
+
+		return l.WriteManifestAndVerify(packageDef, installedFiles, request, source), nil
+	}
+
+	// ==========================================
+	// 分支 B: 从远程 URL 下载安装
+	// ==========================================
+	var filesToDownload []*LocalModelPackageFileDefinition
+	for _, file := range packageFiles {
+		if file.Required || (request.DownloadOptionalFiles && file.InstallByDefault) {
+			filesToDownload = append(filesToDownload, &file)
+		}
+	}
+
+	if len(filesToDownload) == 0 {
+		return &LocalModelInstallResult{
+			Success: false,
+			Message: fmt.Sprintf("Package '%s' does not define a download URL. Use --path to install an existing GGUF file.", packageDef.Id),
+		}, nil
+	}
+
+	// 验证 Gated 模型 Token
+	if packageDef.RequiresDownloadToken && strings.TrimSpace(request.BearerToken) == "" {
+		return &LocalModelInstallResult{
+			Success: false,
+			Message: fmt.Sprintf("Package '%s' is gated. Pass --accept-license and --token, or install from a local file with --path.", packageDef.Id),
+		}, nil
+	}
+
+	httpClient := &http.Client{}
+
+	for _, file := range filesToDownload {
+		var downloadUrl string
+		if strings.EqualFold(file.Role, "model") {
+			if strings.TrimSpace(request.SourceUrl) != "" {
+				downloadUrl = request.SourceUrl
+			} else {
+				downloadUrl = file.DownloadUrl
+			}
+		} else {
+			downloadUrl = file.DownloadUrl
+		}
+
+		if strings.TrimSpace(downloadUrl) == "" {
+			if file.Required {
+				return &LocalModelInstallResult{
+					Success: false,
+					Message: fmt.Sprintf("Package '%s' does not define a download URL for required %s file '%s'.", packageDef.Id, file.Role, file.FileName),
+				}, nil
+			}
+			continue
+		}
+
+		// 执行文件下载
+		downloadResult, err := l.DownloadInstallFile(ctx, packageDef, file, downloadUrl, request, httpClient)
+		if err != nil {
+			return nil, err
+		}
+		if !downloadResult.Success {
+			return downloadResult.Result, nil
+		}
+		installedFiles = append(installedFiles, *downloadResult.Manifest)
+	}
+
+	finalSourceUrl := primaryFile.DownloadUrl
+	if strings.TrimSpace(request.SourceUrl) != "" {
+		finalSourceUrl = request.SourceUrl
+	}
+
+	return l.WriteManifestAndVerify(packageDef, installedFiles, request, finalSourceUrl), nil
 }
