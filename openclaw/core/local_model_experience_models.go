@@ -16,8 +16,8 @@ type LocalModelPresetDefinition struct {
 	Description              string            `json:"description"`
 	Provider                 string            `json:"provider"`
 	DefaultBaseUrl           string            `json:"default_base_url"`
-	PackageId                *string           `json:"package_id,omitempty"`
-	ModelId                  *string           `json:"model_id,omitempty"`
+	PackageId                string            `json:"package_id"`
+	ModelId                  string            `json:"model_id"`
 	Installable              bool              `json:"installable"`
 	Tags                     []string          `json:"tags"`
 	Capabilities             ModelCapabilities `json:"capabilities"`
