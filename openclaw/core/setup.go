@@ -1521,3 +1521,106 @@ func (l *LocalModelCache) Install(ctx context.Context, packageDef *LocalModelPac
 
 	return l.WriteManifestAndVerify(packageDef, installedFiles, request, finalSourceUrl), nil
 }
+
+func (l *LocalModelCache) Remove(packageDef *LocalModelPackageDefinition, modelsRoot string) bool {
+	directory := l.GetPackageDirectory(packageDef, modelsRoot)
+
+	if !directoryExists(directory) {
+		return false
+	}
+
+	err := os.RemoveAll(directory)
+	return err == nil
+}
+
+func (l *LocalModelCache) Verify(ctx context.Context, packageDef *LocalModelPackageDefinition, modelsRoot string) (*LocalModelPackageStatus, error) {
+	packageFiles := l.GetPackageFiles(packageDef)
+
+	// 1. 检查是否有任何“必需(Required)”的文件在本地不存在
+	for _, file := range packageFiles {
+		if file.Required {
+			path := l.GetPackageFilePath(packageDef, &file, modelsRoot)
+			if !fileExists(path) {
+				return l.GetStatus(packageDef, modelsRoot), nil
+			}
+		}
+	}
+
+	// 2. 尝试读取现有的 Manifest 配置文件
+	manifest, err := l.TryReadManifest(l.GetManifestPath(packageDef, modelsRoot))
+	if err != nil || manifest == nil {
+		manifest = &LocalModelInstallManifest{
+			PackageId:       packageDef.Id,
+			PresetId:        packageDef.PresetId,
+			ModelId:         packageDef.ModelId,
+			FileName:        packageDef.FileName,
+			Sha256:          "",
+			LicenseUrl:      packageDef.LicenseUrl,
+			LicenseAccepted: false,
+		}
+	}
+
+	fileManifests := make([]LocalModelInstallFileManifest, 0)
+
+	// 3. 遍历所有实际存在的文件，计算 SHA256 哈希
+	for _, file := range packageFiles {
+		path := l.GetPackageFilePath(packageDef, &file, modelsRoot)
+		if fileExists(path) {
+			sha256, err := l.ComputeSha256(ctx, path)
+			if err != nil {
+				return nil, err
+			}
+
+			// 查找旧 manifest 中对应角色的 Source 来源
+			var source string
+			if manifest.Files != nil {
+				for _, item := range manifest.Files {
+					if strings.EqualFold(item.Role, file.Role) {
+						source = item.Source
+						break
+					}
+				}
+			}
+
+			fileManifests = append(fileManifests, LocalModelInstallFileManifest{
+				Role:     file.Role,
+				FileName: file.FileName,
+				Sha256:   sha256,
+				Source:   source,
+			})
+		}
+	}
+
+	// 4. 获取主模型文件的 SHA256 (若没有则取旧 manifest 的值)
+	primarySha := manifest.Sha256
+	for _, item := range fileManifests {
+		if strings.EqualFold(item.Role, "model") {
+			if item.Sha256 != "" {
+				primarySha = item.Sha256
+			}
+			break
+		}
+	}
+
+	// 处理 LicenseUrl 的空值合并逻辑
+	finalLicenseUrl := packageDef.LicenseUrl
+	if manifest.LicenseUrl != "" {
+		finalLicenseUrl = manifest.LicenseUrl
+	}
+
+	// 5. 写入更新后的本地清单文件
+	l.WriteManifest(packageDef, modelsRoot, &LocalModelInstallManifest{
+		PackageId:       packageDef.Id,
+		PresetId:        packageDef.PresetId,
+		ModelId:         packageDef.ModelId,
+		FileName:        packageDef.FileName,
+		Sha256:          primarySha,
+		Source:          manifest.Source,
+		LicenseUrl:      finalLicenseUrl,
+		LicenseAccepted: manifest.LicenseAccepted,
+		InstalledAtUtc:  manifest.InstalledAtUtc,
+		Files:           fileManifests,
+	})
+
+	return l.GetStatus(packageDef, modelsRoot), nil
+}
