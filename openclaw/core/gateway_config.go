@@ -59,31 +59,31 @@ func DefaultLlmProviderConfig() LlmProviderConfig {
 }
 
 type LocalInferenceConfig struct {
-	Enabled                  bool    `json:"enabled"`
-	AutoStart                bool    `json:"auto_start"`
-	Backend                  string  `json:"backend"`
-	RuntimePath              *string `json:"runtime_path"`
-	ModelsRoot               *string `json:"models_root"`
-	LogsPath                 *string `json:"logs_path"`
-	Host                     string  `json:"host"`
-	Port                     int     `json:"port"`
-	Threads                  string  `json:"threads"`
-	GpuLayers                string  `json:"gpu_layers"`
-	ContextSize              int     `json:"context_size"`
-	StartupTimeoutSeconds    int     `json:"startup_timeout_seconds"`
-	MaxRestartAttempts       int     `json:"max_restart_attempts"`
-	EnableJinja              bool    `json:"enable_jinja"`
-	ChatTemplate             *string `json:"chat_template"`
-	ChatTemplateFilePath     *string `json:"chat_template_file_path"`
-	MultimodalProjectorPath  *string `json:"multimodal_projector_path"`
-	MediaPath                *string `json:"media_path"`
-	DraftModelPath           *string `json:"draft_model_path"`
-	DraftModelGpuLayers      string  `json:"draft_model_gpu_layers"`
-	ReasoningEffort          *string `json:"reasoning_effort"`
-	ReasoningMode            *string `json:"reasoning_mode"`
-	ReasoningBudget          *int    `json:"reasoning_budget"`
-	LiteRtRuntimePath        *string `json:"lite_rt_runtime_path"`
-	LiteRtMediaPipeGraphPath *string `json:"lite_rt_media_pipe_graph_path"`
+	Enabled                  bool   `json:"enabled"`
+	AutoStart                bool   `json:"auto_start"`
+	Backend                  string `json:"backend"`
+	RuntimePath              string `json:"runtime_path"`
+	ModelsRoot               string `json:"models_root"`
+	LogsPath                 string `json:"logs_path"`
+	Host                     string `json:"host"`
+	Port                     int    `json:"port"`
+	Threads                  string `json:"threads"`
+	GpuLayers                string `json:"gpu_layers"`
+	ContextSize              int    `json:"context_size"`
+	StartupTimeoutSeconds    int    `json:"startup_timeout_seconds"`
+	MaxRestartAttempts       int    `json:"max_restart_attempts"`
+	EnableJinja              bool   `json:"enable_jinja"`
+	ChatTemplate             string `json:"chat_template"`
+	ChatTemplateFilePath     string `json:"chat_template_file_path"`
+	MultimodalProjectorPath  string `json:"multimodal_projector_path"`
+	MediaPath                string `json:"media_path"`
+	DraftModelPath           string `json:"draft_model_path"`
+	DraftModelGpuLayers      string `json:"draft_model_gpu_layers"`
+	ReasoningEffort          string `json:"reasoning_effort"`
+	ReasoningMode            string `json:"reasoning_mode"`
+	ReasoningBudget          int    `json:"reasoning_budget"`
+	LiteRtRuntimePath        string `json:"lite_rt_runtime_path"`
+	LiteRtMediaPipeGraphPath string `json:"lite_rt_media_pipe_graph_path"`
 }
 
 func DefaultLocalInferenceConfig() LocalInferenceConfig {

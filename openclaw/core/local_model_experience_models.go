@@ -50,17 +50,17 @@ func DefaultLocalModelPresetListResponse() LocalModelPresetListResponse {
 
 // --- LocalModelRuntimeDefaults ---
 type LocalModelRuntimeDefaults struct {
-	Backend                     string  `json:"backend"`
-	Threads                     string  `json:"threads"`
-	GpuLayers                   string  `json:"gpu_layers"`
-	ContextSize                 int     `json:"context_size"`
-	EnableJinja                 bool    `json:"enable_jinja"`
-	ChatTemplate                *string `json:"chat_template,omitempty"`
-	ChatTemplateFileName        *string `json:"chat_template_file_name,omitempty"`
-	MultimodalProjectorFileName *string `json:"multimodal_projector_file_name,omitempty"`
-	DraftModelFileName          *string `json:"draft_model_file_name,omitempty"`
-	ReasoningMode               string  `json:"reasoning_mode"`
-	ReasoningBudget             *int    `json:"reasoning_budget,omitempty"`
+	Backend                     string `json:"backend"`
+	Threads                     string `json:"threads"`
+	GpuLayers                   string `json:"gpu_layers"`
+	ContextSize                 int    `json:"context_size"`
+	EnableJinja                 bool   `json:"enable_jinja"`
+	ChatTemplate                string `json:"chat_template"`
+	ChatTemplateFileName        string `json:"chat_template_file_name"`
+	MultimodalProjectorFileName string `json:"multimodal_projector_file_name"`
+	DraftModelFileName          string `json:"draft_model_file_name"`
+	ReasoningMode               string `json:"reasoning_mode"`
+	ReasoningBudget             int    `json:"reasoning_budget"`
 }
 
 func DefaultLocalModelRuntimeDefaults() LocalModelRuntimeDefaults {
@@ -82,12 +82,12 @@ const (
 
 // --- LocalModelPackageFileDefinition ---
 type LocalModelPackageFileDefinition struct {
-	Role             string  `json:"role"`
-	FileName         string  `json:"file_name"`
-	DownloadUrl      *string `json:"download_url,omitempty"`
-	ExpectedSha256   *string `json:"expected_sha256,omitempty"`
-	Required         bool    `json:"required"`
-	InstallByDefault bool    `json:"install_by_default"`
+	Role             string `json:"role"`
+	FileName         string `json:"file_name"`
+	DownloadUrl      string `json:"download_url"`
+	ExpectedSha256   string `json:"expected_sha256"`
+	Required         bool   `json:"required"`
+	InstallByDefault bool   `json:"install_by_default"`
 }
 
 func DefaultLocalModelPackageFileDefinition() LocalModelPackageFileDefinition {
@@ -109,10 +109,10 @@ type LocalModelPackageDefinition struct {
 	Format                    string                            `json:"format"`
 	Quantization              string                            `json:"quantization"`
 	FileName                  string                            `json:"file_name"`
-	DownloadUrl               *string                           `json:"download_url,omitempty"`
-	ExpectedSha256            *string                           `json:"expected_sha256,omitempty"`
-	ModelPageUrl              *string                           `json:"model_page_url,omitempty"`
-	LicenseUrl                *string                           `json:"license_url,omitempty"`
+	DownloadUrl               string                            `json:"download_url"`
+	ExpectedSha256            string                            `json:"expected_sha256"`
+	ModelPageUrl              string                            `json:"model_page_url"`
+	LicenseUrl                string                            `json:"license_url"`
 	RequiresLicenseAcceptance bool                              `json:"requires_license_acceptance"`
 	RequiresDownloadToken     bool                              `json:"requires_download_token"`
 	Experimental              bool                              `json:"experimental"`

@@ -397,7 +397,7 @@ func (g *GatewaySetupProfileFactory) configureEmbeddedModelProfile(
 		config.LocalInference.ContextSize = packageDef.Runtime.ContextSize
 		config.LocalInference.EnableJinja = packageDef.Runtime.EnableJinja
 		config.LocalInference.ChatTemplate = packageDef.Runtime.ChatTemplate
-		config.LocalInference.ReasoningMode = &packageDef.Runtime.ReasoningMode
+		config.LocalInference.ReasoningMode = packageDef.Runtime.ReasoningMode
 		config.LocalInference.ReasoningBudget = packageDef.Runtime.ReasoningBudget
 	}
 
@@ -445,10 +445,409 @@ func (g *GatewaySetupProfileFactory) cloneCapabilities(source ModelCapabilities)
 }
 
 func TryGetLocalModelPackage(s string) (*LocalModelPackageDefinition, bool) {
-	// TODO
-	panic("unimplemented")
+	for _, p := range LocalModelPackageDefinitionPackages {
+		if p.Id == s || p.PresetId == s || p.ModelId == s {
+			return &p, true
+		}
+	}
+
+	return nil, false
 }
+
 func TryGetLocalModelPreset(s string) (*LocalModelPresetDefinition, bool) {
 	// TODO
 	panic("unimplemented")
+}
+
+type LocalModelInstallRequest struct {
+	SourcePath              string `json:"source_path"`
+	MultimodalProjectorPath string `json:"multimodal_projector_path"`
+	DraftModelPath          string `json:"draft_model_path"`
+	SourceUrl               string `json:"source_url"`
+	BearerToken             string `json:"bearer_token"`
+	AcceptLicense           bool   `json:"accept_license"`
+	ModelsRoot              string `json:"models_root"`
+	DownloadOptionalFiles   bool   `json:"download_optional_files"`
+}
+
+type LocalModelInstallResult struct {
+	Success bool                     `json:"success"`
+	Message string                   `json:"message"`
+	Status  *LocalModelPackageStatus `json:"status"`
+}
+
+var LocalModelPackageDefinitionPackages []LocalModelPackageDefinition = []LocalModelPackageDefinition{
+
+	{
+		Id:                        "gemma-local-small-q4",
+		PresetId:                  "embedded-gemma-small-q4",
+		DisplayName:               "Gemma 3 4B IT QAT Q4",
+		Description:               "Instruction-tuned Gemma GGUF package for OpenClaw embedded local mode.",
+		Provider:                  "embedded",
+		ModelId:                   "gemma-local-small-q4",
+		Family:                    "gemma",
+		Format:                    "gguf",
+		Quantization:              "Q4_0",
+		FileName:                  "gemma-3-4b-it-q4_0.gguf",
+		DownloadUrl:               "https://huggingface.co/google/gemma-3-4b-it-qat-q4_0-gguf/resolve/main/gemma-3-4b-it-q4_0.gguf",
+		ModelPageUrl:              "https://huggingface.co/google/gemma-3-4b-it-qat-q4_0-gguf",
+		LicenseUrl:                "https://ai.google.dev/gemma/terms",
+		RequiresLicenseAcceptance: true,
+		RequiresDownloadToken:     true,
+		MinRamGb:                  8,
+		RecommendedRamGb:          16,
+		ContextWindow:             4096,
+		MaxOutputTokens:           1024,
+		Tags:                      []string{"local", "private", "offline", "cheap"},
+		Capabilities: ModelCapabilities{
+			SupportsTools:             false,
+			SupportsVision:            false,
+			SupportsJsonSchema:        false,
+			SupportsStructuredOutputs: false,
+			SupportsStreaming:         true,
+			SupportsParallelToolCalls: false,
+			SupportsReasoningEffort:   false,
+			SupportsSystemMessages:    true,
+			SupportsImageInput:        false,
+			SupportsAudioInput:        false,
+			MaxContextTokens:          4096,
+			MaxOutputTokens:           1024,
+		},
+		Runtime: LocalModelRuntimeDefaults{
+			Backend:     "llama.cpp",
+			Threads:     "auto",
+			GpuLayers:   "auto",
+			ContextSize: 4096,
+		},
+	},
+
+	{
+		Id:                        "gemma-4-e2b",
+		PresetId:                  "embedded-gemma-4-e2b",
+		DisplayName:               "Gemma 4 E2B Q8",
+		Description:               "Gemma 4 E2B instruction-tuned GGUF package for ultra-mobile/edge multimodal local inference.",
+		Provider:                  "embedded",
+		ModelId:                   "gemma-4-e2b",
+		Family:                    "gemma",
+		Format:                    "gguf",
+		Quantization:              "Q8_0",
+		FileName:                  "gemma-4-E2B-it-Q8_0.gguf",
+		DownloadUrl:               "https://huggingface.co/ggml-org/gemma-4-E2B-it-GGUF/resolve/main/gemma-4-E2B-it-Q8_0.gguf",
+		ExpectedSha256:            "e049411c01fb7a81161768c52e38828970e55a64e22738957adcbe51d20f1c8e",
+		ModelPageUrl:              "https://huggingface.co/ggml-org/gemma-4-E2B-it-GGUF",
+		LicenseUrl:                "https://ai.google.dev/gemma/terms",
+		RequiresLicenseAcceptance: true,
+		MinRamGb:                  4,
+		RecommendedRamGb:          8,
+		ContextWindow:             128000,
+		MaxOutputTokens:           4096,
+		Tags:                      []string{"local", "private", "offline", "cheap", "gemma4"},
+		Capabilities: ModelCapabilities{
+			SupportsTools:             true,
+			SupportsVision:            true,
+			SupportsJsonSchema:        false,
+			SupportsStructuredOutputs: false,
+			SupportsStreaming:         true,
+			SupportsParallelToolCalls: true,
+			SupportsReasoningEffort:   true,
+			SupportsSystemMessages:    true,
+			SupportsImageInput:        true,
+			SupportsVideoInput:        true,
+			SupportsAudioInput:        true,
+			MaxContextTokens:          128000,
+			MaxOutputTokens:           4096,
+		},
+		Files: []LocalModelPackageFileDefinition{
+			{
+				Role:             "model",
+				FileName:         "gemma-4-E2B-it-Q8_0.gguf",
+				DownloadUrl:      "https://huggingface.co/ggml-org/gemma-4-E2B-it-GGUF/resolve/main/gemma-4-E2B-it-Q8_0.gguf",
+				ExpectedSha256:   "e049411c01fb7a81161768c52e38828970e55a64e22738957adcbe51d20f1c8e",
+				Required:         true,
+				InstallByDefault: true,
+			},
+
+			{
+				Role:             "mmproj",
+				FileName:         "mmproj-gemma-4-E2B-it-Q8_0.gguf",
+				DownloadUrl:      "https://huggingface.co/ggml-org/gemma-4-E2B-it-GGUF/resolve/main/mmproj-gemma-4-E2B-it-Q8_0.gguf",
+				ExpectedSha256:   "8a82e0fd831bb7cb5c8898b86393eb14042986b950a60e1034bf21d061aac8a8",
+				Required:         true,
+				InstallByDefault: true,
+			},
+		},
+		Runtime: LocalModelRuntimeDefaults{
+			Backend:                     "llama.cpp",
+			Threads:                     "auto",
+			GpuLayers:                   "auto",
+			ContextSize:                 128000,
+			EnableJinja:                 true,
+			ChatTemplate:                "gemma",
+			MultimodalProjectorFileName: "mmproj-gemma-4-E2B-it-Q8_0.gguf",
+			ReasoningMode:               "auto",
+		},
+	},
+
+	{
+		Id:               "gemma-4-litert-e2b",
+		PresetId:         "embedded-gemma-4-litert-e2b",
+		DisplayName:      "Gemma 4 E2B LiteRT",
+		Description:      "Experimental Gemma 4 E2B LiteRT-LM package for edge adapters.",
+		Provider:         "embedded",
+		ModelId:          "gemma-4-litert-e2b",
+		Family:           "gemma",
+		Format:           "litertlm",
+		Quantization:     "int4",
+		FileName:         "gemma-4-E2B-it.litertlm",
+		DownloadUrl:      "https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm/resolve/main/gemma-4-E2B-it.litertlm",
+		ExpectedSha256:   "181938105e0eefd105961417e8da75903eacda102c4fce9ce90f50b97139a63c",
+		ModelPageUrl:     "https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm",
+		LicenseUrl:       "https://www.apache.org/licenses/LICENSE-2.0",
+		Experimental:     true,
+		MinRamGb:         4,
+		RecommendedRamGb: 8,
+		ContextWindow:    32768,
+		MaxOutputTokens:  4096,
+		Tags:             []string{"local", "private", "offline", "edge", "gemma4", "litert", "experimental"},
+		Capabilities: ModelCapabilities{
+			SupportsTools:             false,
+			SupportsVision:            false,
+			SupportsJsonSchema:        false,
+			SupportsStructuredOutputs: false,
+			SupportsStreaming:         true,
+			SupportsParallelToolCalls: false,
+			SupportsReasoningEffort:   false,
+			SupportsSystemMessages:    true,
+			SupportsImageInput:        false,
+			SupportsVideoInput:        false,
+			SupportsAudioInput:        false,
+			MaxContextTokens:          32768,
+			MaxOutputTokens:           4096,
+		},
+		Files: []LocalModelPackageFileDefinition{
+
+			{
+				Role:             "model",
+				FileName:         "gemma-4-E2B-it.litertlm",
+				DownloadUrl:      "https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm/resolve/main/gemma-4-E2B-it.litertlm",
+				ExpectedSha256:   "181938105e0eefd105961417e8da75903eacda102c4fce9ce90f50b97139a63c",
+				Required:         true,
+				InstallByDefault: true,
+			},
+		},
+		Runtime: LocalModelRuntimeDefaults{
+			Backend:      "litert",
+			Threads:      "auto",
+			GpuLayers:    "auto",
+			ContextSize:  32768,
+			EnableJinja:  false,
+			ChatTemplate: "gemma",
+		},
+	},
+
+	{
+		Id:                        "gemma-4-e4b",
+		PresetId:                  "embedded-gemma-4-e4b",
+		DisplayName:               "Gemma 4 E4B Q4_K_M",
+		Description:               "Gemma 4 E4B instruction-tuned GGUF package for mobile/edge multimodal local inference.",
+		Provider:                  "embedded",
+		ModelId:                   "gemma-4-e4b",
+		Family:                    "gemma",
+		Format:                    "gguf",
+		Quantization:              "Q4_K_M",
+		FileName:                  "gemma-4-E4B-it-Q4_K_M.gguf",
+		DownloadUrl:               "https://huggingface.co/ggml-org/gemma-4-E4B-it-GGUF/resolve/main/gemma-4-E4B-it-Q4_K_M.gguf",
+		ExpectedSha256:            "90ce98129eb3e8cc57e62433d500c97c624b1e3af1fcc85dd3b55ad7e0313e9f",
+		ModelPageUrl:              "https://huggingface.co/ggml-org/gemma-4-E4B-it-GGUF",
+		LicenseUrl:                "https://ai.google.dev/gemma/terms",
+		RequiresLicenseAcceptance: true,
+		MinRamGb:                  6,
+		RecommendedRamGb:          16,
+		ContextWindow:             128000,
+		MaxOutputTokens:           4096,
+		Tags:                      []string{"local", "private", "offline", "cheap", "gemma4"},
+		Capabilities: ModelCapabilities{
+			SupportsTools:             true,
+			SupportsVision:            true,
+			SupportsJsonSchema:        false,
+			SupportsStructuredOutputs: false,
+			SupportsStreaming:         true,
+			SupportsParallelToolCalls: true,
+			SupportsReasoningEffort:   true,
+			SupportsSystemMessages:    true,
+			SupportsImageInput:        true,
+			SupportsVideoInput:        true,
+			SupportsAudioInput:        true,
+			MaxContextTokens:          128000,
+			MaxOutputTokens:           4096,
+		},
+		Files: []LocalModelPackageFileDefinition{
+
+			{
+				Role:             "model",
+				FileName:         "gemma-4-E4B-it-Q4_K_M.gguf",
+				DownloadUrl:      "https://huggingface.co/ggml-org/gemma-4-E4B-it-GGUF/resolve/main/gemma-4-E4B-it-Q4_K_M.gguf",
+				ExpectedSha256:   "90ce98129eb3e8cc57e62433d500c97c624b1e3af1fcc85dd3b55ad7e0313e9f",
+				Required:         true,
+				InstallByDefault: true,
+			},
+
+			{
+				Role:             "mmproj",
+				FileName:         "mmproj-gemma-4-E4B-it-Q8_0.gguf",
+				DownloadUrl:      "https://huggingface.co/ggml-org/gemma-4-E4B-it-GGUF/resolve/main/mmproj-gemma-4-E4B-it-Q8_0.gguf",
+				ExpectedSha256:   "51d4b7fd825e4569f746b200fccc5332bf914e8ef7cbe447272ce4fec6df3db6",
+				Required:         true,
+				InstallByDefault: true,
+			},
+		},
+		Runtime: LocalModelRuntimeDefaults{
+			Backend:                     "llama.cpp",
+			Threads:                     "auto",
+			GpuLayers:                   "auto",
+			ContextSize:                 128000,
+			EnableJinja:                 true,
+			ChatTemplate:                "gemma",
+			MultimodalProjectorFileName: "mmproj-gemma-4-E4B-it-Q8_0.gguf",
+			ReasoningMode:               "auto",
+		},
+	},
+
+	{
+		Id:                        "gemma-4-31b",
+		PresetId:                  "embedded-gemma-4-31b",
+		DisplayName:               "Gemma 4 31B Dense Q4_K_M",
+		Description:               "Gemma 4 31B dense instruction-tuned GGUF package for workstation/server local inference.",
+		Provider:                  "embedded",
+		ModelId:                   "gemma-4-31b",
+		Family:                    "gemma",
+		Format:                    "gguf",
+		Quantization:              "Q4_K_M",
+		FileName:                  "gemma-4-31B-it-Q4_K_M.gguf",
+		DownloadUrl:               "https://huggingface.co/ggml-org/gemma-4-31B-it-GGUF/resolve/main/gemma-4-31B-it-Q4_K_M.gguf",
+		ExpectedSha256:            "4f369f8fe0e1bedc5caee9abb89316887f548f80f3035398a5d222a737e699e6",
+		ModelPageUrl:              "https://huggingface.co/ggml-org/gemma-4-31B-it-GGUF",
+		LicenseUrl:                "https://ai.google.dev/gemma/terms",
+		RequiresLicenseAcceptance: true,
+		MinRamGb:                  20,
+		RecommendedRamGb:          32,
+		ContextWindow:             256000,
+		MaxOutputTokens:           4096,
+		Tags:                      []string{"local", "private", "offline", "gemma4"},
+		Capabilities: ModelCapabilities{
+			SupportsTools:             true,
+			SupportsVision:            true,
+			SupportsJsonSchema:        false,
+			SupportsStructuredOutputs: false,
+			SupportsStreaming:         true,
+			SupportsParallelToolCalls: true,
+			SupportsReasoningEffort:   true,
+			SupportsSystemMessages:    true,
+			SupportsImageInput:        true,
+			SupportsVideoInput:        true,
+			SupportsAudioInput:        false,
+			MaxContextTokens:          256000,
+			MaxOutputTokens:           4096,
+		},
+		Files: []LocalModelPackageFileDefinition{
+
+			{
+				Role:             "model",
+				FileName:         "gemma-4-31B-it-Q4_K_M.gguf",
+				DownloadUrl:      "https://huggingface.co/ggml-org/gemma-4-31B-it-GGUF/resolve/main/gemma-4-31B-it-Q4_K_M.gguf",
+				ExpectedSha256:   "4f369f8fe0e1bedc5caee9abb89316887f548f80f3035398a5d222a737e699e6",
+				Required:         true,
+				InstallByDefault: true,
+			},
+
+			{
+				Role:             "mmproj",
+				FileName:         "mmproj-gemma-4-31B-it-Q8_0.gguf",
+				DownloadUrl:      "https://huggingface.co/ggml-org/gemma-4-31B-it-GGUF/resolve/main/mmproj-gemma-4-31B-it-Q8_0.gguf",
+				ExpectedSha256:   "1e8de54a30a5d08fa400c8d956a5ef7f8ad5ba51a39b860d1ccb463d7c330c37",
+				Required:         true,
+				InstallByDefault: true,
+			},
+		},
+		Runtime: LocalModelRuntimeDefaults{
+			Backend:                     "llama.cpp",
+			Threads:                     "auto",
+			GpuLayers:                   "auto",
+			ContextSize:                 256000,
+			EnableJinja:                 true,
+			ChatTemplate:                "gemma",
+			MultimodalProjectorFileName: "mmproj-gemma-4-31B-it-Q8_0.gguf",
+			ReasoningMode:               "auto",
+		},
+	},
+
+	{
+		Id:                        "gemma-4-26b-a4b",
+		PresetId:                  "embedded-gemma-4-26b-a4b",
+		DisplayName:               "Gemma 4 26B A4B MoE Q4_K_M",
+		Description:               "Gemma 4 26B A4B MoE instruction-tuned GGUF package for efficient advanced local inference.",
+		Provider:                  "embedded",
+		ModelId:                   "gemma-4-26b-a4b",
+		Family:                    "gemma",
+		Format:                    "gguf",
+		Quantization:              "Q4_K_M",
+		FileName:                  "gemma-4-26B-A4B-it-Q4_K_M.gguf",
+		DownloadUrl:               "https://huggingface.co/ggml-org/gemma-4-26B-A4B-it-GGUF/resolve/main/gemma-4-26B-A4B-it-Q4_K_M.gguf",
+		ExpectedSha256:            "88f4a13b0bb95f031a7fad973e10854122fb67ebc34d214d39a2f65053046abc",
+		ModelPageUrl:              "https://huggingface.co/ggml-org/gemma-4-26B-A4B-it-GGUF",
+		LicenseUrl:                "https://ai.google.dev/gemma/terms",
+		RequiresLicenseAcceptance: true,
+		MinRamGb:                  18,
+		RecommendedRamGb:          24,
+		ContextWindow:             256000,
+		MaxOutputTokens:           4096,
+		Tags:                      []string{"local", "private", "offline", "moe", "gemma4"},
+		Capabilities: ModelCapabilities{
+			SupportsTools:             true,
+			SupportsVision:            true,
+			SupportsJsonSchema:        false,
+			SupportsStructuredOutputs: false,
+			SupportsStreaming:         true,
+			SupportsParallelToolCalls: true,
+			SupportsReasoningEffort:   true,
+			SupportsSystemMessages:    true,
+			SupportsImageInput:        true,
+			SupportsVideoInput:        true,
+			SupportsAudioInput:        false,
+			MaxContextTokens:          256000,
+			MaxOutputTokens:           4096,
+		},
+		Files: []LocalModelPackageFileDefinition{
+			{
+				Role:             "model",
+				FileName:         "gemma-4-26B-A4B-it-Q4_K_M.gguf",
+				DownloadUrl:      "https://huggingface.co/ggml-org/gemma-4-26B-A4B-it-GGUF/resolve/main/gemma-4-26B-A4B-it-Q4_K_M.gguf",
+				ExpectedSha256:   "88f4a13b0bb95f031a7fad973e10854122fb67ebc34d214d39a2f65053046abc",
+				Required:         true,
+				InstallByDefault: true,
+			},
+
+			{
+				Role:             "mmproj",
+				FileName:         "mmproj-gemma-4-26B-A4B-it-Q8_0.gguf",
+				DownloadUrl:      "https://huggingface.co/ggml-org/gemma-4-26B-A4B-it-GGUF/resolve/main/mmproj-gemma-4-26B-A4B-it-Q8_0.gguf",
+				ExpectedSha256:   "1f2339eb6497bd69fde3c68e1592cd472f1ce176dfefe6e6d156d5a55719705e",
+				Required:         true,
+				InstallByDefault: true,
+			},
+		},
+		Runtime: LocalModelRuntimeDefaults{
+			Backend:                     "llama.cpp",
+			Threads:                     "auto",
+			GpuLayers:                   "auto",
+			ContextSize:                 256000,
+			EnableJinja:                 true,
+			ChatTemplate:                "gemma",
+			MultimodalProjectorFileName: "mmproj-gemma-4-26B-A4B-it-Q8_0.gguf",
+			ReasoningMode:               "auto",
+		},
+	},
+}
+
+type LocalModelPackageCatalog struct {
 }
