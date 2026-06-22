@@ -1,9 +1,14 @@
 package core
 
 import (
+	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
+	"net/http"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -1004,4 +1009,363 @@ func (l *LocalModelCache) FindManifestFile(file *LocalModelPackageFileDefinition
 	}
 
 	return nil
+}
+
+func (l *LocalModelCache) WriteManifest(pack *LocalModelPackageDefinition, modelsRoot string, manifest *LocalModelInstallManifest) error {
+	var path = l.GetManifestPath(pack, modelsRoot)
+
+	path = filepath.Dir(path)
+	if err := os.MkdirAll(path, 0755); err != nil {
+		return err
+	}
+
+	data, err := json.Marshal(manifest)
+	if err != nil {
+		return err
+	}
+
+	return os.WriteFile(path, data, 0644)
+}
+
+func (l *LocalModelCache) GetFileStatus(pack *LocalModelPackageDefinition, file *LocalModelPackageFileDefinition, manifest *LocalModelInstallManifest, modelsRoot string) *LocalModelPackageFileStatus {
+	var path = l.GetPackageFilePath(pack, file, modelsRoot)
+	if _, err := os.Stat(path); os.IsNotExist(err) {
+		issue := fmt.Sprintf("%s file is not installed", file.Role)
+		if file.Required {
+			issue = "Required " + issue
+		}
+		return &LocalModelPackageFileStatus{
+			Role:     file.Role,
+			FileName: file.FileName,
+			Required: file.Required,
+			Path:     path,
+			Issue:    issue,
+		}
+	}
+
+	var fileManifest = l.FindManifestFile(file, manifest)
+	if fileManifest == nil {
+		return &LocalModelPackageFileStatus{
+			Role:      file.Role,
+			FileName:  file.FileName,
+			Required:  file.Required,
+			Installed: true,
+			Path:      path,
+			Issue:     "Install manifest does not contain this file.",
+		}
+	}
+	expected := file.ExpectedSha256
+	if len(expected) == 0 {
+		expected = fileManifest.Sha256
+	}
+
+	verified := len(expected) > 0 && (expected == fileManifest.Sha256)
+	issue := "manifest checksum does not match the expected package checksum"
+	if verified {
+		issue = ""
+	}
+
+	return &LocalModelPackageFileStatus{
+		Role:      file.Role,
+		FileName:  file.FileName,
+		Required:  file.Required,
+		Installed: true,
+		Path:      path,
+		Verified:  verified,
+		Sha256:    manifest.Sha256,
+		Issue:     issue,
+	}
+}
+
+func (l *LocalModelCache) ResolveManualSource(role string, request *LocalModelInstallRequest) string {
+	if role == "mmproj" {
+		return request.MultimodalProjectorPath
+	}
+
+	if role == "draft" {
+		return request.DraftModelPath
+	}
+	return ""
+}
+
+func (l *LocalModelCache) WriteManifestAndVerify(pack *LocalModelPackageDefinition, installedFiles []LocalModelInstallFileManifest, request *LocalModelInstallRequest, primarySource string) *LocalModelInstallResult {
+	var primary *LocalModelInstallFileManifest
+	for _, v := range installedFiles {
+		if v.Role == "model" {
+			primary = &v
+			break
+		}
+	}
+
+	sha256 := ""
+	if primary != nil {
+		sha256 = primary.Sha256
+	}
+
+	l.WriteManifest(pack, request.ModelsRoot, &LocalModelInstallManifest{
+		PackageId:       pack.Id,
+		PresetId:        pack.PresetId,
+		ModelId:         pack.ModelId,
+		FileName:        pack.FileName,
+		Sha256:          sha256,
+		Source:          primarySource,
+		LicenseUrl:      pack.LicenseUrl,
+		LicenseAccepted: request.AcceptLicense,
+		Files:           installedFiles,
+	})
+
+	var status = l.GetStatus(pack, request.ModelsRoot)
+	if status == nil {
+		return nil
+	}
+
+	message := status.Issue
+	if status.Verified {
+		message = "installed " + pack.Id
+	} else if len(message) == 0 {
+		message = fmt.Sprintf("installed %s, but verification did not pass.", pack.Id)
+	}
+	return &LocalModelInstallResult{
+		Success: status.Verified,
+		Message: message,
+		Status:  status,
+	}
+}
+
+type InstallFileWrite struct {
+	Success  bool
+	Manifest *LocalModelInstallFileManifest
+	Result   *LocalModelInstallResult
+}
+
+func (l *LocalModelCache) BuildManifestEntry(ctx context.Context, pack *LocalModelPackageDefinition, file *LocalModelPackageFileDefinition, path, source string) (*InstallFileWrite, error) {
+	sha, err := l.ComputeSha256(ctx, path)
+	if err != nil {
+		return nil, err
+	}
+
+	if file != nil && len(file.ExpectedSha256) > 0 && sha != file.ExpectedSha256 {
+		os.Remove(path)
+		return &InstallFileWrite{
+			Success: false,
+			Result: &LocalModelInstallResult{
+				Message: fmt.Sprintf("checksum mismatch for %s file '%s' in package '%s'", file.Role, file.FileName, pack.Id),
+			},
+		}, nil
+	}
+
+	return &InstallFileWrite{
+		Success: true,
+		Manifest: &LocalModelInstallFileManifest{
+			Role:     file.Role,
+			FileName: file.FileName,
+			Sha256:   sha,
+			Source:   source,
+		},
+	}, nil
+}
+
+func (l *LocalModelCache) ComputeSha256(ctx context.Context, path string) (string, error) {
+	file, err := os.Open(path)
+	if err != nil {
+		return "", err
+	}
+	defer file.Close()
+
+	hasher := sha256.New()
+
+	cancelReader := &contextReader{ctx: ctx, r: file}
+
+	if _, err := io.Copy(hasher, cancelReader); err != nil {
+		return "", err
+	}
+
+	hashBytes := hasher.Sum(nil)
+
+	return hex.EncodeToString(hashBytes), nil
+}
+
+type contextReader struct {
+	ctx context.Context
+	r   io.Reader
+}
+
+func (cr *contextReader) Read(p []byte) (n int, err error) {
+	if err := cr.ctx.Err(); err != nil {
+		return 0, err
+	}
+	return cr.r.Read(p)
+}
+
+func (l *LocalModelCache) DownloadInstallFile(ctx context.Context, packageDef *LocalModelPackageDefinition, file *LocalModelPackageFileDefinition, downloadUrl string, request *LocalModelInstallRequest, httpCli *http.Client) (*InstallFileWrite, error) {
+	httpRequest, err := http.NewRequestWithContext(ctx, http.MethodGet, downloadUrl, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	if strings.TrimSpace(request.BearerToken) != "" {
+		httpRequest.Header.Set("Authorization", "Bearer "+request.BearerToken)
+	}
+
+	response, err := httpCli.Do(httpRequest)
+	if err != nil {
+		return nil, err
+	}
+	defer response.Body.Close()
+
+	if response.StatusCode < 200 || response.StatusCode >= 300 {
+		return &InstallFileWrite{
+			Success: false,
+			Result: &LocalModelInstallResult{
+				Success: false,
+				Message: fmt.Sprintf("Download for %s file '%s' failed with HTTP %d %s.",
+					file.Role, file.FileName, response.StatusCode, response.Status),
+			},
+		}, nil
+	}
+
+	destinationPath := l.GetPackageFilePath(packageDef, file, request.ModelsRoot)
+
+	destination, err := os.Create(destinationPath)
+	if err != nil {
+		return nil, err
+	}
+	defer destination.Close()
+
+	if _, err := io.Copy(destination, response.Body); err != nil {
+		return nil, err
+	}
+
+	return l.BuildManifestEntry(ctx, packageDef, file, destinationPath, downloadUrl)
+}
+
+func (l *LocalModelCache) CopyInstallFile(ctx context.Context, packageData *LocalModelPackageDefinition, file *LocalModelPackageFileDefinition, source, modelsRoot string) (*InstallFileWrite, error) {
+	sourcePath, err := l.ResolveConfiguredPath(source)
+	if err != nil {
+		return nil, err
+	}
+
+	if _, err := os.Stat(sourcePath); os.IsNotExist(err) {
+		return &InstallFileWrite{
+			Success: false,
+			Result: &LocalModelInstallResult{
+				Success: false,
+				Message: fmt.Sprintf("Source %s file was not found: %s", file.Role, sourcePath),
+			},
+		}, nil
+	}
+
+	destinationPath := l.GetPackageFilePath(packageData, file, modelsRoot)
+
+	if err := copyFile(sourcePath, destinationPath); err != nil {
+		return nil, err
+	}
+
+	return l.BuildManifestEntry(ctx, packageData, file, destinationPath, sourcePath)
+}
+
+func copyFile(src, dst string) error {
+	sourceFile, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+	defer sourceFile.Close()
+
+	// os.Create 会默认清空并覆盖已存在的文件（对应 overwrite: true）
+	destFile, err := os.Create(dst)
+	if err != nil {
+		return err
+	}
+	defer destFile.Close()
+
+	_, err = io.Copy(destFile, sourceFile)
+	return err
+}
+
+func (l *LocalModelCache) GetStatus(pkg *LocalModelPackageDefinition, modelsRoot string) *LocalModelPackageStatus {
+	packageFiles := l.GetPackageFiles(pkg)
+
+	var primaryFile *LocalModelPackageFileDefinition
+	for _, item := range packageFiles {
+		if strings.EqualFold(item.Role, "model") {
+			primaryFile = &item
+			break
+		}
+	}
+
+	if primaryFile == nil {
+		return nil
+	}
+
+	modelPath := l.GetPackageFilePath(pkg, primaryFile, modelsRoot)
+	manifestPath := l.GetManifestPath(pkg, modelsRoot)
+
+	manifest, manifestError := l.TryReadManifest(manifestPath)
+
+	fileStatuses := make([]LocalModelPackageFileStatus, len(packageFiles))
+	for i, file := range packageFiles {
+		fileStatuses[i] = *l.GetFileStatus(pkg, &file, manifest, modelsRoot)
+	}
+
+	installed := true
+	verified := manifest != nil
+
+	for _, file := range fileStatuses {
+		if file.Required {
+			if !file.Installed {
+				installed = false
+			}
+			if !file.Verified {
+				verified = false
+			}
+		}
+	}
+
+	var issue string
+	if manifest == nil {
+		if manifestError != nil {
+			issue = manifestError.Error()
+		} else {
+			issue = "Install manifest is missing."
+		}
+	} else {
+		for _, file := range fileStatuses {
+			if file.Required && !file.Verified {
+				issue = file.Issue
+				break
+			}
+		}
+	}
+
+	var sha256 string
+	if manifest != nil {
+		for _, file := range manifest.Files {
+			if strings.EqualFold(file.Role, "model") {
+				sha256 = file.Sha256
+				break
+			}
+		}
+		if sha256 == "" {
+			sha256 = manifest.Sha256
+		}
+	}
+
+	if verified {
+		issue = ""
+	} else if issue == "" {
+		issue = "Package files are not installed and verified."
+	}
+
+	return &LocalModelPackageStatus{
+		PackageId:   pkg.Id,
+		PresetId:    pkg.PresetId,
+		ModelId:     pkg.ModelId,
+		DisplayName: pkg.DisplayName,
+		Installed:   installed,
+		Verified:    verified,
+		ModelPath:   modelPath,
+		Sha256:      sha256,
+		Issue:       issue,
+		Files:       fileStatuses,
+	}
 }

@@ -141,10 +141,10 @@ func DefaultLocalModelPackageDefinition() LocalModelPackageDefinition {
 
 // --- LocalModelInstallFileManifest ---
 type LocalModelInstallFileManifest struct {
-	Role     string  `json:"role"`
-	FileName string  `json:"file_name"`
-	Sha256   string  `json:"sha256"`
-	Source   *string `json:"source,omitempty"`
+	Role     string `json:"role"`
+	FileName string `json:"file_name"`
+	Sha256   string `json:"sha256"`
+	Source   string `json:"source"`
 }
 
 // --- LocalModelInstallManifest ---
@@ -155,8 +155,8 @@ type LocalModelInstallManifest struct {
 	ModelId         string                          `json:"model_id"`
 	FileName        string                          `json:"file_name"`
 	Sha256          string                          `json:"sha256"`
-	Source          *string                         `json:"source,omitempty"`
-	LicenseUrl      *string                         `json:"license_url,omitempty"`
+	Source          string                          `json:"source"`
+	LicenseUrl      string                          `json:"license_url"`
 	LicenseAccepted bool                            `json:"license_accepted"`
 	InstalledAtUtc  time.Time                       `json:"installed_at_utc"`
 	Files           []LocalModelInstallFileManifest `json:"files"`
@@ -172,14 +172,14 @@ func DefaultLocalModelInstallManifest() LocalModelInstallManifest {
 
 // --- LocalModelPackageFileStatus ---
 type LocalModelPackageFileStatus struct {
-	Role      string  `json:"role"`
-	FileName  string  `json:"file_name"`
-	Required  bool    `json:"required"`
-	Installed bool    `json:"installed"`
-	Verified  bool    `json:"verified"`
-	Path      *string `json:"path,omitempty"`
-	Sha256    *string `json:"sha256,omitempty"`
-	Issue     *string `json:"issue,omitempty"`
+	Role      string `json:"role"`
+	FileName  string `json:"file_name"`
+	Required  bool   `json:"required"`
+	Installed bool   `json:"installed"`
+	Verified  bool   `json:"verified"`
+	Path      string `json:"path"`
+	Sha256    string `json:"sha256"`
+	Issue     string `json:"issue"`
 }
 
 // --- LocalModelPackageStatus ---
@@ -190,9 +190,9 @@ type LocalModelPackageStatus struct {
 	DisplayName string                        `json:"display_name"`
 	Installed   bool                          `json:"installed"`
 	Verified    bool                          `json:"verified"`
-	ModelPath   *string                       `json:"model_path,omitempty"`
-	Sha256      *string                       `json:"sha256,omitempty"`
-	Issue       *string                       `json:"issue,omitempty"`
+	ModelPath   string                        `json:"model_path"`
+	Sha256      string                        `json:"sha256"`
+	Issue       string                        `json:"issue"`
 	Files       []LocalModelPackageFileStatus `json:"files"`
 }
 
