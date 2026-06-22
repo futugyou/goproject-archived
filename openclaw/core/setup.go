@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 )
@@ -849,5 +850,158 @@ var LocalModelPackageDefinitionPackages []LocalModelPackageDefinition = []LocalM
 	},
 }
 
-type LocalModelPackageCatalog struct {
+type LocalModelCache struct {
+}
+
+func (l *LocalModelCache) GetPackageFiles(pack *LocalModelPackageDefinition) []LocalModelPackageFileDefinition {
+	if pack == nil || len(pack.Files) == 0 {
+		return []LocalModelPackageFileDefinition{
+			{
+				Role:             "model",
+				FileName:         pack.FileName,
+				DownloadUrl:      pack.DownloadUrl,
+				ExpectedSha256:   pack.ExpectedSha256,
+				Required:         true,
+				InstallByDefault: true,
+			},
+		}
+	}
+
+	return pack.Files
+}
+
+func (l *LocalModelCache) ResolveModelsRoot(configuredRoot string) (string, error) {
+	if strings.TrimSpace(configuredRoot) != "" {
+		return l.ResolveConfiguredPath(configuredRoot)
+	}
+
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", err
+	}
+
+	if runtime.GOOS == "windows" {
+		// 在 Windows 上通常是 C:\Users\用户名\AppData\Local
+		localAppData, err := os.UserCacheDir()
+		if err != nil {
+			return "", err
+		}
+		return filepath.Join(localAppData, "OpenClaw", "models"), nil
+	}
+
+	// 非 Windows 系统（Linux/macOS）
+	return filepath.Join(home, ".openclaw", "models"), nil
+}
+
+func (l *LocalModelCache) ResolveConfiguredPath(path string) (string, error) {
+	path = strings.TrimSpace(path)
+	if path == "" {
+		return "", errors.New("configured path cannot be empty")
+	}
+
+	expanded := os.ExpandEnv(path)
+
+	if expanded == "~" {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return "", err
+		}
+		expanded = home
+	} else if strings.HasPrefix(expanded, "~/") || strings.HasPrefix(expanded, "~\\") {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return "", err
+		}
+		expanded = filepath.Join(home, expanded[2:])
+	}
+
+	absolutePath, err := filepath.Abs(expanded)
+	if err != nil {
+		return "", err
+	}
+
+	return absolutePath, nil
+}
+
+func (l *LocalModelCache) GetPackageDirectory(pack *LocalModelPackageDefinition, modelsRoot string) string {
+	r, err := l.ResolveModelsRoot(modelsRoot)
+	if err != nil {
+		return ""
+	}
+	return filepath.Join(r, pack.Id)
+}
+
+func (l *LocalModelCache) GetModelPath(pack *LocalModelPackageDefinition, modelsRoot string) string {
+	return filepath.Join(l.GetPackageDirectory(pack, modelsRoot), pack.FileName)
+}
+
+func (l *LocalModelCache) GetPackageFilePath(pack *LocalModelPackageDefinition, file *LocalModelPackageFileDefinition, modelsRoot string) string {
+	return filepath.Join(l.GetPackageDirectory(pack, modelsRoot), file.FileName)
+}
+
+func (l *LocalModelCache) GetPackageRolePath(pack *LocalModelPackageDefinition, role string, modelsRoot string) string {
+	var fd LocalModelPackageFileDefinition
+	fds := l.GetPackageFiles(pack)
+	for _, f := range fds {
+		if f.Role == role {
+			fd = f
+			break
+		}
+	}
+
+	if len(fd.FileName) > 0 {
+		return l.GetPackageFilePath(pack, &fd, modelsRoot)
+	}
+
+	return ""
+}
+
+func (l *LocalModelCache) GetManifestPath(pack *LocalModelPackageDefinition, modelsRoot string) string {
+	return filepath.Join(l.GetPackageDirectory(pack, modelsRoot), "manifest.json")
+}
+
+func (l *LocalModelCache) TryReadManifest(path string) (*LocalModelInstallManifest, error) {
+	if _, err := os.Stat(path); os.IsNotExist(err) {
+		return nil, err
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+
+	var manifest LocalModelInstallManifest
+
+	if err := json.Unmarshal(data, &manifest); err != nil {
+		return nil, err
+	}
+
+	return &manifest, nil
+}
+
+func (l *LocalModelCache) FindManifestFile(file *LocalModelPackageFileDefinition, manifest *LocalModelInstallManifest) *LocalModelInstallFileManifest {
+	if manifest == nil {
+		return nil
+	}
+
+	var match *LocalModelInstallFileManifest
+	for _, item := range manifest.Files {
+		if item.FileName == file.FileName || item.Role == file.Role {
+			match = &item
+			break
+		}
+	}
+	if match != nil {
+		return match
+	}
+
+	if file.Role == "model" && len(manifest.Sha256) > 0 {
+		return &LocalModelInstallFileManifest{
+			Role:     "model",
+			FileName: manifest.FileName,
+			Sha256:   manifest.Sha256,
+			Source:   manifest.Source,
+		}
+	}
+
+	return nil
 }
