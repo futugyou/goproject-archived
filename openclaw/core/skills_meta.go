@@ -601,8 +601,8 @@ type MetaClarifyField struct {
 }
 
 type MetaRouteDefinition struct {
-	When *string `json:"when,omitempty"`
-	To   string  `json:"to"`
+	When string `json:"when"`
+	To   string `json:"to"`
 }
 
 type MetaStepRetryPolicy struct {
@@ -615,4 +615,114 @@ type MetaStepOutputContract struct {
 	// Expected format. Supported values: text, json. Defaults to "text".
 	Format             string   `json:"format"`
 	RequiredProperties []string `json:"required_properties,omitempty"`
+}
+
+type MetaRoutePlanner struct {
+	conditionEvaluator *MetaConditionEvaluator
+}
+
+func NewMetaRoutePlanner(conditionEvaluator *MetaConditionEvaluator) *MetaRoutePlanner {
+	return &MetaRoutePlanner{
+		conditionEvaluator: conditionEvaluator,
+	}
+}
+
+// SelectNextStep 选择下一步
+func (m *MetaRoutePlanner) SelectNextStep(step *MetaSkillStepDefinition, context *MetaExecutionContext) (string, bool) {
+	if step == nil || context == nil {
+		return "", false
+	}
+
+	for _, route := range step.Routes {
+		if strings.TrimSpace(route.When) == "" || m.conditionEvaluator.Evaluate(route.When, context) {
+			return route.To, true
+		}
+	}
+
+	return "", false
+}
+
+// ApplyInitialRoutingBlocks 应用初始路由阻断
+func (m *MetaRoutePlanner) ApplyInitialRoutingBlocks(
+	steps []*MetaSkillStepDefinition,
+	blocked map[string]struct{},
+	pending map[string]struct{},
+) {
+	if steps == nil || blocked == nil || pending == nil {
+		return
+	}
+
+	for _, step := range steps {
+		if step == nil {
+			continue
+		}
+		for _, route := range step.Routes {
+			blocked[route.To] = struct{}{}
+			delete(pending, route.To)
+		}
+	}
+}
+
+func (m *MetaRoutePlanner) ApplyCompletionRouting(
+	step *MetaSkillStepDefinition,
+	context *MetaExecutionContext,
+	stepById map[string]*MetaSkillStepDefinition,
+	blocked map[string]struct{},
+	pending map[string]struct{},
+	dependentsByStep map[string][]string,
+) {
+	if step == nil || context == nil || stepById == nil || blocked == nil || pending == nil || dependentsByStep == nil {
+		return
+	}
+
+	if len(step.Routes) == 0 {
+		return
+	}
+
+	selectedTarget, hasTarget := m.SelectNextStep(step, context)
+
+	for _, route := range step.Routes {
+		if _, exists := stepById[route.To]; !exists {
+			continue
+		}
+
+		if hasTarget && strings.EqualFold(route.To, selectedTarget) {
+			delete(blocked, route.To)
+			pending[route.To] = struct{}{}
+			continue
+		}
+
+		m.blockStepAndDependents(route.To, blocked, pending, dependentsByStep)
+	}
+}
+
+func (m *MetaRoutePlanner) blockStepAndDependents(
+	stepID string,
+	blocked map[string]struct{},
+	pending map[string]struct{},
+	dependentsByStep map[string][]string,
+) {
+	stack := []string{stepID}
+
+	for len(stack) > 0 {
+		index := len(stack) - 1
+		current := stack[index]
+		stack = stack[:index]
+
+		if _, exists := blocked[current]; exists {
+			continue
+		}
+		blocked[current] = struct{}{}
+
+		delete(pending, current)
+
+		dependents, exists := dependentsByStep[current]
+		if !exists {
+			continue
+		}
+
+		for _, dependent := range dependents {
+			stack = append(stack, dependent)
+		}
+	}
 }
