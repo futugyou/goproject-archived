@@ -552,3 +552,67 @@ func (m *MetaConditionEvaluator) IsTruthy(value string) bool {
 		lower != "none" &&
 		lower != "undefined"
 }
+
+type MetaSkillStepDefinition struct {
+	ID string `json:"id"`
+	// Step kind (agent, tool_call, llm_chat, etc.).
+	Kind                string                 `json:"kind"`
+	Skill               *string                `json:"skill,omitempty"`
+	Tool                *string                `json:"tool,omitempty"`
+	SkillExecEntrypoint *string                `json:"skill_exec_entrypoint,omitempty"`
+	SkillExecArgs       []string               `json:"skill_exec_args,omitempty"`
+	SkillExecStdin      *string                `json:"skill_exec_stdin,omitempty"`
+	SkillExecCwd        *string                `json:"skill_exec_cwd,omitempty"`
+	SkillExecParseMode  *string                `json:"skill_exec_parse_mode,omitempty"`
+	WithJSON            *string                `json:"with_json,omitempty"`
+	When                *string                `json:"when,omitempty"`
+	ToolArgsJSON        *string                `json:"tool_args_json,omitempty"`
+	ToolAllowlist       []string               `json:"tool_allowlist,omitempty"`
+	OutputChoices       []string               `json:"output_choices,omitempty"`
+	Clarify             *MetaClarifySchema     `json:"clarify,omitempty"`
+	Routes              []MetaRouteDefinition  `json:"routes,omitempty"`
+	DependsOn           []string               `json:"depends_on,omitempty"`
+	OnFailure           *string                `json:"on_failure,omitempty"`
+	TimeoutSeconds      *int                   `json:"timeout_seconds,omitempty"`
+	Retry               MetaStepRetryPolicy    `json:"retry"`
+	OutputContract      MetaStepOutputContract `json:"output_contract"`
+}
+
+type MetaClarifySchema struct {
+	// Interaction mode, such as chat or form. Defaults to "chat".
+	Mode                   string             `json:"mode"`
+	ExtractNaturalLanguage bool               `json:"extract_natural_language"`
+	Fields                 []MetaClarifyField `json:"fields,omitempty"`
+	CancelWords            []string           `json:"cancel_words,omitempty"`
+	SkipIf                 *string            `json:"skip_if,omitempty"`
+	TimeoutSeconds         *int               `json:"timeout_seconds,omitempty"`
+}
+
+type MetaClarifyField struct {
+	Name         string           `json:"name"`
+	Type         string           `json:"type"`
+	Required     bool             `json:"required"`
+	DefaultValue *json.RawMessage `json:"default_value,omitempty"`
+	Options      []string         `json:"options,omitempty"`
+	MinLength    *int             `json:"min_length,omitempty"`
+	MaxLength    *int             `json:"max_length,omitempty"`
+	Min          *float64         `json:"min,omitempty"`
+	Max          *float64         `json:"max,omitempty"`
+}
+
+type MetaRouteDefinition struct {
+	When *string `json:"when,omitempty"`
+	To   string  `json:"to"`
+}
+
+type MetaStepRetryPolicy struct {
+	// Total attempts, including the initial try. Defaults to 1.
+	MaxAttempts int `json:"max_attempts"`
+	BackoffMs   int `json:"backoff_ms"`
+}
+
+type MetaStepOutputContract struct {
+	// Expected format. Supported values: text, json. Defaults to "text".
+	Format             string   `json:"format"`
+	RequiredProperties []string `json:"required_properties,omitempty"`
+}
