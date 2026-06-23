@@ -8,6 +8,7 @@ import (
 	"html"
 	"maps"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"unicode"
@@ -724,5 +725,190 @@ func (m *MetaRoutePlanner) blockStepAndDependents(
 		for _, dependent := range dependents {
 			stack = append(stack, dependent)
 		}
+	}
+}
+
+type MetaClarifyValidator struct{}
+
+func (v *MetaClarifyValidator) ValidateAndNormalize(input string, schema *MetaClarifySchema) *MetaClarifyValidationResult {
+	if schema == nil {
+		panic("schema cannot be nil")
+	}
+
+	if matchesCancelWord(input, schema.CancelWords) {
+		return InvalidMetaClarifyValidationResult("user_input_cancelled")
+	}
+
+	if !strings.EqualFold(schema.Mode, "form") {
+		return ValidMetaClarifyValidationResult(input)
+	}
+
+	trimmedInput := strings.TrimSpace(input)
+	if trimmedInput == "" {
+		return InvalidMetaClarifyValidationResult("clarify_input_required")
+	}
+
+	// 解析为通用的 map[string]any 以模拟 JsonDocument/RootElement
+	var root map[string]any
+	decoder := json.NewDecoder(strings.NewReader(trimmedInput))
+	decoder.UseNumber() // 保持数字精度，避免自动转为 float64 丢失整数特征
+	if err := decoder.Decode(&root); err != nil {
+		return InvalidMetaClarifyValidationResult("clarify_invalid_json")
+	}
+
+	if root == nil {
+		return InvalidMetaClarifyValidationResult("clarify_invalid_shape")
+	}
+
+	normalizedMap := make(map[string]any)
+
+	for _, field := range schema.Fields {
+		value, failureCode, ok := tryResolveFieldValue(root, field)
+		if !ok {
+			return InvalidMetaClarifyValidationResult(failureCode)
+		}
+
+		// 如果值有效且不是“未定义”，则写入结果中
+		if value != nil {
+			normalizedMap[field.Name] = value
+		}
+	}
+
+	// 序列化回 JSON 字符串
+	outputBytes, err := json.Marshal(normalizedMap)
+	if err != nil {
+		return InvalidMetaClarifyValidationResult("clarify_invalid_shape")
+	}
+
+	return ValidMetaClarifyValidationResult(string(outputBytes))
+}
+
+func matchesCancelWord(input string, cancelWords []string) bool {
+	trimmed := strings.TrimSpace(input)
+	if trimmed == "" || len(cancelWords) == 0 {
+		return false
+	}
+
+	for _, cancelWord := range cancelWords {
+		if strings.EqualFold(trimmed, cancelWord) {
+			return true
+		}
+	}
+	return false
+}
+
+func tryResolveFieldValue(root map[string]any, field MetaClarifyField) (any, string, bool) {
+	rawVal, exists := root[field.Name]
+
+	// 1. 处理属性不存在的情况
+	if !exists {
+		if field.DefaultValue != nil {
+			return field.DefaultValue, "", true
+		}
+		if field.Required {
+			return nil, "clarify_required_field_missing", false
+		}
+		return nil, "", true // 相当于 Undefined，不写入最后的 JSON
+	}
+
+	// 2. 处理属性存在但为 null 的情况
+	if rawVal == nil {
+		if field.Required {
+			return nil, "clarify_required_field_missing", false
+		}
+		return nil, "", true
+	}
+
+	// 3. 根据字段类型进行校验
+	switch strings.ToLower(field.Type) {
+	case "string":
+		strVal, ok := rawVal.(string)
+		if !ok {
+			return nil, "clarify_invalid_type", false
+		}
+		if field.MinLength != nil && len(strVal) < *field.MinLength {
+			return nil, "clarify_min_length", false
+		}
+		if field.MaxLength != nil && len(strVal) > *field.MaxLength {
+			return nil, "clarify_max_length", false
+		}
+		return strVal, "", true
+
+	case "enum":
+		strVal, ok := rawVal.(string)
+		if !ok {
+			return nil, "clarify_invalid_type", false
+		}
+		found := slices.Contains(field.Options, strVal)
+		if !found {
+			return nil, "clarify_invalid_option", false
+		}
+		return strVal, "", true
+
+	case "number":
+		// 由于启用了 UseNumber()，数字会是 json.Number 类型
+		jsonNum, ok := rawVal.(json.Number)
+		if !ok {
+			return nil, "clarify_invalid_type", false
+		}
+		numVal, err := jsonNum.Float64()
+		if err != nil {
+			return nil, "clarify_invalid_type", false
+		}
+		if field.Min != nil && numVal < *field.Min {
+			return nil, "clarify_min", false
+		}
+		if field.Max != nil && numVal > *field.Max {
+			return nil, "clarify_max", false
+		}
+		return numVal, "", true
+
+	case "integer":
+		jsonNum, ok := rawVal.(json.Number)
+		if !ok {
+			return nil, "clarify_invalid_type", false
+		}
+		intVal, err := jsonNum.Int64()
+		if err != nil {
+			// 如果带有小数点，Int64() 会报错，说明它不是一个合法的整数类型
+			return nil, "clarify_invalid_type", false
+		}
+		if field.Min != nil && float64(intVal) < *field.Min {
+			return nil, "clarify_min", false
+		}
+		if field.Max != nil && float64(intVal) > *field.Max {
+			return nil, "clarify_max", false
+		}
+		return intVal, "", true
+
+	case "boolean":
+		boolVal, ok := rawVal.(bool)
+		if !ok {
+			return nil, "clarify_invalid_type", false
+		}
+		return boolVal, "", true
+	}
+
+	return nil, "clarify_invalid_type", false
+}
+
+// MetaClarifyValidationResult 保存验证结果
+type MetaClarifyValidationResult struct {
+	IsValid          bool
+	NormalizedOutput string
+	FailureCode      string
+}
+
+func ValidMetaClarifyValidationResult(output string) *MetaClarifyValidationResult {
+	return &MetaClarifyValidationResult{
+		IsValid:          true,
+		NormalizedOutput: output,
+	}
+}
+
+func InvalidMetaClarifyValidationResult(failureCode string) *MetaClarifyValidationResult {
+	return &MetaClarifyValidationResult{
+		IsValid:     false,
+		FailureCode: failureCode,
 	}
 }
