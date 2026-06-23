@@ -3,6 +3,7 @@ package core
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"html"
 	"maps"
@@ -215,4 +216,70 @@ func filterToJson(in *pongo2.Value, param *pongo2.Value) (*pongo2.Value, error) 
 	}
 
 	return pongo2.AsValue(string(jsonBytes)), nil
+}
+
+type MetaToolArgumentResolver struct {
+	renderer *MetaTemplateRenderer
+}
+
+func NewMetaToolArgumentResolver(renderer *MetaTemplateRenderer) *MetaToolArgumentResolver {
+	return &MetaToolArgumentResolver{
+		renderer: renderer,
+	}
+}
+
+func (r *MetaToolArgumentResolver) Resolve(
+	compositionToolArgsJSON *string,
+	withJSON *string,
+	stepToolArgsJSON *string,
+	context *MetaExecutionContext,
+) (string, error) {
+
+	merged := make(map[string]any)
+	if err := mergeInto(merged, compositionToolArgsJSON); err != nil {
+		return "", err
+	}
+	if err := mergeInto(merged, withJSON); err != nil {
+		return "", err
+	}
+	if err := mergeInto(merged, stepToolArgsJSON); err != nil {
+		return "", err
+	}
+
+	serialized, err := json.Marshal(merged)
+	if err != nil {
+		return "", errors.New("invalid_tool_args")
+	}
+
+	rendered := r.renderer.Render(string(serialized), context)
+
+	var finalObj map[string]any
+	decoder := json.NewDecoder(strings.NewReader(rendered))
+	if err := decoder.Decode(&finalObj); err != nil {
+		return "", errors.New("invalid_tool_args")
+	}
+
+	finalBytes, err := json.Marshal(finalObj)
+	if err != nil {
+		return "", errors.New("invalid_tool_args")
+	}
+
+	return string(finalBytes), nil
+}
+
+func mergeInto(target map[string]any, jsonStr *string) error {
+	if jsonStr == nil || strings.TrimSpace(*jsonStr) == "" {
+		return nil
+	}
+
+	var parsedNode map[string]any
+	if err := json.Unmarshal([]byte(*jsonStr), &parsedNode); err != nil {
+		return errors.New("invalid_tool_args")
+	}
+
+	for k, v := range parsedNode {
+		target[k] = v
+	}
+
+	return nil
 }
