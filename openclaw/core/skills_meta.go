@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"html"
 	"maps"
+	"regexp"
 	"strconv"
 	"strings"
 	"unicode"
@@ -277,9 +278,277 @@ func mergeInto(target map[string]any, jsonStr *string) error {
 		return errors.New("invalid_tool_args")
 	}
 
-	for k, v := range parsedNode {
-		target[k] = v
-	}
+	maps.Copy(target, parsedNode)
 
 	return nil
+}
+
+type operatorPart struct {
+	Expression string
+	Operator   string
+}
+
+type MetaConditionEvaluator struct {
+	renderer *MetaTemplateRenderer
+}
+
+// 编译正则表达式（不区分大小写）
+var notPrefix = regexp.MustCompile(`(?i)^not\s+`)
+
+func NewMetaConditionEvaluator(renderer *MetaTemplateRenderer) *MetaConditionEvaluator {
+	return &MetaConditionEvaluator{
+		renderer: renderer,
+	}
+}
+
+// Evaluate 评估表达式的布尔结果
+func (m *MetaConditionEvaluator) Evaluate(expression string, context *MetaExecutionContext) bool {
+	candidate := strings.TrimSpace(expression)
+	if candidate == "" {
+		return false
+	}
+
+	parts := m.SplitByTopLevelOperators(candidate)
+
+	if len(parts) == 1 {
+		return m.EvaluateAtomic(parts[0].Expression, context)
+	}
+
+	// ── 按照正确的优先级组合 ──
+	// 首先评估所有原子表达式，然后尊重 "and" > "or" 的优先级：
+	// 按 "or" 边界进行分组，每个分组内是一个 "and" 链条。
+	evaluated := make([]bool, len(parts))
+	for i, part := range parts {
+		evaluated[i] = m.EvaluateAtomic(part.Expression, context)
+	}
+
+	var orResults []bool
+	currentAnd := evaluated[0]
+
+	for i := 1; i < len(parts); i++ {
+		op := parts[i-1].Operator
+		if strings.EqualFold(op, "and") {
+			currentAnd = currentAnd && evaluated[i]
+		} else { // "or"
+			orResults = append(orResults, currentAnd)
+			currentAnd = evaluated[i]
+		}
+	}
+	orResults = append(orResults, currentAnd)
+
+	// 任何一个 "or" 分组为 true，整个表达式即为 true
+	for _, r := range orResults {
+		if r {
+			return true
+		}
+	}
+
+	return false
+}
+
+// EvaluateAtomic 评估单个原子表达式
+func (m *MetaConditionEvaluator) EvaluateAtomic(expression string, context *MetaExecutionContext) bool {
+	candidate := strings.TrimSpace(expression)
+
+	// ── 预包装 {{ … and … }} 回退处理 ──
+	if (strings.HasPrefix(candidate, "{{") || strings.HasPrefix(candidate, "{%")) &&
+		(strings.Contains(strings.ToLower(candidate), " and ") || strings.Contains(strings.ToLower(candidate), " or ")) {
+
+		inner := candidate
+		if strings.HasPrefix(candidate, "{{") && strings.HasSuffix(candidate, "}}") {
+			inner = strings.TrimSpace(candidate[2 : len(candidate)-2])
+		} else if strings.HasPrefix(candidate, "{%") && strings.HasSuffix(candidate, "%}") {
+			inner = m.ExtractIfCondition(inner)
+		}
+
+		return m.Evaluate(inner, context)
+	}
+
+	// ── 正常原子评估 ──
+	negate := false
+	loc := notPrefix.FindStringIndex(candidate)
+	if loc != nil {
+		negate = true
+		candidate = strings.TrimSpace(candidate[loc[1]:])
+	}
+
+	var template string
+	if strings.Contains(candidate, "{{") || strings.Contains(candidate, "{%") {
+		template = candidate
+	} else {
+		template = "{{ " + candidate + " }}"
+	}
+
+	rendered := m.renderer.Render(template, context)
+	result := m.IsTruthy(rendered)
+
+	if negate {
+		return !result
+	}
+	return result
+}
+
+// ExtractIfCondition 从 {% if ... %} 或 {% unless ... %} 中提取条件
+func (m *MetaConditionEvaluator) ExtractIfCondition(template string) string {
+	inner := template[2:] // 剥离前面的 {%
+	endIdx := strings.Index(inner, "%}")
+	if endIdx < 0 {
+		return inner
+	}
+	inner = strings.TrimSpace(inner[:endIdx])
+
+	const ifKeyword = "if "
+	const unlessKeyword = "unless "
+
+	if len(inner) >= len(ifKeyword) && strings.EqualFold(inner[:len(ifKeyword)], ifKeyword) {
+		return strings.TrimSpace(inner[len(ifKeyword):])
+	}
+	if len(inner) >= len(unlessKeyword) && strings.EqualFold(inner[:len(unlessKeyword)], unlessKeyword) {
+		return strings.TrimSpace(inner[len(unlessKeyword):])
+	}
+
+	return inner
+}
+
+// SplitByTopLevelOperators 在顶层 "and"/"or" 边界拆分表达式
+func (m *MetaConditionEvaluator) SplitByTopLevelOperators(expression string) []operatorPart {
+	var parts []operatorPart
+	depth := 0
+	inSingleQuote := false
+	inDoubleQuote := false
+	inCurly := 0
+	lastSplit := 0
+
+	runes := []rune(expression) // 转为 rune 切片以正确处理多字节字符（如果存在）
+	length := len(runes)
+
+	for i := 0; i < length; i++ {
+		ch := runes[i]
+
+		// 跟踪字符串字面量边界
+		if ch == '\'' && !inDoubleQuote {
+			inSingleQuote = !inSingleQuote
+		} else if ch == '"' && !inSingleQuote {
+			inDoubleQuote = !inDoubleQuote
+		}
+
+		if inSingleQuote || inDoubleQuote {
+			continue
+		}
+
+		// 跟踪括号深度
+		switch ch {
+		case '(':
+			depth++
+		case ')':
+			depth--
+		}
+
+		// 跟踪 {{ ... }} / {% ... %} 深度
+		if ch == '{' && i+1 < length && (runes[i+1] == '{' || runes[i+1] == '%') {
+			inCurly++
+			i++ // 跳过第二个大括号/百分号
+			continue
+		}
+		if (ch == '}' || ch == '%') && i+1 < length && runes[i+1] == '}' {
+			if inCurly > 0 {
+				inCurly--
+			}
+			i++
+			continue
+		}
+
+		// 仅在深度为 0 且在 Jinja 定界符之外时拆分
+		if depth > 0 || inCurly > 0 {
+			continue
+		}
+
+		// 检查单词边界处的 "and" / "or"
+		if nextIndex, matched := m.TryMatchLogicalOperator(runes, i, "and"); matched {
+			expr := strings.TrimSpace(string(runes[lastSplit:i]))
+			if len(expr) > 0 {
+				parts = append(parts, operatorPart{Expression: expr, Operator: "and"})
+			}
+			i = nextIndex - 1
+			lastSplit = nextIndex
+			continue
+		}
+
+		if nextIndex, matched := m.TryMatchLogicalOperator(runes, i, "or"); matched {
+			expr := strings.TrimSpace(string(runes[lastSplit:i]))
+			if len(expr) > 0 {
+				parts = append(parts, operatorPart{Expression: expr, Operator: "or"})
+			}
+			i = nextIndex - 1
+			lastSplit = nextIndex
+			continue
+		}
+	}
+
+	// 添加尾部剩余部分
+	tail := strings.TrimSpace(string(runes[lastSplit:]))
+	if len(tail) > 0 {
+		parts = append(parts, operatorPart{Expression: tail, Operator: ""})
+	}
+
+	return parts
+}
+
+// TryMatchLogicalOperator 尝试匹配逻辑运算符并返回下一个索引位置
+func (m *MetaConditionEvaluator) TryMatchLogicalOperator(runes []rune, index int, operatorText string) (int, bool) {
+	nextIndex := index
+	opRunes := []rune(operatorText)
+	opLen := len(opRunes)
+
+	if index < 0 || index+opLen > len(runes) {
+		return index, false
+	}
+
+	// 不区分大小写比对
+	for i := 0; i < opLen; i++ {
+		if unicode.ToLower(runes[index+i]) != unicode.ToLower(opRunes[i]) {
+			return index, false
+		}
+	}
+
+	// 检查前边界
+	beforeOk := index == 0 || unicode.IsSpace(runes[index-1]) || runes[index-1] == '('
+	if !beforeOk {
+		return index, false
+	}
+
+	// 检查后边界
+	afterIndex := index + opLen
+	afterOk := afterIndex == len(runes) || unicode.IsSpace(runes[afterIndex]) || runes[afterIndex] == ')'
+	if !afterOk {
+		return index, false
+	}
+
+	nextIndex = afterIndex
+	for nextIndex < len(runes) && unicode.IsSpace(runes[nextIndex]) {
+		nextIndex++
+	}
+
+	return nextIndex, true
+}
+
+// IsTruthy 判断字符串的真假值
+func (m *MetaConditionEvaluator) IsTruthy(value string) bool {
+	normalized := strings.TrimSpace(value)
+	if normalized == "" {
+		return false
+	}
+
+	if boolValue, err := strconv.ParseBool(strings.ToLower(normalized)); err == nil {
+		return boolValue
+	}
+
+	// 额外排查特定代表 false 的字符串
+	lower := strings.ToLower(normalized)
+	return lower != "0" &&
+		lower != "no" &&
+		lower != "off" &&
+		lower != "null" &&
+		lower != "none" &&
+		lower != "undefined"
 }
