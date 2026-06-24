@@ -298,3 +298,70 @@ func (s SkillPromptBuilder) Build(skills []SkillDefinition) string {
 
 	return sb.String()
 }
+
+var DefaultIndexTemplate string = `
+        <available-skills>
+        The following skills are available. Only metadata and a resource manifest are shown here.
+        {load_instruction}{resource_instruction}Only load what is needed, when it is needed.
+
+        {skills}
+        </available-skills>
+        `
+
+var LoadInstructionFragment string = "Call the `load_skill` tool with a skill name to fetch its full instructions on demand.\n"
+
+var ResourceInstructionFragment string = "Call the `read_skill_resource` tool with a skill name and resource path to fetch a single reference or script body. " +
+	"Only paths listed inside that skill's <resources> manifest are valid; if a skill has no <resources> node, do not call this tool for it. " +
+	"Note: `SKILL.md` is the skill body itself — use `load_skill` to fetch it, never `read_skill_resource`.\n"
+
+var SkillsPlaceholder string = "{skills}"
+
+func (s SkillPromptBuilder) BuildIndex(skills []SkillDefinition, template string) string {
+	modelSkills := make([]SkillDefinition, 0)
+	hasResources := false
+	for _, skill := range skills {
+		if !skill.DisableModelInvocation {
+			modelSkills = append(modelSkills, skill)
+			if len(skill.Resources) > 0 {
+				hasResources = true
+			}
+		}
+	}
+
+	if len(modelSkills) == 0 {
+		return ""
+	}
+
+	var sb strings.Builder
+	for _, skill := range modelSkills {
+		s.appendSkillEntry(&sb, &skill)
+	}
+
+	var skillsBlock = strings.TrimRight(sb.String(), "\r\n")
+
+	effectiveTemplate := template
+	if template == "" {
+		effectiveTemplate = DefaultIndexTemplate
+	}
+
+	if !strings.Contains(effectiveTemplate, SkillsPlaceholder) {
+		return ""
+	}
+
+	resourceVal := ""
+	if hasResources {
+		resourceVal = ResourceInstructionFragment
+	}
+
+	replacer := strings.NewReplacer(
+		"{load_instruction}", LoadInstructionFragment,
+		"{resource_instruction}", resourceVal,
+		SkillsPlaceholder, skillsBlock,
+	)
+
+	rendered := replacer.Replace(effectiveTemplate)
+
+	// Preserve the original behaviour of leading/trailing newlines around the section
+	// so callers can append it directly to the base prompt with a single separator.
+	return "\n" + rendered + "\n"
+}
