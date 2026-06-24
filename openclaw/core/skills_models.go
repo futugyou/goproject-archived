@@ -59,18 +59,23 @@ func DefaultSkillEntryConfig() *SkillEntryConfig {
 }
 
 type SkillDefinition struct {
-	Name                   string          `json:"name"`
-	Description            string          `json:"description"`
-	Instructions           string          `json:"instructions"`
-	Location               string          `json:"location"`
-	Source                 SkillSource     `json:"source"`
-	Metadata               SkillMetadata   `json:"metadata"`
-	UserInvocable          bool            `json:"user_invocable"`
-	DisableModelInvocation bool            `json:"disable_model_invocation"`
-	CommandDispatch        *string         `json:"command_dispatch,omitempty"`
-	CommandTool            *string         `json:"command_tool,omitempty"`
-	CommandArgMode         *string         `json:"command_arg_mode,omitempty"`
-	Resources              []SkillResource `json:"resources"`
+	Name                   string                `json:"name"`
+	Description            string                `json:"description"`
+	Instructions           string                `json:"instructions"`
+	Location               string                `json:"location"`
+	Source                 SkillSource           `json:"source"`
+	Metadata               SkillMetadata         `json:"metadata"`
+	Kind                   SkillKind             `json:"kind"`
+	Triggers               []string              `json:"triggers"`
+	MetaPriority           int                   `json:"meta_priority"`
+	FinalTextMode          string                `json:"final_text_mode"`
+	Composition            *MetaSkillComposition `json:"composition"`
+	UserInvocable          bool                  `json:"user_invocable"`
+	DisableModelInvocation bool                  `json:"disable_model_invocation"`
+	CommandDispatch        *string               `json:"command_dispatch,omitempty"`
+	CommandTool            *string               `json:"command_tool,omitempty"`
+	CommandArgMode         *string               `json:"command_arg_mode,omitempty"`
+	Resources              []SkillResource       `json:"resources"`
 }
 
 // DefaultSkillDefinition 返回带默认值的 SkillDefinition 实例
@@ -80,7 +85,13 @@ func DefaultSkillDefinition() *SkillDefinition {
 		DisableModelInvocation: false,
 		Metadata:               *DefaultSkillMetadata(),
 		Resources:              []SkillResource{},
+		Kind:                   SkillKind_Standard,
 	}
+}
+
+type MetaSkillComposition struct {
+	ToolArgsJson string
+	Steps        []MetaSkillStepDefinition
 }
 
 type SkillMetadata struct {
@@ -130,3 +141,20 @@ const (
 	SkillResourceKind_Reference SkillResourceKind = iota
 	SkillResourceKind_Script
 )
+
+type SkillKind uint8
+
+const (
+	SkillKind_Standard SkillKind = iota
+	SkillKind_Meta
+)
+
+func (s SkillKind) ToString() string {
+	switch s {
+	case SkillKind_Standard:
+		return "standard"
+	case SkillKind_Meta:
+		return "meta"
+	}
+	return "standard"
+}
