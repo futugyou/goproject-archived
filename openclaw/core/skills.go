@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"html"
 	"strings"
 )
 
@@ -152,14 +153,14 @@ func renderResourceManifest(skill *SkillDefinition) string {
 		sb.WriteString("  <resource kind=\"")
 		sb.WriteString(kind)
 		sb.WriteString("\" path=\"")
-		sb.WriteString(xmlEscape(resource.RelativePath))
+		sb.WriteString(securityEscape(resource.RelativePath))
 		sb.WriteString("\" />\n")
 	}
 	sb.WriteString("</skill-resources>")
 	return sb.String()
 }
 
-func xmlEscape(s string) string {
+func securityEscape(s string) string {
 	var sb strings.Builder
 	for _, r := range s {
 		switch r {
@@ -197,6 +198,102 @@ func (s SkillPromptBuilder) BuildSkillBody(skill *SkillDefinition) string {
 	sb.WriteString("\n")
 	sb.WriteString(skill.Instructions)
 	sb.WriteString("\n")
+	sb.WriteString("</skill-instructions>\n")
+
+	return sb.String()
+}
+
+func (s SkillPromptBuilder) appendSkillEntry(sb *strings.Builder, skill *SkillDefinition) {
+	sb.WriteString("<skill>\n")
+	sb.WriteString("  <name>")
+	sb.WriteString(html.EscapeString(skill.Name))
+	sb.WriteString("</name>\n")
+	sb.WriteString("  <kind>")
+	sb.WriteString(html.EscapeString(skill.Kind.ToString()))
+	sb.WriteString("</kind>\n")
+	sb.WriteString("  <description>")
+	sb.WriteString(html.EscapeString(skill.Description))
+	sb.WriteString("</description>\n")
+	sb.WriteString("  <location>")
+	sb.WriteString(html.EscapeString(skill.Location))
+	sb.WriteString("</location>\n")
+
+	if skill.MetaPriority > 0 {
+		sb.WriteString("  <meta-priority>")
+		fmt.Fprintf(sb, "%d", skill.MetaPriority)
+		sb.WriteString("</meta-priority>\n")
+	}
+
+	if len(skill.Triggers) > 0 {
+		sb.WriteString("  <triggers>\n")
+		for _, trigger := range skill.Triggers {
+			sb.WriteString("    <trigger>")
+			sb.WriteString(html.EscapeString(trigger))
+			sb.WriteString("</trigger>\n")
+		}
+
+		sb.WriteString("  </triggers>\n")
+	}
+
+	if len(skill.Resources) > 0 {
+		sb.WriteString("  <resources>\n")
+
+		for _, resource := range skill.Resources {
+			kind := "script"
+			if resource.Kind == SkillResourceKind_Reference {
+				kind = "reference"
+			}
+			sb.WriteString("    <resource kind=\"")
+			sb.WriteString(kind)
+			sb.WriteString("\" path=\"")
+			sb.WriteString(html.EscapeString(resource.RelativePath))
+			sb.WriteString("\" />\n")
+		}
+		sb.WriteString("  </resources>\n")
+	}
+
+	sb.WriteString("</skill>\n")
+}
+
+func (s SkillPromptBuilder) Build(skills []SkillDefinition) string {
+	modelSkills := make([]SkillDefinition, 0)
+	for _, skill := range skills {
+		if !skill.DisableModelInvocation {
+			modelSkills = append(modelSkills, skill)
+		}
+	}
+
+	if len(modelSkills) == 0 {
+		return ""
+	}
+
+	var sb strings.Builder
+	sb.WriteString("\n")
+	sb.WriteString("<available-skills>\n")
+	sb.WriteString("The following skills are available to help you complete tasks. Use them when relevant.\n")
+	sb.WriteString("\n")
+
+	for _, skill := range modelSkills {
+		s.appendSkillEntry(&sb, &skill)
+	}
+
+	sb.WriteString("</available-skills>\n")
+	sb.WriteString("\n")
+	sb.WriteString("<skill-instructions>\n")
+
+	for _, skill := range modelSkills {
+		if len(skill.Instructions) == 0 {
+			continue
+		}
+
+		sb.WriteString("\n")
+		sb.WriteString("## Skill: ")
+		sb.WriteString(skill.Name)
+		sb.WriteString("\n")
+		sb.WriteString(skill.Instructions)
+		sb.WriteString("\n")
+	}
+
 	sb.WriteString("</skill-instructions>\n")
 
 	return sb.String()
