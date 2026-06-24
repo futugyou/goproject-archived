@@ -365,3 +365,42 @@ func (s SkillPromptBuilder) BuildIndex(skills []SkillDefinition, template string
 	// so callers can append it directly to the base prompt with a single separator.
 	return "\n" + rendered + "\n"
 }
+
+func (s SkillPromptBuilder) BuildSummary(skills []SkillDefinition) string {
+	if len(skills) == 0 {
+		return "No skills loaded."
+	}
+
+	var sb strings.Builder
+	sb.WriteString(fmt.Sprintf("Loaded skills (%d):", len(skills)))
+
+	for _, skill := range skills {
+		flags := make([]string, 0)
+		if skill.DisableModelInvocation {
+			flags = append(flags, "no-model")
+		}
+		if !skill.UserInvocable {
+			flags = append(flags, "no-slash")
+		}
+		if skill.Metadata.Always {
+			flags = append(flags, "always")
+		}
+		if skill.CommandDispatch != nil {
+			flags = append(flags, fmt.Sprintf("dispatch:%s", *skill.CommandDispatch))
+		}
+		if skill.Kind == SkillKind_Meta {
+			flags = append(flags, "kind:meta")
+		}
+		if skill.MetaPriority > 0 {
+			flags = append(flags, fmt.Sprintf("meta-priority:%d", skill.MetaPriority))
+		}
+
+		flagStr := ""
+		if len(flags) > 0 {
+			flagStr = fmt.Sprintf(" [%s]", strings.Join(flags, ", "))
+		}
+		fmt.Fprintf(&sb, "  - %s: %s%s (%s)", skill.Name, skill.Description, flagStr, skill.Source.ToString())
+	}
+
+	return sb.String()
+}

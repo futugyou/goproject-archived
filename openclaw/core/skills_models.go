@@ -135,6 +135,22 @@ const (
 	SkillSource_Plugin
 )
 
+func (s SkillSource) ToString() string {
+	switch s {
+	case SkillSource_Bundled:
+		return "bundled"
+	case SkillSource_Managed:
+		return "managed"
+	case SkillSource_Workspace:
+		return "workspace"
+	case SkillSource_Extra:
+		return "extra"
+	case SkillSource_Plugin:
+		return "plugin"
+	}
+	return "bundled"
+}
+
 type SkillResourceKind uint8
 
 const (
