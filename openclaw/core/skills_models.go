@@ -93,7 +93,7 @@ type SkillMetadata struct {
 	RequireEnv     []string `json:"require_env"`
 	RequireConfig  []string `json:"require_config"`
 	PrimaryEnv     *string  `json:"primary_env,omitempty"`
-	SkillKey       *string  `json:"skill_key,omitempty"`
+	SkillKey       string   `json:"skill_key"`
 }
 
 // DefaultSkillMetadata 返回带默认值的 SkillMetadata 实例
