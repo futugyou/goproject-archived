@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"html"
+	"math"
 	"strings"
 )
 
@@ -643,4 +644,57 @@ type MetaInvokeStepSummary struct {
 	Id        string   `json:"id"`
 	Kind      string   `json:"kind"`
 	DependsOn []string `json:"depends_on"`
+}
+
+type MetaSkillResolver struct{}
+
+func (m *MetaSkillResolver) isTriggerMatch(userMessage, trigger string) bool {
+	normalizedTrigger := strings.TrimSpace(trigger)
+	if len(normalizedTrigger) == 0 {
+		return false
+	}
+
+	return strings.Contains(userMessage, normalizedTrigger)
+}
+
+func (m *MetaSkillResolver) TryResolve(skills []SkillDefinition, userMessage string) (matched *SkillDefinition, result bool) {
+	if len(skills) == 0 || len(userMessage) == 0 {
+		return
+	}
+
+	var message = strings.TrimSpace(userMessage)
+
+	var bestSkill *SkillDefinition
+	bestPriority := math.MinInt
+	bestTriggerLength := -1
+	for _, skill := range skills {
+		if skill.Kind != SkillKind_Meta || skill.DisableModelInvocation {
+			continue
+		}
+
+		if len(skill.Triggers) == 0 {
+			continue
+		}
+
+		for _, trigger := range skill.Triggers {
+			if len(trigger) == 0 {
+				continue
+			}
+			if !m.isTriggerMatch(message, trigger) {
+				continue
+			}
+
+			var priority = skill.MetaPriority
+			var triggerLength = len(trigger)
+
+			if priority > bestPriority || (priority == bestPriority && triggerLength > bestTriggerLength) {
+				bestSkill = &skill
+				bestPriority = priority
+				bestTriggerLength = triggerLength
+			}
+		}
+	}
+
+	matched = bestSkill
+	return matched, matched != nil
 }
