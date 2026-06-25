@@ -404,3 +404,109 @@ func (s SkillPromptBuilder) BuildSummary(skills []SkillDefinition) string {
 
 	return sb.String()
 }
+
+func (s SkillPromptBuilder) EstimateCharacterCost(skills []SkillDefinition) int {
+	modelSkills := make([]SkillDefinition, 0)
+	for _, skill := range skills {
+		if !skill.DisableModelInvocation {
+			modelSkills = append(modelSkills, skill)
+		}
+	}
+
+	if len(modelSkills) == 0 {
+		return 0
+	}
+
+	// Base overhead (XML wrapper + header text)
+	var cost = 195
+	for _, skill := range modelSkills {
+		// Per-skill overhead (XML tags + indentation) + actual content
+		cost += 97 + len(html.EscapeString(skill.Name)) + len(html.EscapeString(skill.Description)) + len(html.EscapeString(skill.Location)) + len(skill.Instructions)
+	}
+
+	return cost
+}
+
+func (s SkillPromptBuilder) EstimateIndexCharacterCost(skills []SkillDefinition, template string) int {
+	modelSkills := make([]SkillDefinition, 0)
+	hasResources := false
+	for _, skill := range skills {
+		if !skill.DisableModelInvocation {
+			modelSkills = append(modelSkills, skill)
+			if len(skill.Resources) > 0 {
+				hasResources = true
+			}
+		}
+	}
+
+	if len(modelSkills) == 0 {
+		return 0
+	}
+
+	effectiveTemplate := template
+	if template == "" {
+		effectiveTemplate = DefaultIndexTemplate
+	}
+
+	var templateOverhead = len(effectiveTemplate) - len(SkillsPlaceholder) - len("{load_instruction}") + len(LoadInstructionFragment) + 2 // BuildIndex prepends and appends "\n"
+
+	if hasResources {
+		templateOverhead += len(ResourceInstructionFragment)
+	}
+
+	if strings.Contains(effectiveTemplate, "{resource_instruction}") {
+		templateOverhead -= len("{resource_instruction}")
+	}
+	var cost = templateOverhead
+
+	for _, skill := range modelSkills {
+		// Per-skill XML overhead (<skill>, <name>, <description>, <location>, closing tags + newlines)
+		cost += 97 + len(html.EscapeString(skill.Name)) + len(html.EscapeString(skill.Description)) + len(html.EscapeString(skill.Location))
+
+		if len(skill.Resources) > 0 {
+			// <resources> + </resources> wrapper (incl. indentation + newlines)
+			cost += 30
+			for _, resource := range skill.Resources {
+				// <resource kind="..." path="..." />
+				cost += 33 + len(html.EscapeString(resource.RelativePath))
+				if resource.Kind == SkillResourceKind_Reference {
+					cost += len("reference")
+				} else {
+					cost += len("script")
+				}
+			}
+		}
+	}
+
+	return cost
+}
+
+func (s SkillPromptBuilder) EstimateSkillEagerCost(skill *SkillDefinition) int {
+	if skill == nil || skill.DisableModelInvocation {
+		return 0
+	}
+
+	return 97 + len(html.EscapeString(skill.Name)) + len(html.EscapeString(skill.Description)) + len(html.EscapeString(skill.Location)) + len(skill.Instructions)
+}
+
+func (s SkillPromptBuilder) EstimateSkillIndexCost(skill *SkillDefinition) int {
+	if skill == nil || skill.DisableModelInvocation {
+		return 0
+	}
+
+	var cost = 97 + len(html.EscapeString(skill.Name)) + len(html.EscapeString(skill.Description)) + len(html.EscapeString(skill.Location))
+
+	if len(skill.Resources) > 0 {
+		cost += 30 // <resources>...</resources> wrapper
+		for _, resource := range skill.Resources {
+			cost += 33 + len(html.EscapeString(resource.RelativePath))
+			if resource.Kind == SkillResourceKind_Reference {
+				cost += len("reference")
+			} else {
+				cost += len("script")
+			}
+		}
+	}
+
+	return cost
+}
