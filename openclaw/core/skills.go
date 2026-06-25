@@ -3,6 +3,7 @@ package core
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"html"
 	"strings"
@@ -104,7 +105,7 @@ func tryParseSkillName(argumentsJson string) (string, error) {
 		return "", fmt.Errorf("Error: missing required argument 'skill'.")
 	}
 
-	var rawMap map[string]interface{}
+	var rawMap map[string]any
 	if err := json.Unmarshal([]byte(argumentsJson), &rawMap); err != nil {
 		return "", fmt.Errorf("Error: invalid JSON arguments. Expected {\"skill\":\"<name>\"}.")
 	}
@@ -509,4 +510,137 @@ func (s SkillPromptBuilder) EstimateSkillIndexCost(skill *SkillDefinition) int {
 	}
 
 	return cost
+}
+
+var _ ITool = (*MetaInvokeTool)(nil)
+
+type MetaInvokeTool struct {
+	provider func() []SkillDefinition
+}
+
+func NewMetaInvokeTool(provider func() []SkillDefinition) *MetaInvokeTool {
+	return &MetaInvokeTool{provider: provider}
+}
+
+// Description implements [ITool].
+func (m *MetaInvokeTool) Description() string {
+	return "Invoke a meta skill by name and return a structured execution intent payload. Use when a user intent matches a kind=meta skill."
+}
+
+// ParameterSchema implements [ITool].
+func (m *MetaInvokeTool) ParameterSchema() string {
+	return `{"type":"object","properties":{"skill":{"type":"string","description":"Meta skill name to invoke."},"input":{"type":"string","description":"Optional user input passed to the meta execution pipeline."}},"required":["skill"]}`
+}
+
+// Name implements [ITool].
+func (m *MetaInvokeTool) Name() string {
+	return "meta_invoke"
+}
+
+// Execute implements [ITool].
+func (m *MetaInvokeTool) Execute(ctx context.Context, argumentsJson string) (string, error) {
+	if err := ctx.Err(); err != nil {
+		return "", err
+	}
+	result, skillName, input, errorstr := m.tryParseArguments(argumentsJson)
+	if !result {
+		return errorstr, errors.New(errorstr)
+	}
+
+	skills := []SkillDefinition{}
+	if m.provider != nil {
+		skills = m.provider()
+	}
+	var matched *SkillDefinition
+	for _, skill := range skills {
+		if skill.Kind == SkillKind_Meta && skill.Name == skillName && !skill.DisableModelInvocation {
+			matched = &skill
+			break
+		}
+	}
+
+	if matched == nil {
+		msgs := []string{}
+		for _, skill := range skills {
+			if skill.Kind == SkillKind_Meta && !skill.DisableModelInvocation {
+				msgs = append(msgs, skill.Name)
+			}
+		}
+
+		available := strings.Join(msgs, ", ")
+		errorstr = fmt.Sprintf("Error: meta skill '%s' not found. Available: (none)).", skillName)
+		if len(msgs) > 0 {
+			errorstr = fmt.Sprintf("Error: meta skill '%s' not found. Available: %s).", skillName, available)
+		}
+		return errorstr, errors.New(errorstr)
+	}
+
+	var payload = MetaInvokeIntent{
+		Skill:         matched.Name,
+		Input:         &input,
+		FinalTextMode: &matched.FinalTextMode,
+		MetaPriority:  &matched.MetaPriority,
+	}
+	steps := []MetaInvokeStepSummary{}
+	if matched.Composition != nil {
+		for _, v := range matched.Composition.Steps {
+			steps = append(steps, MetaInvokeStepSummary{
+				Id:        v.ID,
+				Kind:      v.Kind,
+				DependsOn: v.DependsOn,
+			})
+		}
+	}
+
+	payload.Steps = steps
+
+	data, err := json.Marshal(payload)
+	if err != nil {
+		return err.Error(), err
+	}
+	return string(data), nil
+}
+
+func (m *MetaInvokeTool) tryParseArguments(jsonStr string) (result bool, skill string, input string, errorstr string) {
+	if strings.TrimSpace(jsonStr) == "" {
+		return false, "", "", "Error: missing required argument 'skill'."
+	}
+
+	var data map[string]any
+	err := json.Unmarshal([]byte(jsonStr), &data)
+	if err != nil {
+		return false, "", "", "Error: invalid JSON arguments. Expected {\"skill\":\"<name>\"}."
+	}
+
+	if skillVal, exists := data["skill"]; exists {
+		if str, ok := skillVal.(string); ok {
+			skill = str
+		}
+	}
+
+	if inputVal, exists := data["input"]; exists {
+		if str, ok := inputVal.(string); ok {
+			input = str
+		}
+	}
+
+	if strings.TrimSpace(skill) == "" {
+		return false, "", "", "Error: missing required argument 'skill'."
+	}
+
+	return true, skill, input, ""
+}
+
+type MetaInvokeIntent struct {
+	Skill         string                  `json:"skill"`
+	Input         *string                 `json:"input,omitempty"`
+	FinalTextMode *string                 `json:"final_text_mode,omitempty"`
+	MetaPriority  *int                    `json:"meta_priority,omitempty"`
+	Steps         []MetaInvokeStepSummary `json:"steps"`
+}
+
+type MetaInvokeStepSummary struct {
+	Id        string   `json:"id"`
+	Kind      string   `json:"kind"`
+	DependsOn []string `json:"depends_on"`
 }
