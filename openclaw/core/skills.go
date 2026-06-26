@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"html"
 	"math"
+	"path/filepath"
 	"strings"
 )
 
@@ -697,4 +698,52 @@ func (m *MetaSkillResolver) TryResolve(skills []SkillDefinition, userMessage str
 
 	matched = bestSkill
 	return matched, matched != nil
+}
+
+type SkillInspector struct{}
+
+func (s *SkillInspector) TryLocateSkillRoot(candidatePath string) (string, error) {
+	if !directoryExists(candidatePath) {
+		return "", fmt.Errorf("Skill path not found: %s", candidatePath)
+	}
+
+	if fileExists(filepath.Join(candidatePath, "SKILL.md")) {
+		return filepath.Abs(candidatePath)
+	}
+
+	matches, err := findDirectoriesCantainsFileName(candidatePath, "SKILL.md")
+	if err != nil {
+		return "", err
+	}
+
+	if len(matches) == 0 {
+		return "", fmt.Errorf("No SKILL.md file was found under %s", candidatePath)
+	}
+
+	if len(matches) > 1 {
+		return "", fmt.Errorf("Multiple SKILL.md files were found under %s. Point the command at a single skill directory.", candidatePath)
+	}
+
+	return filepath.Abs(matches[0])
+}
+
+func (s *SkillInspector) InspectPath(candidatePath string, source *SkillSource) *SkillInspectionResult {
+	skillRootPath, err := s.TryLocateSkillRoot(candidatePath)
+	if err != nil {
+		return FailureSkillInspectionResult(err.Error())
+	}
+
+	var skillFilePath = filepath.Join(skillRootPath, "SKILL.md")
+	loader := &SkillLoader{}
+	definition, err := loader.ParseSkillFile(skillFilePath, skillRootPath, source)
+	if err != nil || definition == nil {
+		return FailureSkillInspectionResult("failed to parse skill frontmatter at  " + skillFilePath)
+	}
+
+	return &SkillInspectionResult{
+		Success:       true,
+		SkillRootPath: skillRootPath,
+		SkillFilePath: skillFilePath,
+		Definition:    definition,
+	}
 }
