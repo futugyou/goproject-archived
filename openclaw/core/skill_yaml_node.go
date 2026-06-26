@@ -6,11 +6,6 @@ import (
 	"fmt"
 )
 
-type YamlProperty struct {
-	Key   string
-	Value SkillYamlNode
-}
-
 type SkillYamlNode interface {
 	WriteTo(enc *json.Encoder) error
 }

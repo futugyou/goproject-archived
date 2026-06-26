@@ -63,19 +63,19 @@ type SkillDefinition struct {
 	Description            string                `json:"description"`
 	Instructions           string                `json:"instructions"`
 	Location               string                `json:"location"`
-	Source                 SkillSource           `json:"source"`
-	Metadata               SkillMetadata         `json:"metadata"`
+	Source                 *SkillSource          `json:"source,omitempty"`
+	Metadata               *SkillMetadata        `json:"metadata,omitempty"`
 	Kind                   SkillKind             `json:"kind"`
 	Triggers               []string              `json:"triggers"`
 	MetaPriority           int                   `json:"meta_priority"`
 	FinalTextMode          string                `json:"final_text_mode"`
-	Composition            *MetaSkillComposition `json:"composition"`
+	Composition            *MetaSkillComposition `json:"composition,omitempty"`
 	UserInvocable          bool                  `json:"user_invocable"`
 	DisableModelInvocation bool                  `json:"disable_model_invocation"`
 	CommandDispatch        *string               `json:"command_dispatch,omitempty"`
 	CommandTool            *string               `json:"command_tool,omitempty"`
 	CommandArgMode         *string               `json:"command_arg_mode,omitempty"`
-	Resources              []SkillResource       `json:"resources"`
+	Resources              []SkillResource       `json:"resources,omitempty"`
 }
 
 // DefaultSkillDefinition 返回带默认值的 SkillDefinition 实例
@@ -83,7 +83,7 @@ func DefaultSkillDefinition() *SkillDefinition {
 	return &SkillDefinition{
 		UserInvocable:          true,
 		DisableModelInvocation: false,
-		Metadata:               *DefaultSkillMetadata(),
+		Metadata:               DefaultSkillMetadata(),
 		Resources:              []SkillResource{},
 		Kind:                   SkillKind_Standard,
 	}
@@ -97,7 +97,7 @@ type MetaSkillComposition struct {
 type SkillMetadata struct {
 	Always         bool     `json:"always"`
 	Emoji          *string  `json:"emoji,omitempty"`
-	Homepage       *string  `json:"homepage,omitempty"`
+	Homepage       string   `json:"homepage"`
 	Os             []string `json:"os"`
 	RequireBins    []string `json:"require_bins"`
 	RequireAnyBins []string `json:"require_any_bins"`
@@ -105,6 +105,8 @@ type SkillMetadata struct {
 	RequireConfig  []string `json:"require_config"`
 	PrimaryEnv     *string  `json:"primary_env,omitempty"`
 	SkillKey       string   `json:"skill_key"`
+	Risk           string   `json:"risk"`
+	Capabilities   []string `json:"capabilities"`
 }
 
 // DefaultSkillMetadata 返回带默认值的 SkillMetadata 实例
