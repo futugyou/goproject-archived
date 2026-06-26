@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"html"
 	"math"
+	"os"
 	"path/filepath"
 	"strings"
 )
@@ -58,7 +59,7 @@ func (t *LoadSkillTool) Execute(ctx context.Context, argumentsJson string) (stri
 
 	requested, err := tryParseSkillName(argumentsJson)
 	if err != nil {
-		return err.Error(), nil
+		return "", err
 	}
 
 	var skills []SkillDefinition
@@ -81,17 +82,17 @@ func (t *LoadSkillTool) Execute(ctx context.Context, argumentsJson string) (stri
 		if available == "" {
 			available = "(none)"
 		}
-		return fmt.Sprintf("Error: skill '%s' not found. Available: %s.", requested, available), nil
+		return "", fmt.Errorf("Error: skill '%s' not found. Available: %s.", requested, available)
 	}
 
 	if match.DisableModelInvocation {
-		return fmt.Sprintf("Error: skill '%s' is not available for model invocation.", match.Name), nil
+		return "", fmt.Errorf("Error: skill '%s' is not available for model invocation.", match.Name)
 	}
 
 	var builder SkillPromptBuilder
 	body := builder.BuildSkillBody(match)
 	if len(body) == 0 {
-		return fmt.Sprintf("Skill '%s' has no instructions body.", match.Name), nil
+		return "", fmt.Errorf("Skill '%s' has no instructions body.", match.Name)
 	}
 
 	if len(match.Resources) == 0 {
@@ -574,7 +575,7 @@ func (m *MetaInvokeTool) Execute(ctx context.Context, argumentsJson string) (str
 		if len(msgs) > 0 {
 			errorstr = fmt.Sprintf("Error: meta skill '%s' not found. Available: %s).", skillName, available)
 		}
-		return errorstr, errors.New(errorstr)
+		return "", errors.New(errorstr)
 	}
 
 	var payload = MetaInvokeIntent{
@@ -746,4 +747,356 @@ func (s *SkillInspector) InspectPath(candidatePath string, source *SkillSource) 
 		SkillFilePath: skillFilePath,
 		Definition:    definition,
 	}
+}
+
+var _ ITool = (*ReadSkillResourceTool)(nil)
+
+type ReadSkillResourceTool struct {
+	provider         func() []SkillDefinition
+	maxResourceBytes int64
+}
+
+func NewReadSkillResourceTool(provider func() []SkillDefinition, maxResourceBytes int64) *ReadSkillResourceTool {
+	if provider == nil {
+		provider = func() []SkillDefinition {
+			return []SkillDefinition{}
+		}
+	}
+
+	if maxResourceBytes == -1 {
+		maxResourceBytes = 256 * 1024
+	}
+
+	return &ReadSkillResourceTool{
+		provider:         provider,
+		maxResourceBytes: maxResourceBytes,
+	}
+}
+
+func NewReadSkillResourceToolWithSkills(skills []SkillDefinition, maxResourceBytes int64) *ReadSkillResourceTool {
+	provider := func() []SkillDefinition {
+		return skills
+	}
+
+	if maxResourceBytes == -1 {
+		maxResourceBytes = 256 * 1024
+	}
+
+	return &ReadSkillResourceTool{
+		provider:         provider,
+		maxResourceBytes: maxResourceBytes,
+	}
+}
+
+// Description implements [ITool].
+func (r *ReadSkillResourceTool) Description() string {
+	return "Read the contents of a single auxiliary resource (reference document or script) " +
+		"associated with a skill. Resource names are listed in the <skill-resources> manifest " +
+		"either inside the index or alongside a loaded skill body. " +
+		"Never call this tool with 'SKILL.md' — that is the skill body itself, fetch it via `load_skill`. " +
+		"Cross-skill paths (e.g. '../other-skill/...') and absolute paths are not accepted."
+}
+
+// Name implements [ITool].
+func (r *ReadSkillResourceTool) Name() string {
+	return "read_skill_resource"
+}
+
+// ParameterSchema implements [ITool].
+func (r *ReadSkillResourceTool) ParameterSchema() string {
+	return `{"type":"object","properties":{"skill":{"type":"string","description":"Skill name (as listed in <available-skills>)"},"resource":{"type":"string","description":"Resource name — either bare file name (e.g. \"lookup.md\") or relative path (e.g. \"references/lookup.md\"). Must be listed in this skill's own <resources> manifest; do not pass \"SKILL.md\" (use load_skill) or paths containing \"..\""}},"required":["skill","resource"]}`
+}
+
+func (r *ReadSkillResourceTool) tryParseArguments(argumentsJson string) (result bool, skillName string, resourceName string, errorstr string) {
+	if isBlank(argumentsJson) {
+		errorstr = "Error: missing required arguments 'skill' and 'resource'."
+		return
+	}
+
+	var rootElement map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(argumentsJson), &rootElement); err != nil {
+		errorstr = "Error: invalid JSON arguments. Expected an object like {\"skill\":\"<name>\",\"resource\":\"<name>\"}."
+		return
+	}
+
+	var f bool
+	keys := []string{"skill", "skill_name", "name"}
+	for _, key := range keys {
+		if f, skillName = r.tryReadString(rootElement, key); f {
+			break
+		}
+	}
+	keys = []string{"resource", "resource_name", "path"}
+	for _, key := range keys {
+		if f, resourceName = r.tryReadString(rootElement, key); f {
+			break
+		}
+	}
+
+	if isBlank(skillName) {
+		errorstr = "Error: missing required argument 'skill'."
+		return
+	}
+
+	if isBlank(resourceName) {
+		errorstr = "Error: missing required argument 'resource'."
+		return
+	}
+
+	result = true
+	return
+}
+
+func (r *ReadSkillResourceTool) tryReadString(element map[string]json.RawMessage, property string) (bool, string) {
+	routeRaw, exists := element[property]
+	if !exists {
+		return false, ""
+	}
+
+	var result string
+	if err := json.Unmarshal(routeRaw, &result); err != nil {
+		return false, ""
+	}
+
+	return true, result
+}
+
+func (r *ReadSkillResourceTool) findSkill(skills []SkillDefinition, requested string) *SkillDefinition {
+	for _, skill := range skills {
+		if skill.Name == requested {
+			return &skill
+		}
+	}
+
+	for _, skill := range skills {
+		if skill.Metadata != nil && skill.Metadata.SkillKey == requested {
+			return &skill
+		}
+	}
+
+	return nil
+}
+
+func (r *ReadSkillResourceTool) findResource(skill *SkillDefinition, requested string) *SkillResource {
+	var normalized = strings.TrimSpace(strings.ReplaceAll(requested, "\\", "/"))
+
+	for _, resource := range skill.Resources {
+		if resource.RelativePath == normalized {
+			return &resource
+		}
+	}
+	for _, resource := range skill.Resources {
+		if resource.Name == normalized {
+			return &resource
+		}
+	}
+	for _, resource := range skill.Resources {
+		if strings.HasSuffix(resource.RelativePath, "/"+normalized) {
+			return &resource
+		}
+	}
+
+	return nil
+}
+
+func (r *ReadSkillResourceTool) looksLikeSkillBody(requested string) bool {
+	var normalized = strings.TrimSpace(strings.ReplaceAll(requested, "\\", "/"))
+	if isBlank(normalized) {
+		return false
+	}
+	var lastSlash = strings.LastIndex(normalized, "/")
+	var leaf = normalized[(lastSlash + 1):]
+	if lastSlash >= 0 {
+		leaf = normalized
+	}
+	return leaf == "SKILL.md"
+}
+
+func (r *ReadSkillResourceTool) tryExtractCrossSkillName(requested string, skills []SkillDefinition) string {
+	var normalized = strings.TrimSpace(strings.ReplaceAll(requested, "\\", "/"))
+	var lastSlash = strings.LastIndex(normalized, "/")
+	if lastSlash <= 0 {
+		return ""
+	}
+
+	var parent = normalized[:lastSlash]
+	var prevSlash = strings.LastIndex(parent, "/")
+	var lastSeg = parent
+	if prevSlash >= 0 {
+		lastSeg = parent[(prevSlash + 1):]
+	}
+	if isBlank(lastSeg) || lastSeg == ".." {
+		return ""
+	}
+
+	for _, s := range skills {
+
+		if s.DisableModelInvocation {
+			continue
+		}
+		if s.Name == lastSeg {
+			return s.Name
+		}
+		if len(s.Metadata.SkillKey) > 0 && s.Metadata.SkillKey == lastSeg {
+			return s.Name
+		}
+	}
+	return ""
+}
+
+func (r *ReadSkillResourceTool) isPathWithinSkillRoot(resourceAbsolutePath string, skill *SkillDefinition) bool {
+	if skill == nil || isBlank(skill.Location) {
+		return true
+	}
+
+	skillRoot, err := filepath.Abs(skill.Location)
+	if err != nil {
+		return false
+	}
+	resolved, err := filepath.Abs(resourceAbsolutePath)
+	if err != nil {
+		return false
+	}
+	rootWithSep := skillRoot + string(os.PathSeparator)
+	if strings.HasSuffix(skillRoot, string(os.PathSeparator)) {
+		rootWithSep = skillRoot
+	}
+
+	return strings.HasPrefix(resolved, rootWithSep)
+
+}
+
+func (r *ReadSkillResourceTool) resourcePathContainsReparsePoint(skillLocation, resourceAbsolutePath string) bool {
+	if isBlank(skillLocation) {
+		return false
+	}
+	skillRoot, err := filepath.Abs(skillLocation)
+	if err != nil {
+		return true
+	}
+	resolved, err := filepath.Abs(resourceAbsolutePath)
+	if err != nil {
+		return true
+	}
+	relative, err := filepath.Rel(skillRoot, resolved)
+	if err != nil {
+		return true
+	}
+
+	if relative == ".." || strings.HasPrefix(relative, ".."+string(os.PathSeparator)) || strings.HasPrefix(relative, "../") || filepath.IsAbs(relative) {
+		return true
+	}
+
+	var current = skillRoot
+
+	for _, segment := range strings.FieldsFunc(filepath.ToSlash(relative), func(r rune) bool {
+		return r == '/'
+	}) {
+		current = filepath.Join(current, segment)
+		info, err := os.Lstat(current)
+		if err != nil {
+			return true
+		}
+
+		if info.Mode()&os.ModeSymlink != 0 {
+			return true
+		}
+
+	}
+
+	return false
+}
+
+// Execute implements [ITool].
+func (r *ReadSkillResourceTool) Execute(ctx context.Context, argumentsJson string) (string, error) {
+	if err := ctx.Err(); err != nil {
+		return "", err
+	}
+
+	f, skillName, resourceName, errorstr := r.tryParseArguments(argumentsJson)
+	if !f {
+		return "", errors.New(errorstr)
+	}
+	skills := r.provider()
+	skill := r.findSkill(skills, skillName)
+	if skill == nil {
+		msgs := []string{}
+		for _, skill := range skills {
+			if skill.Kind == SkillKind_Meta && !skill.DisableModelInvocation {
+				msgs = append(msgs, skill.Name)
+			}
+		}
+
+		available := strings.Join(msgs, ", ")
+		errorstr = fmt.Sprintf("Error: meta skill '%s' not found. Available: (none)).", skillName)
+		if len(msgs) > 0 {
+			errorstr = fmt.Sprintf("Error: meta skill '%s' not found. Available: %s).", skillName, available)
+		}
+		return "", errors.New(errorstr)
+	}
+	if skill.DisableModelInvocation {
+		errorstr = fmt.Sprintf("Error: skill '%s' is not available for model invocation.", skill.Name)
+		return "", errors.New(errorstr)
+	}
+
+	resource := r.findResource(skill, resourceName)
+	if resource == nil {
+		if r.looksLikeSkillBody(resourceName) {
+			crossSkill := r.tryExtractCrossSkillName(resourceName, skills)
+			if !isBlank(crossSkill) && crossSkill != skill.Name {
+				errorstr = fmt.Sprintf("Error: 'SKILL.md' is the body of skill '%s', not an L3 resource of '%s'. Use `load_skill` with skill='%s' to fetch it, not `read_skill_resource`.)", crossSkill, skill.Name, crossSkill)
+				return "", errors.New(errorstr)
+			}
+			errorstr = fmt.Sprintf("Error: 'SKILL.md' is the skill body itself, not an L3 resource. Use `load_skill` with skill='%s' to fetch it, not `read_skill_resource`.", skill.Name)
+			return "", errors.New(errorstr)
+		}
+
+		if strings.Contains(resourceName, "..") || filepath.IsAbs(resourceName) {
+			errorstr = fmt.Sprintf("Error: cross-skill or absolute paths are not allowed for `read_skill_resource`. It only accepts paths listed in '%s's own <resources> manifest. If you want another skill's body, call `load_skill` with that skill's name instead.", skill.Name)
+			return "", errors.New(errorstr)
+		}
+		available := "(none)"
+		if len(skill.Resources) > 0 {
+			paths := []string{}
+			for _, v := range skill.Resources {
+				paths = append(paths, v.RelativePath)
+			}
+			available = strings.Join(paths, ", ")
+		}
+		errorstr = fmt.Sprintf("Error: resource '%s' not found in skill '%s'. Available: %s.", resourceName, skill.Name, available)
+		return "", errors.New(errorstr)
+	}
+
+	if !r.isPathWithinSkillRoot(resource.AbsolutePath, skill) {
+		errorstr = fmt.Sprintf("Error: resource '%s' resolves outside skill root and was rejected.", resource.RelativePath)
+		return "", errors.New(errorstr)
+	}
+
+	info, err := os.Stat(resource.AbsolutePath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return "", fmt.Errorf("Error: resource '%s' no longer exists on disk.", resource.RelativePath)
+		}
+		return "", err
+	}
+
+	if r.resourcePathContainsReparsePoint(skill.Location, resource.AbsolutePath) {
+		return "", fmt.Errorf("Error: resource '%s' resolves through a symlink or reparse point and was rejected.", resource.RelativePath)
+	}
+
+	if info.Size() > r.maxResourceBytes {
+		return "", fmt.Errorf("Error: resource '%s' is %d bytes (max %d). Read it via the workspace file tools instead.",
+			resource.RelativePath, info.Size(), r.maxResourceBytes)
+	}
+
+	if err := ctx.Err(); err != nil {
+		return "", err
+	}
+
+	data, err := os.ReadFile(resource.AbsolutePath)
+	if err != nil {
+		return "", err
+	}
+
+	return string(data), nil
 }
