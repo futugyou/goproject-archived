@@ -2299,3 +2299,179 @@ func (s *SkillLoader) HasLegacyRouteObject(withJson string) bool {
 
 	return true
 }
+
+func (s *SkillLoader) ScanDirectory(rootDir string, source *SkillSource, results map[string]*SkillDefinition, scanSubdirectories bool) error {
+	rootSkillFile := filepath.Join(rootDir, "SKILL.md")
+	if fileExists(rootSkillFile) {
+		func() {
+			skill, errorCode, err := s.TryParseSkillFile(rootSkillFile, rootDir, source)
+			if err == nil && skill != nil {
+				results[skill.Name] = skill
+			} else {
+				errCode := errorCode
+				if errCode == "" {
+					errCode = "parse_failed"
+				}
+			}
+		}()
+	}
+	return filepath.WalkDir(rootDir, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return nil
+		}
+		if !d.IsDir() {
+			return nil
+		}
+		if path == rootDir {
+			return nil
+		}
+
+		if !scanSubdirectories {
+			rel, _ := filepath.Rel(rootDir, path)
+			if strings.Contains(rel, string(filepath.Separator)) {
+				return filepath.SkipDir
+			}
+		}
+
+		skillFile := filepath.Join(path, "SKILL.md")
+		if !fileExists(skillFile) {
+			return nil
+		}
+
+		func() {
+			skill, errorCode, err := s.TryParseSkillFile(skillFile, path, source)
+			if err == nil && skill != nil {
+				results[skill.Name] = skill
+			} else {
+				errCode := errorCode
+				if errCode == "" {
+					errCode = "parse_failed"
+				}
+			}
+		}()
+
+		return nil
+	})
+
+}
+
+func (s *SkillLoader) TryParseSkillFile(filePath string, skillDir string, source *SkillSource) (*SkillDefinition, string, error) {
+	contentBytes, err := os.ReadFile(filePath)
+	if err != nil {
+		return nil, "", err
+	}
+	return s.TryParseSkillContent(string(contentBytes), skillDir, source)
+}
+
+func (s *SkillLoader) TryParseSkillContent(content string, skillDir string, source *SkillSource) (*SkillDefinition, string, error) {
+	skill, err := s.ParseSkillContent(content, skillDir, source)
+	if err != nil {
+		return nil, "", err
+	}
+	if skill != nil {
+		return skill, "", nil
+	}
+
+	errorCode := s.DiagnoseSkillParseFailure(content)
+	return nil, errorCode, errors.New("parse failed")
+}
+
+func (s *SkillLoader) DiagnoseSkillParseFailure(content string) string {
+	if !strings.HasPrefix(content, "---") {
+		return "invalid_frontmatter"
+	}
+
+	if len(content) < 3 {
+		return "invalid_frontmatter"
+	}
+	endIndex := strings.Index(content[3:], "\n---")
+	if endIndex < 0 {
+		return "invalid_frontmatter"
+	}
+	endIndex += 3 // 加上偏移量
+
+	frontmatter := strings.TrimSpace(content[3:endIndex])
+	var name string
+	kind := SkillKind_Standard
+	var compositionJson string
+	var finalTextMode string
+
+	// 统一处理换行符并分割
+	frontmatterLines := strings.Split(strings.ReplaceAll(frontmatter, "\r\n", "\n"), "\n")
+
+	for lineIndex := 0; lineIndex < len(frontmatterLines); lineIndex++ {
+		rawLine := frontmatterLines[lineIndex]
+		if strings.TrimSpace(rawLine) != "" && s.GetIndent(rawLine) != 0 {
+			continue
+		}
+
+		line := strings.TrimSpace(rawLine)
+		if line == "" {
+			continue
+		}
+
+		colonIdx := strings.Index(line, ":")
+		if colonIdx < 0 {
+			continue
+		}
+
+		key := strings.ToLower(strings.TrimSpace(line[:colonIdx]))
+		value := strings.TrimSpace(line[colonIdx+1:])
+
+		switch key {
+		case "name":
+			name = s.NormalizeFrontmatterScalar(value)
+		case "kind":
+			var err error
+			kind, err = s.TryParseSkillKind(s.NormalizeFrontmatterScalar(value))
+			if err != nil {
+				return "invalid_kind"
+			}
+		case "composition":
+			if strings.TrimSpace(value) == "" {
+				compositionBlock, _ := s.CollectIndentedBlock(frontmatterLines, lineIndex+1)
+				consumedLines := len(strings.Split(compositionBlock, "\n"))
+				if compositionBlock == "" {
+					consumedLines = 0
+				}
+				lineIndex += consumedLines
+
+				var err error
+				compositionJson, err = s.TryConvertYamlBlockToJson(compositionBlock)
+				if err != nil {
+					return "invalid_meta_composition"
+				}
+			} else {
+				compositionJson = value
+			}
+		case "final-text-mode", "final_text_mode":
+			finalTextMode = s.NormalizeFrontmatterScalar(value)
+		}
+	}
+
+	if strings.TrimSpace(name) == "" {
+		return "missing_name"
+	}
+
+	if kind != SkillKind_Meta {
+		return "parse_failed"
+	}
+
+	if strings.TrimSpace(compositionJson) == "" {
+		return "missing_meta_composition"
+	}
+
+	composition, compositionErrorCode := s.ParseComposition(compositionJson)
+	if composition == nil {
+		if compositionErrorCode != "" {
+			return compositionErrorCode
+		}
+		return "invalid_meta_composition"
+	}
+
+	if !s.ValidateFinalTextMode(finalTextMode, composition.Steps) {
+		return "invalid_final_text_mode"
+	}
+
+	return "parse_failed"
+}
