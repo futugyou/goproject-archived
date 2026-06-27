@@ -7,15 +7,18 @@ import (
 	"fmt"
 	"io/fs"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
+	"sync"
 	"unicode"
 )
 
 type SkillLoader struct{}
 
-func (s *SkillLoader) ParseSkillFile(filePath, skillDir string, source *SkillSource) (*SkillDefinition, error) {
+func (s *SkillLoader) ParseSkillFile(filePath, skillDir string, source SkillSource) (*SkillDefinition, error) {
 	data, err := os.ReadFile(filePath)
 	if err != nil {
 		return nil, err
@@ -23,7 +26,7 @@ func (s *SkillLoader) ParseSkillFile(filePath, skillDir string, source *SkillSou
 	return s.ParseSkillContent(string(data), skillDir, source)
 }
 
-func (s *SkillLoader) ParseSkillContent(content, skillDir string, source *SkillSource) (*SkillDefinition, error) {
+func (s *SkillLoader) ParseSkillContent(content, skillDir string, source SkillSource) (*SkillDefinition, error) {
 	if !strings.HasPrefix(content, "---") {
 		return nil, errors.New("missing frontmatter delimiter")
 	}
@@ -2300,7 +2303,7 @@ func (s *SkillLoader) HasLegacyRouteObject(withJson string) bool {
 	return true
 }
 
-func (s *SkillLoader) ScanDirectory(rootDir string, source *SkillSource, results map[string]*SkillDefinition, scanSubdirectories bool) error {
+func (s *SkillLoader) ScanDirectory(rootDir string, source SkillSource, results map[string]*SkillDefinition, scanSubdirectories bool) error {
 	rootSkillFile := filepath.Join(rootDir, "SKILL.md")
 	if fileExists(rootSkillFile) {
 		func() {
@@ -2355,7 +2358,7 @@ func (s *SkillLoader) ScanDirectory(rootDir string, source *SkillSource, results
 
 }
 
-func (s *SkillLoader) TryParseSkillFile(filePath string, skillDir string, source *SkillSource) (*SkillDefinition, string, error) {
+func (s *SkillLoader) TryParseSkillFile(filePath string, skillDir string, source SkillSource) (*SkillDefinition, string, error) {
 	contentBytes, err := os.ReadFile(filePath)
 	if err != nil {
 		return nil, "", err
@@ -2363,7 +2366,7 @@ func (s *SkillLoader) TryParseSkillFile(filePath string, skillDir string, source
 	return s.TryParseSkillContent(string(contentBytes), skillDir, source)
 }
 
-func (s *SkillLoader) TryParseSkillContent(content string, skillDir string, source *SkillSource) (*SkillDefinition, string, error) {
+func (s *SkillLoader) TryParseSkillContent(content string, skillDir string, source SkillSource) (*SkillDefinition, string, error) {
 	skill, err := s.ParseSkillContent(content, skillDir, source)
 	if err != nil {
 		return nil, "", err
@@ -2474,4 +2477,237 @@ func (s *SkillLoader) DiagnoseSkillParseFailure(content string) string {
 	}
 
 	return "parse_failed"
+}
+
+func (s *SkillLoader) LoadAll(config *SkillsConfig, workspacePath *string, pluginSkillDirs []string) []*SkillDefinition {
+	if !config.Enabled {
+		return []*SkillDefinition{}
+	}
+
+	allSkills := make(map[string]*SkillDefinition)
+
+	scanSubdirectories := config.Load.ScanSubdirectories
+
+	// 1. Extra dirs (最低优先级)
+	for _, dir := range config.Load.ExtraDirs {
+		if directoryExists(dir) {
+			s.ScanDirectory(dir, SkillSource_Extra, allSkills, scanSubdirectories)
+		}
+	}
+
+	// 2. Bundled skills
+	if config.Load.IncludeBundled {
+		if exePath, err := os.Executable(); err == nil {
+			baseDir := filepath.Dir(exePath)
+			bundledDir := filepath.Join(baseDir, "skills")
+			if directoryExists(bundledDir) {
+				s.ScanDirectory(bundledDir, SkillSource_Bundled, allSkills, scanSubdirectories)
+			}
+		}
+	}
+
+	// 3. Managed/local skills
+	if config.Load.IncludeManaged {
+		var managedDir string
+		if strings.TrimSpace(config.Load.ManagedRoot) == "" {
+			if homeDir, err := os.UserHomeDir(); err == nil {
+				// 对应 C# 的 Environment.SpecialFolder.UserProfile
+				managedDir = filepath.Join(homeDir, ".openclaw", "skills")
+			}
+		} else {
+			managedDir = s.NormalizeManagedRootPath(config.Load.ManagedRoot)
+		}
+
+		if managedDir != "" && directoryExists(managedDir) {
+			s.ScanDirectory(managedDir, SkillSource_Managed, allSkills, scanSubdirectories)
+		}
+	}
+
+	// 4. Plugin-packaged skills
+	for _, pluginDir := range pluginSkillDirs {
+		if directoryExists(pluginDir) {
+			s.ScanDirectory(pluginDir, SkillSource_Plugin, allSkills, scanSubdirectories)
+		}
+	}
+
+	// 5. Workspace skills (最高优先级)
+	if config.Load.IncludeWorkspace && workspacePath != nil && strings.TrimSpace(*workspacePath) != "" {
+		wsSkillsDir := filepath.Join(*workspacePath, "skills")
+		if directoryExists(wsSkillsDir) {
+			s.ScanDirectory(wsSkillsDir, SkillSource_Workspace, allSkills, scanSubdirectories)
+		}
+	}
+
+	// 过滤符合条件的技能
+	eligible := make([]*SkillDefinition, 0)
+
+	for _, skill := range allSkills {
+		// 因为 key 被转成了小写，拿到原始的 skill.Name
+		name := skill.Name
+
+		// AllowBundled 过滤器
+		if skill.Source == SkillSource_Bundled && len(config.AllowBundled) > 0 {
+			if !containsIgnoreCase(config.AllowBundled, name) {
+				continue
+			}
+		}
+
+		// 单个技能的配置项过滤
+		configKey := name
+		if skill.Metadata.SkillKey != "" {
+			configKey = skill.Metadata.SkillKey
+		}
+
+		if entry, exists := config.Entries[configKey]; exists && !entry.Enabled {
+			continue
+		}
+
+		// 依赖检查组件限制 (除非 Always=true)
+		if !skill.Metadata.Always && !CheckRequirements(skill, config) {
+			continue
+		}
+
+		eligible = append(eligible, skill)
+	}
+
+	return eligible
+}
+
+var binaryOnPathCache sync.Map
+
+func IsBinaryOnPath(binaryName string) bool {
+	// 1. 尝试从缓存中获取 (Load)
+	if val, ok := binaryOnPathCache.Load(binaryName); ok {
+		return val.(bool)
+	}
+	_, err := exec.LookPath(binaryName)
+	exists := (err == nil)
+	actual, _ := binaryOnPathCache.LoadOrStore(binaryName, exists)
+	return actual.(bool)
+}
+
+func CheckRequirements(skill *SkillDefinition, config *SkillsConfig) bool {
+	meta := skill.Metadata
+
+	// 1. 操作系统网关 (OS Gate)
+	if len(meta.Os) > 0 {
+		currentOs := runtime.GOOS
+		if !containsIgnoreCase(meta.Os, currentOs) {
+			return false
+		}
+	}
+
+	// 2. 强依赖的二进制文件 (Required binaries)
+	for _, bin := range meta.RequireBins {
+		if !IsBinaryOnPath(bin) {
+			return false
+		}
+	}
+
+	// 3. 多选一的二进制文件 (Any-of binaries)
+	if len(meta.RequireAnyBins) > 0 {
+		hasAny := false
+		for _, bin := range meta.RequireAnyBins {
+			if IsBinaryOnPath(bin) {
+				hasAny = true
+				break
+			}
+		}
+		if !hasAny {
+			return false
+		}
+	}
+
+	// 4. 环境变量检查 (Required env vars)
+	configKey := skill.Name
+	if meta.SkillKey != "" {
+		configKey = meta.SkillKey
+	}
+
+	entry, hasEntry := config.Entries[configKey]
+
+	for _, envVar := range meta.RequireEnv {
+		// 检查系统环境变量
+		hasEnv := strings.TrimSpace(os.Getenv(envVar)) != ""
+
+		// 检查配置注入的环境变量
+		var hasInConfig bool
+		if hasEntry && entry.Env != nil {
+			_, hasInConfig = entry.Env[envVar]
+		}
+
+		// 检查是否为内置 API Key
+		hasApiKey := meta.PrimaryEnv == envVar && hasEntry && strings.TrimSpace(entry.ApiKey) != ""
+
+		if !hasEnv && !hasInConfig && !hasApiKey {
+			return false
+		}
+	}
+
+	// 5. 元技能特殊校验 (Meta Skill gating)
+	if skill.Kind == SkillKind_Meta && config.MetaSkill.Enabled {
+		// 风险等级过滤
+		if len(config.MetaSkill.AllowedRiskLevels) > 0 {
+			risk := ""
+			if meta.Risk != "" {
+				risk = meta.Risk
+			}
+			if !containsIgnoreCase(config.MetaSkill.AllowedRiskLevels, risk) {
+				displayRisk := risk
+				if displayRisk == "" {
+					displayRisk = "(unset)"
+				}
+				return false
+			}
+		}
+
+		// 能力项（Capabilities）过滤
+		if len(config.MetaSkill.RequiredCapabilities) > 0 {
+			// 在 Go 中用 map[string]struct{} 替代 HashSet<string>
+			declaredCapabilities := make(map[string]struct{})
+			for _, capItem := range meta.Capabilities {
+				declaredCapabilities[strings.ToLower(capItem)] = struct{}{}
+			}
+
+			for _, requiredCapability := range config.MetaSkill.RequiredCapabilities {
+				if _, exists := declaredCapabilities[strings.ToLower(requiredCapability)]; !exists {
+					return false
+				}
+			}
+		}
+	}
+
+	return true
+}
+
+func (s *SkillLoader) NormalizeManagedRootPath(managedRoot string) string {
+	normalized := strings.TrimSpace(managedRoot)
+
+	// 1. 处理以波浪号 `~` 开头的主目录相对路径
+	if strings.HasPrefix(normalized, "~") {
+		home, err := os.UserHomeDir()
+		if err == nil && home != "" {
+			// 截取 `~` 之后的部分，并去除开头的斜杠或反斜杠
+			suffix := normalized[1:]
+			suffix = strings.TrimLeft(suffix, "/\\")
+
+			if len(suffix) == 0 {
+				normalized = home
+			} else {
+				normalized = filepath.Join(home, suffix)
+			}
+		}
+	}
+
+	if !filepath.IsAbs(normalized) {
+		absPath, err := filepath.Abs(normalized)
+		if err != nil {
+			return ""
+		}
+		normalized = absPath
+	} else {
+		normalized = filepath.Clean(normalized)
+	}
+
+	return normalized
 }

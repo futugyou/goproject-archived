@@ -1,7 +1,14 @@
 package core
 
+type MetaSkillPolicyConfig struct {
+	Enabled              bool     `json:"enabled"`
+	AllowedRiskLevels    []string `json:"allowed_risk_levels"`
+	RequiredCapabilities []string `json:"required_capabilities"`
+}
+
 type SkillsConfig struct {
 	Enabled              bool                         `json:"enabled"`
+	MetaSkill            MetaSkillPolicyConfig        `json:"meta_skill"`
 	Load                 SkillLoadConfig              `json:"load"`
 	Entries              map[string]*SkillEntryConfig `json:"entries"`
 	AllowBundled         []string                     `json:"allow_bundled"`
@@ -21,13 +28,14 @@ func DefaultSkillsConfig() *SkillsConfig {
 }
 
 type SkillLoadConfig struct {
-	ExtraDirs        []string `json:"extra_dirs"`
-	IncludeBundled   bool     `json:"include_bundled"`
-	IncludeManaged   bool     `json:"include_managed"`
-	ManagedRoot      *string  `json:"managed_root,omitempty"`
-	IncludeWorkspace bool     `json:"include_workspace"`
-	Watch            bool     `json:"watch"`
-	WatchDebounceMs  int      `json:"watch_debounce_ms"`
+	ExtraDirs          []string `json:"extra_dirs"`
+	IncludeBundled     bool     `json:"include_bundled"`
+	IncludeManaged     bool     `json:"include_managed"`
+	ManagedRoot        string   `json:"managed_root"`
+	IncludeWorkspace   bool     `json:"include_workspace"`
+	Watch              bool     `json:"watch"`
+	WatchDebounceMs    int      `json:"watch_debounce_ms"`
+	ScanSubdirectories bool     `json:"scan_subdirectories"`
 }
 
 // DefaultSkillLoadConfig 返回带默认值的 SkillLoadConfig 实例
@@ -44,7 +52,7 @@ func DefaultSkillLoadConfig() *SkillLoadConfig {
 
 type SkillEntryConfig struct {
 	Enabled bool              `json:"enabled"`
-	ApiKey  *string           `json:"api_key,omitempty"`
+	ApiKey  string            `json:"api_key"`
 	Env     map[string]string `json:"env"`
 	Config  map[string]string `json:"config"`
 }
@@ -63,7 +71,7 @@ type SkillDefinition struct {
 	Description            string                `json:"description"`
 	Instructions           string                `json:"instructions"`
 	Location               string                `json:"location"`
-	Source                 *SkillSource          `json:"source,omitempty"`
+	Source                 SkillSource           `json:"source"`
 	Metadata               *SkillMetadata        `json:"metadata,omitempty"`
 	Kind                   SkillKind             `json:"kind"`
 	Triggers               []string              `json:"triggers"`
@@ -103,7 +111,7 @@ type SkillMetadata struct {
 	RequireAnyBins []string `json:"require_any_bins"`
 	RequireEnv     []string `json:"require_env"`
 	RequireConfig  []string `json:"require_config"`
-	PrimaryEnv     *string  `json:"primary_env,omitempty"`
+	PrimaryEnv     string   `json:"primary_env"`
 	SkillKey       string   `json:"skill_key"`
 	Risk           string   `json:"risk"`
 	Capabilities   []string `json:"capabilities"`

@@ -77,3 +77,13 @@ func readStringArray(raw json.RawMessage) []string {
 	}
 	return nil
 }
+
+func containsIgnoreCase(slice []string, val string) bool {
+	target := strings.ToLower(val)
+	for _, item := range slice {
+		if strings.ToLower(item) == target {
+			return true
+		}
+	}
+	return false
+}

@@ -728,7 +728,7 @@ func (s *SkillInspector) TryLocateSkillRoot(candidatePath string) (string, error
 	return filepath.Abs(matches[0])
 }
 
-func (s *SkillInspector) InspectPath(candidatePath string, source *SkillSource) *SkillInspectionResult {
+func (s *SkillInspector) InspectPath(candidatePath string, source SkillSource) *SkillInspectionResult {
 	skillRootPath, err := s.TryLocateSkillRoot(candidatePath)
 	if err != nil {
 		return FailureSkillInspectionResult(err.Error())
