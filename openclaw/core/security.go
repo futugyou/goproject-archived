@@ -1,7 +1,9 @@
 package core
 
 import (
+	"crypto/subtle"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
@@ -474,4 +476,197 @@ func (InputSanitizer) CheckImapFolderName(folder string) error {
 		}
 	}
 	return nil
+}
+
+type PendingPairing struct {
+	Code           string
+	ExpiresAt      time.Time
+	FailedAttempts int
+	LastFailedAt   *time.Time
+}
+
+type PairingManager struct {
+	codeTtl               time.Duration
+	failedAttemptCooldown time.Duration
+	maxFailedAttempts     int
+	storageDir            string
+	approvedListPath      string
+	pendingCodes          sync.Map
+	approvedSenders       sync.Map
+}
+
+func NewPairingManager(baseStoragePath string) *PairingManager {
+	pm := &PairingManager{}
+	pm.storageDir = filepath.Join(baseStoragePath, "pairing")
+	pm.approvedListPath = filepath.Join(pm.storageDir, "approved.json")
+	pm.maxFailedAttempts = 5
+	pm.codeTtl = time.Millisecond * 10
+	pm.failedAttemptCooldown = time.Millisecond * 5
+	pm.loadApprovedSenders()
+
+	return pm
+}
+
+func (p *PairingManager) loadApprovedSenders() {
+	if !fileExists(p.approvedListPath) {
+		return
+	}
+
+	data, err := os.ReadFile(p.approvedListPath)
+	if err != nil {
+		return
+	}
+
+	var saved []string
+	err = json.Unmarshal(data, &saved)
+	if err != nil {
+		return
+	}
+
+	for _, s := range saved {
+		p.approvedSenders.Store(s, 1)
+	}
+}
+
+func (p *PairingManager) persistApprovedSenders() {
+	var tmp = p.approvedListPath + ".tmp"
+	if err := os.MkdirAll(tmp, 0755); err != nil {
+		return
+	}
+
+	var saved []string
+	p.approvedSenders.Range(func(key, value any) bool {
+		keystring := key.(string)
+		saved = append(saved, keystring)
+		return true
+	})
+
+	defer func() {
+		if recover() != nil {
+			if fileExists(tmp) {
+				os.Remove(tmp)
+			}
+		}
+	}()
+	data, err := json.Marshal(saved)
+	if err != nil {
+		panic(err)
+	}
+
+	if err = os.WriteFile(tmp, data, 0644); err != nil {
+		panic(err)
+	}
+
+	if err := os.Rename(tmp, p.approvedListPath); err != nil {
+		panic(err)
+	}
+}
+
+func (p *PairingManager) cleanupExpiredPendingCodes(now time.Time) {
+	p.pendingCodes.Range(func(key, value any) bool {
+		t := value.(*PendingPairing)
+		if t.ExpiresAt.Before(now) {
+			p.pendingCodes.Delete(key)
+		}
+
+		return true
+	})
+}
+
+func fixedTimeCodeEquals(expected, provided string) bool {
+	if isBlank(provided) {
+		return false
+	}
+
+	expectedBytes := []byte(expected)
+	providedBytes := []byte(strings.TrimSpace(provided))
+
+	return subtle.ConstantTimeCompare(expectedBytes, providedBytes) == 1
+}
+
+func (p *PairingManager) GetApprovedList() []string {
+	result := []string{}
+	p.approvedSenders.Range(func(key, value any) bool {
+		keystring := key.(string)
+		result = append(result, keystring)
+		return true
+	})
+	return result
+}
+
+func (p *PairingManager) Revoke(channelId, senderId string) {
+	var key = fmt.Sprintf("%s:%s", channelId, senderId)
+	if _, loaded := p.approvedSenders.LoadAndDelete(key); loaded {
+		p.persistApprovedSenders()
+	}
+}
+
+func (p *PairingManager) ApproveAdmin(channelId, senderId string) {
+	var key = fmt.Sprintf("%s:%s", channelId, senderId)
+	p.approvedSenders.Store(key, 1)
+	p.persistApprovedSenders()
+}
+
+func (p *PairingManager) TryApprove(channelId, senderId, providedCode string) error {
+	var key = fmt.Sprintf("%s:%s", channelId, senderId)
+
+	var now = time.Now().UTC()
+	pendingValue, ok := p.pendingCodes.Load(key)
+	if !ok {
+		return errors.New("No pending pairing request found.")
+	}
+	pending := pendingValue.(*PendingPairing)
+	if pending.ExpiresAt.Before(now) {
+		p.pendingCodes.Delete(key)
+		return errors.New("Pairing code has expired. Request a new code.")
+	}
+
+	if pending.FailedAttempts >= p.maxFailedAttempts && pending.LastFailedAt != nil && now.Sub(*pending.LastFailedAt) < p.failedAttemptCooldown {
+		return errors.New("Too many invalid attempts. Please wait and try again.")
+	}
+
+	if !fixedTimeCodeEquals(pending.Code, providedCode) {
+		pending.FailedAttempts = pending.FailedAttempts + 1
+		pending.LastFailedAt = &now
+
+		p.pendingCodes.Store(key, pending)
+		return errors.New("TInvalid pairing code.")
+	}
+	_, loaded := p.pendingCodes.LoadAndDelete(key)
+	if loaded {
+		p.approvedSenders.Store(key, 1)
+		p.persistApprovedSenders()
+		return nil
+	}
+
+	return errors.New("Pairing code has already been used or expired.")
+}
+
+func (p *PairingManager) GeneratePairingCode(channelId, senderId string) string {
+	var key = fmt.Sprintf("%s:%s", channelId, senderId)
+	var now = time.Now().UTC()
+
+	p.cleanupExpiredPendingCodes(now)
+	existingValue, loaded := p.pendingCodes.Load(key)
+	if loaded {
+		existing := existingValue.(*PendingPairing)
+		if existing.ExpiresAt.After(now) {
+			return existing.Code
+		}
+	}
+
+	code := generateCode(int64(100000), int64(1000000))
+	p.pendingCodes.Store(key, &PendingPairing{
+		Code:           code,
+		ExpiresAt:      now.Add(p.codeTtl),
+		FailedAttempts: 0,
+	})
+
+	return code
+}
+
+func (p *PairingManager) IsApproved(channelId, senderId string) bool {
+	var key = fmt.Sprintf("%s:%s", channelId, senderId)
+	_, ok := p.approvedSenders.Load(key)
+	return ok
 }
