@@ -381,3 +381,43 @@ func (b *BrowserToolCapabilityEvaluator) Evaluate(config *GatewayConfig) *Browse
 		Reason:                     reason,
 	}
 }
+
+type SecretResolver struct{}
+
+func (s *SecretResolver) IsRawRef(secretRef string) bool {
+	return !isBlank(secretRef) && strings.HasPrefix(secretRef, "raw:")
+}
+
+func (s *SecretResolver) LooksLikeEnvVarName(value string) bool {
+	if len(value) < 3 {
+		return false
+	}
+
+	for _, c := range value {
+		if !((c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '_') {
+			return false
+		}
+	}
+	return true
+}
+
+func (s *SecretResolver) Resolve(secretRef string) string {
+	if isBlank(secretRef) {
+		return ""
+	}
+
+	if strings.HasPrefix(secretRef, "env:") {
+		return os.Getenv(secretRef[4:])
+	}
+
+	if strings.HasPrefix(secretRef, "raw:") {
+		return secretRef[4:]
+	}
+
+	var envValue = os.Getenv(secretRef)
+	if !isBlank(envValue) {
+		return envValue
+	}
+
+	return secretRef
+}
