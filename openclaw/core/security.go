@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -138,10 +139,8 @@ func (m *AllowlistManager) AddAllowedFrom(channelID string, senderID string) {
 		}
 
 		// 检查是否存在
-		for _, id := range cur.AllowedFrom {
-			if id == senderID {
-				return *cur
-			}
+		if slices.Contains(cur.AllowedFrom, senderID) {
+			return *cur
 		}
 
 		// 追加元素
@@ -202,4 +201,101 @@ func (m *AllowlistManager) getPath(channelID string) string {
 	}
 
 	return filepath.Join(m.rootDir, safe+".json")
+}
+
+type AllowlistSemantics uint8
+
+const (
+	AllowlistSemantics_Legacy AllowlistSemantics = iota
+	AllowlistSemantics_Strict
+)
+
+type AllowlistPolicy struct{}
+
+func (a *AllowlistPolicy) ParseSemantics(value string) AllowlistSemantics {
+	if value == "strict" {
+		return AllowlistSemantics_Strict
+	}
+
+	return AllowlistSemantics_Legacy
+}
+
+func (a *AllowlistPolicy) IsAllowed(allowlist []string, value string, semantics AllowlistSemantics) bool {
+	if len(allowlist) == 0 {
+		return semantics == AllowlistSemantics_Legacy
+	}
+
+	for _, entry := range allowlist {
+		if isBlank(entry) {
+			continue
+		}
+
+		var pat = strings.TrimSpace(entry)
+		if pat == "*" {
+			return true
+		}
+
+		matcher := GlobMatcher{}
+		if matcher.IsMatch(pat, value) {
+			return true
+		}
+
+	}
+
+	return false
+}
+
+type GlobMatcher struct{}
+
+func (g *GlobMatcher) IsMatch(pattern string, value string) bool {
+	if pattern == "*" {
+		return true
+	}
+
+	if len(pattern) == 0 {
+		return len(value) == 0
+	}
+
+	// 快速路径：如果不包含 '*'，直接全字匹配
+	if !strings.ContainsRune(pattern, '*') {
+		return pattern == value
+	}
+
+	remaining := pattern
+	valueIndex := 0
+	isFirst := true
+
+	for len(remaining) > 0 {
+		starPos := strings.IndexByte(remaining, '*')
+		if starPos < 0 {
+			// 没有更多通配符了 —— 剩余的 pattern 必须匹配 value 的后缀
+			return strings.HasSuffix(value[valueIndex:], remaining)
+		}
+
+		segment := remaining[:starPos]
+		remaining = remaining[starPos+1:]
+
+		if len(segment) == 0 {
+			isFirst = false
+			continue
+		}
+
+		if isFirst {
+			// 第一段（如果 pattern 不是以 '*' 开头）必须匹配前缀
+			if !strings.HasPrefix(value[valueIndex:], segment) {
+				return false
+			}
+			valueIndex += len(segment)
+			isFirst = false
+		} else {
+			// 中间段 —— 在 value 剩余部分中寻找第一次出现的位置
+			found := strings.Index(value[valueIndex:], segment)
+			if found < 0 {
+				return false
+			}
+			valueIndex += found + len(segment)
+		}
+	}
+
+	return true
 }
