@@ -299,3 +299,23 @@ func (g *GlobMatcher) IsMatch(pattern string, value string) bool {
 
 	return true
 }
+
+func (g *GlobMatcher) IsAllowed(allowGlobs, denyGlobs []string, value string) bool {
+	for _, deny := range denyGlobs {
+		if !isBlank(deny) && g.IsMatch(strings.TrimSpace(deny), value) {
+			return false
+		}
+	}
+
+	if len(allowGlobs) == 0 {
+		return false
+	}
+
+	for _, allow := range allowGlobs {
+		if !isBlank(allow) && g.IsMatch(strings.TrimSpace(allow), value) {
+			return true
+		}
+	}
+
+	return false
+}
