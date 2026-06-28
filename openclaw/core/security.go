@@ -421,3 +421,57 @@ func (s *SecretResolver) Resolve(secretRef string) string {
 
 	return secretRef
 }
+
+const (
+	shellMetaChars = ";|&`$(){}<>\n\r"
+	crlfChars      = "\r\n"
+)
+
+type InputSanitizer struct{}
+
+var Sanitizer = InputSanitizer{}
+
+func (InputSanitizer) CheckShellMetaChars(value string, parameterName string) error {
+	idx := strings.IndexAny(value, shellMetaChars)
+	if idx >= 0 {
+		return fmt.Errorf("error: '%s' contains disallowed character '%c'. "+
+			"Shell metacharacters (;|&`$(){}\\n\\r<>) are not permitted for security reasons",
+			parameterName, value[idx])
+	}
+	return nil
+}
+
+// StripCrlf 从输入中移除 CRLF (\r 和 \n)，防止命令注入。
+func (InputSanitizer) StripCrlf(value string) string {
+	if !strings.ContainsAny(value, crlfChars) {
+		return value
+	}
+
+	// 这种方式比循环拼接字符串高效得多，因为它会计算好内存一次性分配
+	r := strings.NewReplacer("\r", "", "\n", "")
+	return r.Replace(value)
+}
+
+// CheckMemoryKey 验证内存便签键是否包含路径遍历序列或空字节。
+func (InputSanitizer) CheckMemoryKey(key string) error {
+	if strings.Contains(key, "..") ||
+		strings.Contains(key, "/") ||
+		strings.Contains(key, "\\") ||
+		strings.Contains(key, "\x00") {
+		return fmt.Errorf("error: Key contains disallowed characters (path separators, '..' or null bytes)")
+	}
+	return nil
+}
+
+// CheckImapFolderName 验证 IMAP 文件夹名称是否仅包含安全字符（无控制字符）。
+func (InputSanitizer) CheckImapFolderName(folder string) error {
+	for _, c := range folder {
+		// 在 Go 中，控制字符的定义通常是小于 0x20 (空格) 或者是 0x7F (DEL)
+		// 这对应了 ASCII 中的控制字符。
+		if c < ' ' || c == 0x7F {
+			return fmt.Errorf("error: Folder name contains control character (0x%02X). "+
+				"Only printable characters are allowed in folder names", c)
+		}
+	}
+	return nil
+}
