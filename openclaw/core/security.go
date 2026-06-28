@@ -319,3 +319,65 @@ func (g *GlobMatcher) IsAllowed(allowGlobs, denyGlobs []string, value string) bo
 
 	return false
 }
+
+type BrowserToolCapabilityEvaluator struct{}
+
+func (b *BrowserToolCapabilityEvaluator) isNonLocalBackendAvailable(config *GatewayConfig, backendName string) bool {
+	if isBlank(backendName) || backendName == "local" {
+		return false
+	}
+
+	if backendName == "opensandbox" {
+		return IsOpenSandboxProviderConfigured(config)
+	}
+	profile, ok := config.Execution.Profiles[backendName]
+	if ok {
+		return profile.Enabled && profile.Type != BackendLocal
+	}
+
+	return false
+}
+
+func (b *BrowserToolCapabilityEvaluator) hasLegacySandboxRoute(config *GatewayConfig) bool {
+	return IsOpenSandboxProviderConfigured(config) && ResolveMode(config, "browser", ToolSandboxMode_Prefer) != ToolSandboxMode_None
+}
+
+func (b *BrowserToolCapabilityEvaluator) hasExecutionBackend(config *GatewayConfig) bool {
+	if !config.Execution.Enabled {
+		return false
+	}
+	route, ok := config.Execution.Tools["browser"]
+	if !ok {
+		return false
+	}
+
+	return b.isNonLocalBackendAvailable(config, route.Backend) || b.isNonLocalBackendAvailable(config, route.FallbackBackend)
+}
+
+func (b *BrowserToolCapabilityEvaluator) Evaluate(config *GatewayConfig) *BrowserToolCapabilitySummary {
+	var configuredEnabled = config.Tooling.EnableBrowserTool
+	var localExecutionSupported = config.Tooling.EnableLocalTool
+	var executionBackendConfigured = b.hasExecutionBackend(config) || b.hasLegacySandboxRoute(config)
+	var registered = configuredEnabled && (localExecutionSupported || executionBackendConfigured)
+
+	var reason = "disabled"
+	if configuredEnabled {
+		if registered {
+			if executionBackendConfigured && !localExecutionSupported {
+				reason = "backend_only"
+			} else {
+				reason = "available"
+			}
+		} else {
+			reason = "local_execution_unavailable_without_backend"
+		}
+	}
+
+	return &BrowserToolCapabilitySummary{
+		ConfiguredEnabled:          configuredEnabled,
+		LocalExecutionSupported:    localExecutionSupported,
+		ExecutionBackendConfigured: executionBackendConfigured,
+		Registered:                 registered,
+		Reason:                     reason,
+	}
+}

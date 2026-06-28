@@ -54,9 +54,9 @@ func DefaultExecutionBackendProfileConfig() *ExecutionBackendProfileConfig {
 }
 
 type ExecutionToolRouteConfig struct {
-	Backend          string  `json:"backend"`
-	FallbackBackend  *string `json:"fallback_backend,omitempty"`
-	RequireWorkspace bool    `json:"require_workspace"`
+	Backend          string `json:"backend"`
+	FallbackBackend  string `json:"fallback_backend"`
+	RequireWorkspace bool   `json:"require_workspace"`
 }
 
 func DefaultExecutionToolRouteConfig() *ExecutionToolRouteConfig {

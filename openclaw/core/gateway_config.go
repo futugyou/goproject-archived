@@ -504,6 +504,7 @@ type ToolingConfig struct {
 	ApprovalRequiredTools      []string                    `json:"approval_required_tools"`
 	ToolApprovalTimeoutSeconds int                         `json:"tool_approval_timeout_seconds"`
 	EnableBrowserTool          bool                        `json:"enable_browser_tool"`
+	EnableLocalTool            bool                        `json:"enable_local_tool"`
 	AllowBrowserEvaluate       bool                        `json:"allow_browser_evaluate"`
 	BrowserHeadless            bool                        `json:"browser_headless"`
 	BrowserTimeoutSeconds      int                         `json:"browser_timeout_seconds"`
