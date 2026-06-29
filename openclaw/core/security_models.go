@@ -1,5 +1,7 @@
 package core
 
+import "fmt"
+
 type SentinelSubstitutionContext struct {
 	ToolName           string `json:"tool_name"`
 	ArgumentsJson      string `json:"arguments_json"`
@@ -16,4 +18,25 @@ type SentinelSubstitutionResult struct {
 	ExecutionArgumentsJson string `json:"execution_arguments_json"`
 	PersistedArgumentsJson string `json:"persisted_arguments_json"`
 	Substituted            bool   `json:"substituted"`
+}
+
+type UrlSafetyValidationResult struct {
+	Allowed bool
+	Reason  string
+}
+
+func AllowUrlSafetyValidationResult() *UrlSafetyValidationResult {
+	return &UrlSafetyValidationResult{Allowed: true}
+}
+
+func DenyUrlSafetyValidationResult(reason string) *UrlSafetyValidationResult {
+	return &UrlSafetyValidationResult{Reason: reason}
+}
+
+func (u *UrlSafetyValidationResult) ToString() string {
+	if u.Allowed {
+		return ""
+	}
+
+	return fmt.Sprintf("Error: URL blocked by safety policy - %s", u.Reason)
 }

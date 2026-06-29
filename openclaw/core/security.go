@@ -7,6 +7,9 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net"
+	"net/netip"
+	"net/url"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -252,6 +255,8 @@ func (a *AllowlistPolicy) IsAllowed(allowlist []string, value string, semantics 
 }
 
 type GlobMatcher struct{}
+
+var GlobMatcherInstance *GlobMatcher = &GlobMatcher{}
 
 func (g *GlobMatcher) IsMatch(pattern string, value string) bool {
 	if pattern == "*" {
@@ -830,4 +835,179 @@ func (n *NoopSentinelSubstitutionService) Substitute(ctx context.Context, sentin
 		ExecutionArgumentsJson: sentinelContext.ArgumentsJson,
 		PersistedArgumentsJson: sentinelContext.ArgumentsJson,
 	}, nil
+}
+
+type UrlSafetyValidator struct{}
+
+func (u *UrlSafetyValidator) addressMatchesCidr(address netip.Addr, cidr string) bool {
+	// 1. 解析 CIDR 字符串
+	network, err := netip.ParsePrefix(cidr)
+	if err != nil {
+		return false
+	}
+
+	// 2. 将地址统一转换为最简形式（自动处理 IPv4-mapped IPv6 地址）
+	// netip.Addr.Contains 会自动处理同一 IP 空间（如将 IPv4-mapped IPv6 地址作为 IPv4 对比）
+	// 如果需要严格确保两者底层网络家族一致，可以先调用 .Unmap()
+	addrUnmapped := address.Unmap()
+	netUnmapped := network.Addr().Unmap()
+
+	if addrUnmapped.BitLen() != netUnmapped.BitLen() {
+		return false
+	}
+
+	// 3. 检查是否包含
+	// 重新用 unmapped 的网络和原有的 Prefix 长度构建
+	strictNetwork := netip.PrefixFrom(netUnmapped, network.Bits())
+	return strictNetwork.Contains(addrUnmapped)
+}
+
+func (u *UrlSafetyValidator) isNonPublicAddress(ip netip.Addr) bool {
+	// 1. 如果 IP 无效，或者本身就是未指定地址 (0.0.0.0 或 ::)
+	if !ip.IsValid() || ip.IsUnspecified() {
+		return true
+	}
+
+	// 2. 检查环回地址 (127.0.0.1 或 ::1)
+	if ip.IsLoopback() {
+		return true
+	}
+
+	// 3. 检查链路本地地址 (169.254.a.b 或 fe80::)
+	if ip.IsLinkLocalUnicast() {
+		return true
+	}
+
+	// 4. 检查组播/多播地址 (224.0.0.0/4 或 ff00::/8)
+	if ip.IsMulticast() {
+		return true
+	}
+
+	// 5. 检查 RFC 1918 (IPv4私有网段) 和 RFC 4193 (IPv6 唯一本地地址 / ULA)
+	// 这包含了 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16 和 fc00::/7
+	if ip.IsPrivate() {
+		return true
+	}
+
+	// 6. 单独列出的特殊 IPv4 网段做兜底处理 (如 CGNAT、基准测试等)
+	if ip.Is4() {
+		b := ip.As4()
+		return b[0] == 0 || // 0.0.0.0/8
+			(b[0] == 100 && b[1] >= 64 && b[1] <= 127) || // 100.64.0.0/10 (CGNAT)
+			(b[0] == 198 && (b[1] == 18 || b[1] == 19)) // 198.18.0.0/15 (Benchmarking)
+	}
+
+	return false
+}
+
+func (u *UrlSafetyValidator) normalizeHost(uri url.URL) string {
+	return strings.ToLower(strings.TrimRight(strings.TrimSpace(uri.Host), "."))
+}
+
+func (u *UrlSafetyValidator) validateAddresses(addresses []netip.Addr, policy *UrlSafetyConfig, host string) *UrlSafetyValidationResult {
+	for _, address := range addresses {
+		if policy.BlockPrivateNetworkTargets && u.isNonPublicAddress(address) {
+			return DenyUrlSafetyValidationResult(fmt.Sprintf("host '%s' resolves to non-public address %s.", host, address.String()))
+		}
+
+		for _, cidr := range policy.BlockedCidrs {
+			if isBlank(cidr) {
+				continue
+			}
+
+			if u.addressMatchesCidr(address, strings.TrimSpace(cidr)) {
+				return DenyUrlSafetyValidationResult(fmt.Sprintf("host '%s' resolves to %s, which matches blocked CIDR '%s'.", host, address.String(), cidr))
+			}
+
+		}
+	}
+
+	return AllowUrlSafetyValidationResult()
+}
+
+var BuiltInBlockedHostGlobs = []string{
+	"localhost",
+	"*.localhost",
+	"metadata",
+	"metadata.google.internal",
+}
+
+func (u *UrlSafetyValidator) ValidateHttpUrl(ctx context.Context, uri url.URL, policy *UrlSafetyConfig) *UrlSafetyValidationResult {
+	if policy == nil {
+		policy = &UrlSafetyConfig{}
+	}
+
+	// 1. 优先检查 Context 是否已经结束
+	if err := ctx.Err(); err != nil {
+		return DenyUrlSafetyValidationResult(fmt.Sprintf("validation canceled: %v", err))
+	}
+
+	// 2. 第一阶段：进行不触发 DNS 解析的“轻量级初筛”
+	preliminary := u.ValidateHttpUrlLocal(uri, policy)
+	if !preliminary.Allowed {
+		return preliminary
+	}
+
+	// 3. 智能短路：如果不需要拦截私有网络且没有自定义 CIDR，直接放行
+	if !policy.Enabled || (!policy.BlockPrivateNetworkTargets && len(policy.BlockedCidrs) == 0) {
+		return AllowUrlSafetyValidationResult()
+	}
+
+	// 4. 智能短路：如果是字面量 IP，初筛阶段就已经在本地被 validateAddresses 校验过了
+	host := u.normalizeHost(uri)
+	if _, err := netip.ParseAddr(host); err == nil {
+		return preliminary
+	}
+
+	// 5. 第二阶段：执行带 Context 的非阻塞 DNS 解析
+	addresses, err := net.DefaultResolver.LookupNetIP(ctx, "ip", host)
+	if err != nil {
+		return DenyUrlSafetyValidationResult(fmt.Sprintf("DNS resolution failed for '%s': %v", host, err))
+	}
+
+	if len(addresses) == 0 {
+		return DenyUrlSafetyValidationResult(fmt.Sprintf("DNS resolution returned no addresses for '%s'", host))
+	}
+
+	return u.validateAddresses(addresses, policy, host)
+}
+
+// ValidateHttpUrlLocal 仅执行本地规则校验，绝不触网（不解析 DNS）。
+// 对应你原代码中 resolveDns = false 的逻辑，独立出来利于复用。
+func (u *UrlSafetyValidator) ValidateHttpUrlLocal(uri url.URL, policy *UrlSafetyConfig) *UrlSafetyValidationResult {
+	if policy == nil {
+		policy = &UrlSafetyConfig{}
+	}
+
+	if !policy.Enabled {
+		return AllowUrlSafetyValidationResult()
+	}
+
+	if !uri.IsAbs() || (uri.Scheme != "http" && uri.Scheme != "https") {
+		return DenyUrlSafetyValidationResult("only absolute http(s) URLs are allowed.")
+	}
+
+	host := u.normalizeHost(uri)
+	if isBlank(host) {
+		return DenyUrlSafetyValidationResult("URL host is empty.")
+	}
+
+	for _, pattern := range BuiltInBlockedHostGlobs {
+		if policy.BlockPrivateNetworkTargets && GlobMatcherInstance.IsMatch(pattern, host) {
+			return DenyUrlSafetyValidationResult(fmt.Sprintf("host '%s' is blocked.", host))
+		}
+	}
+
+	for _, pattern := range policy.BlockedHostGlobs {
+		if GlobMatcherInstance.IsMatch(pattern, host) {
+			return DenyUrlSafetyValidationResult(fmt.Sprintf("host '%s' matches blocklist entry '%s'", host, pattern))
+		}
+	}
+
+	// 如果直接是 IP 地址，本地就能得出最终结论
+	if literalIp, err := netip.ParseAddr(host); err == nil {
+		return u.validateAddresses([]netip.Addr{literalIp}, policy, host)
+	}
+
+	return AllowUrlSafetyValidationResult()
 }
