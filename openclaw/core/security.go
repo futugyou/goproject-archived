@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"strings"
 	"sync"
@@ -753,4 +754,67 @@ func (r *RedactionPipeline) RedactSessionInPlace(session *Session) error {
 	}
 
 	return nil
+}
+
+type NoopRedactionPipeline struct{}
+
+// Redact implements [IRedactionPipeline].
+func (n *NoopRedactionPipeline) Redact(value string) string {
+	return ""
+}
+
+// RedactBranch implements [IRedactionPipeline].
+func (n *NoopRedactionPipeline) RedactBranch(branch *SessionBranch) *SessionBranch {
+	return branch
+}
+
+// RedactSession implements [IRedactionPipeline].
+func (n *NoopRedactionPipeline) RedactSession(session *Session) *Session {
+	return session
+}
+
+// RedactSessionInPlace implements [IRedactionPipeline].
+func (n *NoopRedactionPipeline) RedactSessionInPlace(session *Session) error {
+	return nil
+}
+
+var _ IRedactionPipeline = (*NoopRedactionPipeline)(nil)
+
+var _ ISensitiveDataRedactor = (*BaselineSecretRedactor)(nil)
+
+type BaselineSecretRedactor struct {
+}
+
+var (
+	// 1. Bearer 认证解析 (Go 不支持在中间混用 ?im，这里统一用 (?i) 开启不区分大小写)
+	// 注意：Go 不支持 \b 单词边界的某些高级特性，但在字母和空格间依然有效。
+	// 原正则末尾的 [^\s"'`]+ 在 Go 的反引号字符串中需要稍微处理，这里排除空格、双引号、单引号
+	BearerAuthorizationRegex = regexp.MustCompile(`(?i)\b(Authorization\s*:\s*Bearer\s+)[^\s"']+\b`)
+
+	// 2. OpenAI Secret 解析
+	OpenAiSecretRegex = regexp.MustCompile(`(?i)\bsk-[A-Za-z0-9_\-]{12,}`)
+
+	// 3. API Key 字段解析
+	ApiKeyFieldRegex = regexp.MustCompile(`(?i)(\bapi[_-]?key["'\s:=]+)[A-Za-z0-9_\-]{12,}`)
+)
+
+// GetName implements [ISensitiveDataRedactor].
+func (b *BaselineSecretRedactor) GetName() string {
+	return "baseline-secrets"
+}
+
+// Redact implements [ISensitiveDataRedactor].
+func (b *BaselineSecretRedactor) Redact(value string) string {
+	if isBlank(value) {
+		return ""
+	}
+	result := BearerAuthorizationRegex.ReplaceAllString(value, "${1}[REDACTED:authorization]")
+
+	// 2. 替换 OpenAI Secret (直接整段替换)
+	result = OpenAiSecretRegex.ReplaceAllString(result, "[REDACTED:secret]")
+
+	// 3. 替换 API Key 字段，保留 "api-key: " 等前缀
+	result = ApiKeyFieldRegex.ReplaceAllString(result, "${1}[REDACTED:secret]")
+
+	return result
 }
