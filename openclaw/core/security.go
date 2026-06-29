@@ -12,6 +12,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/jinzhu/copier"
 )
 
 type ChannelAllowlistFile struct {
@@ -669,4 +671,86 @@ func (p *PairingManager) IsApproved(channelId, senderId string) bool {
 	var key = fmt.Sprintf("%s:%s", channelId, senderId)
 	_, ok := p.approvedSenders.Load(key)
 	return ok
+}
+
+var _ IRedactionPipeline = (*RedactionPipeline)(nil)
+
+type RedactionPipeline struct {
+	redactors []ISensitiveDataRedactor
+}
+
+func NewRedactionPipeline(redactors []ISensitiveDataRedactor) *RedactionPipeline {
+	return &RedactionPipeline{
+		redactors: redactors,
+	}
+}
+
+// Redact implements [IRedactionPipeline].
+func (r *RedactionPipeline) Redact(value string) string {
+	if isBlank(value) {
+		return ""
+	}
+
+	var current = value
+	for _, redactor := range r.redactors {
+		current = redactor.Redact(current)
+	}
+	return current
+}
+
+// RedactBranch implements [IRedactionPipeline].
+func (r *RedactionPipeline) RedactBranch(branch *SessionBranch) *SessionBranch {
+	var dest SessionBranch
+	err := copier.Copy(&dest, branch)
+	if err != nil {
+		return nil
+	}
+	var session = &Session{
+		Id:        dest.SessionId,
+		ChannelId: "",
+		SenderId:  "",
+		History:   dest.History,
+	}
+	r.RedactSessionInPlace(session)
+	return &dest
+}
+
+// RedactSession implements [IRedactionPipeline].
+func (r *RedactionPipeline) RedactSession(session *Session) *Session {
+	var dest Session
+	err := copier.Copy(&dest, session)
+	if err != nil {
+		return nil
+	}
+	r.RedactSessionInPlace(&dest)
+	return &dest
+}
+
+// RedactSessionInPlace implements [IRedactionPipeline].
+func (r *RedactionPipeline) RedactSessionInPlace(session *Session) error {
+	if session == nil {
+		return nil
+	}
+
+	for i := 0; i < len(session.History); i++ {
+		session.History[i].Content = r.Redact(session.History[i].Content)
+		for j := 0; j < len(session.History[i].ToolCalls); j++ {
+			toolCall := &session.History[i].ToolCalls[j]
+			toolCall.Arguments = r.Redact(toolCall.Arguments)
+			if toolCall.Result != nil {
+				res := r.Redact(*toolCall.Result)
+				toolCall.Result = &res
+			}
+			if toolCall.NextStep != nil {
+				res := r.Redact(*toolCall.NextStep)
+				toolCall.NextStep = &res
+			}
+			if toolCall.FailureMessage != nil {
+				res := r.Redact(*toolCall.FailureMessage)
+				toolCall.FailureMessage = &res
+			}
+		}
+	}
+
+	return nil
 }

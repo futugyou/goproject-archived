@@ -7,6 +7,7 @@ require github.com/google/uuid v1.6.0
 require (
 	github.com/flosch/pongo2/v7 v7.0.0-alpha.1
 	github.com/futugyou/extensions_ai v0.0.1
+	github.com/jinzhu/copier v0.4.0
 	go.opentelemetry.io/otel v1.44.0
 	go.opentelemetry.io/otel/metric v1.44.0
 	go.opentelemetry.io/otel/trace v1.44.0

@@ -299,3 +299,15 @@ type IMessageMiddleware interface {
 
 	Invoke(ctx context.Context, messageContext *MessageContext, next func(context.Context) error) error
 }
+
+type ISensitiveDataRedactor interface {
+	GetName() string
+	Redact(value string) string
+}
+
+type IRedactionPipeline interface {
+	Redact(value string) string
+	RedactSessionInPlace(session *Session) error
+	RedactSession(session *Session) *Session
+	RedactBranch(branch *SessionBranch) *SessionBranch
+}
