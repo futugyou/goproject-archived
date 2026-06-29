@@ -1,6 +1,7 @@
 package core
 
 import (
+	"context"
 	"crypto/subtle"
 	"encoding/json"
 	"errors"
@@ -817,4 +818,16 @@ func (b *BaselineSecretRedactor) Redact(value string) string {
 	result = ApiKeyFieldRegex.ReplaceAllString(result, "${1}[REDACTED:secret]")
 
 	return result
+}
+
+var _ ISentinelSubstitutionService = (*NoopSentinelSubstitutionService)(nil)
+
+type NoopSentinelSubstitutionService struct{}
+
+// Substitute implements [ISentinelSubstitutionService].
+func (n *NoopSentinelSubstitutionService) Substitute(ctx context.Context, sentinelContext *SentinelSubstitutionContext) (*SentinelSubstitutionResult, error) {
+	return &SentinelSubstitutionResult{
+		ExecutionArgumentsJson: sentinelContext.ArgumentsJson,
+		PersistedArgumentsJson: sentinelContext.ArgumentsJson,
+	}, nil
 }

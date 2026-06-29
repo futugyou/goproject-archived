@@ -311,3 +311,7 @@ type IRedactionPipeline interface {
 	RedactSession(session *Session) *Session
 	RedactBranch(branch *SessionBranch) *SessionBranch
 }
+
+type ISentinelSubstitutionService interface {
+	Substitute(ctx context.Context, sentinelContext *SentinelSubstitutionContext) (*SentinelSubstitutionResult, error)
+}
