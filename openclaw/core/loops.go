@@ -4,6 +4,10 @@ import (
 	"context"
 	"regexp"
 	"strings"
+	"sync"
+	"time"
+
+	"github.com/robfig/cron/v3"
 )
 
 type AgentLoopRequestPayload struct {
@@ -167,4 +171,41 @@ func (l *LoopTerminationDetector) ScanText(ctx context.Context, sessionId, text 
 	}
 
 	return false
+}
+
+type LoopEntry struct {
+	SessionId      string
+	Prompt         string
+	CronExpression string
+	ScheduledAt    time.Time
+
+	mu             sync.Mutex
+	schedule       cron.Schedule
+	nextOccurrence time.Time
+}
+
+func NewLoopEntry(sessionId, prompt, cronExpression string, schedule cron.Schedule) *LoopEntry {
+	now := time.Now().UTC()
+	return &LoopEntry{
+		SessionId:      sessionId,
+		Prompt:         prompt,
+		CronExpression: cronExpression,
+		schedule:       schedule,
+		ScheduledAt:    now,
+		nextOccurrence: schedule.Next(now),
+	}
+}
+
+// IsDue 检查任务是否到期，并原子化更新下一次执行时间
+func (e *LoopEntry) IsDue(now time.Time) bool {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+
+	nowUTC := now.UTC()
+	if nowUTC.Before(e.nextOccurrence) {
+		return false
+	}
+
+	e.nextOccurrence = e.schedule.Next(nowUTC)
+	return true
 }
