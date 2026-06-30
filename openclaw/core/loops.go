@@ -83,3 +83,88 @@ func (l *LoopCommandParser) TryParse(text string) *LoopCommand {
 		Prompt:   prompt,
 	}
 }
+
+type LoopTerminationDetector struct {
+	loopControl ILoopControlService
+}
+
+var TerminationKeywords = map[string]struct{}{
+	"LOOP_TERMINATE": {},
+	"DONE":           {},
+	"WORK_COMPLETE":  {},
+}
+
+func NewLoopTerminationDetector(loopControl ILoopControlService) *LoopTerminationDetector {
+	return &LoopTerminationDetector{
+		loopControl: loopControl,
+	}
+}
+
+func (l *LoopTerminationDetector) isKeywordCharacter(b byte) bool {
+	return (b >= 'a' && b <= 'z') ||
+		(b >= 'A' && b <= 'Z') ||
+		(b >= '0' && b <= '9') ||
+		b == '_'
+}
+
+func (l *LoopTerminationDetector) cntainsWholeKeyword(text, keyword string) bool {
+	if len(keyword) == 0 {
+		return false
+	}
+
+	lowerText := strings.ToLower(text)
+	lowerKeyword := strings.ToLower(keyword)
+
+	startIndex := 0
+	textLen := len(lowerText)
+	keywordLen := len(lowerKeyword)
+
+	for startIndex < textLen {
+		relIndex := strings.Index(lowerText[startIndex:], lowerKeyword)
+		if relIndex == -1 {
+			return false
+		}
+
+		// 算出在原字符串中的绝对字节索引
+		index := startIndex + relIndex
+
+		// 2. 检查前边界
+		before := index == 0 || !l.isKeywordCharacter(lowerText[index-1])
+
+		// 3. 检查后边界
+		afterIndex := index + keywordLen
+		after := afterIndex == textLen || !l.isKeywordCharacter(lowerText[afterIndex])
+
+		// 4. 两者都符合，说明是独立单词
+		if before && after {
+			return true
+		}
+
+		startIndex = index + 1
+	}
+
+	return false
+}
+
+func (l *LoopTerminationDetector) OnToolComplete(ctx context.Context, sessionId string) error {
+	return l.loopControl.SignalComplete(ctx, sessionId)
+}
+
+func (l *LoopTerminationDetector) ScanText(ctx context.Context, sessionId, text string) bool {
+	if isBlank(text) {
+		return false
+	}
+
+	for keyword := range TerminationKeywords {
+		if !l.cntainsWholeKeyword(text, keyword) {
+			continue
+		}
+
+		if err := l.loopControl.SignalComplete(ctx, sessionId); err != nil {
+			return false
+		}
+		return true
+	}
+
+	return false
+}

@@ -119,3 +119,17 @@ func generateCode(min, max int64) string {
 	code := strconv.FormatInt(codeInt, 10)
 	return code
 }
+
+func indexOf(s string, substr string, startIndex int) int {
+	if startIndex < 0 || startIndex > len(s) {
+		return -1
+	}
+
+	result := strings.Index(s[startIndex:], substr)
+
+	if result != -1 {
+		return result + startIndex
+	}
+
+	return -1
+}
