@@ -2,12 +2,16 @@ package core
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
 	"fmt"
+	"log/slog"
 	"regexp"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/hibiken/asynq"
 	"github.com/robfig/cron/v3"
 )
 
@@ -19,6 +23,15 @@ type AgentLoopRequestPayload struct {
 type IAgentLoopDispatcher interface {
 	Dispatch(ctx context.Context, sessionId, prompt string) bool
 }
+
+type NoopAgentLoopDispatcher struct{}
+
+// Dispatch implements [IAgentLoopDispatcher].
+func (n *NoopAgentLoopDispatcher) Dispatch(ctx context.Context, sessionId string, prompt string) bool {
+	return true
+}
+
+var _ IAgentLoopDispatcher = (*NoopAgentLoopDispatcher)(nil)
 
 type ILoopControlService interface {
 	SignalComplete(ctx context.Context, sessionId string) error
@@ -214,7 +227,14 @@ func (e *LoopEntry) IsDue(now time.Time) bool {
 var _ ILoopControlService = (*ClawLoopScheduler)(nil)
 
 type ClawLoopScheduler struct {
+	logger  *slog.Logger
 	entries sync.Map //map[string]*LoopEntry
+}
+
+func NewClawLoopScheduler(logger *slog.Logger) *ClawLoopScheduler {
+	return &ClawLoopScheduler{
+		logger: logger,
+	}
 }
 
 func (s *ClawLoopScheduler) ScheduleLoop(ctx context.Context, sessionId, cronExpression, prompt string) error {
@@ -226,13 +246,15 @@ func (s *ClawLoopScheduler) ScheduleLoop(ctx context.Context, sessionId, cronExp
 	entry := NewLoopEntry(sessionId, prompt, cronExpression, schedule)
 
 	s.entries.Store(strings.ToLower(sessionId), entry)
-
+	s.logger.Info("Loop scheduled", "sessionId", sessionId, "cron", cronExpression)
 	return nil
 }
 
 func (s *ClawLoopScheduler) CancelLoop(ctx context.Context, sessionId string) error {
 	key := strings.ToLower(sessionId)
-	s.entries.LoadAndDelete(key)
+	if _, loaded := s.entries.LoadAndDelete(key); loaded {
+		s.logger.Info("Loop canceled", "sessionId", sessionId)
+	}
 	return nil
 }
 
@@ -248,6 +270,7 @@ func (s *ClawLoopScheduler) GetLoopStatus(ctx context.Context, sessionId string)
 }
 
 func (s *ClawLoopScheduler) SignalComplete(ctx context.Context, sessionId string) error {
+	s.logger.Info("Loop termination signal received", "sessionId", sessionId)
 	return s.CancelLoop(ctx, sessionId)
 }
 
@@ -282,4 +305,90 @@ func (s *ClawLoopScheduler) parseCronExpression(cronExpression string) (cron.Sch
 		return nil, err
 	}
 	return sched, nil
+}
+
+const TypeAgentLoopTask = "agent:loop_task"
+
+type AgentLoopPayload struct {
+	SessionId string `json:"session_id"`
+	Prompt    string `json:"prompt"`
+}
+
+func NewAgentLoopTask(sessionId, prompt string) (*asynq.Task, error) {
+	payload, err := json.Marshal(AgentLoopPayload{SessionId: sessionId, Prompt: prompt})
+	if err != nil {
+		return nil, err
+	}
+	return asynq.NewTask(TypeAgentLoopTask, payload), nil
+}
+
+type AgentLoopJob struct {
+	scheduler   *ClawLoopScheduler
+	asynqClient *asynq.Client
+	logger      *slog.Logger
+}
+
+func NewAgentLoopJob(sched *ClawLoopScheduler, client *asynq.Client, logger *slog.Logger) *AgentLoopJob {
+	return &AgentLoopJob{
+		scheduler:   sched,
+		asynqClient: client,
+		logger:      logger,
+	}
+}
+
+func (j *AgentLoopJob) Execute(ctx context.Context) {
+	now := time.Now().UTC()
+	dueEntries := j.scheduler.GetDueEntries(now)
+
+	for _, entry := range dueEntries {
+		if ctx.Err() != nil {
+			break
+		}
+
+		j.logger.Info("Loop tick: dispatching prompt for session", "sessionId", entry.SessionId)
+
+		// 打包发给, 准备 asynq 分布式队列
+		task, err := NewAgentLoopTask(entry.SessionId, entry.Prompt)
+		if err != nil {
+			j.logger.Error("Failed to serialize task", "sessionId", entry.SessionId, "err", err)
+			continue
+		}
+
+		// 投递到asynq(比如 Redis)，让集群中的 Worker 去异步执行
+		_, err = j.asynqClient.EnqueueContext(ctx, task)
+		if err != nil {
+			j.logger.Error("Loop dispatch (enqueue) failed for session", "sessionId", entry.SessionId, "err", err)
+		}
+	}
+}
+
+type AgentTaskHandler struct {
+	dispatcher IAgentLoopDispatcher
+	logger     *slog.Logger
+}
+
+var _ asynq.Handler = (*AgentTaskHandler)(nil)
+
+func NewAgentTaskHandler(dispatcher IAgentLoopDispatcher, logger *slog.Logger) *AgentTaskHandler {
+	return &AgentTaskHandler{
+		dispatcher: dispatcher,
+		logger:     logger,
+	}
+}
+
+func (h *AgentTaskHandler) ProcessTask(ctx context.Context, t *asynq.Task) error {
+	var p AgentLoopPayload
+	if err := json.Unmarshal(t.Payload(), &p); err != nil {
+		return err
+	}
+
+	h.logger.Info("Executing business logic via dispatcher", "sessionId", p.SessionId)
+
+	ok := h.dispatcher.Dispatch(ctx, p.SessionId, p.Prompt)
+	if !ok {
+		h.logger.Error("Dispatcher execution failed")
+		return errors.New("Dispatcher execution failed")
+	}
+
+	return nil
 }
