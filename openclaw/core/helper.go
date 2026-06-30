@@ -3,6 +3,7 @@ package core
 import (
 	"crypto/rand"
 	"encoding/json"
+	"fmt"
 	"io/fs"
 	"math/big"
 	"net"
@@ -132,4 +133,31 @@ func indexOf(s string, substr string, startIndex int) int {
 	}
 
 	return -1
+}
+
+func IntervalToCron(interval string) (string, error) {
+	if len(interval) < 2 {
+		return "", fmt.Errorf("invalid interval: %s", interval)
+	}
+
+	unit := interval[len(interval)-1]
+	valStr := interval[:len(interval)-1]
+	val, err := strconv.Atoi(valStr)
+	if err != nil || val <= 0 {
+		return "", fmt.Errorf("invalid interval value: %s", interval)
+	}
+
+	switch unit {
+	case 's':
+		if val >= 60 {
+			return fmt.Sprintf("*/%d * * * *", val/60), nil
+		}
+		return fmt.Sprintf("*/%d * * * * *", val), nil
+	case 'm':
+		return fmt.Sprintf("*/%d * * * *", val), nil
+	case 'h':
+		return fmt.Sprintf("0 */%d * * *", val), nil
+	default:
+		return "", fmt.Errorf("unknown interval unit: %c", unit)
+	}
 }

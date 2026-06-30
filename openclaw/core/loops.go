@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"fmt"
 	"regexp"
 	"strings"
 	"sync"
@@ -208,4 +209,77 @@ func (e *LoopEntry) IsDue(now time.Time) bool {
 
 	e.nextOccurrence = e.schedule.Next(nowUTC)
 	return true
+}
+
+var _ ILoopControlService = (*ClawLoopScheduler)(nil)
+
+type ClawLoopScheduler struct {
+	entries sync.Map //map[string]*LoopEntry
+}
+
+func (s *ClawLoopScheduler) ScheduleLoop(ctx context.Context, sessionId, cronExpression, prompt string) error {
+	schedule, err := s.parseCronExpression(cronExpression)
+	if err != nil {
+		return fmt.Errorf("invalid cron expression %s: %w", cronExpression, err)
+	}
+
+	entry := NewLoopEntry(sessionId, prompt, cronExpression, schedule)
+
+	s.entries.Store(strings.ToLower(sessionId), entry)
+
+	return nil
+}
+
+func (s *ClawLoopScheduler) CancelLoop(ctx context.Context, sessionId string) error {
+	key := strings.ToLower(sessionId)
+	s.entries.LoadAndDelete(key)
+	return nil
+}
+
+func (s *ClawLoopScheduler) GetLoopStatus(ctx context.Context, sessionId string) (string, error) {
+	key := strings.ToLower(sessionId)
+	if val, ok := s.entries.Load(key); ok {
+		entry := val.(*LoopEntry)
+		status := fmt.Sprintf("Loop active — cron: %s, prompt: \"%s\", scheduled at: %s",
+			entry.CronExpression, entry.Prompt, entry.ScheduledAt.Format(time.RFC3339))
+		return status, nil
+	}
+	return "", nil
+}
+
+func (s *ClawLoopScheduler) SignalComplete(ctx context.Context, sessionId string) error {
+	return s.CancelLoop(ctx, sessionId)
+}
+
+func (s *ClawLoopScheduler) GetDueEntries(now time.Time) []*LoopEntry {
+	var results []*LoopEntry
+
+	s.entries.Range(func(key, value any) bool {
+		entry := value.(*LoopEntry)
+		if entry.IsDue(now) {
+			results = append(results, entry)
+		}
+		return true
+	})
+
+	return results
+}
+
+func (s *ClawLoopScheduler) parseCronExpression(cronExpression string) (cron.Schedule, error) {
+	fields := len(strings.Fields(cronExpression))
+
+	var parser cron.Parser
+	if fields == 6 {
+		// 支持秒级：秒 分 时 天 月 周
+		parser = cron.NewParser(cron.Second | cron.Minute | cron.Hour | cron.Dom | cron.Month | cron.Dow)
+	} else {
+		// 标准5段：分 时 天 月 周
+		parser = cron.NewParser(cron.Minute | cron.Hour | cron.Dom | cron.Month | cron.Dow)
+	}
+
+	sched, err := parser.Parse(cronExpression)
+	if err != nil {
+		return nil, err
+	}
+	return sched, nil
 }
