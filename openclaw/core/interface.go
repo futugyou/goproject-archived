@@ -315,3 +315,15 @@ type IRedactionPipeline interface {
 type ISentinelSubstitutionService interface {
 	Substitute(ctx context.Context, sentinelContext *SentinelSubstitutionContext) (*SentinelSubstitutionResult, error)
 }
+
+type IGoalService interface {
+	CreateGoal(sessionId, objective string, tokenBudget, tokensAtStart int64) (*SessionGoal, error)
+	GetGoal(sessionId string) (*SessionGoal, error)
+	UpdateStatus(sessionId string, newStatus GoalStatus, note *string) error
+	UpdateTokenUsage(sessionId string, sessionTotalTokens int64) error
+	IncrementContinuationCount(sessionId string) int
+	RecordTurnHash(sessionId, normalizedText string) bool
+	ClearGoal(sessionId string) error
+	HasActiveGoal(sessionId string) bool
+	RecordGoalHistory(goal *SessionGoal) error
+}
