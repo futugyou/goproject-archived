@@ -2,6 +2,8 @@ package core
 
 import (
 	"crypto/rand"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io/fs"
@@ -11,6 +13,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"unicode"
 )
 
 func fileExists(path string) bool {
@@ -160,4 +163,49 @@ func IntervalToCron(interval string) (string, error) {
 	default:
 		return "", fmt.Errorf("unknown interval unit: %c", unit)
 	}
+}
+
+func Truncate(value string, maxLength int) string {
+	if len(value) <= maxLength {
+		return value
+	}
+
+	return value[:maxLength] + "..."
+}
+
+func NormalizeForComparison(text string) string {
+	trimmed := strings.TrimSpace(text)
+	if trimmed == "" {
+		return ""
+	}
+
+	var sb strings.Builder
+	sb.Grow(len(trimmed))
+
+	wasSpace := false
+
+	for _, ch := range trimmed {
+		if unicode.IsSpace(ch) {
+			if !wasSpace {
+				sb.WriteByte(' ')
+				wasSpace = true
+			}
+		} else {
+			sb.WriteRune(ch)
+			wasSpace = false
+		}
+	}
+
+	return sb.String()
+}
+
+func ComputeTurnHash(normalizedText string) string {
+	if normalizedText == "" {
+		return ""
+	}
+
+	hash := sha256.Sum256([]byte(normalizedText))
+
+	// hex.EncodeToString 会自动生成纯小写的十六进制字符串
+	return hex.EncodeToString(hash[:])
 }

@@ -1,7 +1,9 @@
 package core
 
 import (
+	"fmt"
 	"math"
+	"strings"
 	"time"
 )
 
@@ -79,4 +81,65 @@ func (s *SessionGoal) RemainingBudget() int64 {
 		return max(0, s.TokenBudget-s.TokensUsed)
 	}
 	return math.MaxInt64
+}
+
+func (s *SessionGoal) FormatGoalFooterLine() string {
+	if s == nil {
+		return ""
+	}
+	switch s.Status {
+	case GoalStatus_Activ:
+		if s.TokenBudget > 0 {
+			return fmt.Sprintf("Pursuing goal (%d/%d)", s.TokensUsed, s.TokenBudget)
+		}
+		return fmt.Sprintf("Pursuing goal: %s", Truncate(s.Objective, 40))
+	case GoalStatus_Paused:
+		return "Goal paused (/goal resume)"
+	case GoalStatus_Blocked:
+		return "Goal blocked (/goal resume)"
+	case GoalStatus_BudgetLimited:
+		return fmt.Sprintf("Goal unmet (%d/%d)", s.TokensUsed, s.TokenBudget)
+	case GoalStatus_UsageLimited:
+		return "Goal hit usage limits (/goal resume)"
+	case GoalStatus_Complete:
+		return fmt.Sprintf("Goal achieved (%d)", s.TokensUsed)
+	default:
+		return ""
+	}
+}
+
+func (s *SessionGoal) FormatGoalProgressBar() string {
+	if s == nil || s.TokenBudget < 0 {
+		return ""
+	}
+
+	used := s.TokensUsed
+	if used < 0 {
+		used = 0
+	} else if used > s.TokenBudget {
+		used = s.TokenBudget
+	}
+
+	const barWidth = 20
+
+	filled := int((used * barWidth) / s.TokenBudget)
+
+	pctInt := (used * 100) / s.TokenBudget
+
+	var sb strings.Builder
+	sb.Grow(barWidth + 2)
+
+	sb.WriteByte('[')
+	for range filled {
+		sb.WriteByte('=')
+	}
+	if filled < barWidth {
+		sb.WriteByte('>')
+		for i := filled + 1; i < barWidth; i++ {
+			sb.WriteByte(' ')
+		}
+	}
+	sb.WriteByte(']')
+
+	return fmt.Sprintf("%s %d%% (%d/%d)", sb.String(), pctInt, s.TokensUsed, s.TokenBudget)
 }
