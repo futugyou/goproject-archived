@@ -557,3 +557,44 @@ func (t *ToolUsageTracker) Snapshot() []ToolUsageSnapshot {
 
 	return snapshots
 }
+
+type ReductionResult struct {
+	Text           string  `json:"text"`
+	OriginalLength int     `json:"original_length"`
+	ReducedLength  int     `json:"reduced_length"`
+	Ratio          float64 `json:"ratio"`
+	ReducerID      string  `json:"reducer_id,omitempty"`
+}
+
+func (r ReductionResult) WasReduced() bool {
+	return r.ReducedLength < r.OriginalLength && r.ReducerID != ""
+}
+
+func ReductionResultUnchanged(text string) ReductionResult {
+	return ReductionResult{
+		Text:           text,
+		OriginalLength: len(text),
+		ReducedLength:  len(text),
+		Ratio:          1.0,
+	}
+}
+
+type ReductionContext struct {
+	ToolName        string `json:"tool_name"`
+	ArgumentsJSON   string `json:"arguments_json"`
+	RawOutput       string `json:"raw_output"`
+	IsError         bool   `json:"is_error"`
+	ExitCode        int    `json:"exit_code"`
+	BypassReduction bool   `json:"bypass_reduction"`
+}
+
+func CreateReductionContext(toolName, argumentsJSON, rawOutput string, isError bool, exitCode int, bypassReduction bool) ReductionContext {
+	return ReductionContext{
+		ToolName:        toolName,
+		ArgumentsJSON:   argumentsJSON,
+		RawOutput:       rawOutput,
+		IsError:         isError,
+		ExitCode:        exitCode,
+		BypassReduction: bypassReduction,
+	}
+}

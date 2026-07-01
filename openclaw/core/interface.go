@@ -327,3 +327,9 @@ type IGoalService interface {
 	HasActiveGoal(sessionId string) bool
 	RecordGoalHistory(goal *SessionGoal) error
 }
+
+type IToolResultInterceptor interface {
+	GetOrder() int
+	GetName() string
+	Intercept(ctx context.Context, reductionContext ReductionContext) (string, error)
+}
