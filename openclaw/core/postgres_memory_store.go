@@ -19,6 +19,71 @@ type PostgresMemoryStore struct {
 	embeddingGenerator embeddings.IEmbeddingGenerator[string, embeddings.EmbeddingT[float64]]
 }
 
+// ListSessions implements [ISessionAdminStore].
+func (s *PostgresMemoryStore) ListSessions(ctx context.Context, page int, pageSize int, query *SessionListQuery) (*PagedSessionList, error) {
+	if page < 1 {
+		page = 1
+	}
+	if pageSize < 1 {
+		pageSize = 1
+	} else if pageSize > 200 {
+		pageSize = 200
+	}
+	tx := gorm.G[SessionSummary](s.db).Where("1=1")
+
+	if query != nil {
+		if query.ChannelId != nil && *query.ChannelId != "" {
+			tx = tx.Where("channel_id = ?", *query.ChannelId)
+		}
+		if query.SenderId != nil && *query.SenderId != "" {
+			tx = tx.Where("sender_id = ?", *query.SenderId)
+		}
+		if query.FromUtc != nil {
+			tx = tx.Where("last_active_at >= ?", query.FromUtc.Format(time.RFC3339))
+		}
+		if query.ToUtc != nil {
+			tx = tx.Where("last_active_at <= ?", query.ToUtc.Format(time.RFC3339))
+		}
+		if query.State != nil {
+			tx = tx.Where("state = ? OR state = ?", fmt.Sprintf("%d", *query.State), fmt.Sprintf("%v", *query.State))
+		}
+		if query.Search != nil && *query.Search != "" {
+			searchPattern := "%" + *query.Search + "%"
+			tx = tx.Where(
+				"(id LIKE ? OR channel_id LIKE ? OR sender_id LIKE ?)",
+				searchPattern, searchPattern, searchPattern,
+			)
+		}
+	}
+
+	total, err := tx.Count(ctx, "*")
+	if err != nil {
+		return nil, fmt.Errorf("failed to count sessions: %w", err)
+	}
+
+	var items []SessionSummary
+	skip := (page - 1) * pageSize
+
+	items, err = tx.Order("json->>'lastActiveAt' DESC, id ASC").
+		Limit(pageSize).
+		Offset(skip).
+		Find(ctx)
+
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch sessions: %w", err)
+	}
+
+	hasMore := total > int64(skip+pageSize)
+
+	return &PagedSessionList{
+		Page:          page,
+		PageSize:      pageSize,
+		HasMore:       hasMore,
+		ReturnedCount: len(items),
+		Items:         items,
+	}, nil
+}
+
 // GetRetentionStats implements [IMemoryRetentionStore].
 func (s *PostgresMemoryStore) GetRetentionStats(ctx context.Context) (*RetentionStoreStats, error) {
 	var stats RetentionStoreStats
@@ -437,3 +502,4 @@ var _ IMemoryStore = (*PostgresMemoryStore)(nil)
 var _ IMemoryNoteSearch = (*PostgresMemoryStore)(nil)
 var _ IMemoryNoteCatalog = (*PostgresMemoryStore)(nil)
 var _ IMemoryRetentionStore = (*PostgresMemoryStore)(nil)
+var _ ISessionAdminStore = (*PostgresMemoryStore)(nil)

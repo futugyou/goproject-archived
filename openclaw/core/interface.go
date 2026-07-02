@@ -204,7 +204,7 @@ type ISandboxCapableTool interface {
 
 // ISessionAdminStore 会话管理存储
 type ISessionAdminStore interface {
-	ListSessions(ctx context.Context, page int, pageSize int, query SessionListQuery) (*PagedSessionList, error)
+	ListSessions(ctx context.Context, page int, pageSize int, query *SessionListQuery) (*PagedSessionList, error)
 }
 
 // ISessionSearchStore 会话搜索存储

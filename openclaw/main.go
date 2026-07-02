@@ -28,6 +28,7 @@ func main() {
 		&core.Session{},
 		&core.SessionBranch{},
 		&core.MemoryNoteHit{},
+		&core.SessionSummary{},
 	)
 
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
