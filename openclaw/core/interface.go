@@ -158,7 +158,7 @@ type IMemoryNoteCatalog interface {
 
 // IMemoryRetentionStore 内存留存/清理存储
 type IMemoryRetentionStore interface {
-	Sweep(ctx context.Context, request RetentionSweepRequest, protectedSessionIds map[string]struct{}) (*RetentionSweepResult, error)
+	Sweep(ctx context.Context, request *RetentionSweepRequest, protectedSessionIds map[string]struct{}) (*RetentionSweepResult, error)
 	GetRetentionStats(ctx context.Context) (*RetentionStoreStats, error)
 }
 

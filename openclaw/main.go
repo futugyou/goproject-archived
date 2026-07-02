@@ -23,7 +23,12 @@ func main() {
 		fmt.Println(err.Error())
 		return
 	}
-	db.AutoMigrate(&core.AutomationDefinition{})
+	db.AutoMigrate(
+		&core.AutomationDefinition{},
+		&core.Session{},
+		&core.SessionBranch{},
+		&core.MemoryNoteHit{},
+	)
 
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
 

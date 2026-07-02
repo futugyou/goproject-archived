@@ -43,17 +43,18 @@ type Session struct {
 	SenderId                     string                          `json:"sender_id"`
 	StableSessionBinding         *StableSessionBindingInfo       `json:"stable_session_binding,omitempty"`
 	CreatedAt                    time.Time                       `json:"created_at"`
+	UpdatedAt                    time.Time                       `json:"updated_at"`
 	LastActiveAt                 time.Time                       `json:"last_active_at"`
 	History                      []ChatTurn                      `json:"history"`
 	State                        SessionState                    `json:"state"`
 	ModelOverride                *string                         `json:"model_override,omitempty"`
 	ModelProfileId               *string                         `json:"model_profile_id,omitempty"`
-	PreferredModelTags           []string                        `json:"preferred_model_tags"`
-	FallbackModelProfileIds      []string                        `json:"fallback_model_profile_ids"`
+	PreferredModelTags           []string                        `json:"preferred_model_tags" gorm:"type:text[];not null;default:'{}'"`
+	FallbackModelProfileIds      []string                        `json:"fallback_model_profile_ids" gorm:"type:text[];not null;default:'{}'"`
 	ModelRequirements            ModelSelectionRequirements      `json:"model_requirements"`
 	SystemPromptOverride         *string                         `json:"system_prompt_override,omitempty"`
 	RoutePresetId                *string                         `json:"route_preset_id,omitempty"`
-	RouteAllowedTools            []string                        `json:"route_allowed_tools"`
+	RouteAllowedTools            []string                        `json:"route_allowed_tools" gorm:"type:text[];not null;default:'{}'"`
 	ReasoningEffort              *string                         `json:"reasoning_effort,omitempty"`
 	VerboseMode                  bool                            `json:"verbose_mode"`
 	ResponseMode                 string                          `json:"response_mode"`
@@ -334,6 +335,8 @@ type SessionSummary struct {
 	HistoryTurns           int          `json:"history_turns"`
 	TotalInputTokens       int64        `json:"total_input_tokens"`
 	TotalOutputTokens      int64        `json:"total_output_tokens"`
+	TotalCacheReadTokens   int64        `json:"total_cache_read_tokens"`
+	TotalCacheWriteTokens  int64        `json:"total_cache_write_tokens"`
 	IsActive               bool         `json:"is_active"`
 }
 
@@ -372,6 +375,7 @@ type SessionBranch struct {
 	SessionId string     `json:"session_id"`
 	Name      string     `json:"name"`
 	CreatedAt time.Time  `json:"created_at"`
+	UpdatedAt time.Time  `json:"updated_at"`
 	History   []ChatTurn `json:"history"`
 }
 

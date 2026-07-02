@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"time"
@@ -16,6 +17,222 @@ type PostgresMemoryStore struct {
 	enableVectors      bool
 	ftsEnabled         bool
 	embeddingGenerator embeddings.IEmbeddingGenerator[string, embeddings.EmbeddingT[float64]]
+}
+
+// GetRetentionStats implements [IMemoryRetentionStore].
+func (s *PostgresMemoryStore) GetRetentionStats(ctx context.Context) (*RetentionStoreStats, error) {
+	var stats RetentionStoreStats
+
+	err := s.db.Raw(`
+        SELECT 
+            (SELECT COUNT(*) FROM sessions) AS persisted_sessions,
+            (SELECT COUNT(*) FROM session_branch) AS persisted_branches
+    `).Scan(&stats).Error
+
+	if err != nil {
+		return nil, err
+	}
+	stats.Backend = "postgre"
+	return &stats, nil
+}
+
+// Sweep implements [IMemoryRetentionStore].
+func (s *PostgresMemoryStore) Sweep(ctx context.Context, request *RetentionSweepRequest, protectedSessionIds map[string]struct{}) (*RetentionSweepResult, error) {
+	if request == nil {
+		return nil, errors.New("request can not be nil")
+	}
+	var result = &RetentionSweepResult{
+		StartedAtUtc: request.NowUtc,
+		DryRun:       request.DryRun,
+	}
+	var remaining = max(1, request.MaxItems)
+	var err error
+	remaining, err = s.sweepSessions(ctx, request, protectedSessionIds, result, remaining)
+	if err != nil {
+		return nil, err
+	}
+
+	if remaining > 0 {
+		remaining, err = s.sweepBranches(ctx, request, result, remaining)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	if remaining <= 0 {
+		result.MaxItemsLimitReached = true
+	}
+
+	if request.ArchiveEnabled && !request.DryRun {
+		mra := MemoryRetentionArchive{}
+		var purgeResult = mra.PurgeExpiredArchives(ctx, request.ArchivePath, request.NowUtc, request.ArchiveRetentionDays)
+
+		result.ArchivePurgedFiles = purgeResult.DeletedFiles
+		result.ArchivePurgeErrors = purgeResult.Errors
+		for _, errorStr := range purgeResult.ErrorMessages {
+			if len(result.Errors) >= 16 {
+				break
+			}
+			result.Errors = append(result.Errors, errorStr)
+		}
+	}
+
+	result.CompletedAtUtc = time.Now().UTC()
+	return result, nil
+}
+
+func (s *PostgresMemoryStore) sweepBranches(ctx context.Context, request *RetentionSweepRequest, result *RetentionSweepResult, remaining int) (int, error) {
+	if remaining <= 0 {
+		return 0, nil
+	}
+	var cutoff = request.BranchExpiresBeforeUtc
+	var scanLimit = min(max(remaining*4, remaining), 20_000)
+	sessionBranchs, err := gorm.G[SessionBranch](s.db).Where("updated_at < ?", cutoff).Order("updated_at asc").Limit(scanLimit).Find(ctx)
+	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+		return -1, err
+	}
+
+	pendingDeletes := []string{}
+
+	for i := range sessionBranchs {
+		if remaining <= 0 {
+			result.MaxItemsLimitReached = true
+			break
+		}
+
+		if err := ctx.Err(); err != nil {
+			return -1, err
+		}
+
+		sessionBranch := sessionBranchs[i]
+		if sessionBranch.CreatedAt.After(request.BranchExpiresBeforeUtc) {
+			continue
+		}
+		result.EligibleBranches++
+		remaining--
+		if request.DryRun {
+			continue
+		}
+
+		if request.ArchiveEnabled {
+			mra := MemoryRetentionArchive{}
+			data, err := json.Marshal(sessionBranch)
+			if err != nil {
+				if len(result.Errors) < 16 {
+					result.Errors = append(result.Errors, fmt.Sprintf("Failed to archive branch '%s': %s", sessionBranch.BranchId, err.Error()))
+				}
+				continue
+			}
+			if err := mra.ArchivePayload(ctx, request.ArchivePath, request.NowUtc, "branches", sessionBranch.BranchId, request.BranchExpiresBeforeUtc, "postgres", string(data)); err != nil {
+				if len(result.Errors) < 16 {
+					result.Errors = append(result.Errors, fmt.Sprintf("Failed to archive branch '%s': %s", sessionBranch.BranchId, err.Error()))
+				}
+				continue
+			}
+			result.ArchivedBranches++
+		}
+		pendingDeletes = append(pendingDeletes, sessionBranch.BranchId)
+	}
+
+	if len(pendingDeletes) > 0 {
+		deletedBranches, err := s.deleteBranchesById(ctx, pendingDeletes)
+		if err == nil {
+			result.DeletedBranches += deletedBranches
+		}
+	}
+	return remaining, nil
+}
+
+func (s *PostgresMemoryStore) sweepSessions(ctx context.Context, request *RetentionSweepRequest, protectedSessionIds map[string]struct{}, result *RetentionSweepResult, remaining int) (int, error) {
+	if remaining <= 0 {
+		return 0, nil
+	}
+	var cutoff = request.SessionExpiresBeforeUtc
+	var scanLimit = min(max(remaining*4, remaining), 20_000)
+	sessions, err := gorm.G[Session](s.db).Where("updated_at < ?", cutoff).Order("updated_at asc").Limit(scanLimit).Find(ctx)
+	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+		return -1, err
+	}
+
+	pendingDeletes := []string{}
+
+	for i := range sessions {
+		if remaining <= 0 {
+			result.MaxItemsLimitReached = true
+			break
+		}
+
+		if err := ctx.Err(); err != nil {
+			return -1, err
+		}
+
+		session := sessions[i]
+		if _, ok := protectedSessionIds[session.Id]; ok {
+			result.SkippedProtectedSessions++
+			continue
+		}
+		if session.LastActiveAt.After(request.SessionExpiresBeforeUtc) {
+			continue
+		}
+		result.EligibleSessions++
+		remaining--
+		if request.DryRun {
+			continue
+		}
+
+		if request.ArchiveEnabled {
+			mra := MemoryRetentionArchive{}
+			data, err := json.Marshal(session)
+			if err != nil {
+				if len(result.Errors) < 16 {
+					result.Errors = append(result.Errors, fmt.Sprintf("Failed to archive session '%s': %s", session.Id, err.Error()))
+				}
+				continue
+			}
+			if err := mra.ArchivePayload(ctx, request.ArchivePath, request.NowUtc, "session", session.Id, request.SessionExpiresBeforeUtc, "postgres", string(data)); err != nil {
+				if len(result.Errors) < 16 {
+					result.Errors = append(result.Errors, fmt.Sprintf("Failed to archive session '%s': %s", session.Id, err.Error()))
+				}
+				continue
+			}
+			result.ArchivedSessions++
+		}
+		pendingDeletes = append(pendingDeletes, session.Id)
+	}
+
+	if len(pendingDeletes) > 0 {
+		deletedSessions, err := s.deleteSessionsById(ctx, pendingDeletes)
+		if err == nil {
+			result.DeletedSessions += deletedSessions
+		}
+	}
+	return remaining, nil
+}
+
+func (s *PostgresMemoryStore) deleteSessionsById(ctx context.Context, pendingDeletes []string) (int, error) {
+	return gorm.G[Session](s.db).Where("id in ?", pendingDeletes).Delete(ctx)
+}
+
+func (s *PostgresMemoryStore) deleteBranchesById(ctx context.Context, pendingDeletes []string) (int, error) {
+	return gorm.G[SessionBranch](s.db).Where("branch_id in ?", pendingDeletes).Delete(ctx)
+}
+
+// GetNoteEntry implements [IMemoryNoteCatalog].
+func (s *PostgresMemoryStore) GetNoteEntry(ctx context.Context, key string) (*MemoryNoteCatalogEntry, error) {
+	ad, err := gorm.G[MemoryNoteCatalogEntry](s.db).Where("key = ?", key).First(ctx)
+	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, err
+	}
+
+	if len(ad.PreviewContent) > 4096 {
+		ad.PreviewContent = ad.PreviewContent[0:4096] + "..."
+	}
+	return &ad, err
+}
+
+// ListNotes implements [IMemoryNoteCatalog].
+func (s *PostgresMemoryStore) ListNotes(ctx context.Context, prefix string, limit int) ([]MemoryNoteCatalogEntry, error) {
+	return gorm.G[MemoryNoteCatalogEntry](s.db).Find(ctx)
 }
 
 func NewPostgresMemoryStore(db *gorm.DB, enableVectors, ftsEnabled bool, embeddingGenerator embeddings.IEmbeddingGenerator[string, embeddings.EmbeddingT[float64]]) (*PostgresMemoryStore, error) {
@@ -218,3 +435,5 @@ func (s *PostgresMemoryStore) SaveSession(ctx context.Context, session Session) 
 
 var _ IMemoryStore = (*PostgresMemoryStore)(nil)
 var _ IMemoryNoteSearch = (*PostgresMemoryStore)(nil)
+var _ IMemoryNoteCatalog = (*PostgresMemoryStore)(nil)
+var _ IMemoryRetentionStore = (*PostgresMemoryStore)(nil)
