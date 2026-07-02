@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"sort"
+	"strings"
 	"time"
 
 	"github.com/futugyou/extensions_ai/abstractions/embeddings"
@@ -17,6 +19,175 @@ type PostgresMemoryStore struct {
 	enableVectors      bool
 	ftsEnabled         bool
 	embeddingGenerator embeddings.IEmbeddingGenerator[string, embeddings.EmbeddingT[float64]]
+}
+
+// SearchSessions implements [ISessionSearchStore].
+func (s *PostgresMemoryStore) SearchSessions(ctx context.Context, query *SessionSearchQuery) (*SessionSearchResult, error) {
+	if query == nil || isBlank(query.Text) {
+		return &SessionSearchResult{Query: query, Items: []SessionSearchHit{}}, nil
+	}
+
+	limit := query.Limit
+	if limit > 200 {
+		limit = 200
+	}
+	if limit < 1 {
+		limit = 1
+	}
+
+	// 1. 全文检索分支 (PostgreSQL tsvector)
+	if s.ftsEnabled {
+		var ftsResults []SessionSearchHit
+
+		// websearch_to_tsquery 类似 Google 搜索语法
+		// 如果需要严格的布尔语法，可以换成 to_tsquery
+		tx := s.db.WithContext(ctx).Table("session_turns_fts").
+			Select(`
+				session_id, 
+				channel_id, 
+				sender_id, 
+				role, 
+				timestamp, 
+				ts_headline('simplified', content, websearch_to_tsquery('simplified', ?), 'StartSel=<<, StopSel=>>, MaxWords=16, MinWords=8') as snippet,
+				ts_rank(search_vector, websearch_to_tsquery('simplified', ?)) as rank
+			`, query.Text, query.Text)
+
+		// 动态拼接过滤条件
+		tx = tx.Where("search_vector @@ websearch_to_tsquery('simplified', ?)", query.Text)
+
+		if query.ChannelID != nil && *query.ChannelID != "" {
+			tx = tx.Where("channel_id = ?", *query.ChannelID)
+		}
+		if query.SenderID != nil && *query.SenderID != "" {
+			tx = tx.Where("sender_id = ?", *query.SenderID)
+		}
+		if query.FromUtc != nil {
+			tx = tx.Where("timestamp >= ?", *query.FromUtc)
+		}
+		if query.ToUtc != nil {
+			tx = tx.Where("timestamp <= ?", *query.ToUtc)
+		}
+
+		err := tx.Order("rank DESC").Limit(limit).Find(&ftsResults).Error
+		if err != nil {
+			return &SessionSearchResult{Query: query, Items: []SessionSearchHit{}}, nil
+		}
+
+		hits := make([]SessionSearchHit, len(ftsResults))
+		for i, res := range ftsResults {
+			hits[i] = SessionSearchHit{
+				SessionID: res.SessionID,
+				ChannelID: res.ChannelID,
+				SenderID:  res.SenderID,
+				Role:      res.Role,
+				Timestamp: res.Timestamp,
+				Snippet:   res.Snippet,
+				Score:     res.Rank, //
+			}
+		}
+
+		return &SessionSearchResult{Query: query, Items: hits}, nil
+	}
+
+	// 2. fallback
+	fallback, err := s.ListSessions(ctx, 1, 200, &SessionListQuery{
+		ChannelId: query.ChannelID,
+		SenderId:  query.SenderID,
+		FromUtc:   query.FromUtc,
+		ToUtc:     query.ToUtc,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	var itemsFallback []SessionSearchHit
+	searchTextLower := strings.ToLower(query.Text)
+
+	for _, summary := range fallback.Items {
+		session, err := s.GetSession(ctx, summary.Id)
+		if err != nil || session == nil {
+			continue
+		}
+
+		for _, turn := range session.History {
+			if isBlank(turn.Content) {
+				continue
+			}
+
+			contentLower := strings.ToLower(turn.Content)
+			idx := strings.Index(contentLower, searchTextLower)
+			if idx < 0 {
+				continue
+			}
+
+			// 计算分数
+			bonus := float32(100-idx) / 100.0
+			if bonus < 0 {
+				bonus = 0
+			}
+			score := 1.0 + bonus
+
+			itemsFallback = append(itemsFallback, SessionSearchHit{
+				SessionID: session.Id,
+				ChannelID: session.ChannelId,
+				SenderID:  session.SenderId,
+				Role:      turn.Role,
+				Timestamp: turn.Timestamp,
+				Snippet:   s.buildSnippet(turn.Content, idx, query.SnippetLength),
+				Score:     score,
+			})
+		}
+	}
+
+	sort.Slice(itemsFallback, func(i, j int) bool {
+		return itemsFallback[i].Score > itemsFallback[j].Score
+	})
+
+	if len(itemsFallback) > limit {
+		itemsFallback = itemsFallback[:limit]
+	}
+
+	return &SessionSearchResult{
+		Query: query,
+		Items: itemsFallback,
+	}, nil
+}
+
+func (s *PostgresMemoryStore) buildSnippet(content string, index int, snippetLength int) string {
+	contentLen := len(content)
+
+	if contentLen == 0 {
+		return ""
+	}
+
+	if snippetLength > 400 {
+		snippetLength = 400
+	} else if snippetLength < 40 {
+		snippetLength = 40
+	}
+
+	if index < 0 {
+		index = 0
+	} else if index > contentLen {
+		index = contentLen
+	}
+
+	start := max(0, index-(snippetLength/3))
+	start = min(start, contentLen)
+
+	end := min(snippetLength+start, contentLen)
+
+	r := strings.NewReplacer("\r", "", "\n", "")
+	snippet := strings.TrimSpace(r.Replace(content[start:end]))
+
+	if start > 0 {
+		snippet = "..." + snippet
+	}
+	if end < contentLen {
+		snippet = snippet + "..."
+	}
+
+	return snippet
 }
 
 // ListSessions implements [ISessionAdminStore].
@@ -64,7 +235,7 @@ func (s *PostgresMemoryStore) ListSessions(ctx context.Context, page int, pageSi
 	var items []SessionSummary
 	skip := (page - 1) * pageSize
 
-	items, err = tx.Order("json->>'lastActiveAt' DESC, id ASC").
+	items, err = tx.Order("last_active_at DESC, id ASC").
 		Limit(pageSize).
 		Offset(skip).
 		Find(ctx)
@@ -317,7 +488,9 @@ func (s *PostgresMemoryStore) initialize() error {
 	return s.db.AutoMigrate(
 		&Session{},
 		&SessionBranch{},
-		&MemoryNoteHit{},
+		&Note{},
+		&SessionSummary{},
+		&SessionTurnsFts{},
 	)
 }
 
@@ -356,7 +529,7 @@ func (s *PostgresMemoryStore) SearchNotes(ctx context.Context, query string, pre
             (ts_rank(to_tsvector('english', content), plainto_tsquery('english', ?)) * 0.4 + 
             (1.0 - (embedding <=> ?)) * 0.6) AS score`, query, queryEmbedding).
 				Where("key LIKE ?", prefixstr+"%").
-				Where("to_tsvector('english', content) @@ plainto_tsquery('english', ?)", query).
+				Where("(to_tsvector('english', content) @@ plainto_tsquery('english', ?) OR (1.0 - (embedding <=> ?)) > 0.6)", query, queryEmbedding).
 				Order("score DESC").
 				Limit(limit).
 				Find(&hits).Error
@@ -503,3 +676,4 @@ var _ IMemoryNoteSearch = (*PostgresMemoryStore)(nil)
 var _ IMemoryNoteCatalog = (*PostgresMemoryStore)(nil)
 var _ IMemoryRetentionStore = (*PostgresMemoryStore)(nil)
 var _ ISessionAdminStore = (*PostgresMemoryStore)(nil)
+var _ ISessionSearchStore = (*PostgresMemoryStore)(nil)

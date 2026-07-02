@@ -401,6 +401,15 @@ func DefaultSessionSearchQuery() SessionSearchQuery {
 	}
 }
 
+type SessionTurnsFts struct {
+	SessionID string    `json:"session_id"`
+	ChannelID string    `json:"channel_id"`
+	SenderID  string    `json:"sender_id"`
+	Role      string    `json:"role"`
+	Timestamp time.Time `json:"timestamp"`
+	Content   string    `json:"content"`
+}
+
 type SessionSearchHit struct {
 	SessionID string    `json:"session_id"`
 	ChannelID string    `json:"channel_id"`
@@ -409,11 +418,12 @@ type SessionSearchHit struct {
 	Timestamp time.Time `json:"timestamp"`
 	Snippet   string    `json:"snippet"`
 	Score     float32   `json:"score"`
+	Rank      float32   `json:"rank"`
 }
 
 type SessionSearchResult struct {
-	Query SessionSearchQuery `json:"query"`
-	Items []SessionSearchHit `json:"items"`
+	Query *SessionSearchQuery `json:"query"`
+	Items []SessionSearchHit  `json:"items"`
 }
 
 type SessionManager struct {

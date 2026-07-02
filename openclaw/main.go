@@ -27,8 +27,9 @@ func main() {
 		&core.AutomationDefinition{},
 		&core.Session{},
 		&core.SessionBranch{},
-		&core.MemoryNoteHit{},
+		&core.Note{},
 		&core.SessionSummary{},
+		&core.SessionTurnsFts{},
 	)
 
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))

@@ -209,7 +209,7 @@ type ISessionAdminStore interface {
 
 // ISessionSearchStore 会话搜索存储
 type ISessionSearchStore interface {
-	SearchSessions(ctx context.Context, query SessionSearchQuery) (*SessionSearchResult, error)
+	SearchSessions(ctx context.Context, query *SessionSearchQuery) (*SessionSearchResult, error)
 }
 
 // ISharedHarnessStateStore 共享测试基座状态存储
