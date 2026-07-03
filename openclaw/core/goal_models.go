@@ -21,7 +21,7 @@ type GoalHistoryRecord struct {
 type GoalStatus uint8
 
 const (
-	GoalStatus_Activ GoalStatus = iota
+	GoalStatus_Active GoalStatus = iota
 	GoalStatus_Paused
 	GoalStatus_Blocked
 	GoalStatus_BudgetLimited
@@ -30,7 +30,7 @@ const (
 )
 
 func (g GoalStatus) IsPursuable() bool {
-	return g == GoalStatus_Activ
+	return g == GoalStatus_Active
 }
 
 func (g GoalStatus) IsTerminal() bool {
@@ -39,7 +39,7 @@ func (g GoalStatus) IsTerminal() bool {
 
 func (g GoalStatus) ToDisplayName() string {
 	switch g {
-	case GoalStatus_Activ:
+	case GoalStatus_Active:
 		return "Activ"
 	case GoalStatus_Paused:
 		return "Paused"
@@ -88,7 +88,7 @@ func (s *SessionGoal) FormatGoalFooterLine() string {
 		return ""
 	}
 	switch s.Status {
-	case GoalStatus_Activ:
+	case GoalStatus_Active:
 		if s.TokenBudget > 0 {
 			return fmt.Sprintf("Pursuing goal (%d/%d)", s.TokensUsed, s.TokenBudget)
 		}
