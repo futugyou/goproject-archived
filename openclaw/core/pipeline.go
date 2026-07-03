@@ -3,6 +3,7 @@ package core
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"math"
 	"regexp"
 	"strconv"
@@ -462,5 +463,76 @@ func (c *ChatCommandProcessor) TryProcessCommand(ctx context.Context, session *S
 			}
 		}
 		return false, "", nil
+	}
+}
+
+type ICronJobSource interface {
+	GetJobs() []CronJobConfig
+}
+
+type MessagePipeline struct {
+	inbound  chan InboundMessage
+	outbound chan OutboundMessage
+	logger   *slog.Logger
+	once     sync.Once
+}
+
+func NewMessagePipeline(capacity int, logger *slog.Logger) *MessagePipeline {
+	if capacity <= 0 {
+		capacity = 1024
+	}
+	return &MessagePipeline{
+		inbound:  make(chan InboundMessage, capacity),
+		outbound: make(chan OutboundMessage, capacity),
+		logger:   logger,
+	}
+}
+
+func (mp *MessagePipeline) InboundWriter() chan<- InboundMessage {
+	return mp.inbound
+}
+
+func (mp *MessagePipeline) InboundReader() <-chan InboundMessage {
+	return mp.inbound
+}
+
+func (mp *MessagePipeline) OutboundWriter() chan<- OutboundMessage {
+	return mp.outbound
+}
+
+func (mp *MessagePipeline) OutboundReader() <-chan OutboundMessage {
+	return mp.outbound
+}
+
+func (mp *MessagePipeline) Close() error {
+	mp.once.Do(func() {
+		// 1. 关闭写入端
+		close(mp.inbound)
+		close(mp.outbound)
+
+		// 2. 清空残留消息
+		mp.drainInbound()
+		mp.drainOutbound()
+	})
+	return nil
+}
+
+func (mp *MessagePipeline) drainInbound() {
+	count := 0
+	for range mp.inbound {
+		count++
+	}
+	if count > 0 && mp.logger != nil {
+		mp.logger.Info(fmt.Sprintf("MessagePipeline: %d inbound message(s) dropped during shutdown.\n", count))
+	}
+}
+
+func (mp *MessagePipeline) drainOutbound() {
+	count := 0
+	for range mp.outbound {
+		count++
+	}
+	if count > 0 && mp.logger != nil {
+		mp.logger.Info(fmt.Sprintf("MessagePipeline: %d outbound message(s) dropped during shutdown.\n", count))
 	}
 }
