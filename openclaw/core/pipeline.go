@@ -9,14 +9,15 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 )
 
-type DynamicCommandRegistrationResult uint
+type DynamicCommandRegistrationResult uint8
 
 const (
-	Registered      DynamicCommandRegistrationResult = 0
-	ReservedBuiltIn DynamicCommandRegistrationResult = 1
-	Duplicate       DynamicCommandRegistrationResult = 2
+	Registered DynamicCommandRegistrationResult = iota
+	ReservedBuiltIn
+	Duplicate
 )
 
 type CompactCallback func(context.Context, *Session) (int, error)
@@ -535,4 +536,54 @@ func (mp *MessagePipeline) drainOutbound() {
 	if count > 0 && mp.logger != nil {
 		mp.logger.Info(fmt.Sprintf("MessagePipeline: %d outbound message(s) dropped during shutdown.\n", count))
 	}
+}
+
+type RecentSenderEntry struct {
+	SenderId    string    `json:"sender_id"`
+	SenderName  string    `json:"sender_name"`
+	LastSeenUtc time.Time `json:"last_seen"`
+}
+
+type RecentSendersFile struct {
+	Senders []RecentSenderEntry `json:"senders"`
+}
+
+type ToolApprovalDecisionResult uint8
+
+const (
+	ToolApprovalDecisionResult_Recorded ToolApprovalDecisionResult = iota
+	ToolApprovalDecisionResult_NotFound
+	ToolApprovalDecisionResult_Unauthorized
+)
+
+type ToolApprovalWaitResult uint8
+
+const (
+	ToolApprovalWaitResult_Approved ToolApprovalWaitResult = iota
+	ToolApprovalWaitResult_Denied
+	ToolApprovalWaitResult_TimedOut
+	ToolApprovalWaitResult_NotFound
+)
+
+type ToolApprovalDecisionOutcome struct {
+	Result  ToolApprovalDecisionResult `json:"result"`
+	Request *ToolApprovalRequest       `json:"request"`
+}
+
+type ToolApprovalWaitOutcome struct {
+	Result  ToolApprovalWaitResult `json:"result"`
+	Request *ToolApprovalRequest   `json:"request"`
+}
+
+type ToolApprovalRequest struct {
+	ApprovalId string    `json:"approval_id"`
+	SessionId  string    `json:"session_id"`
+	ChannelId  string    `json:"channel_id"`
+	SenderId   string    `json:"sender_id"`
+	ToolName   string    `json:"tool_name"`
+	Arguments  string    `json:"arguments"`
+	Action     string    `json:"action"`
+	IsMutation bool      `json:"is_mutation"`
+	Summary    string    `json:"summary"`
+	CreatedAt  time.Time `json:"created_at"`
 }
