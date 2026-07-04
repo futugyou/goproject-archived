@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -756,4 +757,256 @@ func (r *RecentSendersStore) Record(ctx context.Context, channelId, senderId, se
 		file.Senders = file.Senders[:r.maxEntries]
 	}
 	return r.saveUnlocked(ctx, path, file)
+}
+
+var AlwaysMutatingTools = map[string]struct{}{
+	"write_file":           {},
+	"edit_file":            {},
+	"apply_patch":          {},
+	"shell":                {},
+	"code_exec":            {},
+	"git":                  {},
+	"database":             {},
+	"home_assistant_write": {},
+	"mqtt_publish":         {},
+	"notion_write":         {},
+	"inbox_zero":           {},
+	"email":                {},
+	"calendar":             {},
+	"delegate_agent":       {},
+}
+
+type ToolActionPolicyResolver struct{}
+
+var ToolActionPolicyResolverInstance = &ToolActionPolicyResolver{}
+
+func (t *ToolActionPolicyResolver) Resolve(toolName string, argumentsJson string) *ToolActionDescriptor {
+	if strings.TrimSpace(toolName) == "" {
+		return &ToolActionDescriptor{}
+	}
+
+	var root map[string]any
+	if strings.TrimSpace(argumentsJson) == "" {
+		argumentsJson = "{}"
+	}
+
+	if err := json.Unmarshal([]byte(argumentsJson), &root); err != nil {
+		return &ToolActionDescriptor{
+			Summary: fmt.Sprintf("Execute tool '%s'.", toolName),
+		}
+	}
+
+	getString := func(key string, fallback string) string {
+		if val, exists := root[key]; exists {
+			if strVal, ok := val.(string); ok && strVal != "" {
+				return strVal
+			}
+		}
+		return fallback
+	}
+
+	isOneOf := func(val string, options ...string) bool {
+		return slices.Contains(options, val)
+	}
+
+	if strings.EqualFold(toolName, "process") {
+		action := getString("action", "start")
+		command := getString("command", "")
+		processId := getString("process_id", getString("session_id", ""))
+
+		var summary string
+		switch action {
+		case "start":
+			if command == "" {
+				summary = "Start a background process."
+			} else {
+				summary = fmt.Sprintf("Start process: %s", command)
+			}
+		case "write":
+			if processId == "" {
+				summary = "Write input to a background process."
+			} else {
+				summary = fmt.Sprintf("Write input to process %s.", processId)
+			}
+		case "kill":
+			if processId == "" {
+				summary = "Terminate a background process."
+			} else {
+				summary = fmt.Sprintf("Terminate process %s.", processId)
+			}
+		case "wait":
+			if processId == "" {
+				summary = "Wait for a background process."
+			} else {
+				summary = fmt.Sprintf("Wait for process %s.", processId)
+			}
+		case "log":
+			if processId == "" {
+				summary = "Read background process logs."
+			} else {
+				summary = fmt.Sprintf("Read logs for process %s.", processId)
+			}
+		case "poll":
+			if processId == "" {
+				summary = "Check background process status."
+			} else {
+				summary = fmt.Sprintf("Check status for process %s.", processId)
+			}
+		default:
+			summary = "Inspect background processes."
+		}
+
+		return &ToolActionDescriptor{
+			Action:     action,
+			IsMutation: isOneOf(action, "start", "write", "kill"),
+			Summary:    summary,
+		}
+	}
+
+	// 2. Automation 工具
+	if strings.EqualFold(toolName, "automation") {
+		action := getString("action", "list")
+		automationId := getString("automation_id", getString("id", ""))
+		name := getString("name", "")
+
+		var summary string
+		switch action {
+		case "create":
+			if name == "" {
+				summary = "Create an automation."
+			} else {
+				summary = fmt.Sprintf("Create automation '%s'.", name)
+			}
+		case "update":
+			if automationId == "" {
+				summary = "Update an automation."
+			} else {
+				summary = fmt.Sprintf("Update automation %s.", automationId)
+			}
+		case "pause":
+			if automationId == "" {
+				summary = "Pause an automation."
+			} else {
+				summary = fmt.Sprintf("Pause automation %s.", automationId)
+			}
+		case "resume":
+			if automationId == "" {
+				summary = "Resume an automation."
+			} else {
+				summary = fmt.Sprintf("Resume automation %s.", automationId)
+			}
+		case "run":
+			if automationId == "" {
+				summary = "Run an automation."
+			} else {
+				summary = fmt.Sprintf("Run automation %s.", automationId)
+			}
+		case "preview":
+			summary = "Preview an automation."
+		case "get":
+			if automationId == "" {
+				summary = "Read automation details."
+			} else {
+				summary = fmt.Sprintf("Read automation %s.", automationId)
+			}
+		default:
+			summary = "List automations."
+		}
+
+		return &ToolActionDescriptor{
+			Action:     action,
+			IsMutation: isOneOf(action, "create", "update", "pause", "resume", "run"),
+			Summary:    summary,
+		}
+	}
+
+	// 3. External CLI 工具
+	if strings.EqualFold(toolName, "external_cli") {
+		action := getString("action", "list_connectors")
+		connector := getString("connector", "")
+		command := getString("command", "")
+
+		target := "an external CLI command"
+		if connector != "" && command != "" {
+			target = fmt.Sprintf("%s/%s", connector, command)
+		}
+
+		var summary string
+		switch action {
+		case "execute":
+			summary = fmt.Sprintf("Execute %s.", target)
+		case "preview":
+			summary = fmt.Sprintf("Preview %s.", target)
+		case "connector_status":
+			if connector == "" {
+				summary = "Check external CLI connector status."
+			} else {
+				summary = fmt.Sprintf("Check external CLI connector '%s'.", connector)
+			}
+		case "list_commands":
+			if connector == "" {
+				summary = "List external CLI commands."
+			} else {
+				summary = fmt.Sprintf("List commands for external CLI connector '%s'.", connector)
+			}
+		case "command_schema":
+			summary = fmt.Sprintf("Inspect schema for %s.", target)
+		default:
+			summary = "List external CLI connectors."
+		}
+
+		return &ToolActionDescriptor{
+			Action:           action,
+			IsMutation:       action == "execute",
+			RequiresApproval: action == "execute",
+			Summary:          summary,
+		}
+	}
+
+	// 4. Todo 工具
+	if strings.EqualFold(toolName, "todo") {
+		action := getString("action", "list")
+
+		var summary string
+		switch action {
+		case "add":
+			summary = "Add a todo item."
+		case "update":
+			summary = "Update a todo item."
+		case "complete":
+			summary = "Complete a todo item."
+		case "remove":
+			summary = "Remove a todo item."
+		case "clear":
+			summary = "Clear all todo items."
+		default:
+			summary = "List todo items."
+		}
+
+		return &ToolActionDescriptor{
+			Action:     action,
+			IsMutation: action != "list",
+			Summary:    summary,
+		}
+	}
+
+	return &ToolActionDescriptor{
+		Summary: fmt.Sprintf("Execute tool '%s'.", toolName),
+	}
+}
+
+func (t *ToolActionPolicyResolver) SupportsActionAwareApproval(toolName string) bool {
+	return strings.EqualFold(toolName, "process") || strings.EqualFold(toolName, "automation") || strings.EqualFold(toolName, "external_cli")
+}
+
+func (t *ToolActionPolicyResolver) IsMutationCapable(toolName, argumentsJson string) bool {
+	if isBlank(toolName) {
+		return false
+	}
+
+	if _, ok := AlwaysMutatingTools[toolName]; ok {
+		return true
+	}
+
+	return t.Resolve(toolName, argumentsJson).IsMutation
 }
