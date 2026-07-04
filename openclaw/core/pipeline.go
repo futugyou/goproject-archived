@@ -592,10 +592,10 @@ type ToolApprovalRequest struct {
 }
 
 type RecentSendersStore struct {
-	rootDir    string
-	logger     *slog.Logger
-	gates      sync.Map //map[string]chan struct{}
-	maxEntries int
+	rootDir     string
+	logger      *slog.Logger
+	lockManager *NamedLockManager
+	maxEntries  int
 }
 
 func NewRecentSendersStore(baseStoragePath string, logger *slog.Logger, maxEntries int) *RecentSendersStore {
@@ -607,9 +607,10 @@ func NewRecentSendersStore(baseStoragePath string, logger *slog.Logger, maxEntri
 		maxEntries = 50
 	}
 	return &RecentSendersStore{
-		rootDir:    path,
-		maxEntries: maxEntries,
-		logger:     logger,
+		rootDir:     path,
+		maxEntries:  maxEntries,
+		logger:      logger,
+		lockManager: NewNamedLockManager(),
 	}
 }
 
@@ -715,17 +716,12 @@ func (r *RecentSendersStore) Record(ctx context.Context, channelId, senderId, se
 		return nil
 	}
 
-	actual, _ := r.gates.LoadOrStore(channelId, make(chan struct{}, 1))
-	gate := actual.(chan struct{})
-
-	select {
-	case gate <- struct{}{}:
-	case <-ctx.Done():
-		return ctx.Err()
+	unlock, err := r.lockManager.Lock(ctx, channelId)
+	if err != nil {
+		return err
 	}
-	defer func() {
-		<-gate
-	}()
+	defer unlock()
+
 	var path = r.getPath(channelId)
 	file, err := r.loadUnlocked(ctx, path)
 	if err != nil {
