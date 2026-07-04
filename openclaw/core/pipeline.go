@@ -2,6 +2,8 @@ package core
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"log/slog"
@@ -1009,4 +1011,203 @@ func (t *ToolActionPolicyResolver) IsMutationCapable(toolName, argumentsJson str
 	}
 
 	return t.Resolve(toolName, argumentsJson).IsMutation
+}
+
+type pendingRequest struct {
+	Request      *ToolApprovalRequest
+	ExpiresAt    time.Time
+	decisionChan chan bool
+	setDecision  sync.Once
+}
+
+type ToolApprovalService struct {
+	mu      sync.RWMutex
+	pending map[string]*pendingRequest
+}
+
+func NewToolApprovalService() *ToolApprovalService {
+	return &ToolApprovalService{
+		pending: make(map[string]*pendingRequest),
+	}
+}
+
+func (s *ToolApprovalService) PendingCount() int {
+	return len(s.ListPending("", ""))
+}
+
+func (s *ToolApprovalService) Create(
+	sessionId, channelId, senderId, toolName, arguments string,
+	timeout time.Duration,
+	action string, isMutation bool, summary string,
+) *ToolApprovalRequest {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	approvalId := "apr_" + generateShortUUID()
+
+	req := &ToolApprovalRequest{
+		ApprovalId: approvalId,
+		SessionId:  sessionId,
+		ChannelId:  channelId,
+		SenderId:   senderId,
+		ToolName:   toolName,
+		Arguments:  arguments,
+		IsMutation: isMutation,
+		Summary:    summary,
+	}
+	if strings.TrimSpace(action) != "" {
+		req.Action = action
+	}
+
+	p := &pendingRequest{
+		Request:      req,
+		ExpiresAt:    time.Now().Add(timeout),
+		decisionChan: make(chan bool, 1), // 缓冲大小为 1，防止写端阻塞
+	}
+
+	s.pending[approvalId] = p
+	return req
+}
+
+func (s *ToolApprovalService) TrySetDecision(
+	approvalId string, approved bool,
+	requesterChannelId, requesterSenderId string,
+	requireRequesterMatch bool,
+) ToolApprovalDecisionOutcome {
+	s.mu.RLock()
+	p, exists := s.pending[approvalId]
+	s.mu.RUnlock()
+
+	if !exists {
+		return ToolApprovalDecisionOutcome{Result: ToolApprovalDecisionResult_NotFound}
+	}
+
+	if requireRequesterMatch {
+		if strings.TrimSpace(requesterChannelId) == "" || strings.TrimSpace(requesterSenderId) == "" {
+			return ToolApprovalDecisionOutcome{Result: ToolApprovalDecisionResult_Unauthorized, Request: p.Request}
+		}
+		if requesterChannelId != p.Request.ChannelId || requesterSenderId != p.Request.SenderId {
+			return ToolApprovalDecisionOutcome{Result: ToolApprovalDecisionResult_Unauthorized, Request: p.Request}
+		}
+	}
+
+	// TrySetResult 使用 sync.Once 保证哪怕高并发下，决议也只会被写入一次
+	hasSet := false
+	p.setDecision.Do(func() {
+		p.decisionChan <- approved
+		hasSet = true
+	})
+
+	if !hasSet {
+		// 说明在这一次调用前，结果已经被别的人设置过了（Task.IsCompleted == true）
+		return ToolApprovalDecisionOutcome{Result: ToolApprovalDecisionResult_NotFound}
+	}
+
+	return ToolApprovalDecisionOutcome{
+		Result:  ToolApprovalDecisionResult_Recorded,
+		Request: p.Request,
+	}
+}
+
+func (s *ToolApprovalService) WaitForDecisionOutcomeAsync(
+	approvalId string, timeout time.Duration, ctx context.Context,
+) (ToolApprovalWaitOutcome, error) {
+	s.mu.RLock()
+	p, exists := s.pending[approvalId]
+	s.mu.RUnlock()
+
+	if !exists {
+		return ToolApprovalWaitOutcome{Result: ToolApprovalWaitResult_NotFound}, nil
+	}
+
+	timer := time.NewTimer(timeout)
+	defer timer.Stop()
+
+	select {
+	case <-ctx.Done():
+		// 外部的 CancellationToken 被取消了
+		return ToolApprovalWaitOutcome{}, ctx.Err()
+
+	case approved := <-p.decisionChan:
+		// 收到明确的审批结果（通过或拒绝）
+		s.mu.Lock()
+		delete(s.pending, approvalId)
+		s.mu.Unlock()
+
+		res := ToolApprovalWaitResult_Denied
+		if approved {
+			res = ToolApprovalWaitResult_Approved
+		}
+		return ToolApprovalWaitOutcome{Result: res, Request: p.Request}, nil
+
+	case <-timer.C:
+		// 审批超时
+		s.mu.Lock()
+		delete(s.pending, approvalId)
+		s.mu.Unlock()
+
+		// 尝试关闭/取消该请求
+		// 如果在这一瞬间 TrySetDecision 抢先一步成功了，则这里 hasSet 会是 false
+		hasCanceled := false
+		p.setDecision.Do(func() {
+			hasCanceled = true
+		})
+
+		if !hasCanceled {
+			// 边缘情况竞态赢了：决议其实在超时的一瞬间被设置了，读取它
+			approved := <-p.decisionChan
+			res := ToolApprovalWaitResult_Denied
+			if approved {
+				res = ToolApprovalWaitResult_Approved
+			}
+			return ToolApprovalWaitOutcome{Result: res, Request: p.Request}, nil
+		}
+
+		return ToolApprovalWaitOutcome{Result: ToolApprovalWaitResult_TimedOut, Request: p.Request}, nil
+	}
+}
+
+// ListPending 列出并清理过期的请求
+func (s *ToolApprovalService) ListPending(channelId, senderId string) []*ToolApprovalRequest {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	now := time.Now()
+	var result []*ToolApprovalRequest
+
+	for id, p := range s.pending {
+		// 检查是否过期
+		if p.ExpiresAt.Before(now) || p.ExpiresAt.Equal(now) {
+			delete(s.pending, id)
+			continue
+		}
+
+		// 检查 channel 是否已经有结果了（非阻塞读取，类似 Task.IsCompleted）
+		select {
+		case <-p.decisionChan:
+			// 说明已经有结果了，将其移除
+			delete(s.pending, id)
+			continue
+		default:
+			// 没有结果，继续走下面的过滤逻辑
+		}
+
+		if channelId != "" && p.Request.ChannelId != channelId {
+			continue
+		}
+		if senderId != "" && p.Request.SenderId != senderId {
+			continue
+		}
+
+		result = append(result, p.Request)
+	}
+
+	return result
+}
+
+// 辅助函数：生成 16 位 Hex 字符串模拟 Guid:N 后截取
+func generateShortUUID() string {
+	b := make([]byte, 8)
+	_, _ = rand.Read(b)
+	return hex.EncodeToString(b) // 16个字符
 }
