@@ -209,3 +209,9 @@ func ComputeTurnHash(normalizedText string) string {
 	// hex.EncodeToString 会自动生成纯小写的十六进制字符串
 	return hex.EncodeToString(hash[:])
 }
+
+func isLetterOrDigit(b byte) bool {
+	return (b >= 'a' && b <= 'z') ||
+		(b >= 'A' && b <= 'Z') ||
+		(b >= '0' && b <= '9')
+}

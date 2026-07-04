@@ -2,9 +2,12 @@ package core
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log/slog"
 	"math"
+	"os"
+	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
@@ -586,4 +589,175 @@ type ToolApprovalRequest struct {
 	IsMutation bool      `json:"is_mutation"`
 	Summary    string    `json:"summary"`
 	CreatedAt  time.Time `json:"created_at"`
+}
+
+type RecentSendersStore struct {
+	rootDir    string
+	logger     *slog.Logger
+	gates      sync.Map //map[string]chan struct{}
+	maxEntries int
+}
+
+func NewRecentSendersStore(baseStoragePath string, logger *slog.Logger, maxEntries int) *RecentSendersStore {
+	path := filepath.Join(baseStoragePath, "recent_senders")
+	if logger == nil {
+		logger = slog.Default()
+	}
+	if maxEntries <= 0 {
+		maxEntries = 50
+	}
+	return &RecentSendersStore{
+		rootDir:    path,
+		maxEntries: maxEntries,
+		logger:     logger,
+	}
+}
+
+func (r *RecentSendersStore) getPath(channelId string) string {
+	safe := []byte{}
+	for i := 0; i < len(channelId); i++ {
+		c := channelId[i]
+		if isLetterOrDigit(c) || c == '_' || c == '-' || c == '.' {
+			safe = append(safe, c)
+		}
+	}
+
+	if len(safe) == 0 {
+		return filepath.Join(r.rootDir, "unknown.json")
+	}
+	return filepath.Join(r.rootDir, string(safe)+".json")
+}
+
+func (r *RecentSendersStore) GetSnapshot(channelId string) (*RecentSendersFile, error) {
+	var path = r.getPath(channelId)
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+	var result RecentSendersFile
+	if err := json.Unmarshal(data, &result); err != nil {
+		return nil, err
+	}
+	return &result, nil
+}
+
+func (r *RecentSendersStore) TryGetLatest(channelId string) (*RecentSenderEntry, error) {
+	if isBlank(channelId) {
+		return &RecentSenderEntry{}, nil
+	}
+
+	data, err := r.GetSnapshot(channelId)
+	if err != nil {
+		return nil, err
+	}
+
+	if len(data.Senders) > 0 {
+		return &data.Senders[0], nil
+	}
+	return &RecentSenderEntry{}, nil
+}
+
+func (r *RecentSendersStore) saveUnlocked(ctx context.Context, path string, file *RecentSendersFile) error {
+	dir := filepath.Dir(path)
+	base := filepath.Base(path)
+
+	tempFile, err := os.CreateTemp(dir, base+".tmp")
+	if err != nil {
+		return fmt.Errorf("failed to create temp file: %w", err)
+	}
+	tempPath := tempFile.Name()
+
+	defer func() {
+		if tempFile != nil {
+			tempFile.Close()
+			_ = os.Remove(tempPath)
+		}
+	}()
+
+	encoder := json.NewEncoder(tempFile)
+	if err := encoder.Encode(file); err != nil {
+		return fmt.Errorf("failed to encode json: %w", err)
+	}
+
+	if err := tempFile.Sync(); err != nil {
+		return fmt.Errorf("failed to sync temp file: %w", err)
+	}
+
+	tempFile.Close()
+	tempFile = nil
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+
+	return os.Rename(tempPath, path)
+}
+
+func (r *RecentSendersStore) loadUnlocked(ctx context.Context, path string) (*RecentSendersFile, error) {
+	var result RecentSendersFile
+	file, err := os.OpenFile(path, os.O_RDONLY, 0666)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return &RecentSendersFile{}, nil
+		}
+		return nil, err
+	}
+	defer file.Close()
+	decoder := json.NewDecoder(file)
+	if err := decoder.Decode(&result); err != nil {
+		return &RecentSendersFile{}, nil
+	}
+
+	return &result, nil
+}
+
+func (r *RecentSendersStore) Record(ctx context.Context, channelId, senderId, senderName string) error {
+	if isBlank(channelId) || isBlank(senderId) {
+		return nil
+	}
+
+	actual, _ := r.gates.LoadOrStore(channelId, make(chan struct{}, 1))
+	gate := actual.(chan struct{})
+
+	select {
+	case gate <- struct{}{}:
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+	defer func() {
+		<-gate
+	}()
+	var path = r.getPath(channelId)
+	file, err := r.loadUnlocked(ctx, path)
+	if err != nil {
+		return err
+	}
+
+	now := time.Now().UTC()
+	entry := RecentSenderEntry{
+		SenderId:    senderId,
+		SenderName:  senderName,
+		LastSeenUtc: now,
+	}
+
+	if len(file.Senders) == 0 {
+		file.Senders = append(file.Senders, entry)
+	} else {
+		remaining := file.Senders[:0]
+		for _, s := range file.Senders {
+			if strings.EqualFold(s.SenderId, senderId) {
+				if senderName == "" {
+					entry.SenderName = s.SenderName
+				}
+				continue
+			}
+			remaining = append(remaining, s)
+		}
+
+		file.Senders = append([]RecentSenderEntry{entry}, remaining...)
+	}
+
+	if len(file.Senders) > r.maxEntries {
+		file.Senders = file.Senders[:r.maxEntries]
+	}
+	return r.saveUnlocked(ctx, path, file)
 }

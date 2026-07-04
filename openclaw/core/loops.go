@@ -119,10 +119,7 @@ func NewLoopTerminationDetector(loopControl ILoopControlService) *LoopTerminatio
 }
 
 func (l *LoopTerminationDetector) isKeywordCharacter(b byte) bool {
-	return (b >= 'a' && b <= 'z') ||
-		(b >= 'A' && b <= 'Z') ||
-		(b >= '0' && b <= '9') ||
-		b == '_'
+	return isLetterOrDigit(b) || b == '_'
 }
 
 func (l *LoopTerminationDetector) cntainsWholeKeyword(text, keyword string) bool {
