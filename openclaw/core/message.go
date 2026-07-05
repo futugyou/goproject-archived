@@ -6,8 +6,8 @@ type InboundMessage struct {
 	ChannelId               string    `json:"channel_id"`
 	SenderId                string    `json:"sender_id"`
 	AccountId               *string   `json:"account_id,omitempty"`
-	SessionId               *string   `json:"session_id,omitempty"`
-	CronJobName             *string   `json:"cron_job_name,omitempty"`
+	SessionId               string    `json:"session_id"`
+	CronJobName             string    `json:"cron_job_name"`
 	AutomationRunId         *string   `json:"automation_run_id,omitempty"`
 	AutomationTriggerSource *string   `json:"automation_trigger_source,omitempty"`
 	Type                    *string   `json:"type,omitempty"`
@@ -22,7 +22,7 @@ type InboundMessage struct {
 	ValueJson               *string   `json:"value_json,omitempty"`
 	Sequence                *int64    `json:"sequence,omitempty"`
 	IsSystem                bool      `json:"is_system"`
-	Subject                 *string   `json:"subject,omitempty"`
+	Subject                 string    `json:"subject"`
 	ApprovalId              *string   `json:"approval_id,omitempty"`
 	Approved                *bool     `json:"approved,omitempty"`
 	ReceivedAt              time.Time `json:"received_at"`

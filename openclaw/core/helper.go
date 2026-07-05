@@ -18,6 +18,8 @@ import (
 	"time"
 	"unicode"
 
+	_ "time/tzdata"
+
 	"github.com/robfig/cron/v3"
 )
 
@@ -370,4 +372,9 @@ func isTime(expression string, t time.Time) bool {
 	previousSecond := truncatedTime.Add(-1 * time.Second)
 	nextOccurrence := sched.Next(previousSecond)
 	return nextOccurrence.Equal(truncatedTime)
+}
+
+func isValidIANA(tz string) bool {
+	_, err := time.LoadLocation(tz)
+	return err == nil
 }

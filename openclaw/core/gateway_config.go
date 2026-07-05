@@ -1048,26 +1048,17 @@ func DefaultCronConfig() CronConfig {
 
 // CronJobConfig represents a specific cron job's configuration.
 type CronJobConfig struct {
-	Name                    string  `json:"name"`
-	CronExpression          string  `json:"cron_expression"`
-	Prompt                  string  `json:"prompt"`
-	RunOnStartup            bool    `json:"run_on_startup"`
-	SessionId               *string `json:"session_id"`
-	ChannelId               *string `json:"channel_id"`
-	RecipientId             *string `json:"recipient_id"`
-	Subject                 *string `json:"subject"`
-	AutomationId            *string `json:"automation_id"`
-	AutomationTriggerSource *string `json:"automation_trigger_source"`
-	Timezone                *string `json:"timezone"`
-}
-
-func DefaultCronJobConfig() CronJobConfig {
-	return CronJobConfig{
-		Name:           "",
-		CronExpression: "",
-		Prompt:         "",
-		RunOnStartup:   false,
-	}
+	Name                    string `json:"name"`
+	CronExpression          string `json:"cron_expression"`
+	Prompt                  string `json:"prompt"`
+	RunOnStartup            bool   `json:"run_on_startup"`
+	SessionId               string `json:"session_id"`
+	ChannelId               string `json:"channel_id"`
+	RecipientId             string `json:"recipient_id"`
+	Subject                 string `json:"subject"`
+	AutomationId            string `json:"automation_id"`
+	AutomationTriggerSource string `json:"automation_trigger_source"`
+	Timezone                string `json:"timezone"`
 }
 
 // WebhooksConfig represents the global webhooks configuration.

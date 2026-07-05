@@ -1207,3 +1207,219 @@ func generateShortUUID() string {
 	_, _ = rand.Read(b)
 	return hex.EncodeToString(b) // 16个字符
 }
+
+type CronScheduler struct {
+	maxRunningDuration time.Duration
+	jobSource          ICronJobSource
+	logger             *slog.Logger
+	startupNoticeSink  IStartupNoticeSink
+	pipelineChannel    chan<- InboundMessage
+	runDispatcher      IAutomationRunDispatcher
+	runningJobs        sync.Map //map[string]time.Time
+}
+
+func NewCronScheduler(jobSource ICronJobSource, logger *slog.Logger, startupNoticeSink IStartupNoticeSink, pipelineChannel chan<- InboundMessage, runDispatcher IAutomationRunDispatcher) *CronScheduler {
+	if logger == nil {
+		logger = slog.Default()
+	}
+	return &CronScheduler{
+		maxRunningDuration: 6 * time.Hour,
+		jobSource:          jobSource,
+		logger:             logger,
+		startupNoticeSink:  startupNoticeSink,
+		pipelineChannel:    pipelineChannel,
+		runDispatcher:      runDispatcher,
+	}
+}
+
+const overlapLogTemplate = "Background job '%s' is still running from an earlier trigger; this tick was skipped."
+
+func (c *CronScheduler) logOverlap(jobName string) {
+	msg := fmt.Sprintf(overlapLogTemplate, jobName)
+	c.logger.Warn(msg)
+	c.startupNoticeSink.Record(msg)
+}
+
+func (c *CronScheduler) cleanupStaleRunningJobs(nowUtc time.Time) {
+	c.runningJobs.Range(func(key, value any) bool {
+		t := value.(time.Time)
+		if nowUtc.Sub(t) <= c.maxRunningDuration {
+			return true
+		}
+		c.runningJobs.Delete(key)
+
+		msg := fmt.Sprintf("Removed stale running marker for cron job '%s' after %d.", key, nowUtc.Sub(t))
+		c.logger.Warn(msg)
+		return true
+	})
+}
+
+func (c *CronScheduler) enqueueJob(ctx context.Context, job *CronJobConfig) error {
+	sessionId := job.SessionId
+	if isBlank(sessionId) {
+		if isBlank(job.Name) {
+			sessionId = "cron:system"
+		} else {
+			sessionId = fmt.Sprintf("cron:%s", job.Name)
+		}
+
+	}
+
+	var channelId = job.ChannelId
+	if isBlank(channelId) {
+		channelId = "cron"
+	}
+
+	senderId := job.RecipientId
+	if senderId == "" {
+		senderId = sessionId
+	}
+	if senderId == "" {
+		senderId = job.Name
+	}
+	if senderId == "" {
+		senderId = "system"
+	}
+
+	var msg *InboundMessage
+	var err error
+	subject := job.Subject
+	if isBlank(subject) {
+		if !isBlank(job.Name) {
+			subject = fmt.Sprintf("OpenClaw Cron: %s", job.Name)
+		}
+
+	}
+	if c.runDispatcher != nil && !isBlank(job.AutomationId) {
+		request := &AutomationDispatchRequest{
+			AutomationId:  job.AutomationId,
+			SessionId:     sessionId,
+			ChannelId:     channelId,
+			SenderId:      senderId,
+			Prompt:        job.Prompt,
+			TriggerSource: job.AutomationTriggerSource,
+			Subject:       subject,
+		}
+
+		if isBlank(request.TriggerSource) {
+			request.TriggerSource = "schedule"
+		}
+		msg, err = c.runDispatcher.PrepareDispatch(ctx, request)
+		if err != nil {
+			return err
+		}
+	}
+
+	if msg == nil {
+		msg = &InboundMessage{
+			IsSystem:    true,
+			SessionId:   sessionId,
+			CronJobName: job.Name,
+			ChannelId:   channelId,
+			SenderId:    senderId,
+			Subject:     subject,
+			Text:        job.Prompt,
+		}
+	}
+
+	select {
+	case c.pipelineChannel <- *msg:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
+func (c *CronScheduler) enqueueJobIfNotRunning(ctx context.Context, job *CronJobConfig) error {
+	var jobName = "unnamed"
+	if !isBlank(job.Name) {
+		jobName = job.Name
+	}
+	var now = time.Now().UTC()
+
+	runningSinceVal, ok := c.runningJobs.Load(jobName)
+	if ok {
+		runningSince := runningSinceVal.(time.Time)
+		if now.Sub(runningSince) <= c.maxRunningDuration {
+			c.logOverlap(jobName)
+			return nil
+		}
+
+		c.runningJobs.Delete(jobName)
+	}
+
+	_, loaded := c.runningJobs.LoadOrStore(jobName, now)
+
+	if loaded {
+		c.logOverlap(jobName)
+		return nil
+	}
+
+	err := c.enqueueJob(ctx, job)
+	if err == nil {
+		c.runningJobs.Delete(jobName)
+	}
+
+	return err
+}
+
+func (c *CronScheduler) MarkJobCompleted(jobName string) {
+	if isBlank(jobName) {
+		return
+	}
+
+	c.runningJobs.Delete(jobName)
+}
+
+func (c *CronScheduler) RunTick(ctx context.Context) error {
+	var utcNow = time.Now().UTC()
+	c.cleanupStaleRunningJobs(utcNow)
+	var jobs = c.jobSource.GetJobs()
+	if len(jobs) == 0 {
+		return nil
+	}
+	for _, job := range jobs {
+		var now = utcNow
+		if !isBlank(job.Timezone) {
+			tz, err := time.LoadLocation(job.Timezone)
+			if err == nil {
+				now = utcNow.In(tz)
+			}
+		}
+
+		if !isTime(job.CronExpression, now) {
+			continue
+		}
+
+		if err := c.enqueueJobIfNotRunning(ctx, &job); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func (c *CronScheduler) RunStartupJobs(ctx context.Context) error {
+	var initialJobs = c.jobSource.GetJobs()
+	if len(initialJobs) == 0 {
+		c.logger.Info("Cron scheduler startup dispatch found no initial jobs.")
+		return nil
+	}
+	c.logger.Info("cron scheduler initiates dispatching: it checks for initial tasks to execute the RunOnStartup logic", "JobCount", len(initialJobs))
+
+	for _, job := range initialJobs {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		if !job.RunOnStartup {
+			continue
+		}
+		var now = time.Now().UTC()
+		c.logger.Info("triggering cron job on startup", "JobName", job.Name, "Time", now)
+		if err := c.enqueueJobIfNotRunning(ctx, &job); err != nil {
+			c.logger.Info("failed to run cron job on startup", "JobName", job.Name)
+		}
+	}
+
+	return nil
+}
