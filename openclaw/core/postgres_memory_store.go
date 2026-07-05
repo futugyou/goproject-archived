@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -21,19 +22,56 @@ type PostgresMemoryStore struct {
 	embeddingGenerator embeddings.IEmbeddingGenerator[string, embeddings.EmbeddingT[float64]]
 }
 
+// ListBackgroundRunnableSessions implements [IBackgroundSessionStore].
+func (s *PostgresMemoryStore) ListBackgroundRunnableSessions(ctx context.Context, limit int) ([]Session, error) {
+	limit = max(min(limit, 500), 1)
+	sessions, err := gorm.G[Session](s.db).Order("updated_at DESC").Limit(4 * limit).Find(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	results := []Session{}
+	for _, session := range sessions {
+		if session.BackgroundRun != nil && (session.RunState == SessionRunState_Running || session.RunState == SessionRunState_Continuing) {
+			results = append(results, session)
+		}
+
+		if len(results) > limit {
+			break
+		}
+	}
+
+	slices.SortFunc(results, func(a, b Session) int {
+		aTime := a.LastActiveAt
+		bTime := b.LastActiveAt
+
+		if a.BackgroundRun != nil && a.BackgroundRun.LastContinuedAtUtc != nil {
+			aTime = *a.BackgroundRun.LastContinuedAtUtc
+		}
+		if b.BackgroundRun != nil && b.BackgroundRun.LastContinuedAtUtc != nil {
+			bTime = *b.BackgroundRun.LastContinuedAtUtc
+		}
+
+		if aTime.Before(bTime) {
+			return -1
+		}
+		if aTime.After(bTime) {
+			return 1
+		}
+
+		return 0
+	})
+
+	return results, nil
+}
+
 // SearchSessions implements [ISessionSearchStore].
 func (s *PostgresMemoryStore) SearchSessions(ctx context.Context, query *SessionSearchQuery) (*SessionSearchResult, error) {
 	if query == nil || isBlank(query.Text) {
 		return &SessionSearchResult{Query: query, Items: []SessionSearchHit{}}, nil
 	}
 
-	limit := query.Limit
-	if limit > 200 {
-		limit = 200
-	}
-	if limit < 1 {
-		limit = 1
-	}
+	limit := max(min(query.Limit, 200), 1)
 
 	// 1. 全文检索分支 (PostgreSQL tsvector)
 	if s.ftsEnabled {
@@ -677,3 +715,4 @@ var _ IMemoryNoteCatalog = (*PostgresMemoryStore)(nil)
 var _ IMemoryRetentionStore = (*PostgresMemoryStore)(nil)
 var _ ISessionAdminStore = (*PostgresMemoryStore)(nil)
 var _ ISessionSearchStore = (*PostgresMemoryStore)(nil)
+var _ IBackgroundSessionStore = (*PostgresMemoryStore)(nil)

@@ -45,19 +45,19 @@ const (
 // ============================================================================
 
 type BackgroundRunMetadata struct {
-	RunId                      string    `json:"run_id"`
-	Objective                  string    `json:"objective"`
-	StartedAtUtc               time.Time `json:"started_at_utc"`
-	LastContinuedAtUtc         time.Time `json:"last_continued_at_utc"`
-	LastNotificationAtUtc      time.Time `json:"last_notification_at_utc"`
-	ContinuationCount          int       `json:"continuation_count"`
-	ContinuationSequence       int       `json:"continuation_sequence"`
-	ConsecutiveNoProgressCount int       `json:"consecutive_no_progress_count"`
-	ToolCallCount              int64     `json:"tool_call_count"`
-	TokenBudget                int64     `json:"token_budget"`
-	MaxContinuationTurns       int       `json:"max_continuation_turns"`
-	LastCheckpointId           string    `json:"last_checkpoint_id"`
-	LastStopReason             string    `json:"last_stop_reason"`
+	RunId                      string     `json:"run_id"`
+	Objective                  string     `json:"objective"`
+	StartedAtUtc               time.Time  `json:"started_at_utc"`
+	LastContinuedAtUtc         *time.Time `json:"last_continued_at_utc,omitempty"`
+	LastNotificationAtUtc      time.Time  `json:"last_notification_at_utc"`
+	ContinuationCount          int        `json:"continuation_count"`
+	ContinuationSequence       int        `json:"continuation_sequence"`
+	ConsecutiveNoProgressCount int        `json:"consecutive_no_progress_count"`
+	ToolCallCount              int64      `json:"tool_call_count"`
+	TokenBudget                int64      `json:"token_budget"`
+	MaxContinuationTurns       int        `json:"max_continuation_turns"`
+	LastCheckpointId           string     `json:"last_checkpoint_id"`
+	LastStopReason             string     `json:"last_stop_reason"`
 }
 
 type Session struct {

@@ -343,5 +343,5 @@ type IStartupNoticeSink interface {
 }
 
 type IBackgroundSessionStore interface {
-	ListBackgroundRunnableSessionsAsync(ctx context.Context, limit int) ([]Session, error)
+	ListBackgroundRunnableSessions(ctx context.Context, limit int) ([]Session, error)
 }
