@@ -15,7 +15,10 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 	"unicode"
+
+	"github.com/robfig/cron/v3"
 )
 
 func fileExists(path string) bool {
@@ -281,4 +284,90 @@ func (m *NamedLockManager) Lock(ctx context.Context, key string) (unlock func(),
 			delete(m.gates, key)
 		}
 	}, nil
+}
+
+func daysInMonth(year int, month time.Month) string {
+	t := time.Date(year, month+1, 0, 0, 0, 0, 0, time.UTC)
+	return strconv.Itoa(t.Day())
+}
+
+func normalizeExpression(expression string, time time.Time) string {
+	expression = strings.ToLower(strings.TrimSpace(expression))
+	normalized := expression
+	switch expression {
+	case "@hourly":
+		normalized = "0 * * * *"
+	case "@daily":
+		normalized = "0 0 * * *"
+	case "@weekly":
+		normalized = "0 0 * * 0"
+	case "@monthly":
+		normalized = "0 0 1 * *"
+	}
+
+	parts := strings.Split(normalized, " ")
+	dayOfMonthIndex := -1
+	if len(parts) == 5 {
+		dayOfMonthIndex = 2
+	}
+	if len(parts) == 6 {
+		dayOfMonthIndex = 3
+	}
+
+	if dayOfMonthIndex >= 0 && parts[dayOfMonthIndex] == "1" {
+		parts[dayOfMonthIndex] = daysInMonth(time.Year(), time.Month())
+	}
+
+	return strings.Join(parts, " ")
+}
+
+func parseCronExpression(spec string) (cron.Schedule, bool) {
+	spec = strings.TrimSpace(spec)
+	if spec == "" {
+		return nil, false
+	}
+
+	// 1. 处理预定义描述符（如 @yearly, @monthly, @every 1h 等）
+	if strings.HasPrefix(spec, "@") {
+		parser := cron.NewParser(cron.Descriptor)
+		if sched, err := parser.Parse(spec); err == nil {
+			return sched, true
+		}
+		return nil, false
+	}
+
+	// 2. 根据空格计算段数
+	fields := len(strings.Fields(spec))
+
+	var parser cron.Parser
+	switch fields {
+	case 5:
+		// 标准 5 段式：分 时 日 月 周
+		parser = cron.NewParser(cron.Minute | cron.Hour | cron.Dom | cron.Month | cron.Dow | cron.Descriptor)
+	case 6:
+		// 常见 6 段式：秒 分 时 日 月 周
+		parser = cron.NewParser(cron.Second | cron.Minute | cron.Hour | cron.Dom | cron.Month | cron.Dow | cron.Descriptor)
+	default:
+		// 其他段数（如 7 段带年份的）当前库默认不支持，直接返回失败
+		return nil, false
+	}
+
+	sched, err := parser.Parse(spec)
+	if err != nil {
+		return nil, false
+	}
+
+	return sched, true
+}
+
+func isTime(expression string, t time.Time) bool {
+	sched, ok := parseCronExpression(expression)
+	if !ok {
+		return false
+	}
+
+	truncatedTime := t.Truncate(time.Second)
+	previousSecond := truncatedTime.Add(-1 * time.Second)
+	nextOccurrence := sched.Next(previousSecond)
+	return nextOccurrence.Equal(truncatedTime)
 }

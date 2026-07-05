@@ -235,9 +235,9 @@ func NewClawLoopScheduler(logger *slog.Logger) *ClawLoopScheduler {
 }
 
 func (s *ClawLoopScheduler) ScheduleLoop(ctx context.Context, sessionId, cronExpression, prompt string) error {
-	schedule, err := s.parseCronExpression(cronExpression)
-	if err != nil {
-		return fmt.Errorf("invalid cron expression %s: %w", cronExpression, err)
+	schedule, ok := parseCronExpression(cronExpression)
+	if !ok {
+		return fmt.Errorf("invalid cron expression %s", cronExpression)
 	}
 
 	entry := NewLoopEntry(sessionId, prompt, cronExpression, schedule)
@@ -283,25 +283,6 @@ func (s *ClawLoopScheduler) GetDueEntries(now time.Time) []*LoopEntry {
 	})
 
 	return results
-}
-
-func (s *ClawLoopScheduler) parseCronExpression(cronExpression string) (cron.Schedule, error) {
-	fields := len(strings.Fields(cronExpression))
-
-	var parser cron.Parser
-	if fields == 6 {
-		// 支持秒级：秒 分 时 天 月 周
-		parser = cron.NewParser(cron.Second | cron.Minute | cron.Hour | cron.Dom | cron.Month | cron.Dow)
-	} else {
-		// 标准5段：分 时 天 月 周
-		parser = cron.NewParser(cron.Minute | cron.Hour | cron.Dom | cron.Month | cron.Dow)
-	}
-
-	sched, err := parser.Parse(cronExpression)
-	if err != nil {
-		return nil, err
-	}
-	return sched, nil
 }
 
 const TypeAgentLoopTask = "agent:loop_task"
