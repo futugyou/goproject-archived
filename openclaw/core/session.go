@@ -18,6 +18,18 @@ const (
 	SessionStateExpired
 )
 
+type SessionRunState uint8
+
+const (
+	SessionRunState_Idle SessionRunState = iota
+	SessionRunState_Running
+	SessionRunState_Continuing
+	SessionRunState_Paused
+	SessionRunState_Blocked
+	SessionRunState_BudgetLimited
+	SessionRunState_Completed
+	SessionRunState_Failed
+)
 const (
 	SessionCheckpointKindsToolBatch = "tool_batch"
 )
@@ -31,6 +43,22 @@ const (
 // ============================================================================
 // Structs & Factories
 // ============================================================================
+
+type BackgroundRunMetadata struct {
+	RunId                      string    `json:"run_id"`
+	Objective                  string    `json:"objective"`
+	StartedAtUtc               time.Time `json:"started_at_utc"`
+	LastContinuedAtUtc         time.Time `json:"last_continued_at_utc"`
+	LastNotificationAtUtc      time.Time `json:"last_notification_at_utc"`
+	ContinuationCount          int       `json:"continuation_count"`
+	ContinuationSequence       int       `json:"continuation_sequence"`
+	ConsecutiveNoProgressCount int       `json:"consecutive_no_progress_count"`
+	ToolCallCount              int64     `json:"tool_call_count"`
+	TokenBudget                int64     `json:"token_budget"`
+	MaxContinuationTurns       int       `json:"max_continuation_turns"`
+	LastCheckpointId           string    `json:"last_checkpoint_id"`
+	LastStopReason             string    `json:"last_stop_reason"`
+}
 
 type Session struct {
 	totalInputTokens      *int64
@@ -47,6 +75,8 @@ type Session struct {
 	LastActiveAt                 time.Time                       `json:"last_active_at"`
 	History                      []ChatTurn                      `json:"history"`
 	State                        SessionState                    `json:"state"`
+	RunState                     SessionRunState                 `json:"run_state"`
+	BackgroundRun                *BackgroundRunMetadata          `json:"background_run"`
 	ModelOverride                *string                         `json:"model_override,omitempty"`
 	ModelProfileId               *string                         `json:"model_profile_id,omitempty"`
 	PreferredModelTags           []string                        `json:"preferred_model_tags" gorm:"type:text[];not null;default:'{}'"`
@@ -80,6 +110,7 @@ func DefaultSession() *Session {
 		LastActiveAt:            now,
 		History:                 []ChatTurn{},
 		State:                   SessionStateActive,
+		RunState:                SessionRunState_Idle,
 		PreferredModelTags:      []string{},
 		FallbackModelProfileIds: []string{},
 		RouteAllowedTools:       []string{},

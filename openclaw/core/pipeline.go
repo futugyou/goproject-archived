@@ -473,10 +473,6 @@ func (c *ChatCommandProcessor) TryProcessCommand(ctx context.Context, session *S
 	}
 }
 
-type ICronJobSource interface {
-	GetJobs() []CronJobConfig
-}
-
 type MessagePipeline struct {
 	inbound  chan InboundMessage
 	outbound chan OutboundMessage

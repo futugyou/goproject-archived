@@ -333,3 +333,15 @@ type IToolResultInterceptor interface {
 	GetName() string
 	Intercept(ctx context.Context, reductionContext ReductionContext) (string, error)
 }
+
+type ICronJobSource interface {
+	GetJobs() []CronJobConfig
+}
+
+type IStartupNoticeSink interface {
+	Record(message string) error
+}
+
+type IBackgroundSessionStore interface {
+	ListBackgroundRunnableSessionsAsync(ctx context.Context, limit int) ([]Session, error)
+}
