@@ -202,7 +202,7 @@ func DefaultPluginCompatibilityDiagnostic() PluginCompatibilityDiagnostic {
 type PluginLoadReport struct {
 	PluginId               string                          `json:"plugin_id"`
 	SourcePath             string                          `json:"source_path"`
-	EntryPath              *string                         `json:"entry_path,omitempty"`
+	EntryPath              string                          `json:"entry_path"`
 	Origin                 string                          `json:"origin"`
 	Loaded                 bool                            `json:"loaded"`
 	EffectiveRuntimeMode   string                          `json:"effective_runtime_mode"`

@@ -13,6 +13,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"strconv"
 	"strings"
@@ -457,4 +458,29 @@ func pathHasPrefix(path, prefix string) bool {
 		return strings.HasPrefix(strings.ToLower(path), strings.ToLower(prefix))
 	}
 	return strings.HasPrefix(path, prefix)
+}
+
+func getFileNameWithoutExtension(path string) string {
+	base := filepath.Base(path)
+	ext := filepath.Ext(base)
+	return strings.TrimSuffix(base, ext)
+}
+
+func pathGetFullPath(path string) string {
+	p, _ := filepath.Abs(path)
+	return p
+}
+
+func expandAllEnv(input string) string {
+	if input == "" {
+		return ""
+	}
+
+	winRe := regexp.MustCompile(`%([^%]+)%`)
+	winExpanded := winRe.ReplaceAllStringFunc(input, func(match string) string {
+		varName := match[1 : len(match)-1]
+		return os.Getenv(varName)
+	})
+
+	return os.ExpandEnv(winExpanded)
 }
