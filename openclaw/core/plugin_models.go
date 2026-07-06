@@ -188,7 +188,7 @@ type PluginCompatibilityDiagnostic struct {
 	Code     string  `json:"code"`
 	Message  string  `json:"message"`
 	Surface  *string `json:"surface,omitempty"`
-	Path     *string `json:"path,omitempty"`
+	Path     string  `json:"path"`
 }
 
 func DefaultPluginCompatibilityDiagnostic() PluginCompatibilityDiagnostic {
