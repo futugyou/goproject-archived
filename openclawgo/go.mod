@@ -6,7 +6,7 @@ require (
 	github.com/futugyou/extensions_ai v0.0.1
 	github.com/futugyou/mcp v0.0.1
 	github.com/google/uuid v1.6.0
-	github.com/shirou/gopsutil/v4 v4.26.5
+	github.com/shirou/gopsutil/v4 v4.26.6
 	gorm.io/gorm v1.31.2
 )
 
