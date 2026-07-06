@@ -6,12 +6,14 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io/fs"
 	"math/big"
 	"net"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"sync"
@@ -377,4 +379,82 @@ func isTime(expression string, t time.Time) bool {
 func isValidIANA(tz string) bool {
 	_, err := time.LoadLocation(tz)
 	return err == nil
+}
+
+func tryResolveLinkTarget(path string) (string, bool) {
+	finalPath, err := filepath.EvalSymlinks(path)
+	if err != nil {
+		if errors.Is(err, fs.ErrPermission) {
+			return "", false
+		}
+
+		if errors.Is(err, fs.ErrNotExist) || errors.Is(err, fs.ErrInvalid) {
+			return "", false
+		}
+
+		return "", false
+	}
+
+	// EvalSymlinks 如果传入普通路径，会直接返回原路径。
+	// 我们检查原路径是否真的是一个符号链接。
+	if isLstatSame(path, finalPath) {
+		return "", false
+	}
+
+	return finalPath, true
+}
+
+// 辅助函数：判断原路径是否本身就是最终路径（排除非链接的情况）
+func isLstatSame(original, final string) bool {
+	// 获取原路径的 Lstat（不追踪链接本身）
+	origFi, err1 := os.Lstat(original)
+	// 获取最终路径的 Stat
+	finalFi, err2 := os.Stat(final)
+
+	if err1 != nil || err2 != nil {
+		return true
+	}
+
+	// 如果原路径的模式不是 Symlink，说明它本来就不是链接
+	if origFi.Mode()&os.ModeSymlink == 0 {
+		return true
+	}
+
+	// 比较它们是否指向同一个文件系统实体
+	return os.SameFile(origFi, finalFi)
+}
+
+// isUnresolvedLink 判断路径是否是一个无法解析的死链接
+func isUnresolvedLink(path string) bool {
+	// 1. 获取路径自身的元数据（Lstat 不会追踪符号链接目标）
+	fi, err := os.Lstat(path)
+	if err != nil {
+		// 如果路径本身就不存在或无法读取，它就谈不上是一个“未解析的链接”，返回 false
+		return false
+	}
+
+	// 2. 检查它是否是符号链接
+	if fi.Mode()&os.ModeSymlink == 0 {
+		return false
+	}
+
+	// 3. 如果 tryResolveLinkTarget 返回 false，说明链接断开或目标不可达
+	_, ok := tryResolveLinkTarget(path)
+	return !ok
+}
+
+// 判断两个路径在当前操作系统下是否相等
+func pathEqual(path1, path2 string) bool {
+	if runtime.GOOS == "windows" {
+		return strings.EqualFold(path1, path2)
+	}
+	return path1 == path2
+}
+
+// 判断 path 是否以 prefix 为前缀（考虑操作系统大小写）
+func pathHasPrefix(path, prefix string) bool {
+	if runtime.GOOS == "windows" {
+		return strings.HasPrefix(strings.ToLower(path), strings.ToLower(prefix))
+	}
+	return strings.HasPrefix(path, prefix)
 }
