@@ -1,12 +1,23 @@
 package core
 
 import (
+	"bytes"
 	"cmp"
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
 	"maps"
+	"os"
+	"os/exec"
+	"regexp"
 	"slices"
 	"sort"
 	"strings"
 	"sync"
+	"syscall"
+	"time"
 )
 
 const (
@@ -940,4 +951,296 @@ func (e *ExternalCliPresetCatalog) List() []ExternalCliPresetSummary {
 	})
 
 	return result
+}
+
+type ExternalCliPreparedCommand struct {
+	ConnectorName     string
+	CommandName       string
+	Connector         *ExternalCliConnectorOptions
+	Command           *ExternalCliCommandOptions
+	Executable        string
+	Arguments         []string
+	RedactedArguments []string
+	WorkingDirectory  string
+	Environment       map[string]string
+	Preview           *ExternalCliInvocationPreview
+	MaxStdoutBytes    int
+	MaxStderrBytes    int
+	RedactionRules    []string
+}
+
+type IExternalCliConnectorRegistry interface {
+	ListConnectors() ([]ExternalCliConnectorSummary, error)
+	ListCommands(connectorName string) (*ExternalCliCommandListResponse, error)
+	GetCommandSchema(connectorName, commandName string) (*ExternalCliCommandSchemaResponse, error)
+	BuildPreview(request *ExternalCliPreviewRequest, dryRun bool) (*ExternalCliPreparedCommand, error)
+	GetStatus(ctx context.Context, connectorName string) (*ExternalCliConnectorStatus, error)
+}
+
+type IExternalCliRunner interface {
+	Execute(ctx context.Context, command *ExternalCliPreparedCommand) (*ExternalCliExecutionResult, error)
+}
+
+type IExternalCliAuditSink interface {
+	Record(entry *ExternalCliAuditEntry) error
+}
+
+type IExternalCliEventSink interface {
+	Record(entry *ExternalCliRuntimeEvent) error
+}
+
+var _ IExternalCliRunner = (*ExternalCliRunner)(nil)
+
+type ExternalCliRunner struct {
+	redaction IRedactionPipeline
+}
+
+func NewExternalCliRunner(redaction IRedactionPipeline) *ExternalCliRunner {
+	if redaction == nil {
+		redaction = &NoopRedactionPipeline{}
+	}
+	return &ExternalCliRunner{
+		redaction: redaction,
+	}
+}
+func (r *ExternalCliRunner) Execute(ctx context.Context, command *ExternalCliPreparedCommand) (*ExternalCliExecutionResult, error) {
+	startedAt := time.Now().UTC()
+
+	timeoutDuration := time.Duration(command.Preview.TimeoutSeconds) * time.Second
+	cmdCtx, cancel := context.WithTimeout(ctx, timeoutDuration)
+	defer cancel()
+
+	cmd := exec.CommandContext(cmdCtx, command.Executable, command.Arguments...)
+
+	// 配置工作目录与环境变量
+	if strings.TrimSpace(command.WorkingDirectory) != "" {
+		cmd.Dir = command.WorkingDirectory
+	}
+	if len(command.Environment) > 0 {
+		cmd.Env = os.Environ()
+		for k, v := range command.Environment {
+			cmd.Env = append(cmd.Env, fmt.Sprintf("%s=%s", k, v))
+		}
+	}
+
+	configureSysProcAttr(cmd)
+
+	// 重定向标准输出流
+	stdoutPipe, err := cmd.StdoutPipe()
+	if err != nil {
+		return r.createErrorResult(command, startedAt, err)
+	}
+	stderrPipe, err := cmd.StderrPipe()
+	if err != nil {
+		return r.createErrorResult(command, startedAt, err)
+	}
+
+	// 启动进程
+	if err := cmd.Start(); err != nil {
+		return r.createErrorResult(command, startedAt, err)
+	}
+
+	// 异步读取流（带容量上限，防止因缓冲区满导致进程阻塞）
+	type readResult struct {
+		bytes     []byte
+		truncated bool
+		err       error
+	}
+
+	stdoutChan := make(chan readResult, 1)
+	stderrChan := make(chan readResult, 1)
+
+	go func() {
+		b, trunc, e := readCapped(stdoutPipe, command.MaxStdoutBytes)
+		stdoutChan <- readResult{b, trunc, e}
+	}()
+
+	go func() {
+		b, trunc, e := readCapped(stderrPipe, command.MaxStderrBytes)
+		stderrChan <- readResult{b, trunc, e}
+	}()
+
+	// 等待命令执行完毕
+	waitErr := cmd.Wait()
+
+	completedAt := time.Now().UTC()
+	durationMs := float64(completedAt.Sub(startedAt).Milliseconds())
+
+	// 获取读取结果
+	stdoutRes := <-stdoutChan
+	stderrRes := <-stderrChan
+
+	// 判断是否超时
+	timedOut := false
+	exitCode := 0
+	var errMsg string
+
+	if waitErr != nil {
+		if errors.Is(cmdCtx.Err(), context.DeadlineExceeded) {
+			timedOut = true
+			exitCode = -1
+			errMsg = "External CLI command timed out."
+
+			killProcessTree(cmd)
+		} else {
+			// 提取 Exit Code
+			if exitError, ok := waitErr.(*exec.ExitError); ok {
+				if status, ok := exitError.Sys().(syscall.WaitStatus); ok {
+					exitCode = status.ExitStatus()
+				} else {
+					exitCode = -1
+				}
+			} else {
+				exitCode = -1
+				errMsg = waitErr.Error()
+			}
+		}
+	}
+
+	// 处理文本脱敏
+	stdoutText := r.redact(string(stdoutRes.bytes), command.RedactionRules)
+	stderrText := r.redact(string(stderrRes.bytes), command.RedactionRules)
+
+	// 解析结构化 JSON
+	outputFormat := strings.ToLower(strings.TrimSpace(command.Preview.StructuredOutput))
+	parsedJson, parseErr := parseStructuredOutput(outputFormat, stdoutText)
+
+	var parseErrStr string
+	if parseErr != nil {
+		parseErrStr = parseErr.Error()
+	}
+
+	return &ExternalCliExecutionResult{
+		Preview:         command.Preview,
+		Success:         !timedOut && exitCode == 0,
+		ExitCode:        exitCode,
+		Stdout:          stdoutText,
+		Stderr:          stderrText,
+		StdoutTruncated: stdoutRes.truncated,
+		StderrTruncated: stderrRes.truncated,
+		TimedOut:        timedOut,
+		DurationMs:      durationMs,
+		StartedAtUtc:    startedAt,
+		CompletedAtUtc:  completedAt,
+		ParsedJson:      parsedJson,
+		ParseError:      parseErrStr,
+		ErrorMessage:    errMsg,
+	}, nil
+}
+
+// 辅助方法：启动失败时的快速返回
+func (r *ExternalCliRunner) createErrorResult(command *ExternalCliPreparedCommand, startedAt time.Time, err error) (*ExternalCliExecutionResult, error) {
+	now := time.Now().UTC()
+	return &ExternalCliExecutionResult{
+		Preview:        command.Preview,
+		Success:        false,
+		ExitCode:       -1,
+		StartedAtUtc:   startedAt,
+		CompletedAtUtc: now,
+		DurationMs:     float64(now.Sub(startedAt).Milliseconds()),
+		ErrorMessage:   r.redaction.Redact(err.Error()),
+	}, nil
+}
+
+// --- 核心脱敏逻辑 ---
+func (r *ExternalCliRunner) redact(value string, redactionRules []string) string {
+	current := r.redaction.Redact(value)
+
+	for _, pattern := range redactionRules {
+		if strings.TrimSpace(pattern) == "" {
+			continue
+		}
+		re, err := regexp.Compile(pattern)
+		if err != nil {
+			continue // 保持 best-effort，非法的正则直接跳过
+		}
+		current = re.ReplaceAllString(current, "[REDACTED:external-cli]")
+	}
+	return current
+}
+
+// --- 核心读取逻辑：安全读取防止内存溢出，同时消耗掉剩余流防止死锁 ---
+func readCapped(reader io.Reader, maxBytes int) ([]byte, bool, error) {
+	buffer := make([]byte, 8192)
+	var out bytes.Buffer
+	remaining := maxBytes
+	truncated := false
+
+	for {
+		n, err := reader.Read(buffer)
+		if n > 0 {
+			if remaining <= 0 {
+				truncated = true
+			} else if n > remaining {
+				out.Write(buffer[:remaining])
+				remaining = 0
+				truncated = true
+			} else {
+				out.Write(buffer[:n])
+				remaining -= n
+			}
+		}
+		if err != nil {
+			if errors.Is(err, io.EOF) {
+				break
+			}
+			return nil, false, err
+		}
+	}
+	return out.Bytes(), truncated, nil
+}
+
+// --- 核心解析逻辑：支持 JSON 和 NDJSON ---
+func parseStructuredOutput(outputFormat, stdout string) (json.RawMessage, error) {
+	stdout = strings.TrimSpace(stdout)
+	if stdout == "" {
+		return nil, nil
+	}
+
+	if outputFormat == "json" {
+		// 验证其是否为合法的 JSON，防止把脏字符串直接当成 RawMessage 返回
+		var b json.RawMessage
+		if err := json.Unmarshal([]byte(stdout), &b); err != nil {
+			return nil, err
+		}
+		return b, nil
+	}
+
+	if outputFormat == "ndjson" {
+		lines := strings.Split(stdout, "\n")
+
+		// 用 bytes.Buffer 来高效拼接 JSON 数组：[item1,item2,...]
+		var buf bytes.Buffer
+		buf.WriteByte('[')
+
+		hasRecords := false
+		for _, line := range lines {
+			line = strings.TrimSpace(line)
+			if line == "" {
+				continue
+			}
+
+			// 验证当前行是否为合法的单条 JSON
+			var item json.RawMessage
+			if err := json.Unmarshal([]byte(line), &item); err != nil {
+				return nil, err
+			}
+
+			// 如果不是第一条记录，中间加逗号分隔
+			if hasRecords {
+				buf.WriteByte(',')
+			}
+			buf.Write([]byte(line))
+			hasRecords = true
+		}
+		buf.WriteByte(']')
+
+		if !hasRecords {
+			return nil, nil
+		}
+
+		return buf.Bytes(), nil
+	}
+
+	return nil, nil
 }

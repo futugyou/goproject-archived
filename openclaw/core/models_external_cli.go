@@ -310,20 +310,20 @@ type ExternalCliPreviewResponse struct {
 }
 
 type ExternalCliExecutionResult struct {
-	Preview         ExternalCliInvocationPreview `json:"preview"`
-	Success         bool                         `json:"success"`
-	ExitCode        int                          `json:"exit_code"`
-	Stdout          string                       `json:"stdout"`
-	Stderr          string                       `json:"stderr"`
-	StdoutTruncated bool                         `json:"stdout_truncated"`
-	StderrTruncated bool                         `json:"stderr_truncated"`
-	TimedOut        bool                         `json:"timed_out"`
-	DurationMs      float64                      `json:"duration_ms"`
-	StartedAtUtc    time.Time                    `json:"started_at_utc"`
-	CompletedAtUtc  time.Time                    `json:"completed_at_utc"`
-	ParsedJson      *json.RawMessage             `json:"parsed_json,omitempty"`
-	ParseError      *string                      `json:"parse_error,omitempty"`
-	ErrorMessage    *string                      `json:"error_message,omitempty"`
+	Preview         *ExternalCliInvocationPreview `json:"preview"`
+	Success         bool                          `json:"success"`
+	ExitCode        int                           `json:"exit_code"`
+	Stdout          string                        `json:"stdout"`
+	Stderr          string                        `json:"stderr"`
+	StdoutTruncated bool                          `json:"stdout_truncated"`
+	StderrTruncated bool                          `json:"stderr_truncated"`
+	TimedOut        bool                          `json:"timed_out"`
+	DurationMs      float64                       `json:"duration_ms"`
+	StartedAtUtc    time.Time                     `json:"started_at_utc"`
+	CompletedAtUtc  time.Time                     `json:"completed_at_utc"`
+	ParsedJson      json.RawMessage               `json:"-"`
+	ParseError      string                        `json:"parse_error"`
+	ErrorMessage    string                        `json:"error_message"`
 }
 
 type ExternalCliConnectorStatus struct {
