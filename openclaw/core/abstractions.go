@@ -5,13 +5,6 @@ import (
 	"time"
 )
 
-// IContactStore 接口定义
-type IContactStore interface {
-	Touch(ctx context.Context, phoneE164 string) (Contact, error)
-	Get(ctx context.Context, phoneE164 string) (*Contact, error)
-	SetDoNotText(ctx context.Context, phoneE164 string, doNotText bool) error
-}
-
 // PlanExecuteVerifyOrchestrator 接口
 type IPlanExecuteVerifyOrchestrator interface {
 	EvaluateTool(ctx context.Context, toolCtx *PlanExecuteVerifyToolContext) (*PlanExecuteVerifyDecision, error)

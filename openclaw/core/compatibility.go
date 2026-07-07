@@ -27,7 +27,11 @@ func getPublicCompatibilityCatalog() (*CompatibilityCatalogResponse, error) {
 	return publicCompatibilityCatalogInstance, publicCompatibilityCatalogErr
 }
 
-func GetPublicCompatibilityCatalog(compatibilityStatus, kind, category *string) (*CompatibilityCatalogResponse, error) {
+type PublicCompatibilityCatalog struct{}
+
+var PublicCompatibilityCatalogInstance = &PublicCompatibilityCatalog{}
+
+func (*PublicCompatibilityCatalog) GetCatalog(compatibilityStatus, kind, category *string) (*CompatibilityCatalogResponse, error) {
 	all, err := getPublicCompatibilityCatalog()
 	if err != nil {
 		return nil, err

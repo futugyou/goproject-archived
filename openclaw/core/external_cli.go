@@ -1,406 +1,943 @@
 package core
 
 import (
-	"encoding/json"
-	"time"
+	"cmp"
+	"maps"
+	"slices"
+	"sort"
+	"strings"
+	"sync"
 )
 
-func NormalizeRiskLevel(val string) string {
-	switch val {
-	case "medium", "high":
-		return val
-	default:
-		return RiskLevelLow
-	}
-}
-
-// Const enums for Output Formats
 const (
-	OutputFormatJson   = "json"
-	OutputFormatNdjson = "ndjson"
-	OutputFormatCsv    = "csv"
-	OutputFormatText   = "text"
-	OutputFormatTable  = "table"
+	ExternalCliPresetCatalogRepoPattern       = `^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$`
+	ExternalCliPresetCatalogNumberPattern     = `^[0-9]+$`
+	ExternalCliPresetCatalogSimpleNamePattern = `^[A-Za-z0-9_.:-]+$`
 )
 
-func NormalizeOutputFormat(val string) string {
-	switch val {
-	case "json", "ndjson", "csv", "table":
-		return val
-	default:
-		return OutputFormatText
-	}
+type ExternalCliPresetDefinition struct {
+	Summary   ExternalCliPresetSummary
+	Connector ExternalCliConnectorOptions
 }
 
-// --- Options Structs ---
-
-type ExternalCliOptions struct {
-	Enabled                            bool                                   `json:"enabled"`
-	DefaultTimeoutSeconds              int                                    `json:"default_timeout_seconds"`
-	MaxStdoutBytes                     int                                    `json:"max_stdout_bytes"`
-	MaxStderrBytes                     int                                    `json:"max_stderr_bytes"`
-	RedactSecrets                      bool                                   `json:"redact_secrets"`
-	AllowFreeformCommands              bool                                   `json:"allow_freeform_commands"`
-	RequireApprovalForMutatingCommands bool                                   `json:"require_approval_for_mutating_commands"`
-	Presets                            []string                               `json:"presets"`
-	Connectors                         map[string]ExternalCliConnectorOptions `json:"connectors"`
-}
-
-func DefaultExternalCliOptions() ExternalCliOptions {
-	return ExternalCliOptions{
-		Enabled:                            false,
-		DefaultTimeoutSeconds:              60,
-		MaxStdoutBytes:                     262144,
-		MaxStderrBytes:                     65536,
-		RedactSecrets:                      true,
-		AllowFreeformCommands:              false,
-		RequireApprovalForMutatingCommands: true,
-		Presets:                            []string{},
-		Connectors:                         make(map[string]ExternalCliConnectorOptions),
-	}
-}
-
-type ExternalCliConnectorOptions struct {
-	Enabled             bool                                 `json:"enabled"`
-	DisplayName         string                               `json:"display_name"`
-	Executable          string                               `json:"executable"`
-	DefaultArgs         []string                             `json:"default_args"`
-	WorkingDirectory    *string                              `json:"working_directory,omitempty"`
-	Environment         map[string]string                    `json:"environment"`
-	StatusCommand       *ExternalCliStatusCommandOptions     `json:"status_command,omitempty"`
-	VersionCommand      *ExternalCliStatusCommandOptions     `json:"version_command,omitempty"`
-	DefaultOutputFormat string                               `json:"default_output_format"`
-	RequiresApproval    bool                                 `json:"requires_approval"`
-	RedactionRules      []string                             `json:"redaction_rules"`
-	Commands            map[string]ExternalCliCommandOptions `json:"commands"`
-}
-
-func DefaultExternalCliConnectorOptions() ExternalCliConnectorOptions {
-	return ExternalCliConnectorOptions{
-		Enabled:             false,
-		DisplayName:         "",
-		Executable:          "",
-		DefaultArgs:         []string{},
-		Environment:         make(map[string]string),
-		DefaultOutputFormat: OutputFormatText,
-		RequiresApproval:    false,
-		RedactionRules:      []string{},
-		Commands:            make(map[string]ExternalCliCommandOptions),
-	}
-}
-
-type ExternalCliStatusCommandOptions struct {
-	Args           []string `json:"args"`
-	TimeoutSeconds *int     `json:"timeout_seconds,omitempty"`
-}
-
-func DefaultExternalCliStatusCommandOptions() ExternalCliStatusCommandOptions {
-	return ExternalCliStatusCommandOptions{
-		Args: []string{},
-	}
-}
-
-type ExternalCliCommandOptions struct {
-	Description            string                                 `json:"description"`
-	ArgsTemplate           []string                               `json:"args_template"`
-	Parameters             map[string]ExternalCliParameterOptions `json:"parameters"`
-	AllowUnknownParameters bool                                   `json:"allow_unknown_parameters"`
-	RiskLevel              string                                 `json:"risk_level"`
-	ReadOnly               bool                                   `json:"read_only"`
-	RequiresApproval       bool                                   `json:"requires_approval"`
-	SupportsDryRun         bool                                   `json:"supports_dry_run"`
-	DryRunArgsTemplate     []string                               `json:"dry_run_args_template"`
-	StructuredOutput       string                                 `json:"structured_output"`
-	TimeoutSeconds         *int                                   `json:"timeout_seconds,omitempty"`
-	WorkingDirectory       *string                                `json:"working_directory,omitempty"`
-	Environment            map[string]string                      `json:"environment"`
-	RedactionRules         []string                               `json:"redaction_rules"`
-	RequiredScopes         []string                               `json:"required_scopes"`
-	RequiredIdentity       *string                                `json:"required_identity,omitempty"`
-	Tags                   []string                               `json:"tags"`
-}
-
-func DefaultExternalCliCommandOptions() ExternalCliCommandOptions {
-	return ExternalCliCommandOptions{
-		Description:            "",
-		ArgsTemplate:           []string{},
-		Parameters:             make(map[string]ExternalCliParameterOptions),
-		AllowUnknownParameters: false,
-		RiskLevel:              RiskLevelLow,
-		ReadOnly:               true,
-		RequiresApproval:       false,
-		SupportsDryRun:         false,
-		DryRunArgsTemplate:     []string{},
-		StructuredOutput:       "",
-		Environment:            make(map[string]string),
-		RedactionRules:         []string{},
-		RequiredScopes:         []string{},
-		Tags:                   []string{},
-	}
-}
-
-type ExternalCliParameterOptions struct {
-	Required      bool     `json:"required"`
-	Description   string   `json:"description"`
-	MaxLength     *int     `json:"max_length,omitempty"`
-	Pattern       *string  `json:"pattern,omitempty"`
-	AllowedValues []string `json:"allowed_values"`
-}
-
-func DefaultExternalCliParameterOptions() ExternalCliParameterOptions {
-	return ExternalCliParameterOptions{
-		Required:      false,
-		Description:   "",
-		AllowedValues: []string{},
-	}
-}
-
-// --- Request Structs ---
-
-type ExternalCliPreviewRequest struct {
-	Connector     *string                    `json:"connector,omitempty"`
-	Command       *string                    `json:"command,omitempty"`
-	Parameters    map[string]json.RawMessage `json:"parameters"`
-	ExecuteDryRun bool                       `json:"execute_dry_run"`
-}
-
-type ExternalCliExecuteRequest struct {
-	Connector           *string                    `json:"connector,omitempty"`
-	Command             *string                    `json:"command,omitempty"`
-	Parameters          map[string]json.RawMessage `json:"parameters"`
-	ApprovedFingerprint *string                    `json:"approved_fingerprint,omitempty"`
-	ApprovalReason      *string                    `json:"approval_reason,omitempty"`
-}
-
-type ExternalCliToolRequest struct {
-	Action              string                     `json:"action"`
-	Connector           *string                    `json:"connector,omitempty"`
-	Command             *string                    `json:"command,omitempty"`
-	Parameters          map[string]json.RawMessage `json:"parameters"`
-	ExecuteDryRun       bool                       `json:"execute_dry_run"`
-	ApprovedFingerprint *string                    `json:"approved_fingerprint,omitempty"`
-	ApprovalReason      *string                    `json:"approval_reason,omitempty"`
-}
-
-func DefaultExternalCliToolRequest() ExternalCliToolRequest {
-	return ExternalCliToolRequest{
-		Action:     "list_connectors",
-		Parameters: make(map[string]json.RawMessage),
-	}
-}
-
-// --- Response Structs ---
-
-type ExternalCliConnectorSummary struct {
-	Name         string `json:"name"`
-	DisplayName  string `json:"display_name"`
-	Enabled      bool   `json:"enabled"`
-	Executable   string `json:"executable"`
-	CommandCount int    `json:"command_count"`
-}
-
-type ExternalCliConnectorListResponse struct {
-	Items []ExternalCliConnectorSummary `json:"items"`
-}
-
-type ExternalCliPresetSummary struct {
-	Id          string   `json:"id"`
-	Connector   string   `json:"connector"`
-	DisplayName string   `json:"display_name"`
-	Description string   `json:"description"`
-	Tags        []string `json:"tags"`
-	Commands    []string `json:"commands"`
-}
-
-type ExternalCliPresetListResponse struct {
-	Items []ExternalCliPresetSummary `json:"items"`
-}
-
-type ExternalCliCommandSummary struct {
-	Name             string   `json:"name"`
-	Description      string   `json:"description"`
-	RiskLevel        string   `json:"risk_level"`
-	ReadOnly         bool     `json:"read_only"`
-	RequiresApproval bool     `json:"requires_approval"`
-	SupportsDryRun   bool     `json:"supports_dry_run"`
-	StructuredOutput string   `json:"structured_output"`
-	Tags             []string `json:"tags"`
-}
-
-func DefaultExternalCliCommandSummary() ExternalCliCommandSummary {
-	return ExternalCliCommandSummary{
-		RiskLevel:        RiskLevelLow,
-		ReadOnly:         true,
-		StructuredOutput: OutputFormatText,
-		Tags:             []string{},
-	}
-}
-
-type ExternalCliCommandListResponse struct {
-	Connector string                      `json:"connector"`
-	Items     []ExternalCliCommandSummary `json:"items"`
-}
-
-type ExternalCliCommandSchemaResponse struct {
-	Connector          string                                 `json:"connector"`
-	Command            string                                 `json:"command"`
-	Description        string                                 `json:"description"`
-	Parameters         map[string]ExternalCliParameterOptions `json:"parameters"`
-	RequiredParameters []string                               `json:"required_parameters"`
-	RiskLevel          string                                 `json:"risk_level"`
-	ReadOnly           bool                                   `json:"read_only"`
-	RequiresApproval   bool                                   `json:"requires_approval"`
-	SupportsDryRun     bool                                   `json:"supports_dry_run"`
-	StructuredOutput   string                                 `json:"structured_output"`
-}
-
-func DefaultExternalCliCommandSchemaResponse() ExternalCliCommandSchemaResponse {
-	return ExternalCliCommandSchemaResponse{
-		Parameters:         make(map[string]ExternalCliParameterOptions),
-		RequiredParameters: []string{},
-		RiskLevel:          RiskLevelLow,
-		ReadOnly:           true,
-		StructuredOutput:   OutputFormatText,
-	}
-}
-
-type ExternalCliInvocationPreview struct {
-	Connector           string   `json:"connector"`
-	Command             string   `json:"command"`
-	Executable          string   `json:"executable"`
-	Arguments           []string `json:"arguments"`
-	RedactedArguments   []string `json:"redacted_arguments"`
-	RedactedCommandLine string   `json:"redacted_command_line"`
-	RiskLevel           string   `json:"risk_level"`
-	ReadOnly            bool     `json:"read_only"`
-	RequiresApproval    bool     `json:"requires_approval"`
-	SupportsDryRun      bool     `json:"supports_dry_run"`
-	IsDryRun            bool     `json:"is_dry_run"`
-	StructuredOutput    string   `json:"structured_output"`
-	RequiredScopes      []string `json:"required_scopes"`
-	RequiredIdentity    *string  `json:"required_identity,omitempty"`
-	WorkingDirectory    *string  `json:"working_directory,omitempty"`
-	TimeoutSeconds      int      `json:"timeout_seconds"`
-	Fingerprint         string   `json:"fingerprint"`
-	ParametersHash      string   `json:"parameters_hash"`
-	Warnings            []string `json:"warnings"`
-}
-
-func DefaultExternalCliInvocationPreview() ExternalCliInvocationPreview {
-	return ExternalCliInvocationPreview{
-		Arguments:         []string{},
-		RedactedArguments: []string{},
-		RiskLevel:         RiskLevelLow,
-		ReadOnly:          true,
-		StructuredOutput:  OutputFormatText,
-		RequiredScopes:    []string{},
-		Warnings:          []string{},
-	}
-}
-
-type ExternalCliPreviewResponse struct {
-	Preview      ExternalCliInvocationPreview `json:"preview"`
-	DryRunResult *ExternalCliExecutionResult  `json:"dry_run_result,omitempty"`
-}
-
-type ExternalCliExecutionResult struct {
-	Preview         ExternalCliInvocationPreview `json:"preview"`
-	Success         bool                         `json:"success"`
-	ExitCode        int                          `json:"exit_code"`
-	Stdout          string                       `json:"stdout"`
-	Stderr          string                       `json:"stderr"`
-	StdoutTruncated bool                         `json:"stdout_truncated"`
-	StderrTruncated bool                         `json:"stderr_truncated"`
-	TimedOut        bool                         `json:"timed_out"`
-	DurationMs      float64                      `json:"duration_ms"`
-	StartedAtUtc    time.Time                    `json:"started_at_utc"`
-	CompletedAtUtc  time.Time                    `json:"completed_at_utc"`
-	ParsedJson      *json.RawMessage             `json:"parsed_json,omitempty"`
-	ParseError      *string                      `json:"parse_error,omitempty"`
-	ErrorMessage    *string                      `json:"error_message,omitempty"`
-}
-
-type ExternalCliConnectorStatus struct {
-	Connector              string    `json:"connector"`
-	DisplayName            string    `json:"display_name"`
-	Enabled                bool      `json:"enabled"`
-	Executable             string    `json:"executable"`
-	ExecutableFound        bool      `json:"executable_found"`
-	ResolvedExecutablePath *string   `json:"resolved_executable_path,omitempty"`
-	Version                *string   `json:"version,omitempty"`
-	Authenticated          *bool     `json:"authenticated,omitempty"`
-	AuthenticationStatus   string    `json:"authentication_status"`
-	IdentitySummary        *string   `json:"identity_summary,omitempty"`
-	GrantedScopes          []string  `json:"granted_scopes"`
-	Warnings               []string  `json:"warnings"`
-	LastCheckedAtUtc       time.Time `json:"last_checked_at_utc"`
-}
-
-func DefaultExternalCliConnectorStatus() ExternalCliConnectorStatus {
-	return ExternalCliConnectorStatus{
-		AuthenticationStatus: "unknown",
-		GrantedScopes:        []string{},
-		Warnings:             []string{},
-		LastCheckedAtUtc:     time.Now().UTC(),
-	}
-}
-
-// --- Audit & Diagnostics Structs ---
-
-type ExternalCliAuditEntry struct {
-	Id                  string    `json:"id"`
-	TimestampUtc        time.Time `json:"timestamp_utc"`
-	SessionId           string    `json:"session_id"`
-	ChannelId           string    `json:"channel_id"`
-	SenderId            string    `json:"sender_id"`
-	ActorId             string    `json:"actor_id"`
-	Connector           string    `json:"connector"`
-	Command             string    `json:"command"`
-	Executable          string    `json:"executable"`
-	ArgsHash            string    `json:"args_hash"`
-	RedactedArgsPreview string    `json:"redacted_args_preview"`
-	ParametersHash      string    `json:"parameters_hash"`
-	ApprovalId          *string   `json:"approval_id,omitempty"`
-	ApprovalFingerprint *string   `json:"approval_fingerprint,omitempty"`
-	ExitCode            int       `json:"exit_code"`
-	DurationMs          float64   `json:"duration_ms"`
-	TimedOut            bool      `json:"timed_out"`
-	Failed              bool      `json:"failed"`
-	StdoutTruncated     bool      `json:"stdout_truncated"`
-	StderrTruncated     bool      `json:"stderr_truncated"`
-	RiskLevel           string    `json:"risk_level"`
-	ReadOnly            bool      `json:"read_only"`
-	WorkingDirectory    *string   `json:"working_directory,omitempty"`
-}
-
-func DefaultExternalCliAuditEntry() ExternalCliAuditEntry {
-	return ExternalCliAuditEntry{
-		TimestampUtc: time.Now().UTC(),
-		RiskLevel:    RiskLevelLow,
-	}
-}
-
-type ExternalCliRuntimeEvent struct {
-	SessionId string            `json:"session_id"`
-	ChannelId string            `json:"channel_id"`
-	SenderId  string            `json:"sender_id"`
-	Action    string            `json:"action"`
-	Severity  string            `json:"severity"`
-	Summary   string            `json:"summary"`
-	Metadata  map[string]string `json:"metadata"`
-}
-
-func DefaultExternalCliRuntimeEvent() ExternalCliRuntimeEvent {
-	return ExternalCliRuntimeEvent{
-		Severity: "info",
-		Metadata: make(map[string]string),
-	}
-}
-
-const (
-	ExternalCliPresetCatalogRepoPattern       = "^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$"
-	ExternalCliPresetCatalogNumberPattern     = "^[0-9]+$"
-	ExternalCliPresetCatalogSimpleNamePattern = "^[A-Za-z0-9_.:-]+$"
+var (
+	presetsInstance map[string]ExternalCliPresetDefinition
+	once            sync.Once
 )
 
 type ExternalCliPresetCatalog struct{}
+
+var ExternalCliPresetCatalogInstance = newExternalCliPresetCatalog()
+
+func newExternalCliPresetCatalog() *ExternalCliPresetCatalog {
+	once.Do(func() {
+		presetsInstance = buildPresets()
+	})
+	return &ExternalCliPresetCatalog{}
+}
+
+// 抽象出的公共辅助函数：提取 map 的 key 并按不区分大小写字母排序
+func getSortedKeys[V any](m map[string]V) []string {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	sort.Slice(keys, func(i, j int) bool {
+		return strings.ToLower(keys[i]) < strings.ToLower(keys[j])
+	})
+	return keys
+}
+
+func buildPresets() map[string]ExternalCliPresetDefinition {
+	m := make(map[string]ExternalCliPresetDefinition)
+
+	// =========================================================================
+	// 1. GitHub CLI ("gh")
+	// =========================================================================
+	ghCommands := map[string]ExternalCliCommandOptions{
+		"repo_view": {
+			Description:      "View repository metadata.",
+			ArgsTemplate:     []string{"repo", "view", "{{repo}}", "--json", "name,owner,description,url,isPrivate"},
+			ReadOnly:         true,
+			RiskLevel:        ExternalCliRiskLevelLow,
+			RequiresApproval: false,
+			Parameters: map[string]ExternalCliParameterOptions{
+				"repo": {Required: true, Description: "owner/repo repository name.", Pattern: ExternalCliPresetCatalogRepoPattern, AllowedValues: []string{}},
+			},
+			StructuredOutput: ExternalCliOutputFormatJson,
+			Tags:             []string{"github", "repository"},
+		},
+		"issue_list": {
+			Description:      "List repository issues.",
+			ArgsTemplate:     []string{"issue", "list", "--repo", "{{repo}}", "--json", "number,title,state,author,url,labels"},
+			ReadOnly:         true,
+			RiskLevel:        ExternalCliRiskLevelLow,
+			RequiresApproval: false,
+			Parameters: map[string]ExternalCliParameterOptions{
+				"repo": {Required: true, Description: "owner/repo repository name.", Pattern: ExternalCliPresetCatalogRepoPattern, AllowedValues: []string{}},
+			},
+			StructuredOutput: ExternalCliOutputFormatJson,
+			Tags:             []string{"github", "issues"},
+		},
+		"pr_list": {
+			Description:      "List repository pull requests.",
+			ArgsTemplate:     []string{"pr", "list", "--repo", "{{repo}}", "--json", "number,title,state,author,url,headRefName,baseRefName"},
+			ReadOnly:         true,
+			RiskLevel:        ExternalCliRiskLevelLow,
+			RequiresApproval: false,
+			Parameters: map[string]ExternalCliParameterOptions{
+				"repo": {Required: true, Description: "owner/repo repository name.", Pattern: ExternalCliPresetCatalogRepoPattern, AllowedValues: []string{}},
+			},
+			StructuredOutput: ExternalCliOutputFormatJson,
+			Tags:             []string{"github", "pull-requests"},
+		},
+		"pr_view": {
+			Description:      "View pull request metadata.",
+			ArgsTemplate:     []string{"pr", "view", "{{number}}", "--repo", "{{repo}}", "--json", "number,title,state,url,mergeStateStatus,reviewDecision,headRefName,baseRefName"},
+			ReadOnly:         true,
+			RiskLevel:        ExternalCliRiskLevelLow,
+			RequiresApproval: false,
+			Parameters: map[string]ExternalCliParameterOptions{
+				"repo":   {Required: true, Description: "owner/repo repository name.", Pattern: ExternalCliPresetCatalogRepoPattern, AllowedValues: []string{}},
+				"number": {Required: true, Description: "Pull request number.", Pattern: ExternalCliPresetCatalogNumberPattern, AllowedValues: []string{}},
+			},
+			StructuredOutput: ExternalCliOutputFormatJson,
+			Tags:             []string{"github", "pull-requests"},
+		},
+		"release_list": {
+			Description:      "List repository releases.",
+			ArgsTemplate:     []string{"release", "list", "--repo", "{{repo}}", "--json", "name,tagName,isDraft,isPrerelease,publishedAt,url"},
+			ReadOnly:         true,
+			RiskLevel:        ExternalCliRiskLevelLow,
+			RequiresApproval: false,
+			Parameters: map[string]ExternalCliParameterOptions{
+				"repo": {Required: true, Description: "owner/repo repository name.", Pattern: ExternalCliPresetCatalogRepoPattern, AllowedValues: []string{}},
+			},
+			StructuredOutput: ExternalCliOutputFormatJson,
+			Tags:             []string{"github", "releases"},
+		},
+		"issue_comment": {
+			Description:      "Add a comment to a GitHub issue or pull request.",
+			ArgsTemplate:     []string{"issue", "comment", "{{number}}", "--repo", "{{repo}}", "--body", "{{body}}"},
+			ReadOnly:         false,
+			RiskLevel:        ExternalCliRiskLevelMedium,
+			RequiresApproval: true,
+			Parameters: map[string]ExternalCliParameterOptions{
+				"repo":   {Required: true, Description: "owner/repo repository name.", Pattern: ExternalCliPresetCatalogRepoPattern, AllowedValues: []string{}},
+				"number": {Required: true, Description: "Issue or pull request number.", Pattern: ExternalCliPresetCatalogNumberPattern, AllowedValues: []string{}},
+				"body":   {Required: true, Description: "Comment body.", MaxLength: 16000, AllowedValues: []string{}},
+			},
+			StructuredOutput: "",
+			Tags:             []string{"github", "issues", "mutating"},
+		},
+	}
+
+	m["gh"] = ExternalCliPresetDefinition{
+		Summary: ExternalCliPresetSummary{
+			Id:          "gh",
+			Connector:   "gh",
+			DisplayName: "GitHub CLI",
+			Description: "Read-oriented GitHub repository, issue, pull request, and release commands.",
+			Tags:        []string{"github", "vcs"},
+			Commands:    getSortedKeys(ghCommands),
+		},
+		Connector: ExternalCliConnectorOptions{
+			Enabled:             false,
+			DisplayName:         "GitHub CLI",
+			Executable:          "gh",
+			DefaultOutputFormat: ExternalCliOutputFormatJson,
+			StatusCommand:       &ExternalCliStatusCommandOptions{Args: []string{"auth", "status"}, TimeoutSeconds: 20},
+			VersionCommand:      &ExternalCliStatusCommandOptions{Args: []string{"--version"}, TimeoutSeconds: 10},
+			Commands:            ghCommands,
+		},
+	}
+
+	// =========================================================================
+	// 2. Azure CLI ("az")
+	// =========================================================================
+	azCommands := map[string]ExternalCliCommandOptions{
+		"account_show": {
+			Description:      "Show the active Azure account.",
+			ArgsTemplate:     []string{"account", "show", "--output", "json"},
+			ReadOnly:         true,
+			RiskLevel:        ExternalCliRiskLevelLow,
+			RequiresApproval: false,
+			Parameters:       map[string]ExternalCliParameterOptions{},
+			StructuredOutput: ExternalCliOutputFormatJson,
+			Tags:             []string{"azure", "account"},
+		},
+		"group_list": {
+			Description:      "List Azure resource groups.",
+			ArgsTemplate:     []string{"group", "list", "--output", "json"},
+			ReadOnly:         true,
+			RiskLevel:        ExternalCliRiskLevelLow,
+			RequiresApproval: false,
+			Parameters:       map[string]ExternalCliParameterOptions{},
+			StructuredOutput: ExternalCliOutputFormatJson,
+			Tags:             []string{"azure", "resource-groups"},
+		},
+		"resource_list": {
+			Description:      "List Azure resources.",
+			ArgsTemplate:     []string{"resource", "list", "--output", "json"},
+			ReadOnly:         true,
+			RiskLevel:        ExternalCliRiskLevelLow,
+			RequiresApproval: false,
+			Parameters:       map[string]ExternalCliParameterOptions{},
+			StructuredOutput: ExternalCliOutputFormatJson,
+			Tags:             []string{"azure", "resources"},
+		},
+	}
+
+	m["az"] = ExternalCliPresetDefinition{
+		Summary: ExternalCliPresetSummary{
+			Id:          "az",
+			Connector:   "az",
+			DisplayName: "Azure CLI",
+			Description: "Read-only Azure account, resource group, and resource inventory commands.",
+			Tags:        []string{"azure", "cloud"},
+			Commands:    getSortedKeys(azCommands),
+		},
+		Connector: ExternalCliConnectorOptions{
+			Enabled:             false,
+			DisplayName:         "Azure CLI",
+			Executable:          "az",
+			DefaultOutputFormat: ExternalCliOutputFormatJson,
+			StatusCommand:       &ExternalCliStatusCommandOptions{Args: []string{"account", "show", "--output", "json"}, TimeoutSeconds: 20},
+			VersionCommand:      &ExternalCliStatusCommandOptions{Args: []string{"--version"}, TimeoutSeconds: 10},
+			Commands:            azCommands,
+		},
+	}
+
+	// =========================================================================
+	// 3. Kubernetes CLI ("kubectl")
+	// =========================================================================
+	kubeCommands := map[string]ExternalCliCommandOptions{
+		"current_context": {
+			Description:      "Show the current Kubernetes context.",
+			ArgsTemplate:     []string{"config", "current-context"},
+			ReadOnly:         true,
+			RiskLevel:        ExternalCliRiskLevelLow,
+			RequiresApproval: false,
+			Parameters:       map[string]ExternalCliParameterOptions{},
+			StructuredOutput: ExternalCliOutputFormatText,
+			Tags:             []string{"kubernetes", "context"},
+		},
+		"get_pods_all": {
+			Description:      "List pods in all namespaces.",
+			ArgsTemplate:     []string{"get", "pods", "--all-namespaces", "-o", "json"},
+			ReadOnly:         true,
+			RiskLevel:        ExternalCliRiskLevelLow,
+			RequiresApproval: false,
+			Parameters:       map[string]ExternalCliParameterOptions{},
+			StructuredOutput: ExternalCliOutputFormatJson,
+			Tags:             []string{"kubernetes", "pods"},
+		},
+		"get_pods": {
+			Description:      "List pods in one namespace.",
+			ArgsTemplate:     []string{"get", "pods", "--namespace", "{{namespace}}", "-o", "json"},
+			ReadOnly:         true,
+			RiskLevel:        ExternalCliRiskLevelLow,
+			RequiresApproval: false,
+			Parameters: map[string]ExternalCliParameterOptions{
+				"namespace": {Required: true, Description: "Kubernetes namespace.", Pattern: ExternalCliPresetCatalogSimpleNamePattern, AllowedValues: []string{}},
+			},
+			StructuredOutput: ExternalCliOutputFormatJson,
+			Tags:             []string{"kubernetes", "pods"},
+		},
+		"get_services_all": {
+			Description:      "List services in all namespaces.",
+			ArgsTemplate:     []string{"get", "services", "--all-namespaces", "-o", "json"},
+			ReadOnly:         true,
+			RiskLevel:        ExternalCliRiskLevelLow,
+			RequiresApproval: false,
+			Parameters:       map[string]ExternalCliParameterOptions{},
+			StructuredOutput: ExternalCliOutputFormatJson,
+			Tags:             []string{"kubernetes", "services"},
+		},
+		"get_deployments_all": {
+			Description:      "List deployments in all namespaces.",
+			ArgsTemplate:     []string{"get", "deployments", "--all-namespaces", "-o", "json"},
+			ReadOnly:         true,
+			RiskLevel:        ExternalCliRiskLevelLow,
+			RequiresApproval: false,
+			Parameters:       map[string]ExternalCliParameterOptions{},
+			StructuredOutput: ExternalCliOutputFormatJson,
+			Tags:             []string{"kubernetes", "deployments"},
+		},
+	}
+
+	m["kubectl"] = ExternalCliPresetDefinition{
+		Summary: ExternalCliPresetSummary{
+			Id:          "kubectl",
+			Connector:   "kubectl",
+			DisplayName: "kubectl",
+			Description: "Read-only Kubernetes context and workload inventory commands.",
+			Tags:        []string{"kubernetes", "cluster"},
+			Commands:    getSortedKeys(kubeCommands),
+		},
+		Connector: ExternalCliConnectorOptions{
+			Enabled:             false,
+			DisplayName:         "kubectl",
+			Executable:          "kubectl",
+			DefaultOutputFormat: ExternalCliOutputFormatJson,
+			StatusCommand:       &ExternalCliStatusCommandOptions{Args: []string{"config", "current-context"}, TimeoutSeconds: 10},
+			VersionCommand:      &ExternalCliStatusCommandOptions{Args: []string{"version", "--client=true", "-o", "json"}, TimeoutSeconds: 15},
+			Commands:            kubeCommands,
+		},
+	}
+
+	// =========================================================================
+	// 4. Stripe CLI ("stripe")
+	// =========================================================================
+	stripeCommands := map[string]ExternalCliCommandOptions{
+		"version": {
+			Description:      "Show Stripe CLI version.",
+			ArgsTemplate:     []string{"--version"},
+			ReadOnly:         true,
+			RiskLevel:        ExternalCliRiskLevelLow,
+			RequiresApproval: false,
+			Parameters:       map[string]ExternalCliParameterOptions{},
+			StructuredOutput: ExternalCliOutputFormatText,
+			Tags:             []string{"stripe", "diagnostics"},
+		},
+		"customers_list": {
+			Description:      "List Stripe customers with a small limit. Customer data can contain PII.",
+			ArgsTemplate:     []string{"customers", "list", "--limit", "{{limit}}"},
+			ReadOnly:         true,
+			RiskLevel:        ExternalCliRiskLevelMedium,
+			RequiresApproval: true,
+			Parameters: map[string]ExternalCliParameterOptions{
+				"limit": {Required: true, Description: "Maximum customers to list.", Pattern: ExternalCliPresetCatalogNumberPattern, AllowedValues: []string{}},
+			},
+			StructuredOutput: ExternalCliOutputFormatText,
+			Tags:             []string{"stripe", "customers", "pii"},
+		},
+	}
+
+	m["stripe"] = ExternalCliPresetDefinition{
+		Summary: ExternalCliPresetSummary{
+			Id:          "stripe",
+			Connector:   "stripe",
+			DisplayName: "Stripe CLI",
+			Description: "Conservative Stripe CLI commands with PII-bearing reads approval-gated.",
+			Tags:        []string{"stripe", "payments"},
+			Commands:    getSortedKeys(stripeCommands),
+		},
+		Connector: ExternalCliConnectorOptions{
+			Enabled:             false,
+			DisplayName:         "Stripe CLI",
+			Executable:          "stripe",
+			DefaultOutputFormat: ExternalCliOutputFormatText,
+			VersionCommand:      &ExternalCliStatusCommandOptions{Args: []string{"--version"}, TimeoutSeconds: 10},
+			Commands:            stripeCommands,
+		},
+	}
+
+	// =========================================================================
+	// 5. Lark CLI ("lark")
+	// =========================================================================
+	larkCommands := map[string]ExternalCliCommandOptions{
+		"auth_status": {
+			Description:      "Show Lark CLI authentication status.",
+			ArgsTemplate:     []string{"auth", "status"},
+			ReadOnly:         true,
+			RiskLevel:        ExternalCliRiskLevelLow,
+			RequiresApproval: false,
+			Parameters:       map[string]ExternalCliParameterOptions{},
+			StructuredOutput: ExternalCliOutputFormatJson,
+			Tags:             []string{"lark", "auth"},
+		},
+		"docs_search": {
+			Description:      "Search Lark docs.",
+			ArgsTemplate:     []string{"docs", "search", "{{query}}", "--output", "json"},
+			ReadOnly:         true,
+			RiskLevel:        ExternalCliRiskLevelLow,
+			RequiresApproval: false,
+			Parameters: map[string]ExternalCliParameterOptions{
+				"query": {Required: true, Description: "Search query.", MaxLength: 500, AllowedValues: []string{}},
+			},
+			StructuredOutput: ExternalCliOutputFormatJson,
+			Tags:             []string{"lark", "docs"},
+		},
+		"docs_read": {
+			Description:      "Read a Lark document.",
+			ArgsTemplate:     []string{"docs", "read", "{{document_id}}", "--output", "json"},
+			ReadOnly:         true,
+			RiskLevel:        ExternalCliRiskLevelLow,
+			RequiresApproval: false,
+			Parameters: map[string]ExternalCliParameterOptions{
+				"document_id": {Required: true, Description: "Lark document identifier.", Pattern: ExternalCliPresetCatalogSimpleNamePattern, AllowedValues: []string{}},
+			},
+			StructuredOutput: ExternalCliOutputFormatJson,
+			Tags:             []string{"lark", "docs"},
+		},
+		"sheets_read": {
+			Description:      "Read a Lark sheet range.",
+			ArgsTemplate:     []string{"sheets", "read", "{{sheet_id}}", "{{range}}", "--output", "json"},
+			ReadOnly:         true,
+			RiskLevel:        ExternalCliRiskLevelLow,
+			RequiresApproval: false,
+			Parameters: map[string]ExternalCliParameterOptions{
+				"sheet_id": {Required: true, Description: "Lark sheet identifier.", Pattern: ExternalCliPresetCatalogSimpleNamePattern, AllowedValues: []string{}},
+				"range":    {Required: true, Description: "Sheet range.", MaxLength: 200, AllowedValues: []string{}},
+			},
+			StructuredOutput: ExternalCliOutputFormatJson,
+			Tags:             []string{"lark", "sheets"},
+		},
+		"message_send": {
+			Description:      "Send a Lark message.",
+			ArgsTemplate:     []string{"messages", "send", "--chat", "{{chat_id}}", "--text", "{{text}}", "--output", "json"},
+			ReadOnly:         false,
+			RiskLevel:        ExternalCliRiskLevelMedium,
+			RequiresApproval: true,
+			Parameters: map[string]ExternalCliParameterOptions{
+				"chat_id": {Required: true, Description: "Lark chat identifier.", Pattern: ExternalCliPresetCatalogSimpleNamePattern, AllowedValues: []string{}},
+				"text":    {Required: true, Description: "Message text.", MaxLength: 4000, AllowedValues: []string{}},
+			},
+			StructuredOutput: ExternalCliOutputFormatJson,
+			Tags:             []string{"lark", "messages", "mutating"},
+		},
+	}
+
+	m["lark"] = ExternalCliPresetDefinition{
+		Summary: ExternalCliPresetSummary{
+			Id:          "lark",
+			Connector:   "lark",
+			DisplayName: "Lark CLI",
+			Description: "Generic lark-cli compatible templates for auth checks, docs, sheets, and guarded sends.",
+			Tags:        []string{"lark", "feishu", "collaboration"},
+			Commands:    getSortedKeys(larkCommands),
+		},
+		Connector: ExternalCliConnectorOptions{
+			Enabled:             false,
+			DisplayName:         "Lark CLI",
+			Executable:          "lark-cli",
+			DefaultOutputFormat: ExternalCliOutputFormatJson,
+			StatusCommand:       &ExternalCliStatusCommandOptions{Args: []string{"auth", "status"}, TimeoutSeconds: 20},
+			VersionCommand:      &ExternalCliStatusCommandOptions{Args: []string{"--version"}, TimeoutSeconds: 10},
+			Commands:            larkCommands,
+		},
+	}
+
+	// =========================================================================
+	// 6. GitHub Copilot CLI ("github-copilot")
+	// =========================================================================
+	copilotCommands := map[string]ExternalCliCommandOptions{
+		"version": {
+			Description:      "Show GitHub Copilot CLI version.",
+			ArgsTemplate:     []string{"version"},
+			ReadOnly:         true,
+			RiskLevel:        ExternalCliRiskLevelLow,
+			RequiresApproval: false,
+			Parameters:       map[string]ExternalCliParameterOptions{},
+			StructuredOutput: ExternalCliOutputFormatText,
+			Tags:             []string{"github", "copilot", "diagnostics"},
+		},
+		"prompt": {
+			Description:      "Run a non-interactive GitHub Copilot CLI prompt.",
+			ArgsTemplate:     []string{"-p", "{{prompt}}"},
+			ReadOnly:         false,
+			RiskLevel:        ExternalCliRiskLevelHigh,
+			RequiresApproval: true,
+			Parameters: map[string]ExternalCliParameterOptions{
+				"prompt": {Required: true, Description: "Prompt to send to GitHub Copilot CLI.", MaxLength: 8000, AllowedValues: []string{}},
+			},
+			StructuredOutput: "",
+			Tags:             []string{"github", "copilot", "ai-agent"},
+		},
+	}
+
+	m["github-copilot"] = ExternalCliPresetDefinition{
+		Summary: ExternalCliPresetSummary{
+			Id:          "github-copilot",
+			Connector:   "github-copilot",
+			DisplayName: "GitHub Copilot CLI",
+			Description: "GitHub Copilot CLI non-interactive prompt and diagnostic commands.",
+			Tags:        []string{"github", "copilot", "ai"},
+			Commands:    getSortedKeys(copilotCommands),
+		},
+		Connector: ExternalCliConnectorOptions{
+			Enabled:             false,
+			DisplayName:         "GitHub Copilot CLI",
+			Executable:          "copilot",
+			DefaultOutputFormat: ExternalCliOutputFormatText,
+			VersionCommand:      &ExternalCliStatusCommandOptions{Args: []string{"version"}, TimeoutSeconds: 10},
+			Commands:            copilotCommands,
+		},
+	}
+
+	// =========================================================================
+	// 7. Codex CLI ("codex")
+	// =========================================================================
+	codexCommands := map[string]ExternalCliCommandOptions{
+		"version": {
+			Description:      "Show Codex CLI version.",
+			ArgsTemplate:     []string{"--version"},
+			ReadOnly:         true,
+			RiskLevel:        ExternalCliRiskLevelLow,
+			RequiresApproval: false,
+			Parameters:       map[string]ExternalCliParameterOptions{},
+			StructuredOutput: ExternalCliOutputFormatText,
+			Tags:             []string{"codex", "diagnostics"},
+		},
+		"exec_readonly": {
+			Description:      "Run Codex non-interactively in an explicit read-only sandbox.",
+			ArgsTemplate:     []string{"exec", "--sandbox", "read-only", "{{prompt}}"},
+			ReadOnly:         true,
+			RiskLevel:        ExternalCliRiskLevelMedium,
+			RequiresApproval: true,
+			Parameters: map[string]ExternalCliParameterOptions{
+				"prompt": {Required: true, Description: "Prompt to send to Codex CLI.", MaxLength: 8000, AllowedValues: []string{}},
+			},
+			StructuredOutput: "",
+			Tags:             []string{"codex", "ai-agent"},
+		},
+		"exec_readonly_json": {
+			Description:      "Run Codex non-interactively with JSON Lines events in a read-only sandbox.",
+			ArgsTemplate:     []string{"exec", "--sandbox", "read-only", "--json", "{{prompt}}"},
+			ReadOnly:         true,
+			RiskLevel:        ExternalCliRiskLevelMedium,
+			RequiresApproval: true,
+			Parameters: map[string]ExternalCliParameterOptions{
+				"prompt": {Required: true, Description: "Prompt to send to Codex CLI.", MaxLength: 8000, AllowedValues: []string{}},
+			},
+			StructuredOutput: ExternalCliOutputFormatNdjson,
+			Tags:             []string{"codex", "ai-agent", "jsonl"},
+		},
+		"exec_workspace_write": {
+			Description:      "Run Codex non-interactively with workspace-write sandboxing.",
+			ArgsTemplate:     []string{"exec", "--sandbox", "workspace-write", "{{prompt}}"},
+			ReadOnly:         false,
+			RiskLevel:        ExternalCliRiskLevelHigh,
+			RequiresApproval: true,
+			Parameters: map[string]ExternalCliParameterOptions{
+				"prompt": {Required: true, Description: "Prompt to send to Codex CLI.", MaxLength: 8000, AllowedValues: []string{}},
+			},
+			StructuredOutput: "",
+			Tags:             []string{"codex", "ai-agent", "mutating"},
+		},
+	}
+
+	m["codex"] = ExternalCliPresetDefinition{
+		Summary: ExternalCliPresetSummary{
+			Id:          "codex",
+			Connector:   "codex",
+			DisplayName: "Codex CLI",
+			Description: "Codex CLI non-interactive exec commands with explicit sandbox choices.",
+			Tags:        []string{"codex", "openai", "ai"},
+			Commands:    getSortedKeys(codexCommands),
+		},
+		Connector: ExternalCliConnectorOptions{
+			Enabled:             false,
+			DisplayName:         "Codex CLI",
+			Executable:          "codex",
+			DefaultOutputFormat: ExternalCliOutputFormatText,
+			VersionCommand:      &ExternalCliStatusCommandOptions{Args: []string{"--version"}, TimeoutSeconds: 10},
+			Commands:            codexCommands,
+		},
+	}
+
+	// =========================================================================
+	// 8. Gemini CLI ("gemini")
+	// =========================================================================
+	geminiCommands := map[string]ExternalCliCommandOptions{
+		"version": {
+			Description:      "Show Gemini CLI version.",
+			ArgsTemplate:     []string{"--version"},
+			ReadOnly:         true,
+			RiskLevel:        ExternalCliRiskLevelLow,
+			RequiresApproval: false,
+			Parameters:       map[string]ExternalCliParameterOptions{},
+			StructuredOutput: ExternalCliOutputFormatText,
+			Tags:             []string{"gemini", "diagnostics"},
+		},
+		"prompt": {
+			Description:      "Run a non-interactive Gemini CLI prompt.",
+			ArgsTemplate:     []string{"-p", "{{prompt}}"},
+			ReadOnly:         false,
+			RiskLevel:        ExternalCliRiskLevelHigh,
+			RequiresApproval: true,
+			Parameters: map[string]ExternalCliParameterOptions{
+				"prompt": {Required: true, Description: "Prompt to send to Gemini CLI.", MaxLength: 8000, AllowedValues: []string{}},
+			},
+			StructuredOutput: "",
+			Tags:             []string{"gemini", "ai-agent"},
+		},
+	}
+
+	m["gemini"] = ExternalCliPresetDefinition{
+		Summary: ExternalCliPresetSummary{
+			Id:          "gemini",
+			Connector:   "gemini",
+			DisplayName: "Gemini CLI",
+			Description: "Gemini CLI non-interactive prompt and diagnostic commands.",
+			Tags:        []string{"gemini", "google", "ai"},
+			Commands:    getSortedKeys(geminiCommands),
+		},
+		Connector: ExternalCliConnectorOptions{
+			Enabled:             false,
+			DisplayName:         "Gemini CLI",
+			Executable:          "gemini",
+			DefaultOutputFormat: ExternalCliOutputFormatText,
+			VersionCommand:      &ExternalCliStatusCommandOptions{Args: []string{"--version"}, TimeoutSeconds: 10},
+			Commands:            geminiCommands,
+		},
+	}
+
+	return m
+}
+
+func (*ExternalCliPresetCatalog) riskRank(risk string) int {
+	switch NormalizeRiskLevel(risk) {
+	case ExternalCliRiskLevelHigh:
+		return 3
+	case ExternalCliRiskLevelMedium:
+		return 2
+	default:
+		return 1
+	}
+}
+
+func (e *ExternalCliPresetCatalog) maxRisk(left, right string) string {
+	var normalizedLeft = NormalizeRiskLevel(left)
+	var normalizedRight = NormalizeRiskLevel(right)
+	if e.riskRank(normalizedRight) > e.riskRank(normalizedLeft) {
+		return normalizedRight
+	}
+	return normalizedLeft
+}
+
+func (e *ExternalCliPresetCatalog) prefer(configured, preset string) string {
+	if isBlank(configured) {
+		return preset
+	}
+	return configured
+}
+
+func (e *ExternalCliPresetCatalog) mergeStringSet(preset, configured []string) []string {
+	preset = append(preset, configured...)
+	result := []string{}
+	tmp := map[string]struct{}{}
+	for _, v := range preset {
+		if isBlank(v) {
+			continue
+		}
+
+		if _, ok := tmp[v]; ok {
+			continue
+		}
+		tmp[v] = struct{}{}
+		result = append(result, v)
+	}
+	return result
+}
+
+func (e *ExternalCliPresetCatalog) mergeDictionary(preset, configured map[string]string) map[string]string {
+	maps.Copy(preset, configured)
+	return preset
+}
+
+func (e *ExternalCliPresetCatalog) mergeParameter(preset, configured ExternalCliParameterOptions) ExternalCliParameterOptions {
+	result := ExternalCliParameterOptions{
+		Required:      preset.Required || configured.Required,
+		Description:   e.prefer(configured.Description, preset.Description),
+		MaxLength:     configured.MaxLength,
+		Pattern:       e.prefer(configured.Pattern, preset.Pattern),
+		AllowedValues: configured.AllowedValues,
+	}
+
+	if result.MaxLength == 0 {
+		result.MaxLength = preset.MaxLength
+	}
+
+	if len(result.AllowedValues) == 0 {
+		result.AllowedValues = preset.AllowedValues
+	}
+
+	return result
+}
+
+func (e *ExternalCliPresetCatalog) cloneParameter(source ExternalCliParameterOptions) ExternalCliParameterOptions {
+	if source.AllowedValues != nil {
+		source.AllowedValues = slices.Clone(source.AllowedValues)
+	}
+	return source
+}
+
+func (e *ExternalCliPresetCatalog) cloneParameters(source map[string]ExternalCliParameterOptions) map[string]ExternalCliParameterOptions {
+	if source == nil {
+		return nil
+	}
+
+	result := make(map[string]ExternalCliParameterOptions, len(source))
+	for name, parameter := range source {
+		result[name] = e.cloneParameter(parameter)
+	}
+
+	return result
+}
+
+func (e *ExternalCliPresetCatalog) mergeParameters(preset, configured map[string]ExternalCliParameterOptions) map[string]ExternalCliParameterOptions {
+	var result = e.cloneParameters(preset)
+	for name, parameter := range configured {
+		presetParameter, ok := result[name]
+		if ok {
+			result[name] = e.mergeParameter(presetParameter, parameter)
+		} else {
+			result[name] = e.cloneParameter(parameter)
+		}
+	}
+
+	return result
+}
+
+func (e *ExternalCliPresetCatalog) cloneStatusCommand(source *ExternalCliStatusCommandOptions) *ExternalCliStatusCommandOptions {
+	if source == nil {
+		return nil
+	}
+
+	return &ExternalCliStatusCommandOptions{
+		Args:           slices.Clone(source.Args),
+		TimeoutSeconds: source.TimeoutSeconds,
+	}
+}
+
+func (e *ExternalCliPresetCatalog) mergeStatusCommand(preset, configured *ExternalCliStatusCommandOptions) *ExternalCliStatusCommandOptions {
+	if preset == nil {
+		return e.cloneStatusCommand(configured)
+	}
+
+	if configured == nil {
+		return e.cloneStatusCommand(preset)
+	}
+
+	result := &ExternalCliStatusCommandOptions{
+		Args:           slices.Clone(configured.Args),
+		TimeoutSeconds: configured.TimeoutSeconds,
+	}
+
+	if len(result.Args) == 0 {
+		result.Args = slices.Clone(preset.Args)
+	}
+
+	if result.TimeoutSeconds == 0 {
+		result.TimeoutSeconds = preset.TimeoutSeconds
+	}
+
+	return result
+}
+
+func (e *ExternalCliPresetCatalog) cloneCommand(source ExternalCliCommandOptions) ExternalCliCommandOptions {
+	result := ExternalCliCommandOptions{
+		Description:            source.Description,
+		ArgsTemplate:           slices.Clone(source.ArgsTemplate),
+		Parameters:             e.cloneParameters(source.Parameters),
+		AllowUnknownParameters: source.AllowUnknownParameters,
+		RiskLevel:              source.RiskLevel,
+		ReadOnly:               source.ReadOnly,
+		RequiresApproval:       source.RequiresApproval,
+		SupportsDryRun:         source.SupportsDryRun,
+		DryRunArgsTemplate:     slices.Clone(source.DryRunArgsTemplate),
+		StructuredOutput:       source.StructuredOutput,
+		TimeoutSeconds:         source.TimeoutSeconds,
+		WorkingDirectory:       source.WorkingDirectory,
+		RedactionRules:         slices.Clone(source.RedactionRules),
+		RequiredScopes:         slices.Clone(source.RequiredScopes),
+		RequiredIdentity:       source.RequiredIdentity,
+		Tags:                   slices.Clone(source.Tags),
+	}
+
+	result.Environment = maps.Clone(source.Environment)
+	return result
+}
+
+func (e *ExternalCliPresetCatalog) mergeConnector(preset, configured ExternalCliConnectorOptions) ExternalCliConnectorOptions {
+	commands := e.cloneCommands(preset.Commands)
+	for name, command := range configured.Commands {
+		lowerName := strings.ToLower(name)
+		if presetCommand, exists := commands[lowerName]; exists {
+			commands[lowerName] = e.mergeCommand(presetCommand, command)
+		} else {
+			commands[lowerName] = e.cloneCommand(command)
+		}
+	}
+
+	var defaultArgs []string
+	if len(configured.DefaultArgs) > 0 {
+		defaultArgs = slices.Clone(configured.DefaultArgs)
+	} else {
+		defaultArgs = slices.Clone(preset.DefaultArgs)
+	}
+
+	return ExternalCliConnectorOptions{
+		Enabled:             preset.Enabled || configured.Enabled,
+		DisplayName:         e.prefer(configured.DisplayName, preset.DisplayName),
+		Executable:          e.prefer(configured.Executable, preset.Executable),
+		DefaultArgs:         defaultArgs,
+		WorkingDirectory:    e.preferNullable(configured.WorkingDirectory, preset.WorkingDirectory),
+		Environment:         e.mergeDictionary(preset.Environment, configured.Environment),
+		StatusCommand:       e.mergeStatusCommand(preset.StatusCommand, configured.StatusCommand),
+		VersionCommand:      e.mergeStatusCommand(preset.VersionCommand, configured.VersionCommand),
+		DefaultOutputFormat: e.prefer(configured.DefaultOutputFormat, preset.DefaultOutputFormat),
+		RequiresApproval:    preset.RequiresApproval || configured.RequiresApproval,
+		RedactionRules:      e.mergeStringSet(preset.RedactionRules, configured.RedactionRules),
+		Commands:            commands,
+	}
+}
+
+func (e *ExternalCliPresetCatalog) mergeCommand(preset ExternalCliCommandOptions, configured ExternalCliCommandOptions) ExternalCliCommandOptions {
+	var argsTemplate []string
+	if len(configured.ArgsTemplate) > 0 {
+		argsTemplate = slices.Clone(configured.ArgsTemplate)
+	} else {
+		argsTemplate = slices.Clone(preset.ArgsTemplate)
+	}
+
+	var dryRunArgsTemplate []string
+	if len(configured.DryRunArgsTemplate) > 0 {
+		dryRunArgsTemplate = slices.Clone(configured.DryRunArgsTemplate)
+	} else {
+		dryRunArgsTemplate = slices.Clone(preset.DryRunArgsTemplate)
+	}
+
+	return ExternalCliCommandOptions{
+		Description:            e.prefer(configured.Description, preset.Description),
+		ArgsTemplate:           argsTemplate,
+		Parameters:             e.mergeParameters(preset.Parameters, configured.Parameters),
+		AllowUnknownParameters: preset.AllowUnknownParameters || configured.AllowUnknownParameters,
+		RiskLevel:              e.maxRisk(preset.RiskLevel, configured.RiskLevel),
+		ReadOnly:               preset.ReadOnly && configured.ReadOnly,
+		RequiresApproval:       preset.RequiresApproval || configured.RequiresApproval,
+		SupportsDryRun:         preset.SupportsDryRun || configured.SupportsDryRun,
+		DryRunArgsTemplate:     dryRunArgsTemplate,
+		StructuredOutput:       e.prefer(configured.StructuredOutput, preset.StructuredOutput),
+		TimeoutSeconds:         e.preferOptionalInt(configured.TimeoutSeconds, preset.TimeoutSeconds),
+		WorkingDirectory:       e.preferNullable(configured.WorkingDirectory, preset.WorkingDirectory),
+		Environment:            e.mergeDictionary(preset.Environment, configured.Environment),
+		RedactionRules:         e.mergeStringSet(preset.RedactionRules, configured.RedactionRules),
+		RequiredScopes:         e.mergeStringSet(preset.RequiredScopes, configured.RequiredScopes),
+		RequiredIdentity:       e.preferNullable(configured.RequiredIdentity, preset.RequiredIdentity),
+		Tags:                   e.mergeStringSet(preset.Tags, configured.Tags),
+	}
+}
+
+func (e *ExternalCliPresetCatalog) preferNullable(one *string, two *string) *string {
+	if one != nil {
+		return one
+	}
+
+	return two
+}
+
+func (e *ExternalCliPresetCatalog) preferOptionalInt(one *int, two *int) *int {
+	if one != nil {
+		return one
+	}
+	return two
+}
+
+func (e *ExternalCliPresetCatalog) cloneConnector(source ExternalCliConnectorOptions) ExternalCliConnectorOptions {
+	return ExternalCliConnectorOptions{
+		Enabled:             source.Enabled,
+		DisplayName:         source.DisplayName,
+		Executable:          source.Executable,
+		DefaultArgs:         slices.Clone(source.DefaultArgs),
+		WorkingDirectory:    source.WorkingDirectory,
+		Environment:         maps.Clone(source.Environment),
+		StatusCommand:       e.cloneStatusCommand(source.StatusCommand),
+		VersionCommand:      e.cloneStatusCommand(source.VersionCommand),
+		DefaultOutputFormat: source.DefaultOutputFormat,
+		RequiresApproval:    source.RequiresApproval,
+		RedactionRules:      slices.Clone(source.RedactionRules),
+		Commands:            e.cloneCommands(source.Commands),
+	}
+}
+
+func (e *ExternalCliPresetCatalog) cloneCommands(source map[string]ExternalCliCommandOptions) map[string]ExternalCliCommandOptions {
+	result := make(map[string]ExternalCliCommandOptions, len(source))
+	for name, command := range source {
+		result[strings.ToLower(name)] = e.cloneCommand(command)
+	}
+	return result
+}
+
+func (e *ExternalCliPresetCatalog) Apply(options ExternalCliOptions) ExternalCliOptions {
+	var effective = ExternalCliOptions{
+		Enabled:                            options.Enabled,
+		DefaultTimeoutSeconds:              options.DefaultTimeoutSeconds,
+		MaxStdoutBytes:                     options.MaxStdoutBytes,
+		MaxStderrBytes:                     options.MaxStderrBytes,
+		RedactSecrets:                      options.RedactSecrets,
+		AllowFreeformCommands:              options.AllowFreeformCommands,
+		RequireApprovalForMutatingCommands: options.RequireApprovalForMutatingCommands,
+		Connectors:                         map[string]ExternalCliConnectorOptions{},
+	}
+
+	effective.Presets = slices.Clone(options.Presets)
+	once.Do(func() {
+		presetsInstance = buildPresets()
+	})
+	for _, id := range options.Presets {
+		if preset, ok := presetsInstance[id]; ok {
+			effective.Connectors[preset.Summary.Connector] = e.cloneConnector(preset.Connector)
+		}
+	}
+	for name, connector := range options.Connectors {
+		presetConnector, ok := effective.Connectors[name]
+		if ok {
+			effective.Connectors[name] = e.mergeConnector(presetConnector, connector)
+		} else {
+			effective.Connectors[name] = e.cloneConnector(connector)
+		}
+	}
+
+	return effective
+}
+
+func (e *ExternalCliPresetCatalog) FindUnknownPresetIds(options ExternalCliOptions) []string {
+	once.Do(func() {
+		presetsInstance = buildPresets()
+	})
+	result := []string{}
+	tmp := map[string]struct{}{}
+	for _, id := range options.Presets {
+		if _, ok := presetsInstance[id]; !ok {
+			if _, f := tmp[id]; !f {
+				result = append(result, id)
+				tmp[id] = struct{}{}
+			}
+		}
+	}
+
+	slices.Sort(result)
+	return result
+}
+
+func (e *ExternalCliPresetCatalog) TryGet(id string) *ExternalCliPresetSummary {
+	once.Do(func() {
+		presetsInstance = buildPresets()
+	})
+
+	if preset, ok := presetsInstance[id]; ok {
+		return &preset.Summary
+	}
+
+	return nil
+}
+
+func (e *ExternalCliPresetCatalog) List() []ExternalCliPresetSummary {
+	once.Do(func() {
+		presetsInstance = buildPresets()
+	})
+
+	result := make([]ExternalCliPresetSummary, 0, len(presetsInstance))
+	for _, v := range presetsInstance {
+		result = append(result, v.Summary)
+	}
+
+	slices.SortFunc(result, func(a, b ExternalCliPresetSummary) int {
+		return cmp.Compare(a.Id, b.Id)
+	})
+
+	return result
+}
