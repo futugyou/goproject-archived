@@ -13,6 +13,55 @@ type PostgresFeatureStore struct {
 	db *gorm.DB
 }
 
+// AppendBackendEvent implements [IBackendSessionStore].
+func (s *PostgresFeatureStore) AppendBackendEvent(ctx context.Context, evt BackendEvent) error {
+	return s.db.WithContext(ctx).
+		Clauses(clause.OnConflict{
+			Columns:   []clause.Column{{Name: "session_id"}, {Name: "sequence"}},
+			UpdateAll: true,
+		}).
+		Create(&evt).Error
+}
+
+// DeleteBackendSession implements [IBackendSessionStore].
+func (s *PostgresFeatureStore) DeleteBackendSession(ctx context.Context, sessionID string) error {
+	_, err := gorm.G[BackendSessionRecord](s.db).Where("session_id = ?", sessionID).Delete(ctx)
+	return err
+}
+
+// GetBackendSession implements [IBackendSessionStore].
+func (s *PostgresFeatureStore) GetBackendSession(ctx context.Context, sessionID string) (*BackendSessionRecord, error) {
+	ad, err := gorm.G[BackendSessionRecord](s.db).Where("session_id = ?", sessionID).First(ctx)
+	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, err
+	}
+	return &ad, err
+}
+
+// ListBackendEvents implements [IBackendSessionStore].
+func (s *PostgresFeatureStore) ListBackendEvents(ctx context.Context, sessionID string, afterSequence int64, limit int) ([]BackendEvent, error) {
+	return gorm.G[BackendEvent](s.db).Where("session_id = ?", sessionID).Where("sequence >= ?", afterSequence).Limit(limit).Find(ctx)
+}
+
+// ListBackendSessions implements [IBackendSessionStore].
+func (s *PostgresFeatureStore) ListBackendSessions(ctx context.Context, backendID *string) ([]BackendSessionRecord, error) {
+	if isBlankP(backendID) {
+		return gorm.G[BackendSessionRecord](s.db).Find(ctx)
+	} else {
+		return gorm.G[BackendSessionRecord](s.db).Where("backend_id = ?", *backendID).Find(ctx)
+	}
+}
+
+// SaveBackendSession implements [IBackendSessionStore].
+func (s *PostgresFeatureStore) SaveBackendSession(ctx context.Context, session BackendSessionRecord) error {
+	return s.db.WithContext(ctx).
+		Clauses(clause.OnConflict{
+			Columns:   []clause.Column{{Name: "session_id"}},
+			UpdateAll: true,
+		}).
+		Create(&session).Error
+}
+
 // DeleteAccount implements [IConnectedAccountStore].
 func (s *PostgresFeatureStore) DeleteAccount(ctx context.Context, accountID string) error {
 	_, err := gorm.G[ConnectedAccount](s.db).Where("id = ?", accountID).Delete(ctx)
@@ -211,3 +260,4 @@ var _ IAutomationStore = (*PostgresFeatureStore)(nil)
 var _ IUserProfileStore = (*PostgresFeatureStore)(nil)
 var _ ILearningProposalStore = (*PostgresFeatureStore)(nil)
 var _ IConnectedAccountStore = (*PostgresFeatureStore)(nil)
+var _ IBackendSessionStore = (*PostgresFeatureStore)(nil)
