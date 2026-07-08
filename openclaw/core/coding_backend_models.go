@@ -6,6 +6,48 @@ import (
 	"time"
 )
 
+type BackendEventType string
+
+const (
+	EventAssistantMessage     BackendEventType = "assistant_message"
+	EventStdoutOutput         BackendEventType = "stdout_output"
+	EventStderrOutput         BackendEventType = "stderr_output"
+	EventToolCallRequested    BackendEventType = "tool_call_requested"
+	EventShellCommandProposed BackendEventType = "shell_command_proposed"
+	EventShellCommandExecuted BackendEventType = "shell_command_executed"
+	EventPatchProposed        BackendEventType = "patch_proposed"
+	EventPatchApplied         BackendEventType = "patch_applied"
+	EventFileRead             BackendEventType = "file_read"
+	EventFileWrite            BackendEventType = "file_write"
+	EventError                BackendEventType = "error"
+	EventSessionCompleted     BackendEventType = "session_completed"
+)
+
+// BackendEvent 扁平化的事件结构体
+type BackendEvent struct {
+	// 基础字段
+	SessionID    string           `json:"session_id" gorm:"column:session_id;not null"`
+	Sequence     int64            `json:"sequence" gorm:"column:sequence;not null"`
+	TimestampUtc time.Time        `json:"timestamp_utc" gorm:"column:timestamp_utc;not null"`
+	RawLine      *string          `json:"raw_line,omitempty" gorm:"column:raw_line"`
+	Type         BackendEventType `json:"type" gorm:"column:type;not null"` // 额外的类型字段
+
+	// 派生事件的聚合字段 (使用指针以支持数据库/JSON 中的 NULL/omitempty)
+	Text          *string `json:"text,omitempty" gorm:"column:text"`
+	ToolName      *string `json:"tool_name,omitempty" gorm:"column:tool_name"`
+	ArgumentsJSON *string `json:"arguments_json,omitempty" gorm:"column:arguments_json"`
+	Command       *string `json:"command,omitempty" gorm:"column:command"`
+	ExitCode      *int    `json:"exit_code,omitempty" gorm:"column:exit_code"`
+	Stdout        *string `json:"stdout,omitempty" gorm:"column:stdout"`
+	Stderr        *string `json:"stderr,omitempty" gorm:"column:stderr"`
+	Path          *string `json:"path,omitempty" gorm:"column:path"`
+	Patch         *string `json:"patch,omitempty" gorm:"column:patch"`
+	Summary       *string `json:"summary,omitempty" gorm:"column:summary"`
+	Message       *string `json:"message,omitempty" gorm:"column:message"`
+	Reason        *string `json:"reason,omitempty" gorm:"column:reason"`
+}
+
+// Deprecated: Use BackendEvent struct
 type IBackendEvent interface {
 	GetBase() *BackendEventBase
 }
@@ -511,12 +553,6 @@ type IntegrationBackendResponse struct {
 
 type IntegrationBackendSessionResponse struct {
 	Session *BackendSessionRecord `json:"session,omitempty"`
-}
-
-type BackendEvent struct {
-	Sequence int64  `json:"sequence"`
-	Type     string `json:"type"`
-	Payload  string `json:"payload"`
 }
 
 type IntegrationBackendEventsResponse struct {
