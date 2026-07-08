@@ -38,6 +38,7 @@ func main() {
 		&core.BackendSessionRecord{},
 		&core.BackendEvent{},
 		&core.EvidenceBundle{},
+		&core.GovernanceLedgerEntry{},
 	)
 
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
