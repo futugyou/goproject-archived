@@ -15,6 +15,8 @@ import (
 	"strings"
 
 	"github.com/google/uuid"
+	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 var _ IEvidenceBundleStore = (*FileEvidenceBundleStore)(nil)
@@ -340,4 +342,94 @@ type interfaceReader struct {
 
 func (i interfaceReader) Read(p []byte) (int, error) {
 	return i.readFn(p)
+}
+
+var _ IEvidenceBundleStore = (*PostgresEvidenceBundleStore)(nil)
+
+type PostgresEvidenceBundleStore struct {
+	db *gorm.DB
+}
+
+func NewPostgresEvidenceBundleStore(db *gorm.DB) *PostgresEvidenceBundleStore {
+	store := &PostgresEvidenceBundleStore{db: db}
+	if err := store.initialize(); err != nil {
+		return nil
+	}
+	return store
+}
+
+func (s *PostgresEvidenceBundleStore) initialize() error {
+	return s.db.AutoMigrate(
+		&EvidenceBundle{},
+	)
+}
+
+// Delete implements [IEvidenceBundleStore].
+func (p *PostgresEvidenceBundleStore) Delete(ctx context.Context, id string) error {
+	_, err := gorm.G[EvidenceBundle](p.db).Where("id = ?", id).Delete(ctx)
+	return err
+}
+
+// Get implements [IEvidenceBundleStore].
+func (p *PostgresEvidenceBundleStore) Get(ctx context.Context, id string) (*EvidenceBundle, error) {
+	ad, err := gorm.G[EvidenceBundle](p.db).Where("id = ?", id).First(ctx)
+	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, err
+	}
+	return &ad, err
+}
+
+// List implements [IEvidenceBundleStore].
+func (p *PostgresEvidenceBundleStore) List(ctx context.Context, query EvidenceBundleListQuery) ([]EvidenceBundle, error) {
+	tx := gorm.G[EvidenceBundle](p.db).Where("1=1")
+
+	if query.SourceSessionID != nil && *query.SourceSessionID != "" {
+		tx = tx.Where("source_session_id = ?", *query.SourceSessionID)
+	}
+
+	if query.HarnessContractID != nil && *query.HarnessContractID != "" {
+		tx = tx.Where("harness_contract_id = ?", *query.HarnessContractID)
+	}
+
+	if query.LearningProposalID != nil && *query.LearningProposalID != "" {
+		tx = tx.Where("learning_proposal_id = ?", *query.LearningProposalID)
+	}
+
+	if query.ActorID != nil && *query.ActorID != "" {
+		tx = tx.Where("actor_id = ?", *query.ActorID)
+	}
+
+	if query.ChannelID != nil && *query.ChannelID != "" {
+		tx = tx.Where("channel_id = ?", *query.ChannelID)
+	}
+
+	if query.Confidence != nil && *query.Confidence != "" {
+		tx = tx.Where("confidence = ?", *query.Confidence)
+	}
+
+	if query.CreatedFromUtc != nil {
+		tx = tx.Where("created_at_utc >= ?", *query.CreatedFromUtc)
+	}
+
+	if query.CreatedToUtc != nil {
+		tx = tx.Where("created_at_utc <= ?", *query.CreatedToUtc)
+	}
+	if query.Tag != nil && *query.Tag != "" {
+		qTag := strings.TrimSpace(*query.Tag)
+		tx = tx.Where("tags in  ?", qTag)
+	}
+
+	return tx.Order("updated_at_utc DESC, created_at_utc DESC").
+		Limit(query.Limit).
+		Find(ctx)
+}
+
+// Save implements [IEvidenceBundleStore].
+func (p *PostgresEvidenceBundleStore) Save(ctx context.Context, bundle EvidenceBundle) error {
+	return p.db.WithContext(ctx).
+		Clauses(clause.OnConflict{
+			Columns:   []clause.Column{{Name: "id"}},
+			UpdateAll: true,
+		}).
+		Create(&bundle).Error
 }

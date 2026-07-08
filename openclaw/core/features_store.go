@@ -158,6 +158,11 @@ func (s *PostgresFeatureStore) initialize() error {
 	return s.db.AutoMigrate(
 		&AutomationDefinition{},
 		&AutomationRunRecord{},
+		&UserProfile{},
+		&LearningProposal{},
+		&ConnectedAccount{},
+		&BackendSessionRecord{},
+		&BackendEvent{},
 	)
 }
 

@@ -30,6 +30,14 @@ func main() {
 		&core.Note{},
 		&core.SessionSummary{},
 		&core.SessionTurnsFts{},
+		&core.AutomationDefinition{},
+		&core.AutomationRunRecord{},
+		&core.UserProfile{},
+		&core.LearningProposal{},
+		&core.ConnectedAccount{},
+		&core.BackendSessionRecord{},
+		&core.BackendEvent{},
+		&core.EvidenceBundle{},
 	)
 
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))

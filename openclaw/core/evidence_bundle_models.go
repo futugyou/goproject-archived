@@ -69,7 +69,7 @@ type EvidenceBundle struct {
 	Assumptions        []EvidenceAssumption    `json:"assumptions"`
 	UntestedAreas      []EvidenceUntestedArea  `json:"untested_areas"`
 	HumanReviews       []EvidenceHumanReview   `json:"human_reviews"`
-	Tags               []string                `json:"tags"`
+	Tags               []string                `json:"tags" gorm:"type:text[];not null;default:'{}'"`
 	Metadata           *EvidenceBundleMetadata `json:"metadata,omitempty"`
 }
 
