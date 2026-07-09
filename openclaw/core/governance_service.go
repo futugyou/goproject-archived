@@ -291,3 +291,17 @@ func (s *HttpSidecarToolGovernanceService) mapAction(action string) GovernanceAc
 		return GovernanceActionDeny
 	}
 }
+
+var _ IToolGovernanceService = (*NoopToolGovernanceService)(nil)
+
+type NoopToolGovernanceService struct{}
+
+// Authorize implements [IToolGovernanceService].
+func (n *NoopToolGovernanceService) Authorize(ctx context.Context, context ToolGovernanceContext) (*GovernanceDecision, error) {
+	return NewGovernanceDecisionAllow("Governance disabled"), nil
+}
+
+// RecordResult implements [IToolGovernanceService].
+func (n *NoopToolGovernanceService) RecordResult(ctx context.Context, context ToolGovernanceContext, decision GovernanceDecision, result ToolGovernanceExecutionResult) error {
+	return nil
+}
