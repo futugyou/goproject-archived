@@ -40,6 +40,7 @@ func main() {
 		&core.EvidenceBundle{},
 		&core.GovernanceLedgerEntry{},
 		&core.HarnessContract{},
+		&core.SharedHarnessState{},
 	)
 
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
