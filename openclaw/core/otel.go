@@ -2,13 +2,6 @@ package core
 
 import (
 	"context"
-	"encoding/json"
-	"fmt"
-	"log"
-	"os"
-	"path/filepath"
-	"slices"
-	"sync"
 	"sync/atomic"
 	"time"
 
@@ -16,203 +9,6 @@ import (
 	"go.opentelemetry.io/otel/metric"
 	"go.opentelemetry.io/otel/trace"
 )
-
-type ProviderUsageSnapshot struct {
-	ProviderID       string `json:"provider_id"`
-	ModelID          string `json:"model_id"`
-	Requests         int64  `json:"requests"`
-	Retries          int64  `json:"retries"`
-	Errors           int64  `json:"errors"`
-	InputTokens      int64  `json:"input_tokens"`
-	OutputTokens     int64  `json:"output_tokens"`
-	CacheReadTokens  int64  `json:"cache_read_tokens"`
-	CacheWriteTokens int64  `json:"cache_write_tokens"`
-}
-
-type ToolUsageSnapshot struct {
-	ToolName        string  `json:"tool_name"`
-	Calls           int64   `json:"calls"`
-	Failures        int64   `json:"failures"`
-	Timeouts        int64   `json:"timeouts"`
-	TotalDurationMs float64 `json:"total_duration_ms"`
-}
-
-type usageCounter struct {
-	requests         atomic.Int64
-	retries          atomic.Int64
-	errors           atomic.Int64
-	inputTokens      atomic.Int64
-	outputTokens     atomic.Int64
-	cacheReadTokens  atomic.Int64
-	cacheWriteTokens atomic.Int64
-}
-
-func (u *usageCounter) Snapshot(providerId, modelId string) *ProviderUsageSnapshot {
-	return &ProviderUsageSnapshot{
-		ProviderID:       providerId,
-		ModelID:          modelId,
-		Requests:         u.requests.Load(),
-		Retries:          u.retries.Load(),
-		Errors:           u.errors.Load(),
-		InputTokens:      u.inputTokens.Load(),
-		OutputTokens:     u.outputTokens.Load(),
-		CacheReadTokens:  u.cacheReadTokens.Load(),
-		CacheWriteTokens: u.cacheWriteTokens.Load(),
-	}
-}
-
-type ProviderUsageTracker struct {
-	usage          sync.Map
-	recentTurns    []ProviderTurnUsageEntry
-	maxRecentTurns int
-}
-
-func NewProviderUsageTracker() *ProviderUsageTracker {
-	return &ProviderUsageTracker{maxRecentTurns: 256, recentTurns: []ProviderTurnUsageEntry{}}
-}
-
-func (p *ProviderUsageTracker) getCounter(providerId, modelId string) *usageCounter {
-	if len(providerId) == 0 {
-		providerId = "unknown"
-	}
-	if len(modelId) == 0 {
-		modelId = "default"
-	}
-
-	key := providerId + ":" + modelId
-
-	// 先读，读到了直接返回（无内存分配）
-	if u, ok := p.usage.Load(key); ok {
-		return u.(*usageCounter)
-	}
-
-	// 没读到再创建
-	u, _ := p.usage.LoadOrStore(key, &usageCounter{})
-	return u.(*usageCounter)
-}
-
-func (p *ProviderUsageTracker) GetLatestSessionCacheTotals(sessionId string) (int64, int64) {
-	slices.SortFunc(p.recentTurns, func(a, b ProviderTurnUsageEntry) int {
-		return b.TimestampUtc.Compare(a.TimestampUtc)
-	})
-
-	var latest ProviderTurnUsageEntry
-	for _, item := range p.recentTurns {
-		if item.SessionId == sessionId && (item.CacheReadTokens > 0 || item.CacheWriteTokens > 0) {
-			latest = item
-			break
-		}
-	}
-
-	return latest.CacheReadTokens, latest.CacheWriteTokens
-}
-
-func (p *ProviderUsageTracker) RecentTurns(sessionId string, limit int) []ProviderTurnUsageEntry {
-	if limit < 1 {
-		limit = 1
-	}
-	if limit >= p.maxRecentTurns {
-		limit = p.maxRecentTurns
-	}
-	slices.SortFunc(p.recentTurns, func(a, b ProviderTurnUsageEntry) int {
-		return b.TimestampUtc.Compare(a.TimestampUtc)
-	})
-
-	result := []ProviderTurnUsageEntry{}
-	for _, item := range p.recentTurns {
-		if item.SessionId == sessionId && (item.CacheReadTokens > 0 || item.CacheWriteTokens > 0) {
-			if len(result) > limit {
-				break
-			}
-			result = append(result, item)
-		}
-	}
-
-	return result
-}
-
-func (p *ProviderUsageTracker) RecordTurn(sessionId, channelId, providerId, modelId string, inputTokens, outputTokens, cacheReadTokens, cacheWriteTokens int64, estimatedInputTokensByComponent *InputTokenComponentEstimate) {
-	if len(sessionId) == 0 {
-		sessionId = "unknown"
-	}
-	if len(channelId) == 0 {
-		channelId = "unknown"
-	}
-	if len(providerId) == 0 {
-		providerId = "unknown"
-	}
-	if len(modelId) == 0 {
-		modelId = "default"
-	}
-	p.recentTurns = append(p.recentTurns, ProviderTurnUsageEntry{
-		SessionId:                       sessionId,
-		ChannelId:                       channelId,
-		ProviderId:                      providerId,
-		ModelId:                         modelId,
-		InputTokens:                     inputTokens,
-		OutputTokens:                    outputTokens,
-		CacheReadTokens:                 cacheReadTokens,
-		CacheWriteTokens:                cacheWriteTokens,
-		EstimatedInputTokensByComponent: estimatedInputTokensByComponent,
-	})
-
-	for {
-		if len(p.recentTurns) <= p.maxRecentTurns {
-			break
-		}
-		p.recentTurns = p.recentTurns[1:]
-	}
-}
-
-func (p *ProviderUsageTracker) AddCacheTokens(providerId, modelId string, cacheReadTokens, cacheWriteTokens int64) {
-	var counter = p.getCounter(providerId, modelId)
-	if cacheReadTokens > 0 {
-		counter.cacheReadTokens.Add(cacheReadTokens)
-	}
-
-	if cacheWriteTokens > 0 {
-		counter.cacheWriteTokens.Add(cacheWriteTokens)
-	}
-}
-
-func (p *ProviderUsageTracker) RecordRequest(providerId, modelId string) {
-	p.getCounter(providerId, modelId).requests.Add(1)
-
-}
-func (p *ProviderUsageTracker) RecordRetry(providerId, modelId string) {
-	p.getCounter(providerId, modelId).retries.Add(1)
-
-}
-
-func (p *ProviderUsageTracker) RecordError(providerId, modelId string) {
-	p.getCounter(providerId, modelId).errors.Add(1)
-
-}
-
-func (p *ProviderUsageTracker) AddTokens(providerId, modelId string, inputTokens, outputTokens int64) {
-	var counter = p.getCounter(providerId, modelId)
-	if inputTokens > 0 {
-		counter.inputTokens.Add(inputTokens)
-	}
-	if outputTokens > 0 {
-		counter.outputTokens.Add(outputTokens)
-	}
-}
-
-var _ ITurnTokenUsageObserver = (*ProviderUsageTurnTokenUsageObserver)(nil)
-
-type ProviderUsageTurnTokenUsageObserver struct {
-	providerUsage *ProviderUsageTracker
-}
-
-// RecordTurn implements [ITurnTokenUsageObserver].
-func (p *ProviderUsageTurnTokenUsageObserver) RecordTurn(record TurnTokenUsageRecord) {
-	p.providerUsage.RecordTurn(record.SessionId, record.ChannelId, record.ProviderId, record.ModelId, record.InputTokens, record.OutputTokens, record.CacheReadTokens, record.CacheWriteTokens, &record.EstimatedInputTokensByComponent)
-}
-
-func NewProviderUsageTurnTokenUsageObserver(providerUsage *ProviderUsageTracker) *ProviderUsageTurnTokenUsageObserver {
-	return &ProviderUsageTurnTokenUsageObserver{providerUsage: providerUsage}
-}
 
 type RuntimeMetrics struct {
 	// ── Counters (monotonically increasing) ───────────────────────────────
@@ -556,129 +352,61 @@ func RegisterApprovalQueueGauge(observeFunc func() int) error {
 	return err
 }
 
-var _ ITurnTokenUsageObserver = (*TurnTokenUsageAuditLog)(nil)
-
-type TurnTokenUsageAuditLog struct {
-	defaultAuditQueueCapacity int
-	filePath                  string
-	lineQueue                 chan string
-	wg                        sync.WaitGroup
-	disposed                  atomic.Int32
-}
-
-func NewTurnTokenUsageAuditLog(filePath string, auditQueueCapacity int) *TurnTokenUsageAuditLog {
-	if filePath == "" {
-		return &TurnTokenUsageAuditLog{}
-	}
-
-	if auditQueueCapacity <= 0 {
-		auditQueueCapacity = 4096
-	}
-
-	// 1. 解析并创建文件夹路径
-	fullPath, err := filepath.Abs(filePath)
-	if err != nil {
-		log.Printf("Failed to get absolute path for %s: %v; file logging will be disabled\n", filePath, err)
-		return &TurnTokenUsageAuditLog{}
-	}
-
-	dir := filepath.Dir(fullPath)
-	if err := os.MkdirAll(dir, 0755); err != nil {
-		log.Printf("Failed to create directory %s: %v; file logging will be disabled\n", dir, err)
-		return &TurnTokenUsageAuditLog{}
-	}
-
-	logger := &TurnTokenUsageAuditLog{
-		filePath:  fullPath,
-		lineQueue: make(chan string, auditQueueCapacity),
-	}
-
-	logger.wg.Add(1)
-	go logger.writeLoop()
-
-	return logger
-}
-
-// RecordTurn implements [ITurnTokenUsageObserver].
-func (l *TurnTokenUsageAuditLog) RecordTurn(record TurnTokenUsageRecord) {
-	// 检查是否已被释放/关闭
-	if l.disposed.Load() != 0 {
-		return
-	}
-
-	// 如果未初始化成功（路径为空），则直接跳过
-	if l.filePath == "" || l.lineQueue == nil {
-		return
-	}
-
-	// 序列化
-	jsonData, err := json.Marshal(record)
-	if err != nil {
-		log.Printf("Failed to serialize turn token usage record: %v\n", err)
-		return
-	}
-
-	// 为防止关闭 channel 时的 panic 风险，配合 atomic 安全写入
-	defer func() {
-		if recover() != nil {
-			// 捕获可能在极罕见并发下向已关闭 channel 发送数据引发的 panic
-		}
-	}()
-
-	if l.disposed.Load() == 0 {
-		l.lineQueue <- string(jsonData)
-	}
-}
-
-func (l *TurnTokenUsageAuditLog) Close() {
-	// 使用原子操作确保只执行一次关闭
-	if !l.disposed.CompareAndSwap(0, 1) {
-		return
-	}
-
-	if l.lineQueue == nil {
-		return
-	}
-
-	// 关闭 channel，通知 writeLoop 结束
-	close(l.lineQueue)
-
-	l.wg.Wait()
-}
-
-// writeLoop 后台写文件循环
-func (l *TurnTokenUsageAuditLog) writeLoop() {
-	defer l.wg.Done()
-
-	// 以 Append 模式打开文件
-	file, err := os.OpenFile(l.filePath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
-	if err != nil {
-		log.Printf("Failed to open turn token usage audit file %s: %v\n", l.filePath, err)
-		// 即使文件打开失败，也要排空 channel，防止 RecordTurn 端阻塞
-		for range l.lineQueue {
-		}
-		return
-	}
-	defer file.Close()
-
-	// Go 的 range channel 会持续消费，直到 channel 被 close 且数据被读完
-	for line := range l.lineQueue {
-		_, err := fmt.Fprintln(file, line)
-		if err != nil {
-			log.Printf("Failed to append turn token usage entry to %s: %v\n", l.filePath, err)
-		}
-	}
-}
-
-var _ ITurnTokenUsageObserver = (*CompositeTurnTokenUsageObserver)(nil)
-
-type CompositeTurnTokenUsageObserver struct {
-	observers []ITurnTokenUsageObserver
-}
-
-// RecordTurn implements [ITurnTokenUsageObserver].
-func (c *CompositeTurnTokenUsageObserver) RecordTurn(record TurnTokenUsageRecord) {
-	for _, observer := range c.observers {
-		observer.RecordTurn(record)
-	}
+type MetricsSnapshot struct {
+	TotalRequests                     int64 `json:"total_requests"`
+	TotalLlmCalls                     int64 `json:"total_llm_calls"`
+	TotalInputTokens                  int64 `json:"total_input_tokens"`
+	TotalOutputTokens                 int64 `json:"total_output_tokens"`
+	TotalToolCalls                    int64 `json:"total_tool_calls"`
+	TotalToolFailures                 int64 `json:"total_tool_failures"`
+	TotalToolTimeouts                 int64 `json:"total_tool_timeouts"`
+	TotalLlmRetries                   int64 `json:"total_llm_retries"`
+	TotalLlmErrors                    int64 `json:"total_llm_errors"`
+	ApprovalDecisionsRecorded         int64 `json:"approval_decisions_recorded"`
+	ApprovalDecisionsRejected         int64 `json:"approval_decisions_rejected"`
+	SessionEvictions                  int64 `json:"session_evictions"`
+	SessionCapacityRejects            int64 `json:"session_capacity_rejects"`
+	EstimatedTokenAdmissionRejects    int64 `json:"estimated_token_admission_rejects"`
+	BrowserCancellationResets         int64 `json:"browser_cancellation_resets"`
+	PluginBridgeAuthFailures          int64 `json:"plugin_bridge_auth_failures"`
+	PluginBridgeRestartAttempts       int64 `json:"plugin_bridge_restart_attempts"`
+	PluginBridgeRestartFailures       int64 `json:"plugin_bridge_restart_failures"`
+	ProcessStarts                     int64 `json:"process_starts"`
+	ProcessCompletions                int64 `json:"process_completions"`
+	ProcessFailures                   int64 `json:"process_failures"`
+	ProcessKills                      int64 `json:"process_kills"`
+	ProcessTimeouts                   int64 `json:"process_timeouts"`
+	ProcessHistoryEvictions           int64 `json:"process_history_evictions"`
+	SandboxLeaseCreates               int64 `json:"sandbox_lease_creates"`
+	SandboxLeaseReuses                int64 `json:"sandbox_lease_reuses"`
+	SandboxLeaseRecoveries            int64 `json:"sandbox_lease_recoveries"`
+	RetentionSweepRuns                int64 `json:"retention_sweep_runs"`
+	RetentionSweepFailures            int64 `json:"retention_sweep_failures"`
+	RetentionArchivedItems            int64 `json:"retention_archived_items"`
+	RetentionDeletedItems             int64 `json:"retention_deleted_items"`
+	RetentionSkippedProtectedSessions int64 `json:"retention_skipped_protected_sessions"`
+	OperatorAuditWriteFailures        int64 `json:"operator_audit_write_failures"`
+	RuntimeEventWriteFailures         int64 `json:"runtime_event_write_failures"`
+	SessionCacheHits                  int64 `json:"session_cache_hits"`
+	SessionCacheMisses                int64 `json:"session_cache_misses"`
+	MemoryRecallSearches              int64 `json:"memory_recall_searches"`
+	MemoryRecallHits                  int64 `json:"memory_recall_hits"`
+	MemoryCompactions                 int64 `json:"memory_compactions"`
+	PromptCacheReads                  int64 `json:"prompt_cache_reads"`
+	PromptCacheWrites                 int64 `json:"prompt_cache_writes"`
+	PromptCacheWarmRuns               int64 `json:"prompt_cache_warm_runs"`
+	PromptCacheWarmSkips              int64 `json:"prompt_cache_warm_skips"`
+	PromptCacheWarmFailures           int64 `json:"prompt_cache_warm_failures"`
+	PulseRuns                         int64 `json:"pulse_runs"`
+	PulseSkips                        int64 `json:"pulse_skips"`
+	PulseAlerts                       int64 `json:"pulse_alerts"`
+	PulseOkSuppressed                 int64 `json:"pulse_ok_suppressed"`
+	PulseErrors                       int64 `json:"pulse_errors"`
+	RetentionLastRunAtUnixSeconds     int64 `json:"retention_last_run_at_unix_seconds"`
+	RetentionLastRunDurationMs        int64 `json:"retention_last_run_duration_ms"`
+	RetentionLastRunSucceeded         int32 `json:"retention_last_run_succeeded"`
+	PulseLastRunDurationMs            int64 `json:"pulse_last_run_duration_ms"`
+	ActiveSessions                    int32 `json:"active_sessions"`
+	CircuitBreakerState               int32 `json:"circuit_breaker_state"`
+	RetainedProcesses                 int32 `json:"retained_processes"`
 }

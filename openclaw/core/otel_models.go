@@ -4,7 +4,15 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
+	"log/slog"
+	"math"
+	"os"
+	"path/filepath"
+	"slices"
+	"sort"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -218,4 +226,365 @@ func (p *PromptCacheUsageExtractor) Merge(items []PromptCacheUsage) *PromptCache
 		CacheReadTokens:  cacheRead,
 		CacheWriteTokens: cacheWrite,
 	}
+}
+
+type usageCounter struct {
+	requests         atomic.Int64
+	retries          atomic.Int64
+	errors           atomic.Int64
+	inputTokens      atomic.Int64
+	outputTokens     atomic.Int64
+	cacheReadTokens  atomic.Int64
+	cacheWriteTokens atomic.Int64
+}
+
+func (u *usageCounter) Snapshot(providerId, modelId string) *ProviderUsageSnapshot {
+	return &ProviderUsageSnapshot{
+		ProviderID:       providerId,
+		ModelID:          modelId,
+		Requests:         u.requests.Load(),
+		Retries:          u.retries.Load(),
+		Errors:           u.errors.Load(),
+		InputTokens:      u.inputTokens.Load(),
+		OutputTokens:     u.outputTokens.Load(),
+		CacheReadTokens:  u.cacheReadTokens.Load(),
+		CacheWriteTokens: u.cacheWriteTokens.Load(),
+	}
+}
+
+type ProviderUsageTracker struct {
+	usage          sync.Map
+	recentTurns    []ProviderTurnUsageEntry
+	maxRecentTurns int
+}
+
+func NewProviderUsageTracker() *ProviderUsageTracker {
+	return &ProviderUsageTracker{maxRecentTurns: 256, recentTurns: []ProviderTurnUsageEntry{}}
+}
+
+func (p *ProviderUsageTracker) getCounter(providerId, modelId string) *usageCounter {
+	if len(providerId) == 0 {
+		providerId = "unknown"
+	}
+	if len(modelId) == 0 {
+		modelId = "default"
+	}
+
+	key := providerId + ":" + modelId
+
+	// 先读，读到了直接返回（无内存分配）
+	if u, ok := p.usage.Load(key); ok {
+		return u.(*usageCounter)
+	}
+
+	// 没读到再创建
+	u, _ := p.usage.LoadOrStore(key, &usageCounter{})
+	return u.(*usageCounter)
+}
+
+func (p *ProviderUsageTracker) GetLatestSessionCacheTotals(sessionId string) (int64, int64) {
+	slices.SortFunc(p.recentTurns, func(a, b ProviderTurnUsageEntry) int {
+		return b.TimestampUtc.Compare(a.TimestampUtc)
+	})
+
+	var latest ProviderTurnUsageEntry
+	for _, item := range p.recentTurns {
+		if item.SessionId == sessionId && (item.CacheReadTokens > 0 || item.CacheWriteTokens > 0) {
+			latest = item
+			break
+		}
+	}
+
+	return latest.CacheReadTokens, latest.CacheWriteTokens
+}
+
+func (p *ProviderUsageTracker) RecentTurns(sessionId string, limit int) []ProviderTurnUsageEntry {
+	if limit < 1 {
+		limit = 1
+	}
+	if limit >= p.maxRecentTurns {
+		limit = p.maxRecentTurns
+	}
+	slices.SortFunc(p.recentTurns, func(a, b ProviderTurnUsageEntry) int {
+		return b.TimestampUtc.Compare(a.TimestampUtc)
+	})
+
+	result := []ProviderTurnUsageEntry{}
+	for _, item := range p.recentTurns {
+		if item.SessionId == sessionId && (item.CacheReadTokens > 0 || item.CacheWriteTokens > 0) {
+			if len(result) > limit {
+				break
+			}
+			result = append(result, item)
+		}
+	}
+
+	return result
+}
+
+func (p *ProviderUsageTracker) RecordTurn(sessionId, channelId, providerId, modelId string, inputTokens, outputTokens, cacheReadTokens, cacheWriteTokens int64, estimatedInputTokensByComponent *InputTokenComponentEstimate) {
+	if len(sessionId) == 0 {
+		sessionId = "unknown"
+	}
+	if len(channelId) == 0 {
+		channelId = "unknown"
+	}
+	if len(providerId) == 0 {
+		providerId = "unknown"
+	}
+	if len(modelId) == 0 {
+		modelId = "default"
+	}
+	p.recentTurns = append(p.recentTurns, ProviderTurnUsageEntry{
+		SessionId:                       sessionId,
+		ChannelId:                       channelId,
+		ProviderId:                      providerId,
+		ModelId:                         modelId,
+		InputTokens:                     inputTokens,
+		OutputTokens:                    outputTokens,
+		CacheReadTokens:                 cacheReadTokens,
+		CacheWriteTokens:                cacheWriteTokens,
+		EstimatedInputTokensByComponent: estimatedInputTokensByComponent,
+	})
+
+	for {
+		if len(p.recentTurns) <= p.maxRecentTurns {
+			break
+		}
+		p.recentTurns = p.recentTurns[1:]
+	}
+}
+
+func (p *ProviderUsageTracker) AddCacheTokens(providerId, modelId string, cacheReadTokens, cacheWriteTokens int64) {
+	var counter = p.getCounter(providerId, modelId)
+	if cacheReadTokens > 0 {
+		counter.cacheReadTokens.Add(cacheReadTokens)
+	}
+
+	if cacheWriteTokens > 0 {
+		counter.cacheWriteTokens.Add(cacheWriteTokens)
+	}
+}
+
+func (p *ProviderUsageTracker) RecordRequest(providerId, modelId string) {
+	p.getCounter(providerId, modelId).requests.Add(1)
+
+}
+func (p *ProviderUsageTracker) RecordRetry(providerId, modelId string) {
+	p.getCounter(providerId, modelId).retries.Add(1)
+
+}
+
+func (p *ProviderUsageTracker) RecordError(providerId, modelId string) {
+	p.getCounter(providerId, modelId).errors.Add(1)
+
+}
+
+func (p *ProviderUsageTracker) AddTokens(providerId, modelId string, inputTokens, outputTokens int64) {
+	var counter = p.getCounter(providerId, modelId)
+	if inputTokens > 0 {
+		counter.inputTokens.Add(inputTokens)
+	}
+	if outputTokens > 0 {
+		counter.outputTokens.Add(outputTokens)
+	}
+}
+
+type ProviderUsageSnapshot struct {
+	ProviderID       string `json:"provider_id"`
+	ModelID          string `json:"model_id"`
+	Requests         int64  `json:"requests"`
+	Retries          int64  `json:"retries"`
+	Errors           int64  `json:"errors"`
+	InputTokens      int64  `json:"input_tokens"`
+	OutputTokens     int64  `json:"output_tokens"`
+	CacheReadTokens  int64  `json:"cache_read_tokens"`
+	CacheWriteTokens int64  `json:"cache_write_tokens"`
+}
+
+type ToolUsageSnapshot struct {
+	ToolName        string  `json:"tool_name"`
+	Calls           int64   `json:"calls"`
+	Failures        int64   `json:"failures"`
+	Timeouts        int64   `json:"timeouts"`
+	TotalDurationMs float64 `json:"total_duration_ms"`
+}
+
+type ToolAuditEntry struct {
+	TimestampUtc           time.Time `json:"timestamp_utc"`
+	ToolName               string    `json:"tool_name"`
+	SessionId              string    `json:"session_id"`
+	ChannelId              string    `json:"channel_id"`
+	SenderId               string    `json:"sender_id"`
+	CorrelationId          string    `json:"crrelation_id"`
+	DurationMs             float64   `json:"duration_ms"`
+	Failed                 bool      `json:"failed"`
+	TimedOut               bool      `json:"timed_out"`
+	ApprovalId             string    `json:"approval_id"`
+	ArgumentsBytes         int       `json:"arguments_bytes"`
+	ResultBytes            int       `json:"result_bytes"`
+	GovernanceAllowed      bool      `json:"governance_allowed"`
+	GovernanceAction       string    `json:"governance_action"`
+	GovernanceReason       string    `json:"governance_reason"`
+	GovernancePolicyId     string    `json:"governance_policy_id"`
+	GovernanceRuleId       string    `json:"governance_rule_id"`
+	GovernanceTrustScore   float64   `json:"governance_trust_score"`
+	GovernanceEvaluationMs float64   `json:"governance_evaluation_ms"`
+	GovernanceUnavailable  bool      `json:"governance_unavailable"`
+}
+
+type ToolAuditLog struct {
+	filePath             string
+	logger               *slog.Logger
+	recent               []*ToolAuditEntry
+	recentBufferCapacity int
+	lock                 sync.Mutex
+}
+
+func NewToolAuditLog(path string, logger *slog.Logger) *ToolAuditLog {
+	if logger == nil {
+		logger = slog.Default()
+	}
+
+	if len(path) > 0 {
+		dir := filepath.Dir(path)
+		os.MkdirAll(dir, 0755)
+	}
+
+	return &ToolAuditLog{
+		filePath:             path,
+		logger:               logger,
+		recent:               []*ToolAuditEntry{},
+		recentBufferCapacity: 256,
+	}
+}
+
+func (t *ToolAuditLog) Record(entry *ToolAuditEntry) error {
+	if entry == nil {
+		return nil
+	}
+
+	var filePath string
+	t.lock.Lock()
+
+	if len(t.recent) >= t.recentBufferCapacity && len(t.recent) > 0 {
+		t.recent[0] = nil
+		t.recent = t.recent[1:]
+	}
+
+	t.recent = append(t.recent, entry)
+	filePath = t.filePath
+	t.lock.Unlock()
+
+	if filePath == "" {
+		return nil
+	}
+
+	d, err := json.Marshal(entry)
+	if err != nil {
+		return fmt.Errorf("json marshal failed: %w", err)
+	}
+	d = append(d, '\n')
+
+	// O_CREATE: 不存在则创建 | O_WRONLY: 只写 | O_APPEND: 追加
+	f, err := os.OpenFile(filePath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0666)
+	if err != nil {
+		return fmt.Errorf("open file failed: %w", err)
+	}
+	defer f.Close()
+
+	if _, err := f.Write(d); err != nil {
+		return fmt.Errorf("write file failed: %w", err)
+	}
+
+	return nil
+}
+
+func (t *ToolAuditLog) SnapshotRecent(limit int) []*ToolAuditEntry {
+	t.lock.Lock()
+	defer t.lock.Unlock()
+
+	count := min(limit, len(t.recent))
+	if count <= 0 {
+		return []*ToolAuditEntry{}
+	}
+
+	result := make([]*ToolAuditEntry, count)
+	for i := range count {
+		result[i] = t.recent[len(t.recent)-count+1]
+	}
+	return result
+}
+
+type toolUsageCounter struct {
+	Calls           atomic.Int64
+	Failures        atomic.Int64
+	Timeouts        atomic.Int64
+	TotalDurationMs atomic.Int64
+}
+
+type ToolUsageTracker struct {
+	usage sync.Map
+}
+
+func (t *ToolUsageTracker) RecordToolCall(toolName string, duration time.Duration, failed, timedOut bool) error {
+	counter, _ := t.usage.LoadOrStore(toolName, &toolUsageCounter{})
+	tuc := counter.(*toolUsageCounter)
+	tuc.Calls.Add(1)
+	if failed {
+		tuc.Failures.Add(1)
+	}
+	if timedOut {
+		tuc.Timeouts.Add(1)
+	}
+	var rawDuration int64
+	var newRaw int64
+	for {
+		totalDurationMs := tuc.TotalDurationMs.Load()
+		if atomic.CompareAndSwapInt64(&totalDurationMs, rawDuration, newRaw) {
+			break
+		}
+
+		rawDuration := tuc.TotalDurationMs.Load()
+		current := math.Float64frombits(uint64(rawDuration))
+		updated := current + float64(duration.Microseconds())
+		newRaw = int64(math.Float64bits(updated))
+	}
+	return nil
+}
+
+func (t *ToolUsageTracker) Snapshot() []ToolUsageSnapshot {
+	var snapshots []ToolUsageSnapshot
+
+	t.usage.Range(func(key, value any) bool {
+		toolName := key.(string)
+		counter := value.(*toolUsageCounter)
+
+		calls := counter.Calls.Load()
+		failures := counter.Failures.Load()
+		timeouts := counter.Timeouts.Load()
+
+		durationBits := counter.TotalDurationMs.Load()
+		totalDurationMs := math.Float64frombits(uint64(durationBits))
+		totalDurationMs = float64(durationBits)
+
+		snapshots = append(snapshots, ToolUsageSnapshot{
+			ToolName:        toolName,
+			Calls:           calls,
+			Failures:        failures,
+			Timeouts:        timeouts,
+			TotalDurationMs: totalDurationMs,
+		})
+
+		return true
+	})
+
+	sort.Slice(snapshots, func(i, j int) bool {
+		if snapshots[i].Calls != snapshots[j].Calls {
+			return snapshots[i].Calls > snapshots[j].Calls
+		}
+		return snapshots[i].ToolName < snapshots[j].ToolName
+	})
+
+	return snapshots
 }
