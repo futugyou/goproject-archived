@@ -173,11 +173,12 @@ type GovernanceLedgerMutationResponse struct {
 	Message string                 `json:"message"`
 	Error   *string                `json:"error,omitempty"`
 }
+
 type ToolGovernanceDescriptorCatalog struct {
 	descriptors map[string]ToolGovernanceDescriptor
 }
 
-func NewCatalog() *ToolGovernanceDescriptorCatalog {
+func NewToolGovernanceDescriptorCatalog() *ToolGovernanceDescriptorCatalog {
 	catalog := &ToolGovernanceDescriptorCatalog{
 		descriptors: make(map[string]ToolGovernanceDescriptor),
 	}
