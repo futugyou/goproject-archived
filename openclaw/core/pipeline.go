@@ -80,7 +80,7 @@ var (
 	spendRegex  = regexp.MustCompile(`(?i)spend\s+(?P<budget>\d+(?:\.\d+)?)\s*(?P<suffix>[kKmM])?\s*tokens?\s*$`)
 )
 
-func (c *ChatCommandProcessor) handleGoalCommand(_ context.Context, session *Session, args string) string {
+func (c *ChatCommandProcessor) handleGoalCommand(ctx context.Context, session *Session, args string) string {
 	if c.goalService == nil {
 		return "Goal system is not available. Start the gateway with goal support enabled."
 	}
@@ -141,12 +141,12 @@ func (c *ChatCommandProcessor) handleGoalCommand(_ context.Context, session *Ses
 			return "Usage: /goal start <objective> [+<budget>]\nExample: /goal start fix auth bug +500k"
 		}
 
-		existing, err := c.goalService.GetGoal(session.Id)
+		existing, err := c.goalService.GetGoal(ctx, session.Id)
 		if existing != nil {
 			return fmt.Sprintf("A goal already exists: \"%s\"\nClear it with /goal clear first.", existing.Objective)
 		}
 
-		goal, err := c.goalService.CreateGoal(session.Id, objective, budget, session.GetTotalTokens())
+		goal, err := c.goalService.CreateGoal(ctx, session.Id, objective, budget, session.GetTotalTokens())
 		if err != nil {
 			return fmt.Sprintf("Error: %s", err.Error())
 		}
@@ -158,17 +158,17 @@ func (c *ChatCommandProcessor) handleGoalCommand(_ context.Context, session *Ses
 		return fmt.Sprintf("Goal created: \"%s\"%s", goal.Objective, budgetInfo)
 
 	case "pause":
-		_, err := c.goalService.GetGoal(session.Id)
+		_, err := c.goalService.GetGoal(ctx, session.Id)
 		if err != nil {
 			return "No active goal to pause."
 		}
-		if err := c.goalService.UpdateStatus(session.Id, GoalStatus_Paused, &subargs); err != nil {
+		if err := c.goalService.UpdateStatus(ctx, session.Id, GoalStatus_Paused, &subargs); err != nil {
 			return fmt.Sprintf("Error: %s", err.Error())
 		}
 		return "Goal paused. Resume with /goal resume."
 
 	case "resume":
-		goal, err := c.goalService.GetGoal(session.Id)
+		goal, err := c.goalService.GetGoal(ctx, session.Id)
 		if err != nil {
 			return "No goal to resume."
 		}
@@ -179,39 +179,39 @@ func (c *ChatCommandProcessor) handleGoalCommand(_ context.Context, session *Ses
 			return "Cannot resume a completed goal. Start a new one with /goal start."
 		}
 
-		if err := c.goalService.UpdateStatus(session.Id, GoalStatus_Active, &subargs); err != nil {
+		if err := c.goalService.UpdateStatus(ctx, session.Id, GoalStatus_Active, &subargs); err != nil {
 			return fmt.Sprintf("Error: %s", err.Error())
 		}
 		return "Goal resumed."
 
 	case "complete", "done":
-		_, err := c.goalService.GetGoal(session.Id)
+		_, err := c.goalService.GetGoal(ctx, session.Id)
 		if err != nil {
 			return "No active goal."
 		}
-		if err := c.goalService.UpdateStatus(session.Id, GoalStatus_Complete, &subargs); err != nil {
+		if err := c.goalService.UpdateStatus(ctx, session.Id, GoalStatus_Complete, &subargs); err != nil {
 			return fmt.Sprintf("Error: %s", err.Error())
 		}
 		return "Goal marked as complete!"
 
 	case "block", "blocked":
-		_, err := c.goalService.GetGoal(session.Id)
+		_, err := c.goalService.GetGoal(ctx, session.Id)
 		if err != nil {
 			return "No active goal."
 		}
-		if err := c.goalService.UpdateStatus(session.Id, GoalStatus_Blocked, &subargs); err != nil {
+		if err := c.goalService.UpdateStatus(ctx, session.Id, GoalStatus_Blocked, &subargs); err != nil {
 			return fmt.Sprintf("Error: %s", err.Error())
 		}
 		return "Goal marked as blocked. Resume with /goal resume."
 
 	case "clear":
-		c.goalService.ClearGoal(session.Id)
+		c.goalService.ClearGoal(ctx, session.Id)
 		return "Goal cleared."
 
 	case "status":
 		fallthrough
 	default:
-		statusGoal, err := c.goalService.GetGoal(session.Id)
+		statusGoal, err := c.goalService.GetGoal(ctx, session.Id)
 		if err != nil {
 			return "No active goal. Use /goal start <objective> to create one."
 		}
@@ -289,7 +289,7 @@ func (c *ChatCommandProcessor) TryProcessCommand(ctx context.Context, session *S
 		session.SetTotalInputTokens(0)
 		session.SetTotalOutputTokens(0)
 		if c.goalService != nil {
-			c.goalService.ClearGoal(session.Id)
+			c.goalService.ClearGoal(ctx, session.Id)
 		}
 		if err := c.sessionManager.Persist(ctx, session, false); err != nil {
 			return true, "", err
@@ -692,7 +692,7 @@ func (r *RecentSendersStore) saveUnlocked(ctx context.Context, path string, file
 	return os.Rename(tempPath, path)
 }
 
-func (r *RecentSendersStore) loadUnlocked(ctx context.Context, path string) (*RecentSendersFile, error) {
+func (r *RecentSendersStore) loadUnlocked(_ context.Context, path string) (*RecentSendersFile, error) {
 	var result RecentSendersFile
 	file, err := os.OpenFile(path, os.O_RDONLY, 0666)
 	if err != nil {

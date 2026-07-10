@@ -310,15 +310,15 @@ type ISentinelSubstitutionService interface {
 }
 
 type IGoalService interface {
-	CreateGoal(sessionId, objective string, tokenBudget, tokensAtStart int64) (*SessionGoal, error)
-	GetGoal(sessionId string) (*SessionGoal, error)
-	UpdateStatus(sessionId string, newStatus GoalStatus, note *string) error
-	UpdateTokenUsage(sessionId string, sessionTotalTokens int64) error
-	IncrementContinuationCount(sessionId string) int
-	RecordTurnHash(sessionId, normalizedText string) bool
-	ClearGoal(sessionId string) error
-	HasActiveGoal(sessionId string) bool
-	RecordGoalHistory(goal *SessionGoal) error
+	CreateGoal(ctx context.Context, sessionId, objective string, tokenBudget, tokensAtStart int64) (*SessionGoal, error)
+	GetGoal(ctx context.Context, sessionId string) (*SessionGoal, error)
+	UpdateStatus(ctx context.Context, sessionId string, newStatus GoalStatus, note *string) error
+	UpdateTokenUsage(ctx context.Context, sessionId string, sessionTotalTokens int64) error
+	IncrementContinuationCount(ctx context.Context, sessionId string) int
+	RecordTurnHash(ctx context.Context, sessionId, normalizedText string) bool
+	ClearGoal(ctx context.Context, sessionId string) error
+	HasActiveGoal(ctx context.Context, sessionId string) bool
+	RecordGoalHistory(ctx context.Context, goal *SessionGoal) error
 }
 
 type IToolResultInterceptor interface {

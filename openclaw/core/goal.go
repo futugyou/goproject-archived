@@ -32,7 +32,7 @@ func NewInMemoryGoalService(historyFilePath string, logger *slog.Logger) *InMemo
 }
 
 // ClearGoal implements [IGoalService].
-func (i *InMemoryGoalService) ClearGoal(sessionId string) error {
+func (i *InMemoryGoalService) ClearGoal(ctx context.Context, sessionId string) error {
 	val, exists := i.goals.LoadAndDelete(sessionId)
 	if !exists {
 		return nil
@@ -44,14 +44,14 @@ func (i *InMemoryGoalService) ClearGoal(sessionId string) error {
 	defer goal.mu.Unlock()
 
 	if !goal.Status.IsTerminal() {
-		return i.RecordGoalHistory(goal)
+		return i.RecordGoalHistory(ctx, goal)
 	}
 
 	return nil
 }
 
 // CreateGoal implements [IGoalService].
-func (i *InMemoryGoalService) CreateGoal(sessionId string, objective string, tokenBudget int64, tokensAtStart int64) (*SessionGoal, error) {
+func (i *InMemoryGoalService) CreateGoal(ctx context.Context, sessionId string, objective string, tokenBudget int64, tokensAtStart int64) (*SessionGoal, error) {
 	if isBlank(sessionId) || isBlank(objective) {
 		return nil, errors.New("invalid parameter")
 	}
@@ -84,7 +84,7 @@ func (i *InMemoryGoalService) CreateGoal(sessionId string, objective string, tok
 }
 
 // GetGoal implements [IGoalService].
-func (i *InMemoryGoalService) GetGoal(sessionId string) (*SessionGoal, error) {
+func (i *InMemoryGoalService) GetGoal(ctx context.Context, sessionId string) (*SessionGoal, error) {
 	val, exists := i.goals.Load(sessionId)
 	if !exists {
 		return nil, fmt.Errorf("no goal found for session '%s'", sessionId)
@@ -96,7 +96,7 @@ func (i *InMemoryGoalService) GetGoal(sessionId string) (*SessionGoal, error) {
 }
 
 // HasActiveGoal implements [IGoalService].
-func (i *InMemoryGoalService) HasActiveGoal(sessionId string) bool {
+func (i *InMemoryGoalService) HasActiveGoal(ctx context.Context, sessionId string) bool {
 	val, exists := i.goals.Load(sessionId)
 	if !exists {
 		return false
@@ -111,7 +111,7 @@ func (i *InMemoryGoalService) HasActiveGoal(sessionId string) bool {
 }
 
 // IncrementContinuationCount implements [IGoalService].
-func (i *InMemoryGoalService) IncrementContinuationCount(sessionId string) int {
+func (i *InMemoryGoalService) IncrementContinuationCount(ctx context.Context, sessionId string) int {
 	val, exists := i.goals.Load(sessionId)
 	if !exists {
 		return 0
@@ -129,7 +129,7 @@ func (i *InMemoryGoalService) IncrementContinuationCount(sessionId string) int {
 }
 
 // RecordGoalHistory implements [IGoalService].
-func (i *InMemoryGoalService) RecordGoalHistory(goal *SessionGoal) error {
+func (i *InMemoryGoalService) RecordGoalHistory(ctx context.Context, goal *SessionGoal) error {
 	if isBlank(i.historyFilePath) {
 		return nil
 	}
@@ -162,7 +162,7 @@ func (i *InMemoryGoalService) RecordGoalHistory(goal *SessionGoal) error {
 }
 
 // RecordTurnHash implements [IGoalService].
-func (i *InMemoryGoalService) RecordTurnHash(sessionId string, normalizedText string) bool {
+func (i *InMemoryGoalService) RecordTurnHash(ctx context.Context, sessionId string, normalizedText string) bool {
 	val, exists := i.goals.Load(sessionId)
 	if !exists {
 		return false
@@ -214,7 +214,7 @@ func isValidTransition(current, next GoalStatus) bool {
 }
 
 // UpdateStatus implements [IGoalService].
-func (i *InMemoryGoalService) UpdateStatus(sessionId string, newStatus GoalStatus, note *string) error {
+func (i *InMemoryGoalService) UpdateStatus(ctx context.Context, sessionId string, newStatus GoalStatus, note *string) error {
 	val, exists := i.goals.Load(sessionId)
 	if !exists {
 		return fmt.Errorf("no goal found for session '%s'", sessionId)
@@ -240,14 +240,14 @@ func (i *InMemoryGoalService) UpdateStatus(sessionId string, newStatus GoalStatu
 	}
 
 	if newStatus.IsTerminal() || (newStatus == GoalStatus_Blocked || newStatus == GoalStatus_BudgetLimited) {
-		return i.RecordGoalHistory(goal)
+		return i.RecordGoalHistory(ctx, goal)
 	}
 
 	return nil
 }
 
 // UpdateTokenUsage implements [IGoalService].
-func (i *InMemoryGoalService) UpdateTokenUsage(sessionId string, sessionTotalTokens int64) error {
+func (i *InMemoryGoalService) UpdateTokenUsage(ctx context.Context, sessionId string, sessionTotalTokens int64) error {
 	val, exists := i.goals.Load(sessionId)
 	if !exists {
 		return nil
@@ -286,15 +286,13 @@ func (s *PostgresGoalService) initialize() error {
 }
 
 // ClearGoal implements [IGoalService].
-func (p *PostgresGoalService) ClearGoal(sessionId string) error {
-	ctx := context.Background()
+func (p *PostgresGoalService) ClearGoal(ctx context.Context, sessionId string) error {
 	_, err := gorm.G[UserProfile](p.db).Where("session_id = ?", sessionId).Delete(ctx)
 	return err
 }
 
 // CreateGoal implements [IGoalService].
-func (p *PostgresGoalService) CreateGoal(sessionId string, objective string, tokenBudget int64, tokensAtStart int64) (*SessionGoal, error) {
-
+func (p *PostgresGoalService) CreateGoal(ctx context.Context, sessionId string, objective string, tokenBudget int64, tokensAtStart int64) (*SessionGoal, error) {
 	if isBlank(sessionId) || isBlank(objective) {
 		return nil, errors.New("invalid parameter")
 	}
@@ -318,7 +316,6 @@ func (p *PostgresGoalService) CreateGoal(sessionId string, objective string, tok
 		TokensAtStart: tokensAtStart,
 	}
 
-	ctx := context.Background()
 	err := p.db.WithContext(ctx).
 		Clauses(clause.OnConflict{
 			Columns:   []clause.Column{{Name: "session_id"}},
@@ -333,8 +330,7 @@ func (p *PostgresGoalService) CreateGoal(sessionId string, objective string, tok
 }
 
 // GetGoal implements [IGoalService].
-func (p *PostgresGoalService) GetGoal(sessionId string) (*SessionGoal, error) {
-	ctx := context.Background()
+func (p *PostgresGoalService) GetGoal(ctx context.Context, sessionId string) (*SessionGoal, error) {
 	ad, err := gorm.G[SessionGoal](p.db).Where("session_id = ?", sessionId).First(ctx)
 	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, err
@@ -343,8 +339,7 @@ func (p *PostgresGoalService) GetGoal(sessionId string) (*SessionGoal, error) {
 }
 
 // HasActiveGoal implements [IGoalService].
-func (p *PostgresGoalService) HasActiveGoal(sessionId string) bool {
-	ctx := context.Background()
+func (p *PostgresGoalService) HasActiveGoal(ctx context.Context, sessionId string) bool {
 	ad, _ := gorm.G[SessionGoal](p.db).Where("session_id = ?", sessionId).First(ctx)
 	if isBlank(ad.SessionId) {
 		return false
@@ -354,8 +349,7 @@ func (p *PostgresGoalService) HasActiveGoal(sessionId string) bool {
 }
 
 // IncrementContinuationCount implements [IGoalService].
-func (p *PostgresGoalService) IncrementContinuationCount(sessionId string) int {
-	ctx := context.Background()
+func (p *PostgresGoalService) IncrementContinuationCount(ctx context.Context, sessionId string) int {
 	var updatedCount int
 
 	// 1. 使用 gorm.Expr 让数据库自增：continuation_count = continuation_count + 1
@@ -379,7 +373,7 @@ func (p *PostgresGoalService) IncrementContinuationCount(sessionId string) int {
 }
 
 // RecordGoalHistory implements [IGoalService].
-func (p *PostgresGoalService) RecordGoalHistory(goal *SessionGoal) error {
+func (p *PostgresGoalService) RecordGoalHistory(ctx context.Context, goal *SessionGoal) error {
 	record := &GoalHistoryRecord{
 		Timestamp:         time.Now().UTC().Format(time.RFC3339Nano),
 		SessionId:         goal.SessionId,
@@ -390,7 +384,7 @@ func (p *PostgresGoalService) RecordGoalHistory(goal *SessionGoal) error {
 		ContinuationCount: goal.ContinuationCount,
 		CreatedAt:         goal.CreatedAt.Format(time.RFC3339Nano),
 	}
-	return p.db.
+	return p.db.WithContext(ctx).
 		Clauses(clause.OnConflict{
 			Columns:   []clause.Column{{Name: "timestamp"}, {Name: "session_id"}},
 			UpdateAll: true,
@@ -399,9 +393,7 @@ func (p *PostgresGoalService) RecordGoalHistory(goal *SessionGoal) error {
 }
 
 // RecordTurnHash implements [IGoalService].
-func (p *PostgresGoalService) RecordTurnHash(sessionId string, normalizedText string) bool {
-	ctx := context.Background()
-
+func (p *PostgresGoalService) RecordTurnHash(ctx context.Context, sessionId string, normalizedText string) bool {
 	result := false
 	err := p.db.Transaction(func(tx *gorm.DB) error {
 		goal, err := gorm.G[SessionGoal](tx).Where("session_id = ? ", sessionId).First(ctx)
@@ -441,10 +433,8 @@ func (p *PostgresGoalService) RecordTurnHash(sessionId string, normalizedText st
 }
 
 // UpdateStatus implements [IGoalService].
-func (p *PostgresGoalService) UpdateStatus(sessionId string, newStatus GoalStatus, note *string) error {
-	ctx := context.Background()
-
-	return p.db.Transaction(func(tx *gorm.DB) error {
+func (p *PostgresGoalService) UpdateStatus(ctx context.Context, sessionId string, newStatus GoalStatus, note *string) error {
+	return p.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		goal, err := gorm.G[SessionGoal](tx).Where("session_id = ? ", sessionId).First(ctx)
 		if err != nil {
 			return err
@@ -466,7 +456,7 @@ func (p *PostgresGoalService) UpdateStatus(sessionId string, newStatus GoalStatu
 			updatedFields["status_note"] = *note
 		}
 
-		if err = tx.WithContext(ctx).
+		if err = tx.
 			Model(&SessionGoal{}).
 			Where("session_id = ? ", sessionId).
 			Updates(updatedFields).
@@ -498,9 +488,7 @@ func (p *PostgresGoalService) UpdateStatus(sessionId string, newStatus GoalStatu
 }
 
 // UpdateTokenUsage implements [IGoalService].
-func (p *PostgresGoalService) UpdateTokenUsage(sessionId string, sessionTotalTokens int64) error {
-	ctx := context.Background()
-
+func (p *PostgresGoalService) UpdateTokenUsage(ctx context.Context, sessionId string, sessionTotalTokens int64) error {
 	// 使用 GREATEST(0, ? - tokens_at_start) 在数据库层面直接计算
 	return p.db.WithContext(ctx).
 		Model(&SessionGoal{}).
