@@ -356,28 +356,26 @@ func (p *PostgresGoalService) HasActiveGoal(sessionId string) bool {
 // IncrementContinuationCount implements [IGoalService].
 func (p *PostgresGoalService) IncrementContinuationCount(sessionId string) int {
 	ctx := context.Background()
-	var goal SessionGoal
-	var err error
-	err = p.db.Transaction(func(tx *gorm.DB) error {
-		goal, err = gorm.G[SessionGoal](tx).Where("session_id = ? ", sessionId).First(ctx)
-		if err != nil {
-			return err
-		}
+	var updatedCount int
 
-		updatedFields := make(map[string]any)
-		updatedFields["continuation_count"] = goal.ConsecutiveBlockerCount + 1
-		updatedFields["updated_at"] = time.Now().UTC()
-		return tx.WithContext(ctx).
-			Model(&SessionGoal{}).
-			Where("session_id = ? ", sessionId).
-			Updates(updatedFields).
-			Error
-	})
+	// 1. 使用 gorm.Expr 让数据库自增：continuation_count = continuation_count + 1
+	// 2. 使用 Clauses(clause.Returning{}) 让 Postgres 返回更新后的值
+	err := p.db.WithContext(ctx).
+		Model(&SessionGoal{}).
+		Where("session_id = ?", sessionId).
+		Clauses(clause.Returning{Columns: []clause.Column{{Name: "continuation_count"}}}).
+		Updates(map[string]any{
+			"continuation_count": gorm.Expr("continuation_count + 1"),
+			"updated_at":         time.Now().UTC(),
+		}).
+		Scan(&updatedCount). // 将返回的最新值直接注入到 updatedCount 变量中
+		Error
 
 	if err != nil {
 		return 0
 	}
-	return goal.ConsecutiveBlockerCount + 1
+
+	return updatedCount
 }
 
 // RecordGoalHistory implements [IGoalService].
@@ -503,19 +501,13 @@ func (p *PostgresGoalService) UpdateStatus(sessionId string, newStatus GoalStatu
 func (p *PostgresGoalService) UpdateTokenUsage(sessionId string, sessionTotalTokens int64) error {
 	ctx := context.Background()
 
-	return p.db.Transaction(func(tx *gorm.DB) error {
-		goal, err := gorm.G[SessionGoal](tx).Where("session_id = ? ", sessionId).First(ctx)
-		if err != nil {
-			return err
-		}
-
-		updatedFields := make(map[string]any)
-		updatedFields["tokens_used"] = max(0, sessionTotalTokens-goal.TokensAtStart)
-		updatedFields["updated_at"] = time.Now().UTC()
-		return tx.WithContext(ctx).
-			Model(&SessionGoal{}).
-			Where("session_id = ? ", sessionId).
-			Updates(updatedFields).
-			Error
-	})
+	// 使用 GREATEST(0, ? - tokens_at_start) 在数据库层面直接计算
+	return p.db.WithContext(ctx).
+		Model(&SessionGoal{}).
+		Where("session_id = ?", sessionId).
+		Updates(map[string]any{
+			"tokens_used": gorm.Expr("GREATEST(0, ? - tokens_at_start)", sessionTotalTokens),
+			"updated_at":  time.Now().UTC(),
+		}).
+		Error
 }
