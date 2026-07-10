@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"math"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -70,6 +71,7 @@ type SessionGoal struct {
 	LastBlockerHash         string     `json:"last_blocker_hash"`
 	StatusNote              string     `json:"status_note"`
 	TokensAtStart           int64      `json:"tokens_at_start"`
+	mu                      sync.Mutex `json:"-" gorm:"-"`
 }
 
 func (s *SessionGoal) IsBudgetExceeded() bool {
