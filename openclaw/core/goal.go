@@ -1,6 +1,7 @@
 package core
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -9,6 +10,9 @@ import (
 	"path/filepath"
 	"sync"
 	"time"
+
+	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 var _ IGoalService = (*InMemoryGoalService)(nil)
@@ -258,4 +262,260 @@ func (i *InMemoryGoalService) UpdateTokenUsage(sessionId string, sessionTotalTok
 	goal.UpdatedAt = time.Now().UTC()
 
 	return nil
+}
+
+var _ IGoalService = (*PostgresGoalService)(nil)
+
+type PostgresGoalService struct {
+	db *gorm.DB
+}
+
+func NewPostgresGoalService(db *gorm.DB) (*PostgresGoalService, error) {
+	store := &PostgresGoalService{db: db}
+	if err := store.initialize(); err != nil {
+		return nil, err
+	}
+	return store, nil
+}
+
+func (s *PostgresGoalService) initialize() error {
+	return s.db.AutoMigrate(
+		&SessionGoal{},
+		&GoalHistoryRecord{},
+	)
+}
+
+// ClearGoal implements [IGoalService].
+func (p *PostgresGoalService) ClearGoal(sessionId string) error {
+	ctx := context.Background()
+	_, err := gorm.G[UserProfile](p.db).Where("session_id = ?", sessionId).Delete(ctx)
+	return err
+}
+
+// CreateGoal implements [IGoalService].
+func (p *PostgresGoalService) CreateGoal(sessionId string, objective string, tokenBudget int64, tokensAtStart int64) (*SessionGoal, error) {
+
+	if isBlank(sessionId) || isBlank(objective) {
+		return nil, errors.New("invalid parameter")
+	}
+
+	if len(objective) > 4000 {
+		return nil, errors.New("objective exceeds max length of 4000 characters")
+	}
+
+	if tokenBudget < 0 {
+		return nil, errors.New("token budget cannot be negative")
+	}
+
+	if tokensAtStart < 0 {
+		return nil, errors.New("token baseline cannot be negative")
+	}
+
+	var goal = &SessionGoal{
+		SessionId:     sessionId,
+		Objective:     objective,
+		TokenBudget:   tokenBudget,
+		TokensAtStart: tokensAtStart,
+	}
+
+	ctx := context.Background()
+	err := p.db.WithContext(ctx).
+		Clauses(clause.OnConflict{
+			Columns:   []clause.Column{{Name: "session_id"}},
+			UpdateAll: true,
+		}).
+		Create(goal).Error
+	if err != nil {
+		return nil, err
+	}
+
+	return goal, nil
+}
+
+// GetGoal implements [IGoalService].
+func (p *PostgresGoalService) GetGoal(sessionId string) (*SessionGoal, error) {
+	ctx := context.Background()
+	ad, err := gorm.G[SessionGoal](p.db).Where("session_id = ?", sessionId).First(ctx)
+	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, err
+	}
+	return &ad, err
+}
+
+// HasActiveGoal implements [IGoalService].
+func (p *PostgresGoalService) HasActiveGoal(sessionId string) bool {
+	ctx := context.Background()
+	ad, _ := gorm.G[SessionGoal](p.db).Where("session_id = ?", sessionId).First(ctx)
+	if isBlank(ad.SessionId) {
+		return false
+	}
+
+	return true
+}
+
+// IncrementContinuationCount implements [IGoalService].
+func (p *PostgresGoalService) IncrementContinuationCount(sessionId string) int {
+	ctx := context.Background()
+	var goal SessionGoal
+	var err error
+	err = p.db.Transaction(func(tx *gorm.DB) error {
+		goal, err = gorm.G[SessionGoal](tx).Where("session_id = ? ", sessionId).First(ctx)
+		if err != nil {
+			return err
+		}
+
+		updatedFields := make(map[string]any)
+		updatedFields["continuation_count"] = goal.ConsecutiveBlockerCount + 1
+		updatedFields["updated_at"] = time.Now().UTC()
+		return tx.WithContext(ctx).
+			Model(&SessionGoal{}).
+			Where("session_id = ? ", sessionId).
+			Updates(updatedFields).
+			Error
+	})
+
+	if err != nil {
+		return 0
+	}
+	return goal.ConsecutiveBlockerCount + 1
+}
+
+// RecordGoalHistory implements [IGoalService].
+func (p *PostgresGoalService) RecordGoalHistory(goal *SessionGoal) error {
+	record := &GoalHistoryRecord{
+		Timestamp:         time.Now().UTC().Format(time.RFC3339Nano),
+		SessionId:         goal.SessionId,
+		Objective:         goal.Objective,
+		Status:            goal.Status.ToDisplayName(),
+		TokenBudget:       goal.TokenBudget,
+		TokensUsed:        goal.TokensUsed,
+		ContinuationCount: goal.ContinuationCount,
+		CreatedAt:         goal.CreatedAt.Format(time.RFC3339Nano),
+	}
+	return p.db.
+		Clauses(clause.OnConflict{
+			Columns:   []clause.Column{{Name: "timestamp"}, {Name: "session_id"}},
+			UpdateAll: true,
+		}).
+		Create(record).Error // 传入指针
+}
+
+// RecordTurnHash implements [IGoalService].
+func (p *PostgresGoalService) RecordTurnHash(sessionId string, normalizedText string) bool {
+	ctx := context.Background()
+
+	result := false
+	err := p.db.Transaction(func(tx *gorm.DB) error {
+		goal, err := gorm.G[SessionGoal](tx).Where("session_id = ? ", sessionId).First(ctx)
+		if err != nil {
+			return err
+		}
+
+		hash := ComputeTurnHash(normalizedText)
+
+		updatedFields := make(map[string]any)
+
+		if isBlank(hash) {
+			updatedFields["last_blocker_hash"] = ""
+			updatedFields["consecutive_blocker_count"] = 0
+		} else if hash == goal.LastBlockerHash {
+			updatedFields["consecutive_blocker_count"] = goal.ConsecutiveBlockerCount + 1
+			result = goal.ConsecutiveBlockerCount >= 3
+		} else {
+			updatedFields["last_blocker_hash"] = hash
+			updatedFields["consecutive_blocker_count"] = 1
+		}
+
+		err = tx.WithContext(ctx).
+			Model(&SessionGoal{}).
+			Where("session_id = ? ", sessionId).
+			Updates(updatedFields).
+			Error
+
+		return err
+	})
+
+	if err != nil {
+		return false
+	}
+
+	return result
+}
+
+// UpdateStatus implements [IGoalService].
+func (p *PostgresGoalService) UpdateStatus(sessionId string, newStatus GoalStatus, note *string) error {
+	ctx := context.Background()
+
+	return p.db.Transaction(func(tx *gorm.DB) error {
+		goal, err := gorm.G[SessionGoal](tx).Where("session_id = ? ", sessionId).First(ctx)
+		if err != nil {
+			return err
+		}
+
+		if goal.Status.IsTerminal() {
+			return fmt.Errorf("cannot transition from terminal state '%s'", goal.Status.ToDisplayName())
+		}
+
+		if !isValidTransition(goal.Status, newStatus) {
+			return fmt.Errorf("invalid transition: %s -> %s", goal.Status.ToDisplayName(), newStatus.ToDisplayName())
+		}
+
+		updatedFields := make(map[string]any)
+		updatedFields["status"] = newStatus
+		updatedFields["updated_at"] = time.Now().UTC()
+
+		if note != nil {
+			updatedFields["status_note"] = *note
+		}
+
+		if err = tx.WithContext(ctx).
+			Model(&SessionGoal{}).
+			Where("session_id = ? ", sessionId).
+			Updates(updatedFields).
+			Error; err != nil {
+			return err
+		}
+
+		if newStatus.IsTerminal() || (newStatus == GoalStatus_Blocked || newStatus == GoalStatus_BudgetLimited) {
+			record := &GoalHistoryRecord{
+				Timestamp:         time.Now().UTC().Format(time.RFC3339Nano),
+				SessionId:         goal.SessionId,
+				Objective:         goal.Objective,
+				Status:            goal.Status.ToDisplayName(),
+				TokenBudget:       goal.TokenBudget,
+				TokensUsed:        goal.TokensUsed,
+				ContinuationCount: goal.ContinuationCount,
+				CreatedAt:         goal.CreatedAt.Format(time.RFC3339Nano),
+			}
+			return tx.
+				Clauses(clause.OnConflict{
+					Columns:   []clause.Column{{Name: "timestamp"}, {Name: "session_id"}},
+					UpdateAll: true,
+				}).
+				Create(record).Error
+		}
+
+		return nil
+	})
+}
+
+// UpdateTokenUsage implements [IGoalService].
+func (p *PostgresGoalService) UpdateTokenUsage(sessionId string, sessionTotalTokens int64) error {
+	ctx := context.Background()
+
+	return p.db.Transaction(func(tx *gorm.DB) error {
+		goal, err := gorm.G[SessionGoal](tx).Where("session_id = ? ", sessionId).First(ctx)
+		if err != nil {
+			return err
+		}
+
+		updatedFields := make(map[string]any)
+		updatedFields["tokens_used"] = max(0, sessionTotalTokens-goal.TokensAtStart)
+		updatedFields["updated_at"] = time.Now().UTC()
+		return tx.WithContext(ctx).
+			Model(&SessionGoal{}).
+			Where("session_id = ? ", sessionId).
+			Updates(updatedFields).
+			Error
+	})
 }

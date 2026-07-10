@@ -41,6 +41,8 @@ func main() {
 		&core.GovernanceLedgerEntry{},
 		&core.HarnessContract{},
 		&core.SharedHarnessState{},
+		&core.SessionGoal{},
+		&core.GoalHistoryRecord{},
 	)
 
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))

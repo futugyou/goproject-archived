@@ -24,6 +24,7 @@ import (
 	_ "time/tzdata"
 
 	"github.com/robfig/cron/v3"
+	"gorm.io/gorm"
 )
 
 func fileExists(path string) bool {
@@ -494,4 +495,26 @@ func AppendAllText(path, text string) error {
 
 	_, err = f.WriteString(text + "\n")
 	return err
+}
+
+func LoadAndDelete[T any](db *gorm.DB, id any) (*T, error) {
+	var result T
+
+	// 1. 利用 GORM 的 Statement 自动获取该结构体对应的真实表名
+	stmt := &gorm.Statement{DB: db}
+	if err := stmt.Parse(&result); err != nil {
+		return nil, err
+	}
+	tableName := stmt.Schema.Table
+
+	// 2. 动态拼接并执行强类型的 DELETE ... RETURNING 语句
+	// PostgreSQL 允许 RETURNING * 返回整行所有字段
+	query := fmt.Sprintf("DELETE FROM %s WHERE id = ? RETURNING *", tableName)
+
+	err := db.Raw(query, id).Scan(&result).Error
+	if err != nil {
+		return nil, err
+	}
+
+	return &result, nil
 }
