@@ -227,6 +227,10 @@ func isLetterOrDigit(b byte) bool {
 		(b >= '0' && b <= '9')
 }
 
+func isKeywordCharacter(value rune) bool {
+	return unicode.IsLetter(value) || unicode.IsDigit(value) || value == '_'
+}
+
 type NamedLockManager struct {
 	mu    sync.Mutex
 	gates map[string]*countedLock
