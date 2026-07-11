@@ -395,6 +395,8 @@ func (b *BrowserToolCapabilityEvaluator) Evaluate(config *GatewayConfig) *Browse
 
 type SecretResolver struct{}
 
+var SecretResolverInstance = &SecretResolver{}
+
 func (s *SecretResolver) IsRawRef(secretRef string) bool {
 	return !isBlank(secretRef) && strings.HasPrefix(secretRef, "raw:")
 }

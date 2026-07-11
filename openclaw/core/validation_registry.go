@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"net/url"
 	"sort"
 	"strings"
 	"sync"
@@ -13,11 +14,11 @@ type ProviderSmokeProbeResult struct {
 	Detail  string
 }
 
-type ProbeFunc func(ctx context.Context, config LlmProviderConfig) (ProviderSmokeProbeResult, error)
+type ProbeFunc func(ctx context.Context, config LlmProviderConfig) (*ProviderSmokeProbeResult, error)
 
 type ProviderSmokeRegistration struct {
 	ProviderID        string
-	ProbeAsync        ProbeFunc
+	Probe             ProbeFunc
 	TreatAsConfigured bool
 	SkipReason        string
 }
@@ -33,7 +34,7 @@ func NewProviderSmokeRegistry() *ProviderSmokeRegistry {
 	}
 }
 
-func (r *ProviderSmokeRegistry) RegisterHandler(providerID string, probeAsync ProbeFunc, treatAsConfigured bool) {
+func (r *ProviderSmokeRegistry) RegisterHandler(providerID string, probe ProbeFunc, treatAsConfigured bool) {
 	normalized := r.normalize(providerID)
 	if normalized == "" {
 		return
@@ -44,7 +45,7 @@ func (r *ProviderSmokeRegistry) RegisterHandler(providerID string, probeAsync Pr
 
 	r.registrations[normalized] = ProviderSmokeRegistration{
 		ProviderID:        normalized,
-		ProbeAsync:        probeAsync,
+		Probe:             probe,
 		TreatAsConfigured: treatAsConfigured,
 	}
 }
@@ -65,12 +66,12 @@ func (r *ProviderSmokeRegistry) RegisterMetadata(providerID string, treatAsConfi
 	}
 }
 
-func (r *ProviderSmokeRegistry) TryGet(providerID string) (ProviderSmokeRegistration, bool) {
+func (r *ProviderSmokeRegistry) TryGet(providerID string) (*ProviderSmokeRegistration, bool) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 
 	reg, exists := r.registrations[r.normalize(providerID)]
-	return reg, exists
+	return &reg, exists
 }
 
 // 返回按 ProviderID 字母顺序排序后的切片副本
@@ -94,4 +95,49 @@ func (r *ProviderSmokeRegistry) Snapshot() []ProviderSmokeRegistration {
 // 内部标准化方法
 func (r *ProviderSmokeRegistry) normalize(providerID string) string {
 	return strings.ToLower(strings.TrimSpace(providerID))
+}
+
+const DefaultOllamaBaseUrl = "http://127.0.0.1:11434"
+
+type OllamaResult struct {
+	BaseUrl                   string
+	UsesCompatibilityEndpoint bool
+}
+
+func OllamaNormalizeBaseUrl(endpoint string) string {
+	return OllamaNormalize(endpoint).BaseUrl
+}
+
+func OllamaUsesCompatibilityEndpoint(endpoint string) bool {
+	return OllamaNormalize(endpoint).UsesCompatibilityEndpoint
+}
+
+func OllamaNormalize(endpoint string) OllamaResult {
+	trimmed := strings.TrimSpace(endpoint)
+	if trimmed == "" {
+		return OllamaResult{BaseUrl: DefaultOllamaBaseUrl, UsesCompatibilityEndpoint: false}
+	}
+
+	trimmed = strings.TrimRight(trimmed, "/")
+
+	parsedUrl, err := url.Parse(trimmed)
+	if err != nil || parsedUrl.Scheme == "" || parsedUrl.Host == "" {
+		return OllamaResult{BaseUrl: trimmed, UsesCompatibilityEndpoint: false}
+	}
+
+	path := strings.TrimRight(parsedUrl.Path, "/")
+
+	// 检查是否以 /v1 结尾（不区分大小写）
+	if strings.EqualFold(path, "/v1") {
+		parsedUrl.Path = ""
+		parsedUrl.RawQuery = ""
+
+		baseUrl := strings.TrimRight(parsedUrl.String(), "/")
+		return OllamaResult{
+			BaseUrl:                   baseUrl,
+			UsesCompatibilityEndpoint: true,
+		}
+	}
+
+	return OllamaResult{BaseUrl: trimmed, UsesCompatibilityEndpoint: false}
 }
