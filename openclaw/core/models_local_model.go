@@ -343,8 +343,8 @@ const (
 type ReliabilityFactor struct {
 	Id       string   `json:"id"`
 	Label    string   `json:"label"`
-	Weight   int      `json:"weight"`
-	Score    int      `json:"score"`
+	Weight   int64    `json:"weight"`
+	Score    int64    `json:"score"`
 	Status   string   `json:"status"`
 	Findings []string `json:"findings"`
 }
@@ -366,7 +366,7 @@ type ReliabilityRecommendation struct {
 
 // --- ReliabilitySnapshot ---
 type ReliabilitySnapshot struct {
-	Score           int                         `json:"score"`
+	Score           int64                       `json:"score"`
 	Status          string                      `json:"status"`
 	Factors         []ReliabilityFactor         `json:"factors"`
 	Recommendations []ReliabilityRecommendation `json:"recommendations"`
