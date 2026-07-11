@@ -133,6 +133,8 @@ func (g *GatewaySetupArtifacts) BuildReachableBaseUrl(bindAddress string, port i
 	return fmt.Sprintf("http://%s:%s", bindAddress, portStr)
 }
 
+var GatewaySetupPathsIntance = &GatewaySetupPaths{}
+
 type GatewaySetupPaths struct{}
 
 const (

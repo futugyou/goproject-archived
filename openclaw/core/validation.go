@@ -12,19 +12,12 @@ import (
 	"time"
 )
 
-type ProviderSmokeProbe struct {
-	httpClient *http.Client
-}
+var ProviderSmokeProbeInstance = &ProviderSmokeProbe{}
 
-func NewProviderSmokeProbe(client *http.Client) *ProviderSmokeProbe {
-	if client == nil {
-		client = &http.Client{}
-	}
-	return &ProviderSmokeProbe{httpClient: client}
-}
+type ProviderSmokeProbe struct{}
 
 // 执行单次供应商连接可用性探测
-func (p *ProviderSmokeProbe) Probe(ctx context.Context, config LlmProviderConfig, registry *ProviderSmokeRegistry) (*ProviderSmokeProbeResult, error) {
+func (p *ProviderSmokeProbe) Probe(ctx context.Context, httpClient *http.Client, config LlmProviderConfig, registry *ProviderSmokeRegistry) (*ProviderSmokeProbeResult, error) {
 	provider := p.NormalizeProvider(config.Provider)
 	if provider == "" {
 		return &ProviderSmokeProbeResult{
@@ -79,7 +72,7 @@ func (p *ProviderSmokeProbe) Probe(ctx context.Context, config LlmProviderConfig
 	defer cancel()
 	req = req.WithContext(timeoutCtx)
 
-	response, err := p.httpClient.Do(req)
+	response, err := httpClient.Do(req)
 	if err != nil {
 		if ctx.Err() == nil && timeoutCtx.Err() == context.DeadlineExceeded {
 			detail := "The gateway can still work if the provider is reachable later."

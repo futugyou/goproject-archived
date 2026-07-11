@@ -6,8 +6,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"unicode"
 )
@@ -62,10 +64,8 @@ func buildSnapshotKey(configPath string) string {
 func NewUpgradeRollbackSnapshotStore(configPath string) *UpgradeRollbackSnapshotStore {
 	normalizedConfigPath, _ := filepath.Abs(configPath)
 	var key = buildSnapshotKey(normalizedConfigPath)
-	p := &GatewaySetupPaths{}
-
 	store := &UpgradeRollbackSnapshotStore{}
-	store.rootPath = filepath.Join(p.ResolveDefaultUpgradeSnapshotRootPath(), key)
+	store.rootPath = filepath.Join(GatewaySetupPathsIntance.ResolveDefaultUpgradeSnapshotRootPath(), key)
 	store.manifestPath = filepath.Join(store.rootPath, "snapshot.json")
 	store.payloadPath = filepath.Join(store.rootPath, "payload")
 
@@ -259,6 +259,386 @@ func hardenSnapshotTree(rootPath string) {
 	})
 }
 
-func resolveDefaultUpgradeSnapshotRootPath() string {
-	return filepath.Join(os.TempDir(), "upgrade_snapshots")
+const (
+	MaintenanceHistoryRetention    = 20
+	MaxModelEvaluationGroupsToKeep = 20
+	PromptSizeWarningBytes         = 12_000
+)
+
+var ProtectedRetentionTags = map[string]struct{}{
+	"keep":             {},
+	"pinned":           {},
+	"retain":           {},
+	"retention-exempt": {},
+}
+
+type ReliabilityScorer struct{}
+
+func (s *ReliabilityScorer) Build(
+	config GatewayConfig,
+	inputs *MaintenanceScanInputs,
+	maintenanceReport *MaintenanceReportResponse,
+	modelDoctor *ModelSelectionDoctorResponse,
+	automationStates []AutomationRunState,
+) ReliabilitySnapshot {
+
+	if inputs == nil {
+		inputs = &MaintenanceScanInputs{}
+	}
+	if modelDoctor == nil {
+		if inputs.ModelDoctor != nil {
+			modelDoctor = inputs.ModelDoctor
+		} else {
+			// 模拟 ModelDoctorEvaluator.Build(config)
+			modelDoctor = &ModelSelectionDoctorResponse{}
+		}
+	}
+	if automationStates == nil {
+		automationStates = inputs.AutomationRunStates
+	}
+
+	var factors []ReliabilityFactor
+	var recommendations []ReliabilityRecommendation
+
+	factors = append(factors, s.buildReadinessFactor(config, inputs.SetupStatus, &recommendations, inputs.ConfigPath))
+	factors = append(factors, s.buildModelFactor(*modelDoctor, inputs.ProviderRoutes, &recommendations))
+	factors = append(factors, s.buildAutomationFactor(automationStates, &recommendations))
+	factors = append(factors, s.buildMaintenanceFactor(maintenanceReport, &recommendations, inputs.ConfigPath))
+	factors = append(factors, s.buildOperatorFactor(*inputs, &recommendations))
+
+	var score int64 = 0
+	for _, f := range factors {
+		score += f.Score
+	}
+
+	var status string
+	if score >= 90 {
+		status = "healthy"
+	} else if score >= 70 {
+		status = "watch"
+	} else {
+		status = "action_needed"
+	}
+
+	return ReliabilitySnapshot{
+		Score:           score,
+		Status:          status,
+		Factors:         factors,
+		Recommendations: s.processRecommendations(recommendations),
+	}
+}
+
+func (s *ReliabilityScorer) buildReadinessFactor(
+	config GatewayConfig,
+	setupStatus *SetupStatusResponse,
+	recommendations *[]ReliabilityRecommendation,
+	configPath string,
+) ReliabilityFactor {
+	var weight int64 = 25
+	score := weight
+	var findings []string
+
+	publicBind := s.isNonLoopbackBind(config.BindAddress)
+	if setupStatus != nil {
+		publicBind = setupStatus.PublicBind
+	}
+
+	workspacePath := config.Tooling.WorkspaceRoot
+	if setupStatus != nil && setupStatus.WorkspacePath != nil {
+		workspacePath = *setupStatus.WorkspacePath
+	}
+
+	workspaceExists := false
+	if setupStatus != nil {
+		workspaceExists = setupStatus.WorkspaceExists
+	} else {
+		workspaceExists = !isBlank(workspacePath) && directoryExists(workspacePath)
+	}
+
+	providerConfigured := false
+	if setupStatus != nil {
+		providerConfigured = setupStatus.ProviderConfigured
+	} else {
+		providerConfigured = ProviderSmokeProbeInstance.IsProviderConfigured(config.Llm, nil)
+	}
+
+	if publicBind && strings.TrimSpace(config.AuthToken) == "" {
+		score -= 10
+		findings = append(findings, "Public bind is missing an auth token.")
+		*recommendations = append(*recommendations, ReliabilityRecommendation{
+			Id:       "verify-provider",
+			Summary:  "Re-run setup verification with provider requirements.",
+			Command:  s.buildConfigAwareCommand("openclaw setup verify --require-provider", configPath),
+			Priority: 100,
+		})
+	}
+
+	if !workspaceExists {
+		score -= 8
+		findings = append(findings, "Configured workspace path does not exist.")
+		*recommendations = append(*recommendations, ReliabilityRecommendation{
+			Id:       "verify-workspace",
+			Summary:  "Confirm the configured workspace and setup posture.",
+			Command:  s.buildConfigAwareCommand("openclaw setup status", configPath),
+			Priority: 85,
+		})
+	}
+
+	if !providerConfigured {
+		score -= 7
+		findings = append(findings, "No provider is configured.")
+		*recommendations = append(*recommendations, ReliabilityRecommendation{
+			Id:       "require-provider",
+			Summary:  "Finish provider configuration before relying on the gateway.",
+			Command:  s.buildConfigAwareCommand("openclaw setup verify --require-provider", configPath),
+			Priority: 95,
+		})
+	}
+
+	return s.buildFactor("readiness", "Readiness & posture", weight, score, findings)
+}
+
+func (s *ReliabilityScorer) buildModelFactor(
+	modelDoctor ModelSelectionDoctorResponse,
+	routes []ProviderRouteHealthSnapshot,
+	recommendations *[]ReliabilityRecommendation,
+) ReliabilityFactor {
+	var weight int64 = 25
+	score := weight
+	var findings []string
+
+	if len(modelDoctor.Errors) > 0 {
+		score -= int64(min(15, len(modelDoctor.Errors)*5))
+		findings = append(findings, fmt.Sprintf("%d model-doctor error(s) are unresolved.", len(modelDoctor.Errors)))
+	}
+
+	if len(modelDoctor.Warnings) > 0 {
+		score -= int64(min(8, len(modelDoctor.Warnings)*2))
+		findings = append(findings, fmt.Sprintf("%d model-doctor warning(s) are active.", len(modelDoctor.Warnings)))
+	}
+
+	compatibilityCount := 0
+	for _, p := range modelDoctor.Profiles {
+		if p.UsesCompatibilityTransport {
+			compatibilityCount++
+		}
+	}
+	if compatibilityCount > 0 {
+		score -= int64(min(6, compatibilityCount*2))
+		findings = append(findings, fmt.Sprintf("%d profile(s) still rely on compatibility transport.", compatibilityCount))
+	}
+
+	var routeErrors int64 = 0
+	for _, r := range routes {
+		routeErrors += r.Errors
+	}
+	if routeErrors > 0 {
+		score -= min(6, routeErrors)
+		findings = append(findings, fmt.Sprintf("%d recent provider route error(s) were recorded.", routeErrors))
+	}
+
+	if len(findings) > 0 {
+		*recommendations = append(*recommendations, ReliabilityRecommendation{
+			Id:       "model-doctor",
+			Summary:  "Resolve model and provider routing issues.",
+			Command:  "openclaw models doctor",
+			Priority: 90,
+		})
+	}
+
+	return s.buildFactor("model_health", "Model & provider health", weight, score, findings)
+}
+
+func (s *ReliabilityScorer) buildAutomationFactor(
+	automationStates []AutomationRunState,
+	recommendations *[]ReliabilityRecommendation,
+) ReliabilityFactor {
+	var weight int64 = 20
+	score := weight
+	var findings []string
+
+	degraded := 0
+	quarantined := 0
+	for _, state := range automationStates {
+		if strings.EqualFold(state.HealthState, "degraded") {
+			degraded++
+		} else if strings.EqualFold(state.HealthState, "quarantined") {
+			quarantined++
+		}
+	}
+
+	if degraded > 0 {
+		score -= int64(min(8, degraded*2))
+		findings = append(findings, fmt.Sprintf("%d automation(s) are degraded.", degraded))
+	}
+
+	if quarantined > 0 {
+		score -= int64(min(12, quarantined*4))
+		findings = append(findings, fmt.Sprintf("%d automation(s) are quarantined.", quarantined))
+	}
+
+	if len(findings) > 0 {
+		priority := 70
+		if quarantined > 0 {
+			priority = 88
+		}
+		*recommendations = append(*recommendations, ReliabilityRecommendation{
+			Id:       "maintenance-scan",
+			Summary:  "Review automation health before trusting scheduled runs.",
+			Command:  "openclaw maintenance scan",
+			Priority: priority,
+		})
+	}
+
+	return s.buildFactor("automation_health", "Automation health", weight, score, findings)
+}
+
+func (s *ReliabilityScorer) buildMaintenanceFactor(
+	maintenanceReport *MaintenanceReportResponse,
+	recommendations *[]ReliabilityRecommendation,
+	configPath string,
+) ReliabilityFactor {
+	var weight int64 = 20
+	score := weight
+	var findings []string
+
+	if maintenanceReport != nil {
+		failCount := 0
+		warnCount := 0
+		for _, f := range maintenanceReport.Findings {
+			if strings.EqualFold(f.Severity, "fail") {
+				failCount++
+			} else if strings.EqualFold(f.Severity, "warn") {
+				warnCount++
+			}
+		}
+		score -= int64(min(12, failCount*4))
+		score -= int64(min(8, warnCount*2))
+
+		if maintenanceReport.Storage.OrphanedSessionMetadataEntries > 0 {
+			findings = append(findings, fmt.Sprintf("%d orphaned metadata entries remain.", maintenanceReport.Storage.OrphanedSessionMetadataEntries))
+		}
+		if maintenanceReport.Drift.RetentionFailures > 0 {
+			findings = append(findings, fmt.Sprintf("%d retention failure(s) were observed.", maintenanceReport.Drift.RetentionFailures))
+		}
+		if maintenanceReport.Drift.PromptP95Delta > 0 {
+			findings = append(findings, fmt.Sprintf("Prompt p95 drift is +%d tokens.", maintenanceReport.Drift.PromptP95Delta))
+		}
+	}
+
+	if len(findings) > 0 {
+		*recommendations = append(*recommendations, ReliabilityRecommendation{
+			Id:       "maintenance-fix",
+			Summary:  "Run a dry-run maintenance fix and apply only the safe cleanup you want.",
+			Command:  s.buildConfigAwareCommand("openclaw maintenance fix --dry-run", configPath),
+			Priority: 80,
+		})
+	}
+
+	return s.buildFactor("maintenance_drift", "Maintenance & drift", weight, score, findings)
+}
+
+func (s *ReliabilityScorer) buildOperatorFactor(
+	inputs MaintenanceScanInputs,
+	recommendations *[]ReliabilityRecommendation,
+) ReliabilityFactor {
+	var weight int64 = 10
+	score := weight
+	var findings []string
+
+	if inputs.PluginErrorCount > 0 {
+		score -= int64(min(6, inputs.PluginErrorCount*2))
+		findings = append(findings, fmt.Sprintf("%d plugin error(s) need operator review.", inputs.PluginErrorCount))
+	}
+	if inputs.PluginWarningCount > 0 {
+		score -= int64(min(4, inputs.PluginWarningCount))
+		findings = append(findings, fmt.Sprintf("%d plugin warning(s) are active.", inputs.PluginWarningCount))
+	}
+	if inputs.ChannelDriftCount > 0 {
+		findings = append(findings, fmt.Sprintf("%d channel(s) are not fully ready.", inputs.ChannelDriftCount))
+	}
+
+	if len(findings) > 0 {
+		*recommendations = append(*recommendations, ReliabilityRecommendation{
+			Id:       "setup-status",
+			Summary:  "Review setup posture and runtime hygiene before widening scope.",
+			Command:  s.buildConfigAwareCommand("openclaw setup status", inputs.ConfigPath),
+			Priority: 60,
+		})
+	}
+
+	return s.buildFactor("operator_hygiene", "Operator & runtime hygiene", weight, score, findings)
+}
+
+func (s *ReliabilityScorer) buildFactor(id, label string, weight, score int64, findings []string) ReliabilityFactor {
+	boundedScore := score
+	if boundedScore < 0 {
+		boundedScore = 0
+	} else if boundedScore > weight {
+		boundedScore = weight
+	}
+
+	var status string
+	if boundedScore >= int64(math.Ceil(float64(weight)*0.9)) {
+		status = "Healthy"
+	} else if boundedScore >= int64(math.Ceil(float64(weight)*0.6)) {
+		status = "Watch"
+	} else {
+		status = "ActionNeeded"
+	}
+
+	return ReliabilityFactor{
+		Id:       id,
+		Label:    label,
+		Weight:   weight,
+		Score:    boundedScore,
+		Status:   status,
+		Findings: findings,
+	}
+}
+
+func (s *ReliabilityScorer) buildConfigAwareCommand(command, configPath string) string {
+	if strings.TrimSpace(configPath) == "" {
+		return command
+	}
+
+	quoted := GatewaySetupPathsIntance.QuoteIfNeeded(configPath)
+	if strings.Contains(configPath, " ") {
+		quoted = `"` + configPath + `"`
+	}
+	return fmt.Sprintf("%s --config %s", command, quoted)
+}
+
+func (s *ReliabilityScorer) isNonLoopbackBind(bindAddress string) bool {
+	normalized := strings.ToLower(strings.TrimSpace(bindAddress))
+	return len(normalized) > 0 &&
+		normalized != "127.0.0.1" &&
+		normalized != "localhost" &&
+		normalized != "::1" &&
+		normalized != "[::1]"
+}
+
+func (s *ReliabilityScorer) processRecommendations(recs []ReliabilityRecommendation) []ReliabilityRecommendation {
+	groups := make(map[string][]ReliabilityRecommendation)
+	for _, item := range recs {
+		key := strings.ToLower(item.Id)
+		groups[key] = append(groups[key], item)
+	}
+
+	var uniqueRecs []ReliabilityRecommendation
+	for _, group := range groups {
+		sort.Slice(group, func(i, j int) bool {
+			return group[i].Priority > group[j].Priority
+		})
+		uniqueRecs = append(uniqueRecs, group[0])
+	}
+
+	sort.Slice(uniqueRecs, func(i, j int) bool {
+		return uniqueRecs[i].Priority > uniqueRecs[j].Priority
+	})
+
+	if len(uniqueRecs) > 6 {
+		uniqueRecs = uniqueRecs[:6]
+	}
+	return uniqueRecs
 }
