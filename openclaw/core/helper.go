@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/rand"
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -26,57 +27,6 @@ import (
 	"github.com/robfig/cron/v3"
 	"gorm.io/gorm"
 )
-
-func fileExists(path string) bool {
-	info, err := os.Stat(path)
-	if os.IsNotExist(err) {
-		return false
-	}
-	return !info.IsDir()
-}
-
-func directoryExists(path string) bool {
-	info, err := os.Stat(path)
-	if os.IsNotExist(err) {
-		return false
-	}
-	return info.IsDir()
-}
-
-func findDirectoriesCantainsFileName(candidatePath string, filename string) ([]string, error) {
-	uniquePaths := make(map[string]bool)
-
-	err := filepath.WalkDir(candidatePath, func(path string, d fs.DirEntry, err error) error {
-		if err != nil {
-			return nil
-		}
-
-		if d.Type()&fs.ModeSymlink != 0 {
-			return nil
-		}
-
-		if !d.IsDir() && d.Name() == filename {
-			dir := filepath.Dir(path)
-
-			if strings.TrimSpace(dir) != "" {
-				uniquePaths[dir] = true
-			}
-		}
-
-		return nil
-	})
-
-	if err != nil {
-		return nil, err
-	}
-
-	matches := make([]string, 0, len(uniquePaths))
-	for path := range uniquePaths {
-		matches = append(matches, path)
-	}
-
-	return matches, nil
-}
 
 func isBlank(s string) bool {
 	return strings.TrimSpace(s) == ""
@@ -387,6 +337,39 @@ func isValidIANA(tz string) bool {
 	return err == nil
 }
 
+// encodeKey 实现 URL 安全的 Base64 编码 (密匙转码)
+func encodeKey(key string) string {
+	if strings.TrimSpace(key) == "" {
+		return "item"
+	}
+
+	bytes := []byte(key)
+	encoded := base64.StdEncoding.EncodeToString(bytes)
+
+	// 转换成 URL 安全格式并移除填充符 '='
+	encoded = strings.ReplaceAll(encoded, "+", "-")
+	encoded = strings.ReplaceAll(encoded, "/", "_")
+	return strings.TrimRight(encoded, "=")
+}
+
+func expandAllEnv(input string) string {
+	if input == "" {
+		return ""
+	}
+
+	winRe := regexp.MustCompile(`%([^%]+)%`)
+	winExpanded := winRe.ReplaceAllStringFunc(input, func(match string) string {
+		varName := match[1 : len(match)-1]
+		return os.Getenv(varName)
+	})
+
+	return os.ExpandEnv(winExpanded)
+}
+
+// ==========================================
+// 通用私有泛型辅助工具函数
+// ==========================================
+
 func tryResolveLinkTarget(path string) (string, bool) {
 	finalPath, err := filepath.EvalSymlinks(path)
 	if err != nil {
@@ -476,18 +459,32 @@ func pathGetFullPath(path string) string {
 	return p
 }
 
-func expandAllEnv(input string) string {
-	if input == "" {
-		return ""
+// loadAllAsync 遍历目录下所有的 .json 文件并反序列化为对象切片
+func loadAllAsync[T any](ctx context.Context, directory string) ([]T, error) {
+	files, err := os.ReadDir(directory)
+	if err != nil {
+		return []T{}, nil // C# 中 catch 块返回空数组
 	}
 
-	winRe := regexp.MustCompile(`%([^%]+)%`)
-	winExpanded := winRe.ReplaceAllStringFunc(input, func(match string) string {
-		varName := match[1 : len(match)-1]
-		return os.Getenv(varName)
-	})
+	var results []T
+	for _, file := range files {
+		// 检查 Context 是否已取消
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
 
-	return os.ExpandEnv(winExpanded)
+		if file.IsDir() || !strings.HasSuffix(file.Name(), ".json") {
+			continue
+		}
+
+		path := filepath.Join(directory, file.Name())
+		item, err := loadOneAsync[T](ctx, path)
+		if err == nil && item != nil {
+			results = append(results, *item)
+		}
+	}
+
+	return results, nil
 }
 
 func AppendAllText(path, text string) error {
@@ -521,4 +518,114 @@ func LoadAndDelete[T any](db *gorm.DB, id any) (*T, error) {
 	}
 
 	return &result, nil
+}
+
+// loadOneAsync 反序列化单个文件
+func loadOneAsync[T any](ctx context.Context, path string) (*T, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+
+	if _, err := os.Stat(path); os.IsNotExist(err) {
+		return nil, nil
+	}
+
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, nil
+	}
+
+	var item T
+	if err := json.Unmarshal(data, &item); err != nil {
+		return nil, nil // C# 中 catch 块返回 default
+	}
+
+	return &item, nil
+}
+
+// saveOneAsync 安全写入文件（先写临时文件再重命名，以保证原子性）
+func saveOne(ctx context.Context, path string, item any) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+
+	data, err := json.Marshal(item)
+	if err != nil {
+		return err
+	}
+
+	tempPath := path + ".tmp"
+	if err := os.WriteFile(tempPath, data, 0644); err != nil {
+		return err
+	}
+
+	// 重命名（在 Go 中跨平台覆盖行为略有区别，os.Rename 在 Linux/Unix 下支持覆盖，Windows 下建议先移除）
+	if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+		return err
+	}
+
+	return os.Rename(tempPath, path)
+}
+
+func deleteOne(path string) error {
+	err := os.Remove(path)
+	if os.IsNotExist(err) {
+		return nil
+	}
+	return err
+}
+
+func deleteDirectory(path string) {
+	_ = os.RemoveAll(path)
+}
+
+func fileExists(path string) bool {
+	info, err := os.Stat(path)
+	if os.IsNotExist(err) {
+		return false
+	}
+	return !info.IsDir()
+}
+
+func directoryExists(path string) bool {
+	info, err := os.Stat(path)
+	if os.IsNotExist(err) {
+		return false
+	}
+	return info.IsDir()
+}
+
+func findDirectoriesCantainsFileName(candidatePath string, filename string) ([]string, error) {
+	uniquePaths := make(map[string]bool)
+
+	err := filepath.WalkDir(candidatePath, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return nil
+		}
+
+		if d.Type()&fs.ModeSymlink != 0 {
+			return nil
+		}
+
+		if !d.IsDir() && d.Name() == filename {
+			dir := filepath.Dir(path)
+
+			if strings.TrimSpace(dir) != "" {
+				uniquePaths[dir] = true
+			}
+		}
+
+		return nil
+	})
+
+	if err != nil {
+		return nil, err
+	}
+
+	matches := make([]string, 0, len(uniquePaths))
+	for path := range uniquePaths {
+		matches = append(matches, path)
+	}
+
+	return matches, nil
 }
