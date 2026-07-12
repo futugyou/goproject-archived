@@ -3,6 +3,11 @@ package core
 import (
 	"context"
 	"errors"
+	"fmt"
+	"os"
+	"path/filepath"
+	"sort"
+	"strings"
 	"time"
 
 	"gorm.io/gorm"
@@ -266,3 +271,366 @@ var _ IUserProfileStore = (*PostgresFeatureStore)(nil)
 var _ ILearningProposalStore = (*PostgresFeatureStore)(nil)
 var _ IConnectedAccountStore = (*PostgresFeatureStore)(nil)
 var _ IBackendSessionStore = (*PostgresFeatureStore)(nil)
+
+type FileFeatureStore struct {
+	automationsPath          string
+	automationRunsPath       string
+	automationRunHistoryPath string
+	accountsPath             string
+	backendEventsPath        string
+	backendSessionsPath      string
+	profilesPath             string
+	proposalsPath            string
+}
+
+func NewFileFeatureStore(storagePath string) (*FileFeatureStore, error) {
+	root, err := filepath.Abs(storagePath)
+	if err != nil {
+		return nil, err
+	}
+
+	store := &FileFeatureStore{
+		automationsPath:          filepath.Join(root, "automations"),
+		automationRunsPath:       filepath.Join(root, "automation-runs"),
+		automationRunHistoryPath: filepath.Join(root, "automation-run-history"),
+		accountsPath:             filepath.Join(root, "connected-accounts"),
+		backendSessionsPath:      filepath.Join(root, "backend-sessions"),
+		backendEventsPath:        filepath.Join(root, "backend-session-events"),
+		profilesPath:             filepath.Join(root, "profiles"),
+		proposalsPath:            filepath.Join(root, "learning-proposals"),
+	}
+
+	// 初始化创建所有目录
+	paths := []string{
+		store.automationsPath,
+		store.automationRunsPath,
+		store.automationRunHistoryPath,
+		store.accountsPath,
+		store.backendSessionsPath,
+		store.backendEventsPath,
+		store.profilesPath,
+		store.proposalsPath,
+	}
+
+	for _, path := range paths {
+		if err := os.MkdirAll(path, 0755); err != nil {
+			return nil, fmt.Errorf("failed to create directory %s: %w", path, err)
+		}
+	}
+
+	return store, nil
+}
+
+// ==========================================
+// 3. 核心业务方法实现
+// ==========================================
+
+// --- Automations ---
+
+func (f *FileFeatureStore) ListAutomations(ctx context.Context) ([]AutomationDefinition, error) {
+	return loadAllAsync[AutomationDefinition](ctx, f.automationsPath)
+}
+
+func (f *FileFeatureStore) GetAutomation(ctx context.Context, automationId string) (*AutomationDefinition, error) {
+	path := filepath.Join(f.automationsPath, encodeKey(automationId)+".json")
+	return loadOneAsync[AutomationDefinition](ctx, path)
+}
+
+func (f *FileFeatureStore) SaveAutomation(ctx context.Context, automation AutomationDefinition) error {
+	path := filepath.Join(f.automationsPath, encodeKey(automation.Id)+".json")
+	return saveOne(ctx, path, automation)
+}
+
+func (f *FileFeatureStore) DeleteAutomation(ctx context.Context, automationId string) error {
+	_ = deleteOne(filepath.Join(f.automationsPath, encodeKey(automationId)+".json"))
+	_ = deleteOne(filepath.Join(f.automationRunsPath, encodeKey(automationId)+".json"))
+	deleteDirectory(filepath.Join(f.automationRunHistoryPath, encodeKey(automationId)))
+	return nil
+}
+
+// --- Run States ---
+
+func (f *FileFeatureStore) GetRunState(ctx context.Context, automationId string) (*AutomationRunState, error) {
+	path := filepath.Join(f.automationRunsPath, encodeKey(automationId)+".json")
+	return loadOneAsync[AutomationRunState](ctx, path)
+}
+
+func (f *FileFeatureStore) SaveRunState(ctx context.Context, runState AutomationRunState) error {
+	path := filepath.Join(f.automationRunsPath, encodeKey(runState.AutomationId)+".json")
+	return saveOne(ctx, path, runState)
+}
+
+// --- Run Records ---
+
+func (f *FileFeatureStore) ListRunRecords(ctx context.Context, automationId string, limit int) ([]AutomationRunRecord, error) {
+	dir := filepath.Join(f.automationRunHistoryPath, encodeKey(automationId))
+	if _, err := os.Stat(dir); os.IsNotExist(err) {
+		return []AutomationRunRecord{}, nil
+	}
+
+	items, err := loadAllAsync[AutomationRunRecord](ctx, dir)
+	if err != nil {
+		return nil, err
+	}
+
+	// 排序: StartedAtUtc 倒序, 然后 CompletedAtUtc 倒序
+	sort.Slice(items, func(i, j int) bool {
+		if items[i].StartedAtUtc != items[j].StartedAtUtc {
+			return items[i].StartedAtUtc.After(items[j].StartedAtUtc)
+		}
+		var compI, compJ = items[i].StartedAtUtc, items[j].StartedAtUtc
+		if items[i].CompletedAtUtc != nil {
+			compI = *items[i].CompletedAtUtc
+		}
+		if items[j].CompletedAtUtc != nil {
+			compJ = *items[j].CompletedAtUtc
+		}
+		return compI.After(compJ)
+	})
+
+	if limit < 1 {
+		limit = 1
+	}
+	if len(items) > limit {
+		items = items[:limit]
+	}
+
+	return items, nil
+}
+
+func (f *FileFeatureStore) GetRunRecord(ctx context.Context, automationId, runId string) (*AutomationRunRecord, error) {
+	path := filepath.Join(f.automationRunHistoryPath, encodeKey(automationId), encodeKey(runId)+".json")
+	return loadOneAsync[AutomationRunRecord](ctx, path)
+}
+
+func (f *FileFeatureStore) SaveRunRecord(ctx context.Context, runRecord AutomationRunRecord) error {
+	dir := filepath.Join(f.automationRunHistoryPath, encodeKey(runRecord.AutomationId))
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		return err
+	}
+	path := filepath.Join(dir, encodeKey(runRecord.RunId)+".json")
+	return saveOne(ctx, path, runRecord)
+}
+
+func (f *FileFeatureStore) PruneRunRecords(ctx context.Context, automationId string, retainCount int) error {
+	dir := filepath.Join(f.automationRunHistoryPath, encodeKey(automationId))
+	if _, err := os.Stat(dir); os.IsNotExist(err) {
+		return nil
+	}
+
+	retain := retainCount
+	if retain < 1 {
+		retain = 1
+	}
+
+	records, err := loadAllAsync[AutomationRunRecord](ctx, dir)
+	if err != nil {
+		return err
+	}
+
+	// 排序机制相同
+	sort.Slice(records, func(i, j int) bool {
+		if records[i].StartedAtUtc != records[j].StartedAtUtc {
+			return records[i].StartedAtUtc.After(records[j].StartedAtUtc)
+		}
+		var compI, compJ = records[i].StartedAtUtc, records[j].StartedAtUtc
+		if records[i].CompletedAtUtc != nil {
+			compI = *records[i].CompletedAtUtc
+		}
+		if records[j].CompletedAtUtc != nil {
+			compJ = *records[j].CompletedAtUtc
+		}
+		return compI.After(compJ)
+	})
+
+	if len(records) <= retain {
+		return nil
+	}
+
+	toDelete := records[retain:]
+	for _, record := range toDelete {
+		path := filepath.Join(dir, encodeKey(record.RunId)+".json")
+		_ = deleteOne(path)
+	}
+
+	return nil
+}
+
+// --- Profiles ---
+
+func (f *FileFeatureStore) ListProfiles(ctx context.Context) ([]UserProfile, error) {
+	return loadAllAsync[UserProfile](ctx, f.profilesPath)
+}
+
+func (f *FileFeatureStore) GetProfile(ctx context.Context, actorId string) (*UserProfile, error) {
+	path := filepath.Join(f.profilesPath, encodeKey(actorId)+".json")
+	return loadOneAsync[UserProfile](ctx, path)
+}
+
+func (f *FileFeatureStore) SaveProfile(ctx context.Context, profile UserProfile) error {
+	path := filepath.Join(f.profilesPath, encodeKey(profile.ActorId)+".json")
+	return saveOne(ctx, path, profile)
+}
+
+func (f *FileFeatureStore) DeleteProfile(ctx context.Context, actorId string) error {
+	return deleteOne(filepath.Join(f.profilesPath, encodeKey(actorId)+".json"))
+}
+
+// --- Proposals ---
+
+func (f *FileFeatureStore) ListProposals(ctx context.Context, status *string, kind *string) ([]LearningProposal, error) {
+	all, err := loadAllAsync[LearningProposal](ctx, f.proposalsPath)
+	if err != nil {
+		return nil, err
+	}
+
+	var filtered []LearningProposal
+	statusStr := ""
+	if status != nil {
+		statusStr = strings.TrimSpace(*status)
+	}
+	kindstr := ""
+	if kind != nil {
+		kindstr = strings.TrimSpace(*kind)
+	}
+
+	for _, item := range all {
+		if statusStr != "" && !strings.EqualFold(item.Status, statusStr) {
+			continue
+		}
+		if kindstr != "" && !strings.EqualFold(item.Kind, kindstr) {
+			continue
+		}
+		filtered = append(filtered, item)
+	}
+
+	// 按照 UpdatedAtUtc 降序排序
+	sort.Slice(filtered, func(i, j int) bool {
+		return filtered[i].UpdatedAtUtc.After(filtered[j].UpdatedAtUtc)
+	})
+
+	return filtered, nil
+}
+
+func (f *FileFeatureStore) GetProposal(ctx context.Context, proposalId string) (*LearningProposal, error) {
+	path := filepath.Join(f.proposalsPath, encodeKey(proposalId)+".json")
+	return loadOneAsync[LearningProposal](ctx, path)
+}
+
+func (f *FileFeatureStore) SaveProposal(ctx context.Context, proposal *LearningProposal) error {
+	path := filepath.Join(f.proposalsPath, encodeKey(proposal.Id)+".json")
+	return saveOne(ctx, path, proposal)
+}
+
+// --- Connected Accounts ---
+
+func (f *FileFeatureStore) ListAccounts(ctx context.Context) ([]ConnectedAccount, error) {
+	return loadAllAsync[ConnectedAccount](ctx, f.accountsPath)
+}
+
+func (f *FileFeatureStore) GetAccount(ctx context.Context, accountId string) (*ConnectedAccount, error) {
+	path := filepath.Join(f.accountsPath, encodeKey(accountId)+".json")
+	return loadOneAsync[ConnectedAccount](ctx, path)
+}
+
+func (f *FileFeatureStore) SaveAccount(ctx context.Context, account ConnectedAccount) error {
+	path := filepath.Join(f.accountsPath, encodeKey(account.Id)+".json")
+	return saveOne(ctx, path, account)
+}
+
+func (f *FileFeatureStore) DeleteAccount(ctx context.Context, accountId string) error {
+	return deleteOne(filepath.Join(f.accountsPath, encodeKey(accountId)+".json"))
+}
+
+// --- Backend Sessions ---
+
+func (f *FileFeatureStore) ListBackendSessions(ctx context.Context, backendId *string) ([]BackendSessionRecord, error) {
+	all, err := loadAllAsync[BackendSessionRecord](ctx, f.backendSessionsPath)
+	if err != nil {
+		return nil, err
+	}
+
+	backendIdStr := ""
+	if backendId != nil {
+		backendIdStr = strings.TrimSpace(*backendId)
+	}
+	if backendIdStr == "" {
+		return all, nil
+	}
+
+	var filtered []BackendSessionRecord
+	for _, item := range all {
+		if strings.EqualFold(item.BackendId, backendIdStr) {
+			filtered = append(filtered, item)
+		}
+	}
+	return filtered, nil
+}
+
+func (f *FileFeatureStore) GetBackendSession(ctx context.Context, sessionId string) (*BackendSessionRecord, error) {
+	path := filepath.Join(f.backendSessionsPath, encodeKey(sessionId)+".json")
+	return loadOneAsync[BackendSessionRecord](ctx, path)
+}
+
+func (f *FileFeatureStore) SaveBackendSession(ctx context.Context, session BackendSessionRecord) error {
+	path := filepath.Join(f.backendSessionsPath, encodeKey(session.SessionId)+".json")
+	return saveOne(ctx, path, session)
+}
+
+func (f *FileFeatureStore) DeleteBackendSession(ctx context.Context, sessionId string) error {
+	return deleteOne(filepath.Join(f.backendSessionsPath, encodeKey(sessionId)+".json"))
+}
+
+// --- Backend Events ---
+
+func (f *FileFeatureStore) AppendBackendEvent(ctx context.Context, evt BackendEvent) error {
+	path := filepath.Join(f.backendEventsPath, encodeKey(evt.SessionID)+".json")
+
+	// 如果文件存在，载入已有的 events 数组；若不存在则新建
+	var events []BackendEvent
+	if _, err := os.Stat(path); err == nil {
+		ptr, err := loadOneAsync[[]BackendEvent](ctx, path)
+		if err == nil && ptr != nil {
+			events = *ptr
+		}
+	}
+
+	events = append(events, evt)
+	return saveOne(ctx, path, events)
+}
+
+func (f *FileFeatureStore) ListBackendEvents(ctx context.Context, sessionId string, afterSequence int64, limit int) ([]BackendEvent, error) {
+	path := filepath.Join(f.backendEventsPath, encodeKey(sessionId)+".json")
+	ptr, err := loadOneAsync[[]BackendEvent](ctx, path)
+	if err != nil || ptr == nil {
+		return []BackendEvent{}, nil
+	}
+
+	events := *ptr
+	var filtered []BackendEvent
+	for _, item := range events {
+		if item.Sequence > afterSequence {
+			filtered = append(filtered, item)
+		}
+	}
+
+	// 按照 Sequence 升序排序
+	sort.Slice(filtered, func(i, j int) bool {
+		return filtered[i].Sequence < filtered[j].Sequence
+	})
+
+	if limit < 1 {
+		limit = 1
+	}
+	if len(filtered) > limit {
+		filtered = filtered[:limit]
+	}
+
+	return filtered, nil
+}
+
+var _ IAutomationStore = (*FileFeatureStore)(nil)
+var _ IUserProfileStore = (*FileFeatureStore)(nil)
+var _ ILearningProposalStore = (*FileFeatureStore)(nil)
+var _ IConnectedAccountStore = (*FileFeatureStore)(nil)
+var _ IBackendSessionStore = (*FileFeatureStore)(nil)
