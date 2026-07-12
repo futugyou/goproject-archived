@@ -2,6 +2,8 @@ package core
 
 import (
 	"context"
+	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -418,10 +420,7 @@ func (f *FileFeatureStore) PruneRunRecords(ctx context.Context, automationId str
 		return nil
 	}
 
-	retain := retainCount
-	if retain < 1 {
-		retain = 1
-	}
+	retain := max(retainCount, 1)
 
 	records, err := loadAllFile[AutomationRunRecord](ctx, dir)
 	if err != nil {
@@ -634,3 +633,434 @@ var _ IUserProfileStore = (*FileFeatureStore)(nil)
 var _ ILearningProposalStore = (*FileFeatureStore)(nil)
 var _ IConnectedAccountStore = (*FileFeatureStore)(nil)
 var _ IBackendSessionStore = (*FileFeatureStore)(nil)
+
+type SqliteFeatureStore struct {
+	db *sql.DB
+}
+
+// NewSqliteFeatureStore 初始化数据库并自动创建表和索引
+func NewSqliteFeatureStore(dataSourceName string) (*SqliteFeatureStore, error) {
+	// "sqlite3" (github.com/mattn/go-sqlite3)
+	db, err := sql.Open("sqlite3", dataSourceName)
+	if err != nil {
+		return nil, err
+	}
+
+	// 配置连接池优化并发
+	db.SetMaxOpenConns(1) // SQLite 通常推荐单写连接以避免锁冲突
+	db.SetConnMaxLifetime(time.Hour)
+
+	store := &SqliteFeatureStore{db: db}
+	if err := store.initSchema(); err != nil {
+		_ = db.Close()
+		return nil, err
+	}
+
+	return store, nil
+}
+
+func (s *SqliteFeatureStore) Close() error {
+	return s.db.Close()
+}
+
+func (s *SqliteFeatureStore) initSchema() error {
+	// 创建通用的 KV 存储表，按 category 隔离不同业务实体
+	const schema = `
+	CREATE TABLE IF NOT EXISTS kv_store (
+		category TEXT NOT NULL,
+		key TEXT NOT NULL,
+		value TEXT NOT NULL,
+		PRIMARY KEY (category, key)
+	);
+
+	CREATE TABLE IF NOT EXISTS automation_history (
+		automation_id TEXT NOT NULL,
+		run_id TEXT NOT NULL,
+		started_at_utc INTEGER NOT NULL,
+		completed_at_utc INTEGER,
+		value TEXT NOT NULL,
+		PRIMARY KEY (automation_id, run_id)
+	);
+	CREATE INDEX IF NOT EXISTS idx_automation_history_sort ON automation_history(automation_id, started_at_utc DESC, completed_at_utc DESC);
+
+	CREATE TABLE IF NOT EXISTS backend_events (
+		session_id TEXT NOT NULL,
+		sequence INTEGER NOT NULL,
+		value TEXT NOT NULL,
+		PRIMARY KEY (session_id, sequence)
+	);
+	`
+	_, err := s.db.Exec(schema)
+	return err
+}
+
+// ==========================================
+// 3. 核心业务方法实现
+// ==========================================
+
+// --- Automations ---
+
+func (s *SqliteFeatureStore) ListAutomations(ctx context.Context) ([]AutomationDefinition, error) {
+	return loadAllSql[AutomationDefinition](ctx, s.db, "automations")
+}
+
+func (s *SqliteFeatureStore) GetAutomation(ctx context.Context, automationId string) (*AutomationDefinition, error) {
+	return loadOneSql[AutomationDefinition](ctx, s.db, "automations", automationId)
+}
+
+func (s *SqliteFeatureStore) SaveAutomation(ctx context.Context, automation AutomationDefinition) error {
+	return saveOneSql(ctx, s.db, "automations", automation.Id, automation)
+}
+
+func (s *SqliteFeatureStore) DeleteAutomation(ctx context.Context, automationId string) error {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	// 删除定义
+	if _, err := tx.ExecContext(ctx, "DELETE FROM kv_store WHERE category = 'automations' AND key = ?", automationId); err != nil {
+		return err
+	}
+	// 删除运行状态
+	if _, err := tx.ExecContext(ctx, "DELETE FROM kv_store WHERE category = 'automation_runs' AND key = ?", automationId); err != nil {
+		return err
+	}
+	// 删除历史记录
+	if _, err := tx.ExecContext(ctx, "DELETE FROM automation_history WHERE automation_id = ?", automationId); err != nil {
+		return err
+	}
+
+	return tx.Commit()
+}
+
+// --- Run States ---
+
+func (s *SqliteFeatureStore) GetRunState(ctx context.Context, automationId string) (*AutomationRunState, error) {
+	return loadOneSql[AutomationRunState](ctx, s.db, "automation_runs", automationId)
+}
+
+func (s *SqliteFeatureStore) SaveRunState(ctx context.Context, runState AutomationRunState) error {
+	return saveOneSql(ctx, s.db, "automation_runs", runState.AutomationId, runState)
+}
+
+// --- Run Records ---
+
+func (s *SqliteFeatureStore) ListRunRecords(ctx context.Context, automationId string, limit int) ([]AutomationRunRecord, error) {
+	if limit < 1 {
+		limit = 1
+	}
+
+	// 依靠 SQLite 索引完成高性能排序
+	const query = `
+		SELECT value FROM automation_history 
+		WHERE automation_id = ? 
+		ORDER BY started_at_utc DESC, COALESCE(completed_at_utc, started_at_utc) DESC 
+		LIMIT ?`
+
+	rows, err := s.db.QueryContext(ctx, query, automationId, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var results []AutomationRunRecord
+	for rows.Next() {
+		var valStr string
+		if err := rows.Scan(&valStr); err != nil {
+			return nil, err
+		}
+		var item AutomationRunRecord
+		if err := json.Unmarshal([]byte(valStr), &item); err == nil {
+			results = append(results, item)
+		}
+	}
+	return results, nil
+}
+
+func (s *SqliteFeatureStore) GetRunRecord(ctx context.Context, automationId, runId string) (*AutomationRunRecord, error) {
+	const query = "SELECT value FROM automation_history WHERE automation_id = ? AND run_id = ?"
+	var valStr string
+	err := s.db.QueryRowContext(ctx, query, automationId, runId).Scan(&valStr)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+
+	var item AutomationRunRecord
+	if err := json.Unmarshal([]byte(valStr), &item); err != nil {
+		return nil, err
+	}
+	return &item, nil
+}
+
+func (s *SqliteFeatureStore) SaveRunRecord(ctx context.Context, runRecord AutomationRunRecord) error {
+	data, err := json.Marshal(runRecord)
+	if err != nil {
+		return err
+	}
+
+	const query = `
+		INSERT INTO automation_history (automation_id, run_id, started_at_utc, completed_at_utc, value) 
+		VALUES (?, ?, ?, ?, ?)
+		ON CONFLICT(automation_id, run_id) DO UPDATE SET 
+			started_at_utc = excluded.started_at_utc,
+			completed_at_utc = excluded.completed_at_utc,
+			value = excluded.value`
+
+	_, err = s.db.ExecContext(ctx, query, runRecord.AutomationId, runRecord.RunId, runRecord.StartedAtUtc, runRecord.CompletedAtUtc, string(data))
+	return err
+}
+
+func (s *SqliteFeatureStore) PruneRunRecords(ctx context.Context, automationId string, retainCount int) error {
+	if retainCount < 1 {
+		retainCount = 1
+	}
+
+	// 使用 SQLite 子查询直接删除 retainCount 之外的历史记录
+	const query = `
+		DELETE FROM automation_history 
+		WHERE automation_id = ? 
+		AND run_id NOT IN (
+			SELECT run_id FROM automation_history 
+			WHERE automation_id = ? 
+			ORDER BY started_at_utc DESC, COALESCE(completed_at_utc, started_at_utc) DESC 
+			LIMIT ?
+		)`
+
+	_, err := s.db.ExecContext(ctx, query, automationId, automationId, retainCount)
+	return err
+}
+
+// --- Profiles ---
+
+func (s *SqliteFeatureStore) ListProfiles(ctx context.Context) ([]UserProfile, error) {
+	return loadAllSql[UserProfile](ctx, s.db, "profiles")
+}
+
+func (s *SqliteFeatureStore) GetProfile(ctx context.Context, actorId string) (*UserProfile, error) {
+	return loadOneSql[UserProfile](ctx, s.db, "profiles", actorId)
+}
+
+func (s *SqliteFeatureStore) SaveProfile(ctx context.Context, profile UserProfile) error {
+	return saveOneSql(ctx, s.db, "profiles", profile.ActorId, profile)
+}
+
+func (s *SqliteFeatureStore) DeleteProfile(ctx context.Context, actorId string) error {
+	_, err := s.db.ExecContext(ctx, "DELETE FROM kv_store WHERE category = 'profiles' AND key = ?", actorId)
+	return err
+}
+
+// --- Proposals ---
+
+func (s *SqliteFeatureStore) ListProposals(ctx context.Context, status *string, kind *string) ([]LearningProposal, error) {
+	all, err := loadAllSql[LearningProposal](ctx, s.db, "proposals")
+	if err != nil {
+		return nil, err
+	}
+
+	var filtered []LearningProposal
+	statusStr := ""
+	if status != nil {
+		statusStr = strings.TrimSpace(*status)
+	}
+	kindstr := ""
+	if kind != nil {
+		kindstr = strings.TrimSpace(*kind)
+	}
+
+	for _, item := range all {
+		if statusStr != "" && !strings.EqualFold(item.Status, statusStr) {
+			continue
+		}
+		if kindstr != "" && !strings.EqualFold(item.Kind, kindstr) {
+			continue
+		}
+		filtered = append(filtered, item)
+	}
+
+	sort.Slice(filtered, func(i, j int) bool {
+		return filtered[i].UpdatedAtUtc.After(filtered[j].UpdatedAtUtc)
+	})
+
+	return filtered, nil
+}
+
+func (s *SqliteFeatureStore) GetProposal(ctx context.Context, proposalId string) (*LearningProposal, error) {
+	return loadOneSql[LearningProposal](ctx, s.db, "proposals", proposalId)
+}
+
+func (s *SqliteFeatureStore) SaveProposal(ctx context.Context, proposal *LearningProposal) error {
+	return saveOneSql(ctx, s.db, "proposals", proposal.Id, proposal)
+}
+
+// --- Connected Accounts ---
+
+func (s *SqliteFeatureStore) ListAccounts(ctx context.Context) ([]ConnectedAccount, error) {
+	return loadAllSql[ConnectedAccount](ctx, s.db, "accounts")
+}
+
+func (s *SqliteFeatureStore) GetAccount(ctx context.Context, accountId string) (*ConnectedAccount, error) {
+	return loadOneSql[ConnectedAccount](ctx, s.db, "accounts", accountId)
+}
+
+func (s *SqliteFeatureStore) SaveAccount(ctx context.Context, account ConnectedAccount) error {
+	return saveOneSql(ctx, s.db, "accounts", account.Id, account)
+}
+
+func (s *SqliteFeatureStore) DeleteAccount(ctx context.Context, accountId string) error {
+	_, err := s.db.ExecContext(ctx, "DELETE FROM kv_store WHERE category = 'accounts' AND key = ?", accountId)
+	return err
+}
+
+// --- Backend Sessions ---
+
+func (s *SqliteFeatureStore) ListBackendSessions(ctx context.Context, backendId *string) ([]BackendSessionRecord, error) {
+	all, err := loadAllSql[BackendSessionRecord](ctx, s.db, "backend_sessions")
+	if err != nil {
+		return nil, err
+	}
+
+	backendIdStr := ""
+	if backendId != nil {
+		backendIdStr = strings.TrimSpace(*backendId)
+	}
+	if backendIdStr == "" {
+		return all, nil
+	}
+
+	var filtered []BackendSessionRecord
+	for _, item := range all {
+		if strings.EqualFold(item.BackendId, backendIdStr) {
+			filtered = append(filtered, item)
+		}
+	}
+	return filtered, nil
+}
+
+func (s *SqliteFeatureStore) GetBackendSession(ctx context.Context, sessionId string) (*BackendSessionRecord, error) {
+	return loadOneSql[BackendSessionRecord](ctx, s.db, "backend_sessions", sessionId)
+}
+
+func (s *SqliteFeatureStore) SaveBackendSession(ctx context.Context, session BackendSessionRecord) error {
+	return saveOneSql(ctx, s.db, "backend_sessions", session.SessionId, session)
+}
+
+func (s *SqliteFeatureStore) DeleteBackendSession(ctx context.Context, sessionId string) error {
+	_, err := s.db.ExecContext(ctx, "DELETE FROM kv_store WHERE category = 'backend_sessions' AND key = ?", sessionId)
+	return err
+}
+
+// --- Backend Events ---
+
+func (s *SqliteFeatureStore) AppendBackendEvent(ctx context.Context, evt BackendEvent) error {
+	data, err := json.Marshal(evt)
+	if err != nil {
+		return err
+	}
+
+	const query = `
+		INSERT INTO backend_events (session_id, sequence, value) 
+		VALUES (?, ?, ?)
+		ON CONFLICT(session_id, sequence) DO UPDATE SET value = excluded.value`
+
+	_, err = s.db.ExecContext(ctx, query, evt.SessionID, evt.Sequence, string(data))
+	return err
+}
+
+func (s *SqliteFeatureStore) ListBackendEvents(ctx context.Context, sessionId string, afterSequence int64, limit int) ([]BackendEvent, error) {
+	if limit < 1 {
+		limit = 1
+	}
+
+	const query = `
+		SELECT value FROM backend_events 
+		WHERE session_id = ? AND sequence > ? 
+		ORDER BY sequence ASC 
+		LIMIT ?`
+
+	rows, err := s.db.QueryContext(ctx, query, sessionId, afterSequence, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var results []BackendEvent
+	for rows.Next() {
+		var valStr string
+		if err := rows.Scan(&valStr); err != nil {
+			return nil, err
+		}
+		var evt BackendEvent
+		if err := json.Unmarshal([]byte(valStr), &evt); err == nil {
+			results = append(results, evt)
+		}
+	}
+	return results, nil
+}
+
+// ==========================================
+//  通用私有数据库泛型辅助函数
+// ==========================================
+
+func loadAllSql[T any](ctx context.Context, db *sql.DB, category string) ([]T, error) {
+	rows, err := db.QueryContext(ctx, "SELECT value FROM kv_store WHERE category = ?", category)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var results []T
+	for rows.Next() {
+		var valStr string
+		if err := rows.Scan(&valStr); err != nil {
+			return nil, err
+		}
+		var item T
+		if err := json.Unmarshal([]byte(valStr), &item); err == nil {
+			results = append(results, item)
+		}
+	}
+	return results, nil
+}
+
+func loadOneSql[T any](ctx context.Context, db *sql.DB, category, key string) (*T, error) {
+	var valStr string
+	err := db.QueryRowContext(ctx, "SELECT value FROM kv_store WHERE category = ? AND key = ?", category, key).Scan(&valStr)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+
+	var item T
+	if err := json.Unmarshal([]byte(valStr), &item); err != nil {
+		return nil, err
+	}
+	return &item, nil
+}
+
+func saveOneSql(ctx context.Context, db *sql.DB, category, key string, item any) error {
+	data, err := json.Marshal(item)
+	if err != nil {
+		return err
+	}
+
+	const query = `
+		INSERT INTO kv_store (category, key, value) 
+		VALUES (?, ?, ?) 
+		ON CONFLICT(category, key) DO UPDATE SET value = excluded.value`
+
+	_, err = db.ExecContext(ctx, query, category, key, string(data))
+	return err
+}
+
+var _ IAutomationStore = (*SqliteFeatureStore)(nil)
+var _ IUserProfileStore = (*SqliteFeatureStore)(nil)
+var _ ILearningProposalStore = (*SqliteFeatureStore)(nil)
+var _ IConnectedAccountStore = (*SqliteFeatureStore)(nil)
+var _ IBackendSessionStore = (*SqliteFeatureStore)(nil)
