@@ -366,6 +366,28 @@ func expandAllEnv(input string) string {
 	return os.ExpandEnv(winExpanded)
 }
 
+func LoadAndDelete[T any](db *gorm.DB, id any) (*T, error) {
+	var result T
+
+	// 1. 利用 GORM 的 Statement 自动获取该结构体对应的真实表名
+	stmt := &gorm.Statement{DB: db}
+	if err := stmt.Parse(&result); err != nil {
+		return nil, err
+	}
+	tableName := stmt.Schema.Table
+
+	// 2. 动态拼接并执行强类型的 DELETE ... RETURNING 语句
+	// PostgreSQL 允许 RETURNING * 返回整行所有字段
+	query := fmt.Sprintf("DELETE FROM %s WHERE id = ? RETURNING *", tableName)
+
+	err := db.Raw(query, id).Scan(&result).Error
+	if err != nil {
+		return nil, err
+	}
+
+	return &result, nil
+}
+
 // ==========================================
 // 通用私有泛型辅助工具函数
 // ==========================================
@@ -459,8 +481,8 @@ func pathGetFullPath(path string) string {
 	return p
 }
 
-// loadAllAsync 遍历目录下所有的 .json 文件并反序列化为对象切片
-func loadAllAsync[T any](ctx context.Context, directory string) ([]T, error) {
+// loadAllFile 遍历目录下所有的 .json 文件并反序列化为对象切片
+func loadAllFile[T any](ctx context.Context, directory string) ([]T, error) {
 	files, err := os.ReadDir(directory)
 	if err != nil {
 		return []T{}, nil // C# 中 catch 块返回空数组
@@ -478,7 +500,7 @@ func loadAllAsync[T any](ctx context.Context, directory string) ([]T, error) {
 		}
 
 		path := filepath.Join(directory, file.Name())
-		item, err := loadOneAsync[T](ctx, path)
+		item, err := loadOneFile[T](ctx, path)
 		if err == nil && item != nil {
 			results = append(results, *item)
 		}
@@ -498,30 +520,8 @@ func AppendAllText(path, text string) error {
 	return err
 }
 
-func LoadAndDelete[T any](db *gorm.DB, id any) (*T, error) {
-	var result T
-
-	// 1. 利用 GORM 的 Statement 自动获取该结构体对应的真实表名
-	stmt := &gorm.Statement{DB: db}
-	if err := stmt.Parse(&result); err != nil {
-		return nil, err
-	}
-	tableName := stmt.Schema.Table
-
-	// 2. 动态拼接并执行强类型的 DELETE ... RETURNING 语句
-	// PostgreSQL 允许 RETURNING * 返回整行所有字段
-	query := fmt.Sprintf("DELETE FROM %s WHERE id = ? RETURNING *", tableName)
-
-	err := db.Raw(query, id).Scan(&result).Error
-	if err != nil {
-		return nil, err
-	}
-
-	return &result, nil
-}
-
-// loadOneAsync 反序列化单个文件
-func loadOneAsync[T any](ctx context.Context, path string) (*T, error) {
+// loadOneFile 反序列化单个文件
+func loadOneFile[T any](ctx context.Context, path string) (*T, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
@@ -543,8 +543,8 @@ func loadOneAsync[T any](ctx context.Context, path string) (*T, error) {
 	return &item, nil
 }
 
-// saveOneAsync 安全写入文件（先写临时文件再重命名，以保证原子性）
-func saveOne(ctx context.Context, path string, item any) error {
+// saveOneFile 安全写入文件（先写临时文件再重命名，以保证原子性）
+func saveOneFile(ctx context.Context, path string, item any) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
@@ -567,7 +567,7 @@ func saveOne(ctx context.Context, path string, item any) error {
 	return os.Rename(tempPath, path)
 }
 
-func deleteOne(path string) error {
+func deleteOneFile(path string) error {
 	err := os.Remove(path)
 	if os.IsNotExist(err) {
 		return nil

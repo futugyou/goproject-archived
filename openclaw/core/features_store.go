@@ -328,22 +328,22 @@ func NewFileFeatureStore(storagePath string) (*FileFeatureStore, error) {
 // --- Automations ---
 
 func (f *FileFeatureStore) ListAutomations(ctx context.Context) ([]AutomationDefinition, error) {
-	return loadAllAsync[AutomationDefinition](ctx, f.automationsPath)
+	return loadAllFile[AutomationDefinition](ctx, f.automationsPath)
 }
 
 func (f *FileFeatureStore) GetAutomation(ctx context.Context, automationId string) (*AutomationDefinition, error) {
 	path := filepath.Join(f.automationsPath, encodeKey(automationId)+".json")
-	return loadOneAsync[AutomationDefinition](ctx, path)
+	return loadOneFile[AutomationDefinition](ctx, path)
 }
 
 func (f *FileFeatureStore) SaveAutomation(ctx context.Context, automation AutomationDefinition) error {
 	path := filepath.Join(f.automationsPath, encodeKey(automation.Id)+".json")
-	return saveOne(ctx, path, automation)
+	return saveOneFile(ctx, path, automation)
 }
 
 func (f *FileFeatureStore) DeleteAutomation(ctx context.Context, automationId string) error {
-	_ = deleteOne(filepath.Join(f.automationsPath, encodeKey(automationId)+".json"))
-	_ = deleteOne(filepath.Join(f.automationRunsPath, encodeKey(automationId)+".json"))
+	_ = deleteOneFile(filepath.Join(f.automationsPath, encodeKey(automationId)+".json"))
+	_ = deleteOneFile(filepath.Join(f.automationRunsPath, encodeKey(automationId)+".json"))
 	deleteDirectory(filepath.Join(f.automationRunHistoryPath, encodeKey(automationId)))
 	return nil
 }
@@ -352,12 +352,12 @@ func (f *FileFeatureStore) DeleteAutomation(ctx context.Context, automationId st
 
 func (f *FileFeatureStore) GetRunState(ctx context.Context, automationId string) (*AutomationRunState, error) {
 	path := filepath.Join(f.automationRunsPath, encodeKey(automationId)+".json")
-	return loadOneAsync[AutomationRunState](ctx, path)
+	return loadOneFile[AutomationRunState](ctx, path)
 }
 
 func (f *FileFeatureStore) SaveRunState(ctx context.Context, runState AutomationRunState) error {
 	path := filepath.Join(f.automationRunsPath, encodeKey(runState.AutomationId)+".json")
-	return saveOne(ctx, path, runState)
+	return saveOneFile(ctx, path, runState)
 }
 
 // --- Run Records ---
@@ -368,7 +368,7 @@ func (f *FileFeatureStore) ListRunRecords(ctx context.Context, automationId stri
 		return []AutomationRunRecord{}, nil
 	}
 
-	items, err := loadAllAsync[AutomationRunRecord](ctx, dir)
+	items, err := loadAllFile[AutomationRunRecord](ctx, dir)
 	if err != nil {
 		return nil, err
 	}
@@ -400,7 +400,7 @@ func (f *FileFeatureStore) ListRunRecords(ctx context.Context, automationId stri
 
 func (f *FileFeatureStore) GetRunRecord(ctx context.Context, automationId, runId string) (*AutomationRunRecord, error) {
 	path := filepath.Join(f.automationRunHistoryPath, encodeKey(automationId), encodeKey(runId)+".json")
-	return loadOneAsync[AutomationRunRecord](ctx, path)
+	return loadOneFile[AutomationRunRecord](ctx, path)
 }
 
 func (f *FileFeatureStore) SaveRunRecord(ctx context.Context, runRecord AutomationRunRecord) error {
@@ -409,7 +409,7 @@ func (f *FileFeatureStore) SaveRunRecord(ctx context.Context, runRecord Automati
 		return err
 	}
 	path := filepath.Join(dir, encodeKey(runRecord.RunId)+".json")
-	return saveOne(ctx, path, runRecord)
+	return saveOneFile(ctx, path, runRecord)
 }
 
 func (f *FileFeatureStore) PruneRunRecords(ctx context.Context, automationId string, retainCount int) error {
@@ -423,7 +423,7 @@ func (f *FileFeatureStore) PruneRunRecords(ctx context.Context, automationId str
 		retain = 1
 	}
 
-	records, err := loadAllAsync[AutomationRunRecord](ctx, dir)
+	records, err := loadAllFile[AutomationRunRecord](ctx, dir)
 	if err != nil {
 		return err
 	}
@@ -450,7 +450,7 @@ func (f *FileFeatureStore) PruneRunRecords(ctx context.Context, automationId str
 	toDelete := records[retain:]
 	for _, record := range toDelete {
 		path := filepath.Join(dir, encodeKey(record.RunId)+".json")
-		_ = deleteOne(path)
+		_ = deleteOneFile(path)
 	}
 
 	return nil
@@ -459,27 +459,27 @@ func (f *FileFeatureStore) PruneRunRecords(ctx context.Context, automationId str
 // --- Profiles ---
 
 func (f *FileFeatureStore) ListProfiles(ctx context.Context) ([]UserProfile, error) {
-	return loadAllAsync[UserProfile](ctx, f.profilesPath)
+	return loadAllFile[UserProfile](ctx, f.profilesPath)
 }
 
 func (f *FileFeatureStore) GetProfile(ctx context.Context, actorId string) (*UserProfile, error) {
 	path := filepath.Join(f.profilesPath, encodeKey(actorId)+".json")
-	return loadOneAsync[UserProfile](ctx, path)
+	return loadOneFile[UserProfile](ctx, path)
 }
 
 func (f *FileFeatureStore) SaveProfile(ctx context.Context, profile UserProfile) error {
 	path := filepath.Join(f.profilesPath, encodeKey(profile.ActorId)+".json")
-	return saveOne(ctx, path, profile)
+	return saveOneFile(ctx, path, profile)
 }
 
 func (f *FileFeatureStore) DeleteProfile(ctx context.Context, actorId string) error {
-	return deleteOne(filepath.Join(f.profilesPath, encodeKey(actorId)+".json"))
+	return deleteOneFile(filepath.Join(f.profilesPath, encodeKey(actorId)+".json"))
 }
 
 // --- Proposals ---
 
 func (f *FileFeatureStore) ListProposals(ctx context.Context, status *string, kind *string) ([]LearningProposal, error) {
-	all, err := loadAllAsync[LearningProposal](ctx, f.proposalsPath)
+	all, err := loadAllFile[LearningProposal](ctx, f.proposalsPath)
 	if err != nil {
 		return nil, err
 	}
@@ -514,38 +514,38 @@ func (f *FileFeatureStore) ListProposals(ctx context.Context, status *string, ki
 
 func (f *FileFeatureStore) GetProposal(ctx context.Context, proposalId string) (*LearningProposal, error) {
 	path := filepath.Join(f.proposalsPath, encodeKey(proposalId)+".json")
-	return loadOneAsync[LearningProposal](ctx, path)
+	return loadOneFile[LearningProposal](ctx, path)
 }
 
 func (f *FileFeatureStore) SaveProposal(ctx context.Context, proposal *LearningProposal) error {
 	path := filepath.Join(f.proposalsPath, encodeKey(proposal.Id)+".json")
-	return saveOne(ctx, path, proposal)
+	return saveOneFile(ctx, path, proposal)
 }
 
 // --- Connected Accounts ---
 
 func (f *FileFeatureStore) ListAccounts(ctx context.Context) ([]ConnectedAccount, error) {
-	return loadAllAsync[ConnectedAccount](ctx, f.accountsPath)
+	return loadAllFile[ConnectedAccount](ctx, f.accountsPath)
 }
 
 func (f *FileFeatureStore) GetAccount(ctx context.Context, accountId string) (*ConnectedAccount, error) {
 	path := filepath.Join(f.accountsPath, encodeKey(accountId)+".json")
-	return loadOneAsync[ConnectedAccount](ctx, path)
+	return loadOneFile[ConnectedAccount](ctx, path)
 }
 
 func (f *FileFeatureStore) SaveAccount(ctx context.Context, account ConnectedAccount) error {
 	path := filepath.Join(f.accountsPath, encodeKey(account.Id)+".json")
-	return saveOne(ctx, path, account)
+	return saveOneFile(ctx, path, account)
 }
 
 func (f *FileFeatureStore) DeleteAccount(ctx context.Context, accountId string) error {
-	return deleteOne(filepath.Join(f.accountsPath, encodeKey(accountId)+".json"))
+	return deleteOneFile(filepath.Join(f.accountsPath, encodeKey(accountId)+".json"))
 }
 
 // --- Backend Sessions ---
 
 func (f *FileFeatureStore) ListBackendSessions(ctx context.Context, backendId *string) ([]BackendSessionRecord, error) {
-	all, err := loadAllAsync[BackendSessionRecord](ctx, f.backendSessionsPath)
+	all, err := loadAllFile[BackendSessionRecord](ctx, f.backendSessionsPath)
 	if err != nil {
 		return nil, err
 	}
@@ -569,16 +569,16 @@ func (f *FileFeatureStore) ListBackendSessions(ctx context.Context, backendId *s
 
 func (f *FileFeatureStore) GetBackendSession(ctx context.Context, sessionId string) (*BackendSessionRecord, error) {
 	path := filepath.Join(f.backendSessionsPath, encodeKey(sessionId)+".json")
-	return loadOneAsync[BackendSessionRecord](ctx, path)
+	return loadOneFile[BackendSessionRecord](ctx, path)
 }
 
 func (f *FileFeatureStore) SaveBackendSession(ctx context.Context, session BackendSessionRecord) error {
 	path := filepath.Join(f.backendSessionsPath, encodeKey(session.SessionId)+".json")
-	return saveOne(ctx, path, session)
+	return saveOneFile(ctx, path, session)
 }
 
 func (f *FileFeatureStore) DeleteBackendSession(ctx context.Context, sessionId string) error {
-	return deleteOne(filepath.Join(f.backendSessionsPath, encodeKey(sessionId)+".json"))
+	return deleteOneFile(filepath.Join(f.backendSessionsPath, encodeKey(sessionId)+".json"))
 }
 
 // --- Backend Events ---
@@ -589,19 +589,19 @@ func (f *FileFeatureStore) AppendBackendEvent(ctx context.Context, evt BackendEv
 	// 如果文件存在，载入已有的 events 数组；若不存在则新建
 	var events []BackendEvent
 	if _, err := os.Stat(path); err == nil {
-		ptr, err := loadOneAsync[[]BackendEvent](ctx, path)
+		ptr, err := loadOneFile[[]BackendEvent](ctx, path)
 		if err == nil && ptr != nil {
 			events = *ptr
 		}
 	}
 
 	events = append(events, evt)
-	return saveOne(ctx, path, events)
+	return saveOneFile(ctx, path, events)
 }
 
 func (f *FileFeatureStore) ListBackendEvents(ctx context.Context, sessionId string, afterSequence int64, limit int) ([]BackendEvent, error) {
 	path := filepath.Join(f.backendEventsPath, encodeKey(sessionId)+".json")
-	ptr, err := loadOneAsync[[]BackendEvent](ctx, path)
+	ptr, err := loadOneFile[[]BackendEvent](ctx, path)
 	if err != nil || ptr == nil {
 		return []BackendEvent{}, nil
 	}
