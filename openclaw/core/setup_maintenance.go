@@ -35,8 +35,8 @@ type UpgradeRollbackSnapshotStore struct {
 }
 
 func buildSnapshotKey(configPath string) string {
-	var stem = getFileNameWithoutExtension(configPath)
-	if isBlank(stem) {
+	var stem = GetFileNameWithoutExtension(configPath)
+	if IsBlank(stem) {
 		stem = "config"
 	}
 
@@ -50,7 +50,7 @@ func buildSnapshotKey(configPath string) string {
 	}
 
 	safeStem := strings.Trim(sb.String(), "-")
-	if isBlank(safeStem) {
+	if IsBlank(safeStem) {
 		safeStem = "config"
 	}
 
@@ -352,7 +352,7 @@ func (s *ReliabilityScorer) buildReadinessFactor(
 	if setupStatus != nil {
 		workspaceExists = setupStatus.WorkspaceExists
 	} else {
-		workspaceExists = !isBlank(workspacePath) && directoryExists(workspacePath)
+		workspaceExists = !IsBlank(workspacePath) && DirectoryExists(workspacePath)
 	}
 
 	providerConfigured := false

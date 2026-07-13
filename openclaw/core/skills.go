@@ -704,15 +704,15 @@ func (m *MetaSkillResolver) TryResolve(skills []SkillDefinition, userMessage str
 type SkillInspector struct{}
 
 func (s *SkillInspector) TryLocateSkillRoot(candidatePath string) (string, error) {
-	if !directoryExists(candidatePath) {
+	if !DirectoryExists(candidatePath) {
 		return "", fmt.Errorf("Skill path not found: %s", candidatePath)
 	}
 
-	if fileExists(filepath.Join(candidatePath, "SKILL.md")) {
+	if FileExists(filepath.Join(candidatePath, "SKILL.md")) {
 		return filepath.Abs(candidatePath)
 	}
 
-	matches, err := findDirectoriesCantainsFileName(candidatePath, "SKILL.md")
+	matches, err := FindDirectoriesCantainsFileName(candidatePath, "SKILL.md")
 	if err != nil {
 		return "", err
 	}
@@ -808,7 +808,7 @@ func (r *ReadSkillResourceTool) ParameterSchema() string {
 }
 
 func (r *ReadSkillResourceTool) tryParseArguments(argumentsJson string) (result bool, skillName string, resourceName string, errorstr string) {
-	if isBlank(argumentsJson) {
+	if IsBlank(argumentsJson) {
 		errorstr = "Error: missing required arguments 'skill' and 'resource'."
 		return
 	}
@@ -833,12 +833,12 @@ func (r *ReadSkillResourceTool) tryParseArguments(argumentsJson string) (result 
 		}
 	}
 
-	if isBlank(skillName) {
+	if IsBlank(skillName) {
 		errorstr = "Error: missing required argument 'skill'."
 		return
 	}
 
-	if isBlank(resourceName) {
+	if IsBlank(resourceName) {
 		errorstr = "Error: missing required argument 'resource'."
 		return
 	}
@@ -901,7 +901,7 @@ func (r *ReadSkillResourceTool) findResource(skill *SkillDefinition, requested s
 
 func (r *ReadSkillResourceTool) looksLikeSkillBody(requested string) bool {
 	var normalized = strings.TrimSpace(strings.ReplaceAll(requested, "\\", "/"))
-	if isBlank(normalized) {
+	if IsBlank(normalized) {
 		return false
 	}
 	var lastSlash = strings.LastIndex(normalized, "/")
@@ -925,7 +925,7 @@ func (r *ReadSkillResourceTool) tryExtractCrossSkillName(requested string, skill
 	if prevSlash >= 0 {
 		lastSeg = parent[(prevSlash + 1):]
 	}
-	if isBlank(lastSeg) || lastSeg == ".." {
+	if IsBlank(lastSeg) || lastSeg == ".." {
 		return ""
 	}
 
@@ -945,7 +945,7 @@ func (r *ReadSkillResourceTool) tryExtractCrossSkillName(requested string, skill
 }
 
 func (r *ReadSkillResourceTool) isPathWithinSkillRoot(resourceAbsolutePath string, skill *SkillDefinition) bool {
-	if skill == nil || isBlank(skill.Location) {
+	if skill == nil || IsBlank(skill.Location) {
 		return true
 	}
 
@@ -967,7 +967,7 @@ func (r *ReadSkillResourceTool) isPathWithinSkillRoot(resourceAbsolutePath strin
 }
 
 func (r *ReadSkillResourceTool) resourcePathContainsReparsePoint(skillLocation, resourceAbsolutePath string) bool {
-	if isBlank(skillLocation) {
+	if IsBlank(skillLocation) {
 		return false
 	}
 	skillRoot, err := filepath.Abs(skillLocation)
@@ -1043,7 +1043,7 @@ func (r *ReadSkillResourceTool) Execute(ctx context.Context, argumentsJson strin
 	if resource == nil {
 		if r.looksLikeSkillBody(resourceName) {
 			crossSkill := r.tryExtractCrossSkillName(resourceName, skills)
-			if !isBlank(crossSkill) && crossSkill != skill.Name {
+			if !IsBlank(crossSkill) && crossSkill != skill.Name {
 				errorstr = fmt.Sprintf("Error: 'SKILL.md' is the body of skill '%s', not an L3 resource of '%s'. Use `load_skill` with skill='%s' to fetch it, not `read_skill_resource`.)", crossSkill, skill.Name, crossSkill)
 				return "", errors.New(errorstr)
 			}

@@ -52,7 +52,7 @@ func (i *InMemoryGoalService) ClearGoal(ctx context.Context, sessionId string) e
 
 // CreateGoal implements [IGoalService].
 func (i *InMemoryGoalService) CreateGoal(ctx context.Context, sessionId string, objective string, tokenBudget int64, tokensAtStart int64) (*SessionGoal, error) {
-	if isBlank(sessionId) || isBlank(objective) {
+	if IsBlank(sessionId) || IsBlank(objective) {
 		return nil, errors.New("invalid parameter")
 	}
 
@@ -130,12 +130,12 @@ func (i *InMemoryGoalService) IncrementContinuationCount(ctx context.Context, se
 
 // RecordGoalHistory implements [IGoalService].
 func (i *InMemoryGoalService) RecordGoalHistory(ctx context.Context, goal *SessionGoal) error {
-	if isBlank(i.historyFilePath) {
+	if IsBlank(i.historyFilePath) {
 		return nil
 	}
 
 	dir := filepath.Dir(i.historyFilePath)
-	if !isBlank(dir) {
+	if !IsBlank(dir) {
 		os.MkdirAll(dir, 0755)
 	}
 
@@ -175,7 +175,7 @@ func (i *InMemoryGoalService) RecordTurnHash(ctx context.Context, sessionId stri
 
 	hash := ComputeTurnHash(normalizedText)
 
-	if isBlank(hash) {
+	if IsBlank(hash) {
 		goal.LastBlockerHash = ""
 		goal.ConsecutiveBlockerCount = 0
 		return false
@@ -293,7 +293,7 @@ func (p *PostgresGoalService) ClearGoal(ctx context.Context, sessionId string) e
 
 // CreateGoal implements [IGoalService].
 func (p *PostgresGoalService) CreateGoal(ctx context.Context, sessionId string, objective string, tokenBudget int64, tokensAtStart int64) (*SessionGoal, error) {
-	if isBlank(sessionId) || isBlank(objective) {
+	if IsBlank(sessionId) || IsBlank(objective) {
 		return nil, errors.New("invalid parameter")
 	}
 
@@ -341,7 +341,7 @@ func (p *PostgresGoalService) GetGoal(ctx context.Context, sessionId string) (*S
 // HasActiveGoal implements [IGoalService].
 func (p *PostgresGoalService) HasActiveGoal(ctx context.Context, sessionId string) bool {
 	ad, _ := gorm.G[SessionGoal](p.db).Where("session_id = ?", sessionId).First(ctx)
-	if isBlank(ad.SessionId) {
+	if IsBlank(ad.SessionId) {
 		return false
 	}
 
@@ -405,7 +405,7 @@ func (p *PostgresGoalService) RecordTurnHash(ctx context.Context, sessionId stri
 
 		updatedFields := make(map[string]any)
 
-		if isBlank(hash) {
+		if IsBlank(hash) {
 			updatedFields["last_blocker_hash"] = ""
 			updatedFields["consecutive_blocker_count"] = 0
 		} else if hash == goal.LastBlockerHash {

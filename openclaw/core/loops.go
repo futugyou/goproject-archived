@@ -66,7 +66,7 @@ var (
 )
 
 func (l *LoopCommandParser) TryParse(text string) *LoopCommand {
-	if isBlank(text) || !strings.HasPrefix(text, "/loop") {
+	if IsBlank(text) || !strings.HasPrefix(text, "/loop") {
 		return nil
 	}
 
@@ -119,7 +119,7 @@ func NewLoopTerminationDetector(loopControl ILoopControlService) *LoopTerminatio
 }
 
 func (l *LoopTerminationDetector) isKeywordCharacter(b byte) bool {
-	return isLetterOrDigit(b) || b == '_'
+	return IsLetterOrDigit(b) || b == '_'
 }
 
 func (l *LoopTerminationDetector) cntainsWholeKeyword(text, keyword string) bool {
@@ -166,7 +166,7 @@ func (l *LoopTerminationDetector) OnToolComplete(ctx context.Context, sessionId 
 }
 
 func (l *LoopTerminationDetector) ScanText(ctx context.Context, sessionId, text string) bool {
-	if isBlank(text) {
+	if IsBlank(text) {
 		return false
 	}
 
@@ -235,7 +235,7 @@ func NewClawLoopScheduler(logger *slog.Logger) *ClawLoopScheduler {
 }
 
 func (s *ClawLoopScheduler) ScheduleLoop(ctx context.Context, sessionId, cronExpression, prompt string) error {
-	schedule, ok := parseCronExpression(cronExpression)
+	schedule, ok := ParseCronExpression(cronExpression)
 	if !ok {
 		return fmt.Errorf("invalid cron expression %s", cronExpression)
 	}

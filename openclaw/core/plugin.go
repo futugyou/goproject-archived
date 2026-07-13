@@ -38,7 +38,7 @@ func (p *PluginCapabilityPolicy) Normalize(capabilities []string) []string {
 	tmps := map[string]struct{}{}
 	resuls := []string{}
 	for _, cap := range capabilities {
-		if isBlank(cap) {
+		if IsBlank(cap) {
 			continue
 		}
 
@@ -440,7 +440,7 @@ func (p *PluginDiscovery) resolveRealPath(path string, visited map[string]struct
 	}
 	root := filepath.VolumeName(full)
 
-	if isBlank(root) {
+	if IsBlank(root) {
 		return full
 	}
 
@@ -457,8 +457,8 @@ func (p *PluginDiscovery) resolveRealPath(path string, visited map[string]struct
 			return p
 		}
 		current = filepath.Join(current, segment)
-		resolved, _ := tryResolveLinkTarget(current)
-		if !isBlank(resolved) {
+		resolved, _ := TryResolveLinkTarget(current)
+		if !IsBlank(resolved) {
 			current = p.resolveRealPath(resolved, visited, depth+1)
 		}
 	}
@@ -476,7 +476,7 @@ func (p *PluginDiscovery) TryResolveContainedPath(rootPath, relativePath string)
 	if err != nil {
 		return "", false
 	}
-	if isUnresolvedLink(candidatePath) {
+	if IsUnresolvedLink(candidatePath) {
 		return "", false
 	}
 
@@ -491,12 +491,12 @@ func (p *PluginDiscovery) TryResolveContainedPath(rootPath, relativePath string)
 	resolvedPath = p.resolveRealPath(resolvedPath, map[string]struct{}{}, 0)
 	fullRoot = p.resolveRealPath(fullRoot, map[string]struct{}{}, 0)
 
-	if pathEqual(resolvedPath, fullRoot) {
+	if PathEqual(resolvedPath, fullRoot) {
 		return resolvedPath, true
 	}
 
 	prefix := fullRoot + string(os.PathSeparator)
-	return resolvedPath, pathHasPrefix(resolvedPath, prefix)
+	return resolvedPath, PathHasPrefix(resolvedPath, prefix)
 }
 
 func (p *PluginDiscovery) findEntryFile(pluginRoot string) (string, *PluginCompatibilityDiagnostic) {
@@ -508,7 +508,7 @@ func (p *PluginDiscovery) findEntryFile(pluginRoot string) (string, *PluginCompa
 
 	for _, candidate := range candidates {
 		var path = filepath.Join(pluginRoot, candidate)
-		if fileExists(path) {
+		if FileExists(path) {
 			return path, nil
 		}
 
@@ -531,7 +531,7 @@ func (p *PluginDiscovery) findEntryFile(pluginRoot string) (string, *PluginCompa
 
 	// Check package.json for openclaw.extensions
 	var packageJson = filepath.Join(pluginRoot, PackageJsonFileName)
-	if fileExists(packageJson) {
+	if FileExists(packageJson) {
 		data, err := os.ReadFile(packageJson)
 		if err != nil {
 			return fileback(pluginRoot), nil
@@ -563,7 +563,7 @@ func (p *PluginDiscovery) findEntryFile(pluginRoot string) (string, *PluginCompa
 					}
 				}
 
-				if fileExists(entryPath) {
+				if FileExists(entryPath) {
 					return entryPath, nil
 				}
 			}
@@ -591,15 +591,15 @@ func (p *PluginDiscovery) tryAddPluginPack(dir, packageJsonPath string, seen map
 	}
 
 	packName := config.Name
-	if isBlank(packName) {
+	if IsBlank(packName) {
 		packName = filepath.Base(dir)
 	}
 
 	for _, relPath := range config.Openclaw.Extensions {
-		if isBlank(relPath) {
+		if IsBlank(relPath) {
 			continue
 		}
-		var fileBase = getFileNameWithoutExtension(relPath)
+		var fileBase = GetFileNameWithoutExtension(relPath)
 		var pluginId = packName
 		if len(config.Openclaw.Extensions) > 1 {
 			pluginId = fmt.Sprintf("%s/%s", packName, fileBase)
@@ -609,24 +609,24 @@ func (p *PluginDiscovery) tryAddPluginPack(dir, packageJsonPath string, seen map
 		if !ok {
 			result.Reports = append(result.Reports, PluginLoadReport{
 				PluginId:   pluginId,
-				SourcePath: pathGetFullPath(dir),
-				EntryPath:  pathGetFullPath(filepath.Join(dir, relPath)),
+				SourcePath: PathGetFullPath(dir),
+				EntryPath:  PathGetFullPath(filepath.Join(dir, relPath)),
 				Loaded:     false,
 				Diagnostics: []PluginCompatibilityDiagnostic{
 					{
 						Code:    "entry_outside_root",
 						Message: fmt.Sprintf("package entry '%s' for plugin '%s' resolves outside the plugin root", relPath, pluginId),
-						Path:    pathGetFullPath(dir),
+						Path:    PathGetFullPath(dir),
 					},
 				},
 			})
 			continue
 		}
 
-		if !fileExists(entryPath) {
+		if !FileExists(entryPath) {
 			result.Reports = append(result.Reports, PluginLoadReport{
 				PluginId:   pluginId,
-				SourcePath: pathGetFullPath(dir),
+				SourcePath: PathGetFullPath(dir),
 				EntryPath:  entryPath,
 				Loaded:     false,
 				Diagnostics: []PluginCompatibilityDiagnostic{
@@ -645,7 +645,7 @@ func (p *PluginDiscovery) tryAddPluginPack(dir, packageJsonPath string, seen map
 		if found {
 			result.Reports = append(result.Reports, PluginLoadReport{
 				PluginId:   pluginId,
-				SourcePath: pathGetFullPath(dir),
+				SourcePath: PathGetFullPath(dir),
 				EntryPath:  entryPath,
 				Loaded:     false,
 				Diagnostics: []PluginCompatibilityDiagnostic{
@@ -660,7 +660,7 @@ func (p *PluginDiscovery) tryAddPluginPack(dir, packageJsonPath string, seen map
 		}
 
 		entryDir := filepath.Dir(entryPath)
-		if isBlank(entryDir) {
+		if IsBlank(entryDir) {
 			entryDir = dir
 		}
 
@@ -674,7 +674,7 @@ func (p *PluginDiscovery) tryAddPluginPack(dir, packageJsonPath string, seen map
 			json.Unmarshal(data, &manifest)
 		}
 
-		if isBlank(manifest.ID) {
+		if IsBlank(manifest.ID) {
 			manifest = PluginManifest{
 				ID: pluginId,
 			}
@@ -682,7 +682,7 @@ func (p *PluginDiscovery) tryAddPluginPack(dir, packageJsonPath string, seen map
 
 		result.Plugins = append(result.Plugins, DiscoveredPlugin{
 			Manifest:  manifest,
-			RootPath:  pathGetFullPath(dir),
+			RootPath:  PathGetFullPath(dir),
 			EntryPath: entryPath,
 		})
 	}
@@ -698,19 +698,19 @@ func (p *PluginDiscovery) tryAddPluginFromManifest(pluginRoot, manifestPath stri
 	if err != nil {
 		result.Reports = append(result.Reports, PluginLoadReport{
 			PluginId:   filepath.Base(pluginRoot),
-			SourcePath: pathGetFullPath(pluginRoot),
+			SourcePath: PathGetFullPath(pluginRoot),
 			Diagnostics: []PluginCompatibilityDiagnostic{
 				{
 					Code:    "invalid_manifest",
 					Message: fmt.Sprintf("failed to parse manifest '%s'", manifestPath),
-					Path:    pathGetFullPath(manifestPath),
+					Path:    PathGetFullPath(manifestPath),
 				},
 			},
 		})
 		return
 	}
 
-	if isBlank(manifest.ID) {
+	if IsBlank(manifest.ID) {
 		return
 	}
 
@@ -720,12 +720,12 @@ func (p *PluginDiscovery) tryAddPluginFromManifest(pluginRoot, manifestPath stri
 	if found {
 		result.Reports = append(result.Reports, PluginLoadReport{
 			PluginId:   manifest.ID,
-			SourcePath: pathGetFullPath(pluginRoot),
+			SourcePath: PathGetFullPath(pluginRoot),
 			Diagnostics: []PluginCompatibilityDiagnostic{
 				{
 					Code:    "duplicate_plugin_id",
 					Message: fmt.Sprintf("plugin id '%s' was discovered more than once. Later entries are skipped", manifest.ID),
-					Path:    pathGetFullPath(manifestPath),
+					Path:    PathGetFullPath(manifestPath),
 				},
 			},
 		})
@@ -734,26 +734,26 @@ func (p *PluginDiscovery) tryAddPluginFromManifest(pluginRoot, manifestPath stri
 
 	// Find entry file
 	var entryPath, entryDiagnostic = p.findEntryFile(pluginRoot)
-	if isBlank(entryPath) {
+	if IsBlank(entryPath) {
 		code := "entry_not_found"
 		message := fmt.Sprintf("no plugin entry file was found for '%s'. Expected index.ts, index.js, index.mjs, src/index.*, or a package.json openclaw.extensions entry", manifest.ID)
-		path := pathGetFullPath(pluginRoot)
+		path := PathGetFullPath(pluginRoot)
 
 		if entryDiagnostic != nil {
-			if !isBlank(entryDiagnostic.Code) {
+			if !IsBlank(entryDiagnostic.Code) {
 				code = entryDiagnostic.Code
 			}
-			if !isBlank(entryDiagnostic.Message) {
+			if !IsBlank(entryDiagnostic.Message) {
 				message = entryDiagnostic.Message
 			}
-			if !isBlank(entryDiagnostic.Path) {
+			if !IsBlank(entryDiagnostic.Path) {
 				path = entryDiagnostic.Path
 			}
 		}
 
 		result.Reports = append(result.Reports, PluginLoadReport{
 			PluginId:   manifest.ID,
-			SourcePath: pathGetFullPath(pluginRoot),
+			SourcePath: PathGetFullPath(pluginRoot),
 			Diagnostics: []PluginCompatibilityDiagnostic{
 				{
 					Code:    code,
@@ -773,13 +773,13 @@ func (p *PluginDiscovery) tryAddPluginFromManifest(pluginRoot, manifestPath stri
 		if !ok {
 			result.Reports = append(result.Reports, PluginLoadReport{
 				PluginId:   manifest.ID,
-				SourcePath: pathGetFullPath(pluginRoot),
-				EntryPath:  pathGetFullPath(entryPath),
+				SourcePath: PathGetFullPath(pluginRoot),
+				EntryPath:  PathGetFullPath(entryPath),
 				Diagnostics: []PluginCompatibilityDiagnostic{
 					{
 						Code:    "entry_outside_root",
 						Message: fmt.Sprintf("plugin entry file for '%s' resolves outside the plugin root", manifest.ID),
-						Path:    pathGetFullPath(entryPath),
+						Path:    PathGetFullPath(entryPath),
 					},
 				},
 			})
@@ -789,23 +789,23 @@ func (p *PluginDiscovery) tryAddPluginFromManifest(pluginRoot, manifestPath stri
 
 	result.Plugins = append(result.Plugins, DiscoveredPlugin{
 		Manifest:  manifest,
-		RootPath:  pathGetFullPath(pluginRoot),
+		RootPath:  PathGetFullPath(pluginRoot),
 		EntryPath: containedEntryPath,
 	})
 }
 
 func (p *PluginDiscovery) tryAddPluginFromFile(path string, seen map[string]struct{}, result *PluginDiscoveryResult) {
 	var dir = filepath.Dir(path)
-	if isBlank(dir) {
+	if IsBlank(dir) {
 		return
 	}
 
 	var manifestPath = filepath.Join(dir, ManifestFileName)
-	if fileExists(manifestPath) {
+	if FileExists(manifestPath) {
 		p.tryAddPluginFromManifest(dir, manifestPath, seen, result)
 	} else {
 		// Standalone file — use file base name as id
-		var id = getFileNameWithoutExtension(path)
+		var id = GetFileNameWithoutExtension(path)
 		_, found := seen[id]
 		seen[id] = struct{}{}
 
@@ -816,7 +816,7 @@ func (p *PluginDiscovery) tryAddPluginFromFile(path string, seen map[string]stru
 		result.Plugins = append(result.Plugins, DiscoveredPlugin{
 			Manifest:  PluginManifest{ID: id},
 			RootPath:  dir,
-			EntryPath: pathGetFullPath(path),
+			EntryPath: PathGetFullPath(path),
 		})
 	}
 }
@@ -824,14 +824,14 @@ func (p *PluginDiscovery) tryAddPluginFromFile(path string, seen map[string]stru
 func (p *PluginDiscovery) scanDirectory(dir string, seen map[string]struct{}, result *PluginDiscoveryResult) {
 	// Check if this directory is itself a plugin (has manifest)
 	var manifestPath = filepath.Join(dir, ManifestFileName)
-	if fileExists(manifestPath) {
+	if FileExists(manifestPath) {
 		p.tryAddPluginFromManifest(dir, manifestPath, seen, result)
 		return
 	}
 
 	// Check for package pack (package.json with openclaw.extensions)
 	var packageJsonPath = filepath.Join(dir, PackageJsonFileName)
-	if fileExists(packageJsonPath) {
+	if FileExists(packageJsonPath) {
 		p.tryAddPluginPack(dir, packageJsonPath, seen, result)
 		return
 	}
@@ -927,7 +927,7 @@ func (p *PluginDiscovery) DiscoverWithDiagnostics(pluginsConfig *PluginsConfig, 
 
 	// 1. Config paths
 	for _, configPath := range pluginsConfig.Load.Paths {
-		var expanded = expandAllEnv(configPath)
+		var expanded = ExpandAllEnv(configPath)
 		if strings.HasPrefix(expanded, "~") {
 
 			homeDir, err := os.UserHomeDir()
@@ -938,7 +938,7 @@ func (p *PluginDiscovery) DiscoverWithDiagnostics(pluginsConfig *PluginsConfig, 
 			expanded = filepath.Join(homeDir, subPath)
 		}
 
-		if fileExists(expanded) {
+		if FileExists(expanded) {
 			p.tryAddPluginFromFile(expanded, seen, result)
 		} else {
 			p.scanDirectory(expanded, seen, result)
@@ -946,9 +946,9 @@ func (p *PluginDiscovery) DiscoverWithDiagnostics(pluginsConfig *PluginsConfig, 
 	}
 
 	// 2. Workspace extensions
-	if !isBlank(workspacePath) {
+	if !IsBlank(workspacePath) {
 		var wsExtDir = filepath.Join(workspacePath, ".openclaw", "extensions")
-		if directoryExists(wsExtDir) {
+		if DirectoryExists(wsExtDir) {
 			p.scanExtensionsDirectory(wsExtDir, seen, result)
 		}
 	}
@@ -959,7 +959,7 @@ func (p *PluginDiscovery) DiscoverWithDiagnostics(pluginsConfig *PluginsConfig, 
 		return result
 	}
 	var globalExtDir = filepath.Join(homeDir, ".openclaw", "extensions")
-	if directoryExists(globalExtDir) {
+	if DirectoryExists(globalExtDir) {
 		p.scanExtensionsDirectory(globalExtDir, seen, result)
 	}
 

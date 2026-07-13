@@ -617,7 +617,7 @@ func (r *RecentSendersStore) getPath(channelId string) string {
 	safe := []byte{}
 	for i := 0; i < len(channelId); i++ {
 		c := channelId[i]
-		if isLetterOrDigit(c) || c == '_' || c == '-' || c == '.' {
+		if IsLetterOrDigit(c) || c == '_' || c == '-' || c == '.' {
 			safe = append(safe, c)
 		}
 	}
@@ -642,7 +642,7 @@ func (r *RecentSendersStore) GetSnapshot(channelId string) (*RecentSendersFile, 
 }
 
 func (r *RecentSendersStore) TryGetLatest(channelId string) (*RecentSenderEntry, error) {
-	if isBlank(channelId) {
+	if IsBlank(channelId) {
 		return &RecentSenderEntry{}, nil
 	}
 
@@ -711,7 +711,7 @@ func (r *RecentSendersStore) loadUnlocked(_ context.Context, path string) (*Rece
 }
 
 func (r *RecentSendersStore) Record(ctx context.Context, channelId, senderId, senderName string) error {
-	if isBlank(channelId) || isBlank(senderId) {
+	if IsBlank(channelId) || IsBlank(senderId) {
 		return nil
 	}
 
@@ -998,7 +998,7 @@ func (t *ToolActionPolicyResolver) SupportsActionAwareApproval(toolName string) 
 }
 
 func (t *ToolActionPolicyResolver) IsMutationCapable(toolName, argumentsJson string) bool {
-	if isBlank(toolName) {
+	if IsBlank(toolName) {
 		return false
 	}
 
@@ -1256,8 +1256,8 @@ func (c *CronScheduler) cleanupStaleRunningJobs(nowUtc time.Time) {
 
 func (c *CronScheduler) enqueueJob(ctx context.Context, job *CronJobConfig) error {
 	sessionId := job.SessionId
-	if isBlank(sessionId) {
-		if isBlank(job.Name) {
+	if IsBlank(sessionId) {
+		if IsBlank(job.Name) {
 			sessionId = "cron:system"
 		} else {
 			sessionId = fmt.Sprintf("cron:%s", job.Name)
@@ -1266,7 +1266,7 @@ func (c *CronScheduler) enqueueJob(ctx context.Context, job *CronJobConfig) erro
 	}
 
 	var channelId = job.ChannelId
-	if isBlank(channelId) {
+	if IsBlank(channelId) {
 		channelId = "cron"
 	}
 
@@ -1284,13 +1284,13 @@ func (c *CronScheduler) enqueueJob(ctx context.Context, job *CronJobConfig) erro
 	var msg *InboundMessage
 	var err error
 	subject := job.Subject
-	if isBlank(subject) {
-		if !isBlank(job.Name) {
+	if IsBlank(subject) {
+		if !IsBlank(job.Name) {
 			subject = fmt.Sprintf("OpenClaw Cron: %s", job.Name)
 		}
 
 	}
-	if c.runDispatcher != nil && !isBlank(job.AutomationId) {
+	if c.runDispatcher != nil && !IsBlank(job.AutomationId) {
 		request := &AutomationDispatchRequest{
 			AutomationId:  job.AutomationId,
 			SessionId:     sessionId,
@@ -1301,7 +1301,7 @@ func (c *CronScheduler) enqueueJob(ctx context.Context, job *CronJobConfig) erro
 			Subject:       subject,
 		}
 
-		if isBlank(request.TriggerSource) {
+		if IsBlank(request.TriggerSource) {
 			request.TriggerSource = "schedule"
 		}
 		msg, err = c.runDispatcher.PrepareDispatch(ctx, request)
@@ -1332,7 +1332,7 @@ func (c *CronScheduler) enqueueJob(ctx context.Context, job *CronJobConfig) erro
 
 func (c *CronScheduler) enqueueJobIfNotRunning(ctx context.Context, job *CronJobConfig) error {
 	var jobName = "unnamed"
-	if !isBlank(job.Name) {
+	if !IsBlank(job.Name) {
 		jobName = job.Name
 	}
 	var now = time.Now().UTC()
@@ -1364,7 +1364,7 @@ func (c *CronScheduler) enqueueJobIfNotRunning(ctx context.Context, job *CronJob
 }
 
 func (c *CronScheduler) MarkJobCompleted(jobName string) {
-	if isBlank(jobName) {
+	if IsBlank(jobName) {
 		return
 	}
 
@@ -1380,14 +1380,14 @@ func (c *CronScheduler) RunTick(ctx context.Context) error {
 	}
 	for _, job := range jobs {
 		var now = utcNow
-		if !isBlank(job.Timezone) {
+		if !IsBlank(job.Timezone) {
 			tz, err := time.LoadLocation(job.Timezone)
 			if err == nil {
 				now = utcNow.In(tz)
 			}
 		}
 
-		if !isTime(job.CronExpression, now) {
+		if !IsTime(job.CronExpression, now) {
 			continue
 		}
 

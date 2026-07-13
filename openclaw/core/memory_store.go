@@ -76,7 +76,7 @@ func (s *PostgresMemoryStore) ListBackgroundRunnableSessions(ctx context.Context
 
 // SearchSessions implements [ISessionSearchStore].
 func (s *PostgresMemoryStore) SearchSessions(ctx context.Context, query *SessionSearchQuery) (*SessionSearchResult, error) {
-	if query == nil || isBlank(query.Text) {
+	if query == nil || IsBlank(query.Text) {
 		return &SessionSearchResult{Query: query, Items: []SessionSearchHit{}}, nil
 	}
 
@@ -157,7 +157,7 @@ func (s *PostgresMemoryStore) SearchSessions(ctx context.Context, query *Session
 		}
 
 		for _, turn := range session.History {
-			if isBlank(turn.Content) {
+			if IsBlank(turn.Content) {
 				continue
 			}
 
@@ -1001,10 +1001,10 @@ func (s *SqliteMemoryStore) _syncSessionSearchIndex(ctx context.Context, session
 
 		for _, toolCall := range turn.ToolCalls {
 			toolText := toolCall.Result
-			if isBlankP(toolText) {
+			if IsBlankP(toolText) {
 				toolText = &toolCall.Arguments
 			}
-			if !isBlankP(toolText) {
+			if !IsBlankP(toolText) {
 				err = s.insertSessionTurn(ctx, tx, session, "tool", *toolText, turn.Timestamp)
 				if err != nil {
 					return err
@@ -1080,7 +1080,7 @@ func (s *SqliteMemoryStore) SaveNote(ctx context.Context, key, content string) e
 		}
 
 		if len(queryEmbedding) > 0 {
-			blob := serializeEmbedding(queryEmbedding, false)
+			blob := SerializeEmbedding(queryEmbedding, false)
 			_, _ = s.db.ExecContext(ctx, "UPDATE notes SET embedding = ? WHERE key = ?;", blob, key)
 		}
 	}

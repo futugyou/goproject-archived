@@ -619,7 +619,7 @@ func (e *ExternalCliPresetCatalog) maxRisk(left, right string) string {
 }
 
 func (e *ExternalCliPresetCatalog) prefer(configured, preset string) string {
-	if isBlank(configured) {
+	if IsBlank(configured) {
 		return preset
 	}
 	return configured
@@ -630,7 +630,7 @@ func (e *ExternalCliPresetCatalog) mergeStringSet(preset, configured []string) [
 	result := []string{}
 	tmp := map[string]struct{}{}
 	for _, v := range preset {
-		if isBlank(v) {
+		if IsBlank(v) {
 			continue
 		}
 

@@ -30,18 +30,18 @@ import (
 	"gorm.io/gorm"
 )
 
-func isBlank(s string) bool {
+func IsBlank(s string) bool {
 	return strings.TrimSpace(s) == ""
 }
 
-func isBlankP(s *string) bool {
+func IsBlankP(s *string) bool {
 	if s == nil {
 		return true
 	}
 	return strings.TrimSpace(*s) == ""
 }
 
-func readStringArray(raw json.RawMessage) []string {
+func ReadStringArray(raw json.RawMessage) []string {
 	var arr []string
 	if err := json.Unmarshal(raw, &arr); err == nil {
 		return arr
@@ -49,7 +49,7 @@ func readStringArray(raw json.RawMessage) []string {
 	return nil
 }
 
-func containsIgnoreCase(slice []string, val string) bool {
+func ContainsIgnoreCase(slice []string, val string) bool {
 	target := strings.ToLower(val)
 	for _, item := range slice {
 		if strings.ToLower(item) == target {
@@ -59,7 +59,7 @@ func containsIgnoreCase(slice []string, val string) bool {
 	return false
 }
 
-func isLoopbackBind(bindAddress string) bool {
+func IsLoopbackBind(bindAddress string) bool {
 	// 1. 排除常见的通配符（绑定到所有接口，非 loopback）
 	if bindAddress == "*" || bindAddress == "+" || bindAddress == "[::]" || bindAddress == ":" || bindAddress == "0.0.0.0" {
 		return false
@@ -74,7 +74,7 @@ func isLoopbackBind(bindAddress string) bool {
 	return strings.EqualFold(bindAddress, "localhost")
 }
 
-func generateCode(min, max int64) string {
+func GenerateCode(min, max int64) string {
 	rangeSize := big.NewInt(max - min)
 
 	randomNum, err := rand.Int(rand.Reader, rangeSize)
@@ -87,7 +87,7 @@ func generateCode(min, max int64) string {
 	return code
 }
 
-func indexOf(s string, substr string, startIndex int) int {
+func IndexOf(s string, substr string, startIndex int) int {
 	if startIndex < 0 || startIndex > len(s) {
 		return -1
 	}
@@ -173,13 +173,13 @@ func ComputeTurnHash(normalizedText string) string {
 	return hex.EncodeToString(hash[:])
 }
 
-func isLetterOrDigit(b byte) bool {
+func IsLetterOrDigit(b byte) bool {
 	return (b >= 'a' && b <= 'z') ||
 		(b >= 'A' && b <= 'Z') ||
 		(b >= '0' && b <= '9')
 }
 
-func isKeywordCharacter(value rune) bool {
+func IsKeywordCharacter(value rune) bool {
 	return unicode.IsLetter(value) || unicode.IsDigit(value) || value == '_'
 }
 
@@ -248,12 +248,12 @@ func (m *NamedLockManager) Lock(ctx context.Context, key string) (unlock func(),
 	}, nil
 }
 
-func daysInMonth(year int, month time.Month) string {
+func DaysInMonth(year int, month time.Month) string {
 	t := time.Date(year, month+1, 0, 0, 0, 0, 0, time.UTC)
 	return strconv.Itoa(t.Day())
 }
 
-func normalizeExpression(expression string, time time.Time) string {
+func NormalizeExpression(expression string, time time.Time) string {
 	expression = strings.ToLower(strings.TrimSpace(expression))
 	normalized := expression
 	switch expression {
@@ -277,13 +277,13 @@ func normalizeExpression(expression string, time time.Time) string {
 	}
 
 	if dayOfMonthIndex >= 0 && parts[dayOfMonthIndex] == "1" {
-		parts[dayOfMonthIndex] = daysInMonth(time.Year(), time.Month())
+		parts[dayOfMonthIndex] = DaysInMonth(time.Year(), time.Month())
 	}
 
 	return strings.Join(parts, " ")
 }
 
-func parseCronExpression(spec string) (cron.Schedule, bool) {
+func ParseCronExpression(spec string) (cron.Schedule, bool) {
 	spec = strings.TrimSpace(spec)
 	if spec == "" {
 		return nil, false
@@ -322,8 +322,8 @@ func parseCronExpression(spec string) (cron.Schedule, bool) {
 	return sched, true
 }
 
-func isTime(expression string, t time.Time) bool {
-	sched, ok := parseCronExpression(expression)
+func IsTime(expression string, t time.Time) bool {
+	sched, ok := ParseCronExpression(expression)
 	if !ok {
 		return false
 	}
@@ -334,13 +334,13 @@ func isTime(expression string, t time.Time) bool {
 	return nextOccurrence.Equal(truncatedTime)
 }
 
-func isValidIANA(tz string) bool {
+func IsValidIANA(tz string) bool {
 	_, err := time.LoadLocation(tz)
 	return err == nil
 }
 
 // encodeKey 实现 URL 安全的 Base64 编码 (密匙转码)
-func encodeKey(key string) string {
+func EncodeKey(key string) string {
 	if strings.TrimSpace(key) == "" {
 		return "item"
 	}
@@ -354,7 +354,7 @@ func encodeKey(key string) string {
 	return strings.TrimRight(encoded, "=")
 }
 
-func expandAllEnv(input string) string {
+func ExpandAllEnv(input string) string {
 	if input == "" {
 		return ""
 	}
@@ -394,7 +394,7 @@ func LoadAndDelete[T any](db *gorm.DB, id any) (*T, error) {
 // 通用私有泛型辅助工具函数
 // ==========================================
 
-func tryResolveLinkTarget(path string) (string, bool) {
+func TryResolveLinkTarget(path string) (string, bool) {
 	finalPath, err := filepath.EvalSymlinks(path)
 	if err != nil {
 		if errors.Is(err, fs.ErrPermission) {
@@ -410,7 +410,7 @@ func tryResolveLinkTarget(path string) (string, bool) {
 
 	// EvalSymlinks 如果传入普通路径，会直接返回原路径。
 	// 我们检查原路径是否真的是一个符号链接。
-	if isLstatSame(path, finalPath) {
+	if IsLstatSame(path, finalPath) {
 		return "", false
 	}
 
@@ -418,7 +418,7 @@ func tryResolveLinkTarget(path string) (string, bool) {
 }
 
 // 辅助函数：判断原路径是否本身就是最终路径（排除非链接的情况）
-func isLstatSame(original, final string) bool {
+func IsLstatSame(original, final string) bool {
 	// 获取原路径的 Lstat（不追踪链接本身）
 	origFi, err1 := os.Lstat(original)
 	// 获取最终路径的 Stat
@@ -438,7 +438,7 @@ func isLstatSame(original, final string) bool {
 }
 
 // isUnresolvedLink 判断路径是否是一个无法解析的死链接
-func isUnresolvedLink(path string) bool {
+func IsUnresolvedLink(path string) bool {
 	// 1. 获取路径自身的元数据（Lstat 不会追踪符号链接目标）
 	fi, err := os.Lstat(path)
 	if err != nil {
@@ -452,12 +452,12 @@ func isUnresolvedLink(path string) bool {
 	}
 
 	// 3. 如果 tryResolveLinkTarget 返回 false，说明链接断开或目标不可达
-	_, ok := tryResolveLinkTarget(path)
+	_, ok := TryResolveLinkTarget(path)
 	return !ok
 }
 
 // 判断两个路径在当前操作系统下是否相等
-func pathEqual(path1, path2 string) bool {
+func PathEqual(path1, path2 string) bool {
 	if runtime.GOOS == "windows" {
 		return strings.EqualFold(path1, path2)
 	}
@@ -465,26 +465,26 @@ func pathEqual(path1, path2 string) bool {
 }
 
 // 判断 path 是否以 prefix 为前缀（考虑操作系统大小写）
-func pathHasPrefix(path, prefix string) bool {
+func PathHasPrefix(path, prefix string) bool {
 	if runtime.GOOS == "windows" {
 		return strings.HasPrefix(strings.ToLower(path), strings.ToLower(prefix))
 	}
 	return strings.HasPrefix(path, prefix)
 }
 
-func getFileNameWithoutExtension(path string) string {
+func GetFileNameWithoutExtension(path string) string {
 	base := filepath.Base(path)
 	ext := filepath.Ext(base)
 	return strings.TrimSuffix(base, ext)
 }
 
-func pathGetFullPath(path string) string {
+func PathGetFullPath(path string) string {
 	p, _ := filepath.Abs(path)
 	return p
 }
 
-// loadAllFile 遍历目录下所有的 .json 文件并反序列化为对象切片
-func loadAllFile[T any](ctx context.Context, directory string) ([]T, error) {
+// LoadAllFile 遍历目录下所有的 .json 文件并反序列化为对象切片
+func LoadAllFile[T any](ctx context.Context, directory string) ([]T, error) {
 	files, err := os.ReadDir(directory)
 	if err != nil {
 		return []T{}, nil // C# 中 catch 块返回空数组
@@ -502,7 +502,7 @@ func loadAllFile[T any](ctx context.Context, directory string) ([]T, error) {
 		}
 
 		path := filepath.Join(directory, file.Name())
-		item, err := loadOneFile[T](ctx, path)
+		item, err := LoadOneFile[T](ctx, path)
 		if err == nil && item != nil {
 			results = append(results, *item)
 		}
@@ -522,8 +522,8 @@ func AppendAllText(path, text string) error {
 	return err
 }
 
-// loadOneFile 反序列化单个文件
-func loadOneFile[T any](ctx context.Context, path string) (*T, error) {
+// LoadOneFile 反序列化单个文件
+func LoadOneFile[T any](ctx context.Context, path string) (*T, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
@@ -546,7 +546,7 @@ func loadOneFile[T any](ctx context.Context, path string) (*T, error) {
 }
 
 // saveOneFile 安全写入文件（先写临时文件再重命名，以保证原子性）
-func saveOneFile(ctx context.Context, path string, item any) error {
+func SaveOneFile(ctx context.Context, path string, item any) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
@@ -576,7 +576,7 @@ type FileGroup struct {
 	MaxWriteTime time.Time
 }
 
-func getGroupByFilename(dirPath string) ([]FileGroup, error) {
+func GetGroupByFilename(dirPath string) ([]FileGroup, error) {
 	entries, err := os.ReadDir(dirPath)
 	if err != nil {
 		return nil, err
@@ -628,7 +628,41 @@ func getGroupByFilename(dirPath string) ([]FileGroup, error) {
 	return groups, nil
 }
 
-func deleteOneFile(path string) error {
+// 计算指定目录的总大小（字节）
+func GetDirectorySize(path string) int64 {
+	if path == "" {
+		return 0
+	}
+
+	info, err := os.Stat(path)
+	if err != nil || !info.IsDir() {
+		return 0
+	}
+
+	var totalSize int64
+
+	_ = filepath.WalkDir(path, func(p string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return nil
+		}
+
+		if d.IsDir() {
+			return nil
+		}
+
+		fileInfo, err := d.Info()
+		if err != nil {
+			return nil
+		}
+
+		totalSize += fileInfo.Size()
+		return nil
+	})
+
+	return totalSize
+}
+
+func DeleteOneFile(path string) error {
 	err := os.Remove(path)
 	if os.IsNotExist(err) {
 		return nil
@@ -636,11 +670,11 @@ func deleteOneFile(path string) error {
 	return err
 }
 
-func deleteDirectory(path string) {
+func DeleteDirectory(path string) {
 	_ = os.RemoveAll(path)
 }
 
-func fileExists(path string) bool {
+func FileExists(path string) bool {
 	info, err := os.Stat(path)
 	if os.IsNotExist(err) {
 		return false
@@ -648,7 +682,7 @@ func fileExists(path string) bool {
 	return !info.IsDir()
 }
 
-func directoryExists(path string) bool {
+func DirectoryExists(path string) bool {
 	info, err := os.Stat(path)
 	if os.IsNotExist(err) {
 		return false
@@ -656,7 +690,7 @@ func directoryExists(path string) bool {
 	return info.IsDir()
 }
 
-func findDirectoriesCantainsFileName(candidatePath string, filename string) ([]string, error) {
+func FindDirectoriesCantainsFileName(candidatePath string, filename string) ([]string, error) {
 	uniquePaths := make(map[string]bool)
 
 	err := filepath.WalkDir(candidatePath, func(path string, d fs.DirEntry, err error) error {
@@ -691,8 +725,28 @@ func findDirectoriesCantainsFileName(candidatePath string, filename string) ([]s
 	return matches, nil
 }
 
+func EnumerateTopFiles(root string) []string {
+	var files []string
+
+	// os.ReadDir 只读取 root 目录下的第一层内容（非递归）
+	entries, err := os.ReadDir(root)
+	if err != nil {
+		return nil
+	}
+
+	for _, entry := range entries {
+		// 过滤掉子目录，只保留文件
+		if !entry.IsDir() {
+			fullPath := filepath.Join(root, entry.Name())
+			files = append(files, fullPath)
+		}
+	}
+
+	return files
+}
+
 // 递归获取目录下所有文件的绝对路径
-func EnumerateFiles(root string) []string {
+func EnumerateAllFiles(root string) []string {
 	var files []string
 
 	filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
@@ -717,7 +771,7 @@ func EnumerateFiles(root string) []string {
 	return files
 }
 
-func serializeEmbedding(v []float64, needCopy bool) []byte {
+func SerializeEmbedding(v []float64, needCopy bool) []byte {
 	if len(v) == 0 {
 		return nil
 	}
