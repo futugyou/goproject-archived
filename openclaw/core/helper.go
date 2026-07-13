@@ -16,6 +16,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"runtime"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -568,6 +569,65 @@ func saveOneFile(ctx context.Context, path string, item any) error {
 	return os.Rename(tempPath, path)
 }
 
+// 定义一个结构体来存放分组数据
+type FileGroup struct {
+	BaseName     string
+	Files        []string
+	MaxWriteTime time.Time
+}
+
+func getGroupByFilename(dirPath string) ([]FileGroup, error) {
+	entries, err := os.ReadDir(dirPath)
+	if err != nil {
+		return nil, err
+	}
+
+	groupMap := make(map[string]*FileGroup)
+
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue
+		}
+
+		fullPath := filepath.Join(dirPath, entry.Name())
+
+		info, err := entry.Info()
+		if err != nil {
+			continue
+		}
+		writeTime := info.ModTime().UTC()
+
+		ext := filepath.Ext(entry.Name())
+		baseName := strings.TrimSuffix(entry.Name(), ext)
+
+		key := strings.ToLower(baseName)
+
+		if group, exists := groupMap[key]; exists {
+			group.Files = append(group.Files, fullPath)
+			if writeTime.After(group.MaxWriteTime) {
+				group.MaxWriteTime = writeTime
+			}
+		} else {
+			groupMap[key] = &FileGroup{
+				BaseName:     baseName,
+				Files:        []string{fullPath},
+				MaxWriteTime: writeTime,
+			}
+		}
+	}
+
+	var groups []FileGroup
+	for _, group := range groupMap {
+		groups = append(groups, *group)
+	}
+
+	sort.Slice(groups, func(i, j int) bool {
+		return groups[i].MaxWriteTime.After(groups[j].MaxWriteTime)
+	})
+
+	return groups, nil
+}
+
 func deleteOneFile(path string) error {
 	err := os.Remove(path)
 	if os.IsNotExist(err) {
@@ -629,6 +689,32 @@ func findDirectoriesCantainsFileName(candidatePath string, filename string) ([]s
 	}
 
 	return matches, nil
+}
+
+// 递归获取目录下所有文件的绝对路径
+func EnumerateFiles(root string) []string {
+	var files []string
+
+	filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			if d != nil && d.IsDir() {
+				return filepath.SkipDir
+			}
+			return err
+		}
+
+		if !d.IsDir() {
+			absPath, err := filepath.Abs(path)
+			if err != nil {
+				return err
+			}
+			files = append(files, absPath)
+		}
+
+		return nil
+	})
+
+	return files
 }
 
 func serializeEmbedding(v []float64, needCopy bool) []byte {

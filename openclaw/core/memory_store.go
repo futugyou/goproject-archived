@@ -750,6 +750,9 @@ func NewSqliteMemoryStore(
 		return nil, errors.New("dbPath cannot be empty")
 	}
 
+	if logger == nil {
+		logger = slog.Default()
+	}
 	dir := filepath.Dir(filepath.Clean(dbPath))
 	if dir != "." && dir != "" {
 		if err := os.MkdirAll(dir, 0755); err != nil {
@@ -1233,6 +1236,9 @@ func NewFileMemoryStore(basePath string, maxCachedSessions int, logger *slog.Log
 		return nil, errors.New("basePath cannot be empty")
 	}
 
+	if maxCachedSessions <= 0 {
+		maxCachedSessions = 100
+	}
 	sessionsPath := filepath.Join(basePath, "sessions")
 	notesPath := filepath.Join(basePath, "notes")
 	branchesPath := filepath.Join(basePath, "branches")
