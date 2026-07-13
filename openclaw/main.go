@@ -19,7 +19,7 @@ import (
 
 func main() {
 	// test migrate
-	dsn := os.Getenv("PostresDB_URL")
+	dsn := os.Getenv("PostgresDB_URL")
 	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{})
 	if err != nil {
 		fmt.Println(err.Error())

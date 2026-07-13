@@ -136,6 +136,7 @@ type MemoryConfig struct {
 	MaxHistoryTurns      int                    `json:"max_history_turns"`
 	MaxCachedSessions    *int                   `json:"max_cached_sessions"`
 	Sqlite               *MemorySqliteConfig    `json:"sqlite"`
+	Postgres             *MemoryPostgresConfig  `json:"postgres"`
 	Mempalace            *MemoryMempalaceConfig `json:"mempalace"`
 	Fractal              *FractalMemoryConfig   `json:"fractal"`
 	Recall               *MemoryRecallConfig    `json:"recall"`
@@ -256,6 +257,10 @@ type MemorySqliteConfig struct {
 	EnableVectors       bool    `json:"enable_vectors"`
 	EmbeddingModel      *string `json:"embedding_model"` // Nullable string maps to *string
 	EmbeddingDimensions int     `json:"embedding_dimensions"`
+}
+
+type MemoryPostgresConfig struct {
+	PostgresUrl string `json:"postgres_url"`
 }
 
 func NewDefaultMemorySqliteConfig() *MemorySqliteConfig {

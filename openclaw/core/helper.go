@@ -21,6 +21,7 @@ import (
 	"sync"
 	"time"
 	"unicode"
+	"unsafe"
 
 	_ "time/tzdata"
 
@@ -628,4 +629,25 @@ func findDirectoriesCantainsFileName(candidatePath string, filename string) ([]s
 	}
 
 	return matches, nil
+}
+
+func serializeEmbedding(v []float64, needCopy bool) []byte {
+	if len(v) == 0 {
+		return nil
+	}
+
+	// 一个 float64 占用 8 个字节
+	const sizeOfFloat64 = 8
+
+	// 通过 unsafe 获取底层字节切片（无内存拷贝）
+	// 注意：如果这个 []byte 之后会被修改，或者其生命周期超出了 v 的范围
+	srcBytes := unsafe.Slice((*byte)(unsafe.Pointer(&v[0])), len(v)*sizeOfFloat64)
+
+	if needCopy {
+		dstBytes := make([]byte, len(srcBytes))
+		copy(dstBytes, srcBytes)
+		return dstBytes
+	}
+
+	return srcBytes
 }
