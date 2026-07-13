@@ -8,7 +8,7 @@ require (
 	github.com/nguyenthenguyen/docx v0.0.0-20230621112118-9c8e795a11db
 	github.com/pkoukk/tiktoken-go v0.1.8
 	github.com/xuri/excelize/v2 v2.11.0
-	golang.org/x/sync v0.21.0
+	golang.org/x/sync v0.22.0
 	golang.org/x/text v0.38.0
 )
 
