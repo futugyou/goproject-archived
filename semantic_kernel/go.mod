@@ -3,7 +3,7 @@ module github.com/futugyou/semantic_kernel
 go 1.26.2
 
 require (
-	github.com/beevik/etree v1.6.0
+	github.com/beevik/etree v1.7.0
 	github.com/futugyou/extensions_ai v0.0.1
 	github.com/futugyou/kernel_memory v0.0.1
 	github.com/futugyou/yomawari v0.0.1
