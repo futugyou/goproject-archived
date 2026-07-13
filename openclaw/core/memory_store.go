@@ -2,16 +2,21 @@ package core
 
 import (
 	"context"
+	"crypto/sha256"
 	"database/sql"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io/fs"
 	"log/slog"
 	"os"
 	"path/filepath"
 	"slices"
 	"sort"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/futugyou/extensions_ai/abstractions/embeddings"
@@ -1058,26 +1063,23 @@ func (s *SqliteMemoryStore) SaveNote(ctx context.Context, key, content string) e
 	}
 
 	if s.enableVectors && s.embeddingGenerator != nil {
-		go func() {
-			// 为了防止后台任务因外部 Context 取消而中断，通常会使用一个独立的上下文或者基础上下文
-			res, err := s.embeddingGenerator.Generate(ctx, []string{content}, nil)
-			if err != nil {
-				if s.logger != nil {
-					s.logger.Warn("Failed to generate embedding for note", "key", key, "error", err)
-				}
-				return
+		res, err := s.embeddingGenerator.Generate(ctx, []string{content}, nil)
+		if err != nil {
+			if s.logger != nil {
+				s.logger.Warn("Failed to generate embedding for note", "key", key, "error", err)
 			}
+			return err
+		}
 
-			var queryEmbedding []float64
-			if res.Count() > 0 {
-				queryEmbedding = res.Get(0).Vector
-			}
+		var queryEmbedding []float64
+		if res.Count() > 0 {
+			queryEmbedding = res.Get(0).Vector
+		}
 
-			if len(queryEmbedding) > 0 {
-				blob := serializeEmbedding(queryEmbedding, false)
-				_, _ = s.db.ExecContext(ctx, "UPDATE notes SET embedding = ? WHERE key = ?;", blob, key)
-			}
-		}()
+		if len(queryEmbedding) > 0 {
+			blob := serializeEmbedding(queryEmbedding, false)
+			_, _ = s.db.ExecContext(ctx, "UPDATE notes SET embedding = ? WHERE key = ?;", blob, key)
+		}
 	}
 
 	return nil
@@ -1196,3 +1198,584 @@ func (s *SqliteMemoryStore) DeleteBranch(ctx context.Context, branchId string) e
 }
 
 var _ IMemoryStore = (*SqliteMemoryStore)(nil)
+
+const sessionLoadStripeCount = 64
+
+type NoteIndexEntry struct {
+	Key            string
+	PreviewContent string
+	SearchText     string
+	UpdatedAt      time.Time
+}
+type FileMemoryStore struct {
+	basePath     string
+	sessionsPath string
+	notesPath    string
+	branchesPath string
+
+	cacheMu      sync.RWMutex
+	sessionCache map[string]*Session
+
+	sessionLoadStripes [sessionLoadStripeCount]sync.Mutex
+	noteIndexGate      sync.Mutex
+	noteIndex          map[string]NoteIndexEntry
+	noteIndexMu        sync.RWMutex
+	noteIndexInit      int32 // 0=未初始化, 1=已初始化
+
+	logger    *slog.Logger
+	metrics   *RuntimeMetrics
+	redaction IRedactionPipeline
+}
+
+// NewFileMemoryStore 构造函数
+func NewFileMemoryStore(basePath string, maxCachedSessions int, logger *slog.Logger, metrics *RuntimeMetrics, redaction IRedactionPipeline) (*FileMemoryStore, error) {
+	if basePath == "" {
+		return nil, errors.New("basePath cannot be empty")
+	}
+
+	sessionsPath := filepath.Join(basePath, "sessions")
+	notesPath := filepath.Join(basePath, "notes")
+	branchesPath := filepath.Join(basePath, "branches")
+
+	// 确保目录存在
+	for _, p := range []string{sessionsPath, notesPath, branchesPath} {
+		if err := os.MkdirAll(p, 0755); err != nil {
+			return nil, fmt.Errorf("failed to create directory %s: %w", p, err)
+		}
+	}
+
+	return &FileMemoryStore{
+		basePath:     basePath,
+		sessionsPath: sessionsPath,
+		notesPath:    notesPath,
+		branchesPath: branchesPath,
+		sessionCache: make(map[string]*Session),
+		noteIndex:    make(map[string]NoteIndexEntry),
+		logger:       logger,
+		metrics:      metrics,
+		redaction:    redaction,
+	}, nil
+}
+
+// ── Session 读写管理 ─────────────────────────────────────────
+
+func (f *FileMemoryStore) GetSession(ctx context.Context, sessionId string) (*Session, error) {
+	if strings.TrimSpace(sessionId) == "" {
+		return nil, nil
+	}
+
+	// 1. 尝试从缓存读取
+	f.cacheMu.RLock()
+	cached, found := f.sessionCache[sessionId]
+	f.cacheMu.RUnlock()
+
+	if found {
+		if f.metrics != nil {
+			f.metrics.IncrementSessionCacheHits()
+		}
+		return cached, nil
+	}
+	if f.metrics != nil {
+		f.metrics.IncrementSessionCacheMisses()
+	}
+
+	// 2. 分段锁控制并发加载
+	stripe := f.resolveSessionLoadStripe(sessionId)
+	stripe.Lock()
+	defer stripe.Unlock()
+
+	// 双重检查锁定 (DCL)
+	f.cacheMu.RLock()
+	cached, found = f.sessionCache[sessionId]
+	f.cacheMu.RUnlock()
+	if found {
+		return cached, nil
+	}
+
+	encodedId := f.encodeKey(sessionId)
+	filePath := filepath.Join(f.sessionsPath, encodedId+".json")
+
+	if _, err := os.Stat(filePath); os.IsNotExist(err) {
+		return nil, nil
+	}
+
+	// 3. 读取并反序列化文件
+	session, err := f.loadSessionFromFile(ctx, filePath)
+	if err != nil {
+		return nil, f.quarantineCorruptSessionFile(filePath, sessionId, err)
+	}
+
+	if session != nil {
+		// 再次检查防止覆盖更新的值
+		f.cacheMu.Lock()
+		if canonical, exists := f.sessionCache[sessionId]; exists {
+			f.cacheMu.Unlock()
+			return canonical, nil
+		}
+		f.sessionCache[sessionId] = session
+		f.cacheMu.Unlock()
+	}
+
+	return session, nil
+}
+
+func (f *FileMemoryStore) SaveSession(ctx context.Context, session Session) error {
+	persistedSession := &session
+	if f.redaction != nil {
+		persistedSession = f.redaction.RedactSession(&session)
+	}
+
+	encodedId := f.encodeKey(session.Id)
+	filePath := filepath.Join(f.sessionsPath, encodedId+".json")
+	tempPath := filePath + ".tmp"
+
+	// 原子写入安全处理
+	err := func() error {
+		file, err := os.OpenFile(tempPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644)
+		if err != nil {
+			return err
+		}
+		defer file.Close()
+
+		if func() bool {
+			select {
+			case <-ctx.Done():
+				return true
+			default:
+				return false
+			}
+		}() {
+			return ctx.Err()
+		}
+
+		encoder := json.NewEncoder(file)
+		if err := encoder.Encode(persistedSession); err != nil {
+			return err
+		}
+
+		return file.Sync()
+	}()
+
+	if err != nil {
+		_ = os.Remove(tempPath)
+		return err
+	}
+
+	// 原子重命名
+	if err := os.Rename(tempPath, filePath); err != nil {
+		_ = os.Remove(tempPath)
+		return err
+	}
+
+	// 更新缓存
+	f.cacheMu.Lock()
+	f.sessionCache[session.Id] = persistedSession
+	f.cacheMu.Unlock()
+
+	return nil
+}
+
+// ── Note 笔记管理 ───────────────────────────────────────────
+
+func (f *FileMemoryStore) LoadNote(ctx context.Context, key string) (string, error) {
+	if strings.TrimSpace(key) == "" {
+		return "", nil
+	}
+
+	encodedKey := f.encodeKey(key)
+	filePath := filepath.Join(f.notesPath, encodedKey+".md")
+
+	if _, err := os.Stat(filePath); os.IsNotExist(err) {
+		return "", nil
+	}
+
+	content, err := os.ReadFile(filePath)
+	if err != nil {
+		return "", nil
+	}
+	return string(content), nil
+}
+
+func (f *FileMemoryStore) SaveNote(ctx context.Context, key string, content string) error {
+	if strings.TrimSpace(key) == "" {
+		return errors.New("note key cannot be empty")
+	}
+
+	encodedKey := f.encodeKey(key)
+	filePath := filepath.Join(f.notesPath, encodedKey+".md")
+	tempPath := filePath + ".tmp"
+	keyPath := filepath.Join(f.notesPath, encodedKey+".key")
+	keyTempPath := keyPath + ".tmp"
+	nowUtc := time.Now().UTC()
+
+	safeContent := content
+	if f.redaction != nil {
+		safeContent = f.redaction.Redact(content)
+	}
+
+	// 写入 MD 临时文件
+	if err := os.WriteFile(tempPath, []byte(safeContent), 0644); err != nil {
+		_ = os.Remove(tempPath)
+		return err
+	}
+
+	// 移动成正式文件
+	if err := os.Rename(tempPath, filePath); err != nil {
+		_ = os.Remove(tempPath)
+		return err
+	}
+
+	// 写入 Key 旁路文件
+	if err := f.persistOriginalNoteKey(key, keyPath, keyTempPath); err != nil {
+		_ = os.Remove(keyTempPath)
+		return err
+	}
+
+	f.upsertNoteIndexEntry(key, safeContent, nowUtc)
+	return nil
+}
+
+func (f *FileMemoryStore) DeleteNote(ctx context.Context, key string) error {
+	if strings.TrimSpace(key) == "" {
+		return nil
+	}
+
+	encodedKey := f.encodeKey(key)
+	filePath := filepath.Join(f.notesPath, encodedKey+".md")
+	keyPath := filepath.Join(f.notesPath, encodedKey+".key")
+
+	_ = os.Remove(filePath)
+	_ = os.Remove(keyPath)
+
+	f.noteIndexMu.Lock()
+	delete(f.noteIndex, key)
+	f.noteIndexMu.Unlock()
+
+	return nil
+}
+
+func (f *FileMemoryStore) ListNotesWithPrefix(ctx context.Context, prefix string) ([]string, error) {
+	if err := f.ensureNoteIndexLoaded(ctx); err != nil {
+		return []string{}, nil
+	}
+
+	f.noteIndexMu.RLock()
+	var keys []string
+	for k := range f.noteIndex {
+		if strings.HasPrefix(k, prefix) {
+			keys = append(keys, k)
+		}
+	}
+	f.noteIndexMu.RUnlock()
+
+	sort.Strings(keys)
+	return keys, nil
+}
+
+// ── Conversation Branching 分支管理 ─────────────────────────
+
+func (f *FileMemoryStore) SaveBranch(ctx context.Context, branch SessionBranch) error {
+	persistedBranch := &branch
+	if f.redaction != nil {
+		persistedBranch = f.redaction.RedactBranch(&branch)
+	}
+
+	encodedId := f.encodeKey(branch.BranchId)
+	filePath := filepath.Join(f.branchesPath, encodedId+".json")
+	tempPath := filePath + ".tmp"
+
+	err := func() error {
+		file, err := os.OpenFile(tempPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644)
+		if err != nil {
+			return err
+		}
+		defer file.Close()
+
+		encoder := json.NewEncoder(file)
+		if err := encoder.Encode(persistedBranch); err != nil {
+			return err
+		}
+		return file.Sync()
+	}()
+
+	if err != nil {
+		_ = os.Remove(tempPath)
+		return err
+	}
+
+	if err := os.Rename(tempPath, filePath); err != nil {
+		_ = os.Remove(tempPath)
+		return err
+	}
+
+	return nil
+}
+
+func (f *FileMemoryStore) LoadBranch(ctx context.Context, branchId string) (*SessionBranch, error) {
+	if strings.TrimSpace(branchId) == "" {
+		return nil, nil
+	}
+
+	encodedId := f.encodeKey(branchId)
+	filePath := filepath.Join(f.branchesPath, encodedId+".json")
+
+	if _, err := os.Stat(filePath); os.IsNotExist(err) {
+		return nil, nil
+	}
+
+	file, err := os.Open(filePath)
+	if err != nil {
+		return nil, nil
+	}
+	defer file.Close()
+
+	var branch SessionBranch
+	if err := json.NewDecoder(file).Decode(&branch); err != nil {
+		return nil, nil
+	}
+
+	return &branch, nil
+}
+
+func (f *FileMemoryStore) ListBranches(ctx context.Context, sessionId string) ([]SessionBranch, error) {
+	var results []SessionBranch
+
+	files, err := os.ReadDir(f.branchesPath)
+	if err != nil {
+		return []SessionBranch{}, nil
+	}
+
+	for _, fileInfo := range files {
+		if fileInfo.IsDir() || !strings.HasSuffix(fileInfo.Name(), ".json") {
+			continue
+		}
+
+		filePath := filepath.Join(f.branchesPath, fileInfo.Name())
+		branch, err := f.loadBranchFromFile(filePath)
+		if err != nil {
+			continue // 跳过损坏的分支文件
+		}
+
+		if branch != nil && branch.SessionId == sessionId {
+			results = append(results, *branch)
+		}
+	}
+
+	return results, nil
+}
+
+func (f *FileMemoryStore) DeleteBranch(ctx context.Context, branchId string) error {
+	if strings.TrimSpace(branchId) == "" {
+		return nil
+	}
+
+	encodedId := f.encodeKey(branchId)
+	filePath := filepath.Join(f.branchesPath, encodedId+".json")
+	_ = os.Remove(filePath)
+	return nil
+}
+
+// ── 内部辅助私有函数 (Private Helpers) ───────────────────────
+
+func (f *FileMemoryStore) resolveSessionLoadStripe(sessionId string) *sync.Mutex {
+	hash := uint32(2166136261)
+	for i := 0; i < len(sessionId); i++ {
+		hash ^= uint32(sessionId[i])
+		hash *= 16777619
+	}
+	index := (hash & 0x7FFFFFFF) % sessionLoadStripeCount
+	return &f.sessionLoadStripes[index]
+}
+
+func (f *FileMemoryStore) encodeKey(key string) string {
+	// 大于 200 长度使用 SHA256 压缩避免超出文件系统限制
+	if len(key) > 200 {
+		hash := sha256.Sum256([]byte(key))
+		return strings.NewReplacer("+", "-", "/", "_").Replace(strings.TrimRight(base64.StdEncoding.EncodeToString(hash[:]), "="))
+	}
+
+	return strings.NewReplacer("+", "-", "/", "_").Replace(strings.TrimRight(base64.StdEncoding.EncodeToString([]byte(key)), "="))
+}
+
+func (f *FileMemoryStore) persistOriginalNoteKey(key, keyPath, keyTempPath string) error {
+	if !f.requiresKeySidecar(key) {
+		_ = os.Remove(keyPath)
+		return nil
+	}
+
+	if err := os.WriteFile(keyTempPath, []byte(key), 0644); err != nil {
+		return err
+	}
+	return os.Rename(keyTempPath, keyPath)
+}
+
+func (f *FileMemoryStore) requiresKeySidecar(key string) bool {
+	// Base64 编码是可逆的，但如果长度过长使用了 SHA256 摘要（如 encodeKey 里的逻辑），则需要旁路文件存原 Key
+	return len(key) > 200
+}
+
+func (f *FileMemoryStore) upsertNoteIndexEntry(key, content string, updatedAt time.Time) {
+	if atomic.LoadInt32(&f.noteIndexInit) == 0 {
+		return
+	}
+
+	f.noteIndexMu.Lock()
+	f.noteIndex[key] = f.createNoteIndexEntry(key, content, updatedAt)
+	f.noteIndexMu.Unlock()
+}
+
+func (f *FileMemoryStore) ensureNoteIndexLoaded(ctx context.Context) error {
+	if atomic.LoadInt32(&f.noteIndexInit) != 0 {
+		return nil
+	}
+
+	f.noteIndexGate.Lock()
+	defer f.noteIndexGate.Unlock()
+
+	if f.noteIndexInit != 0 {
+		return nil
+	}
+
+	f.noteIndexMu.Lock()
+	clear(f.noteIndex)
+	f.noteIndexMu.Unlock()
+
+	err := filepath.WalkDir(f.notesPath, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+		if d.IsDir() || !strings.HasSuffix(d.Name(), ".md") {
+			return nil
+		}
+
+		encodedKey := strings.TrimSuffix(d.Name(), ".md")
+		key := f.resolveNoteKey(encodedKey, path)
+
+		contentBytes, err := os.ReadFile(path)
+		if err != nil {
+			return nil
+		}
+
+		info, err := d.Info()
+		var updatedAt time.Time
+		if err == nil {
+			updatedAt = info.ModTime().UTC()
+		}
+
+		f.noteIndexMu.Lock()
+		f.noteIndex[key] = f.createNoteIndexEntry(key, string(contentBytes), updatedAt)
+		f.noteIndexMu.Unlock()
+
+		return nil
+	})
+
+	if err != nil {
+		return err
+	}
+
+	atomic.StoreInt32(&f.noteIndexInit, 1)
+	return nil
+}
+
+func (f *FileMemoryStore) createNoteIndexEntry(key, content string, updatedAt time.Time) NoteIndexEntry {
+	preview := content
+	if len(content) > 4096 {
+		// 防止截断时切到非 UTF-8 字符的字节（Go 字符串切片是按字节的）
+		runes := []rune(content)
+		if len(runes) > 4096 {
+			preview = string(runes[:4096]) + "…"
+		}
+	}
+
+	return NoteIndexEntry{
+		Key:            key,
+		PreviewContent: preview,
+		SearchText:     f.normalizeSearchText(fmt.Sprintf("%s\n%s", key, content)),
+		UpdatedAt:      updatedAt,
+	}
+}
+
+func (f *FileMemoryStore) resolveNoteKey(encodedKey, mdPath string) string {
+	if len(encodedKey) <= 200 {
+		// 尝试 Base64 反解
+		// 由于转码时替换了符号，这里换回来
+		base64Str := strings.NewReplacer("-", "+", "_", "/").Replace(encodedKey)
+		// 补齐等号
+		if rem := len(base64Str) % 4; rem != 0 {
+			base64Str += strings.Repeat("=", 4-rem)
+		}
+		if decoded, err := base64.StdEncoding.DecodeString(base64Str); err == nil {
+			return string(decoded)
+		}
+	}
+
+	// 如果反解失败或属于长 key，尝试去读同名 .key 旁路文件
+	keyPath := strings.TrimSuffix(mdPath, ".md") + ".key"
+	if content, err := os.ReadFile(keyPath); err == nil {
+		return string(content)
+	}
+
+	return encodedKey
+}
+
+func (f *FileMemoryStore) normalizeSearchText(text string) string {
+	return strings.ToLower(text)
+}
+
+func (f *FileMemoryStore) loadSessionFromFile(_ context.Context, filePath string) (*Session, error) {
+	file, err := os.Open(filePath)
+	if err != nil {
+		return nil, err
+	}
+	defer file.Close()
+
+	var session Session
+	if err := json.NewDecoder(file).Decode(&session); err != nil {
+		return nil, err
+	}
+	return &session, nil
+}
+
+func (f *FileMemoryStore) loadBranchFromFile(filePath string) (*SessionBranch, error) {
+	file, err := os.Open(filePath)
+	if err != nil {
+		return nil, err
+	}
+	defer file.Close()
+
+	var branch SessionBranch
+	if err := json.NewDecoder(file).Decode(&branch); err != nil {
+		return nil, err
+	}
+	return &branch, nil
+}
+
+// 隔离被损坏的 Session 文件逻辑
+func (f *FileMemoryStore) quarantineCorruptSessionFile(filePath, sessionId string, originalErr error) error {
+	quarantinePath := ""
+	if _, err := os.Stat(filePath); err == nil {
+		timestamp := time.Now().UTC().Format("20060102150405000")
+		quarantinePath = fmt.Sprintf("%s.corrupt-%s", filePath, timestamp)
+		if err := os.Rename(filePath, quarantinePath); err != nil {
+			if f.logger != nil {
+				f.logger.Warn("Failed to quarantine corrupt session", "filePath", filePath, "sessionId", sessionId, "err", err.Error())
+			}
+		}
+	}
+
+	effectivePath := filePath
+	if quarantinePath != "" {
+		effectivePath = quarantinePath
+	}
+
+	if f.logger != nil {
+		f.logger.Error("Session file is corrupt or unreadable and was quarantined", "sessionId", sessionId, "effectivePath", effectivePath, "err", originalErr)
+	}
+
+	return fmt.Errorf("session '%s' could not be loaded because its persisted state is corrupt (Path: %s). Original error: %w", sessionId, effectivePath, originalErr)
+}
+
+var _ IMemoryStore = (*FileMemoryStore)(nil)
