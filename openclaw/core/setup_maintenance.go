@@ -1,6 +1,7 @@
 package core
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -11,7 +12,11 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"time"
 	"unicode"
+
+	"gorm.io/driver/postgres"
+	"gorm.io/gorm"
 )
 
 type MaintenanceScanInputs struct {
@@ -641,4 +646,418 @@ func (s *ReliabilityScorer) processRecommendations(recs []ReliabilityRecommendat
 		uniqueRecs = uniqueRecs[:6]
 	}
 	return uniqueRecs
+}
+
+type MaintenanceCoordinator struct{}
+
+func (m *MaintenanceCoordinator) createAutomationStore(config *GatewayConfig) (IAutomationStore, error) {
+	switch config.Memory.Provider {
+	case "sqlite":
+		dppath := config.Memory.Sqlite.DbPath
+		if !filepath.IsAbs(dppath) {
+			storagePath, err := filepath.Abs(config.Memory.StoragePath)
+			if err != nil {
+				return nil, err
+			}
+			dppath = filepath.Join(storagePath, dppath)
+		}
+
+		fullpath, err := filepath.Abs(dppath)
+		if err != nil {
+			return nil, err
+		}
+		return NewSqliteFeatureStore(fullpath)
+	case "postgres":
+		db, err := gorm.Open(postgres.Open(config.Memory.Postgres.PostgresUrl), &gorm.Config{})
+		if err != nil {
+			return nil, err
+		}
+
+		return NewPostgresFeatureStore(db)
+	}
+
+	fullpath, err := filepath.Abs(config.Memory.StoragePath)
+	if err != nil {
+		return nil, err
+	}
+	return NewFileFeatureStore(fullpath)
+}
+
+func (m *MaintenanceCoordinator) createMemoryStore(config *GatewayConfig) (IMemoryStore, error) {
+	switch config.Memory.Provider {
+	case "sqlite":
+		dppath := config.Memory.Sqlite.DbPath
+		if !filepath.IsAbs(dppath) {
+			storagePath, err := filepath.Abs(config.Memory.StoragePath)
+			if err != nil {
+				return nil, err
+			}
+			dppath = filepath.Join(storagePath, dppath)
+		}
+
+		fullpath, err := filepath.Abs(dppath)
+		if err != nil {
+			return nil, err
+		}
+		return NewSqliteMemoryStore(fullpath, config.Memory.Sqlite.EnableFts, nil, false, nil, nil)
+	case "postgres":
+		db, err := gorm.Open(postgres.Open(config.Memory.Postgres.PostgresUrl), &gorm.Config{})
+		if err != nil {
+			return nil, err
+		}
+
+		return NewPostgresMemoryStore(db, false, false, nil)
+	}
+
+	fullpath, err := filepath.Abs(config.Memory.StoragePath)
+	if err != nil {
+		return nil, err
+	}
+	return NewFileMemoryStore(fullpath, 0, nil, nil, nil)
+}
+
+func (m *MaintenanceCoordinator) resolveWorkspacePromptPath(workspaceRoot, fileName string) string {
+	var dir string
+	var err error
+	if IsBlank(workspaceRoot) {
+		dir, err = os.Getwd()
+	} else {
+		dir, err = filepath.Abs(workspaceRoot)
+	}
+
+	if err != nil {
+		return ""
+	}
+	return filepath.Join(dir, fileName)
+}
+
+func (m *MaintenanceCoordinator) resolvePromptCacheTracePath(config *GatewayConfig, memoryRoot string) string {
+	var raw = config.Llm.PromptCaching.TraceFilePath
+	if IsBlankP(raw) {
+		raw = config.Diagnostics.CacheTrace.FilePath
+	}
+	if IsBlankP(raw) {
+		*raw = filepath.Join(memoryRoot, "logs", "cache-trace.jsonl")
+	}
+
+	return m.pathFor(*raw, memoryRoot)
+}
+
+func (m *MaintenanceCoordinator) pathFor(configuredPath, basePath string) string {
+	path := ""
+	if IsBlank(configuredPath) {
+		path, _ = filepath.Abs(basePath)
+		return path
+	}
+
+	if filepath.IsAbs(configuredPath) {
+		path, _ = filepath.Abs(basePath)
+	} else {
+		path, _ = filepath.Abs(filepath.Join(basePath, configuredPath))
+	}
+	return path
+}
+
+func (m *MaintenanceCoordinator) isUnderRoot(path, root string) bool {
+	absRoot, err := filepath.Abs(root)
+	if err != nil {
+		return false
+	}
+	// 确保 root 结尾有路径分隔符（例如 / 或 \）
+	// filepath.FromSlash("/") 会根据系统自动转为正确的系统分隔符
+	sep := string(filepath.Separator)
+	rootWithSep := strings.TrimSuffix(absRoot, sep) + sep
+
+	// 获取 path 的绝对路径并进行标准化清理
+	absPath, err := filepath.Abs(path)
+	if err != nil {
+		return false
+	}
+
+	// 情况 1: path 是 root 的子目录或子文件
+	// 情况 2: path 和 root 是同一个目录
+	return strings.HasPrefix(absPath, rootWithSep) || absPath == absRoot
+}
+
+func (m *MaintenanceCoordinator) prunePromptCacheTraceArtifacts(config *GatewayConfig, dryRun bool) *MaintenanceFixAction {
+	memoryRoot, err := filepath.Abs(config.Memory.StoragePath)
+	if err != nil {
+		return nil
+	}
+	var path = m.resolvePromptCacheTracePath(config, memoryRoot)
+	if !m.isUnderRoot(path, memoryRoot) {
+		return nil
+	}
+
+	removable := []string{}
+	if FileExists(path) {
+		removable = []string{path}
+	} else if DirectoryExists(path) {
+		removable = EnumerateAllFiles(path)
+	}
+
+	if !dryRun {
+		for _, file := range removable {
+			os.Remove(file)
+		}
+	}
+
+	result := &MaintenanceFixAction{
+		Id:           "prompt-cache-traces",
+		Applied:      !dryRun && len(removable) > 0,
+		Summary:      "No managed prompt-cache trace artifacts were found",
+		NumericValue: int64(len(removable)),
+	}
+	if len(removable) != 0 {
+		if dryRun {
+			result.Summary = fmt.Sprintf("would remove %d managed prompt-cache trace artifact(s)", len(removable))
+		} else {
+
+			result.Summary = fmt.Sprintf("removed %d managed prompt-cache trace artifact(s)", len(removable))
+		}
+	}
+	return result
+}
+
+func (m *MaintenanceCoordinator) pruneModelEvaluationArtifacts(config *GatewayConfig, dryRun bool) *MaintenanceFixAction {
+	path, err := filepath.Abs(config.Memory.StoragePath)
+	if err != nil {
+		return nil
+	}
+	path = filepath.Join(path, "admin", "model-evaluations")
+	if !DirectoryExists(path) {
+		return &MaintenanceFixAction{
+			Id:      "model-evaluations",
+			Summary: "No model evaluation artifacts were found.",
+		}
+	}
+
+	groups, err := GetGroupByFilename(path)
+	if err != nil {
+		return nil
+	}
+	removable := []string{}
+	if len(groups) > MaxModelEvaluationGroupsToKeep {
+		for i := MaxModelEvaluationGroupsToKeep; i < len(groups); i++ {
+			removable = append(removable, groups[i].Files...)
+		}
+	}
+
+	if !dryRun {
+		for _, file := range removable {
+			os.Remove(file)
+		}
+	}
+
+	result := &MaintenanceFixAction{
+		Id:           "model-evaluations",
+		Applied:      !dryRun && len(removable) > 0,
+		Summary:      "Model evaluation artifacts are already within the retention window",
+		NumericValue: int64(len(removable)),
+	}
+	if len(removable) != 0 {
+		if dryRun {
+			result.Summary = fmt.Sprintf("would remove %d old model evaluation artifact(s)", len(removable))
+		} else {
+
+			result.Summary = fmt.Sprintf("removed %d old model evaluation artifact(s)", len(removable))
+		}
+	}
+	return result
+}
+
+func (m *MaintenanceCoordinator) loadPersistedSessionIds(ctx context.Context, config *GatewayConfig) (map[string]struct{}, error) {
+	store, err := m.createMemoryStore(config)
+	if err != nil {
+		return nil, err
+	}
+
+	adminStore, ok := store.(ISessionAdminStore)
+	if !ok {
+		return map[string]struct{}{}, nil
+	}
+
+	sessionIds := map[string]struct{}{}
+
+	for i := 0; i <= 100; i++ {
+
+		result, err := adminStore.ListSessions(ctx, i, 500, &SessionListQuery{})
+		if err != nil {
+			return nil, err
+		}
+
+		for _, item := range result.Items {
+			sessionIds[item.Id] = struct{}{}
+		}
+
+		if !result.HasMore {
+			break
+		}
+	}
+
+	return sessionIds, nil
+}
+
+func (m *MaintenanceCoordinator) loadSessionMetadata(memoryRoot string) []SessionMetadataSnapshot {
+	var path = filepath.Join(memoryRoot, "admin", "session-metadata.json")
+
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return []SessionMetadataSnapshot{}
+	}
+
+	var result []SessionMetadataSnapshot
+
+	json.Unmarshal(data, &result)
+	return result
+}
+
+func (m *MaintenanceCoordinator) saveSessionMetadata(memoryRoot string, metadata []SessionMetadataSnapshot) error {
+	var path = filepath.Join(memoryRoot, "admin", "session-metadata.json")
+	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+		return err
+	}
+
+	data, err := json.Marshal(metadata)
+	if err != nil {
+		return err
+	}
+
+	return os.WriteFile(path, data, 0644)
+}
+
+func (m *MaintenanceCoordinator) pruneOrphanedMetadata(ctx context.Context, config *GatewayConfig, dryRun bool) (*MaintenanceFixAction, error) {
+	memoryRoot, err := filepath.Abs(config.Memory.StoragePath)
+	if err != nil {
+		return nil, err
+	}
+	var metadata = m.loadSessionMetadata(memoryRoot)
+	sessionIds, err := m.loadPersistedSessionIds(ctx, config)
+	if err != nil {
+		return nil, err
+	}
+
+	orphaned := []SessionMetadataSnapshot{}
+	retained := []SessionMetadataSnapshot{}
+	for _, item := range metadata {
+		_, ok := sessionIds[item.SessionId]
+		if !ok {
+			orphaned = append(orphaned, item)
+		} else {
+			retained = append(retained, item)
+		}
+	}
+
+	if !dryRun && len(orphaned) > 0 {
+		m.saveSessionMetadata(memoryRoot, retained)
+	}
+
+	result := &MaintenanceFixAction{
+		Id:           "metadata",
+		Applied:      !dryRun && len(orphaned) > 0,
+		Summary:      "No orphaned session metadata entries were found",
+		NumericValue: int64(len(orphaned)),
+	}
+
+	msg := "ies"
+	if len(orphaned) == 1 {
+		msg = "y"
+	}
+	if len(orphaned) != 0 {
+		if dryRun {
+			result.Summary = fmt.Sprintf("would remove %d orphaned session metadata entr%s", len(orphaned), msg)
+		} else {
+			result.Summary = fmt.Sprintf("removed %d orphaned session metadata entr%s", len(orphaned), msg)
+		}
+	}
+	return result, nil
+}
+
+func (m *MaintenanceCoordinator) runRetentionFix(ctx context.Context, config *GatewayConfig, dryRun bool) (*MaintenanceFixAction, error) {
+	store, err := m.createMemoryStore(config)
+	if err != nil {
+		return nil, err
+	}
+
+	retentionStore, ok := store.(IMemoryRetentionStore)
+	if !ok {
+		return &MaintenanceFixAction{
+			Id:      "retention",
+			Summary: "Current memory store does not support retention sweeps.",
+		}, nil
+	}
+
+	path, err := filepath.Abs(config.Memory.StoragePath)
+	if err != nil {
+		return nil, err
+	}
+	var metadata = m.loadSessionMetadata(path)
+	protectedSessions := map[string]struct{}{}
+	for _, item := range metadata {
+		tagflag := false
+		for _, tag := range item.Tags {
+			if _, ok := ProtectedRetentionTags[tag]; ok {
+				tagflag = true
+				break
+			}
+		}
+		if item.Starred || tagflag {
+			protectedSessions[item.SessionId] = struct{}{}
+		}
+	}
+	now := time.Now().UTC()
+	request := &RetentionSweepRequest{
+		DryRun:                  dryRun,
+		NowUtc:                  now,
+		SessionExpiresBeforeUtc: now.Add(-time.Hour * 24 * time.Duration(max(1, config.Memory.Retention.SessionTtlDays))),
+		BranchExpiresBeforeUtc:  now.Add(-time.Hour * 24 * time.Duration(max(1, config.Memory.Retention.BranchTtlDays))),
+		ArchivePath:             m.pathFor(config.Memory.Retention.ArchivePath, config.Memory.StoragePath),
+		ArchiveEnabled:          config.Memory.Retention.ArchiveEnabled,
+		ArchiveRetentionDays:    max(1, config.Memory.Retention.ArchiveRetentionDays),
+		MaxItems:                max(10, config.Memory.Retention.MaxItemsPerSweep),
+	}
+
+	result, err := retentionStore.Sweep(ctx, request, protectedSessions)
+	if err != nil {
+		return nil, err
+	}
+
+	action := &MaintenanceFixAction{
+		Id:           "retention",
+		Applied:      !dryRun,
+		NumericValue: int64(result.TotalEligible()),
+	}
+
+	if dryRun {
+		action.Summary = fmt.Sprintf("retention dry-run found %d eligible item(s)", result.TotalEligible())
+	} else {
+		action.Summary = fmt.Sprintf("retention archived %d and deleted %d item(s)", result.TotalArchived(), result.TotalDeleted())
+	}
+	return action, nil
+}
+
+func (m *MaintenanceCoordinator) countPromptCacheTraceArtifacts(config *GatewayConfig, memoryRoot string) int {
+	var path = m.resolvePromptCacheTracePath(config, memoryRoot)
+	if !m.isUnderRoot(path, memoryRoot) {
+		return 0
+	}
+
+	if FileExists(path) {
+		return 1
+	}
+
+	if DirectoryExists(path) {
+		return len(EnumerateAllFiles(path))
+	}
+
+	return 0
+}
+
+func (m *MaintenanceCoordinator) countModelEvaluationArtifacts(adminRoot string) int {
+	var path = filepath.Join(adminRoot, "model-evaluations")
+	if DirectoryExists(path) {
+		return len(EnumerateTopFiles(path))
+	}
+
+	return 0
 }
