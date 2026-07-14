@@ -529,17 +529,17 @@ func LoadOneFile[T any](ctx context.Context, path string) (*T, error) {
 	}
 
 	if _, err := os.Stat(path); os.IsNotExist(err) {
-		return nil, nil
+		return nil, nil // 文件不存在，明确返回 nil 指针
 	}
 
 	data, err := os.ReadFile(path)
 	if err != nil {
-		return nil, nil
+		return nil, fmt.Errorf("read file failed: %w", err)
 	}
 
 	var item T
 	if err := json.Unmarshal(data, &item); err != nil {
-		return nil, nil // C# 中 catch 块返回 default
+		return nil, fmt.Errorf("unmarshal json failed: %w", err)
 	}
 
 	return &item, nil

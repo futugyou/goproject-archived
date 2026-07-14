@@ -1092,3 +1092,30 @@ func (m *MaintenanceCoordinator) saveSnapshot(memoryRoot string, report *Mainten
 	os.MkdirAll(filepath.Dir(path), 0755)
 	SaveOneFile(context.Background(), path, result)
 }
+
+func (m *MaintenanceCoordinator) loadPreviousSnapshot(memoryRoot string) *MaintenanceHistorySnapshot {
+	var path = filepath.Join(memoryRoot, "admin", "maintenance-history.json")
+	if !FileExists(path) {
+		return nil
+	}
+
+	items, err := LoadOneFile[[]MaintenanceHistorySnapshot](context.Background(), path)
+	if err != nil {
+		return nil
+	}
+
+	if items == nil || len(*items) == 0 {
+		return nil
+	}
+
+	if len(*items) == 1 {
+		return &((*items)[0])
+	}
+
+	slices.SortFunc(*items, func(a, b MaintenanceHistorySnapshot) int {
+		return b.GeneratedAtUtc.Compare(a.GeneratedAtUtc)
+	})
+
+	return &((*items)[0])
+
+}
