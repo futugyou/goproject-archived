@@ -10,6 +10,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -1060,4 +1061,34 @@ func (m *MaintenanceCoordinator) countModelEvaluationArtifacts(adminRoot string)
 	}
 
 	return 0
+}
+
+func (m *MaintenanceCoordinator) saveSnapshot(memoryRoot string, report *MaintenanceReportResponse) {
+	var path = filepath.Join(memoryRoot, "admin", "maintenance-history.json")
+	items := []MaintenanceHistorySnapshot{}
+	if FileExists(path) {
+		data, err := os.ReadFile(path)
+		if err == nil {
+			var existing []MaintenanceHistorySnapshot
+			if err := json.Unmarshal(data, &existing); err == nil {
+				items = append(items, existing...)
+			}
+		}
+	}
+
+	items = append(items, MaintenanceHistorySnapshot{GeneratedAtUtc: report.GeneratedAtUtc, Report: *report})
+
+	slices.SortFunc(items, func(a, b MaintenanceHistorySnapshot) int {
+		return b.GeneratedAtUtc.Compare(a.GeneratedAtUtc)
+	})
+
+	var result []MaintenanceHistorySnapshot
+	if len(items) <= MaintenanceHistoryRetention {
+		result = items
+	} else {
+		result = items[:MaintenanceHistoryRetention]
+	}
+
+	os.MkdirAll(filepath.Dir(path), 0755)
+	SaveOneFile(context.Background(), path, result)
 }
