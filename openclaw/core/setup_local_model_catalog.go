@@ -24,7 +24,7 @@ var LocalModelPackageDefinitionPackages []LocalModelPackageDefinition = []LocalM
 		ContextWindow:             4096,
 		MaxOutputTokens:           1024,
 		Tags:                      []string{"local", "private", "offline", "cheap"},
-		Capabilities: ModelCapabilities{
+		Capabilities: &ModelCapabilities{
 			SupportsTools:             false,
 			SupportsVision:            false,
 			SupportsJsonSchema:        false,
@@ -38,7 +38,7 @@ var LocalModelPackageDefinitionPackages []LocalModelPackageDefinition = []LocalM
 			MaxContextTokens:          4096,
 			MaxOutputTokens:           1024,
 		},
-		Runtime: LocalModelRuntimeDefaults{
+		Runtime: &LocalModelRuntimeDefaults{
 			Backend:     "llama.cpp",
 			Threads:     "auto",
 			GpuLayers:   "auto",
@@ -67,7 +67,7 @@ var LocalModelPackageDefinitionPackages []LocalModelPackageDefinition = []LocalM
 		ContextWindow:             128000,
 		MaxOutputTokens:           4096,
 		Tags:                      []string{"local", "private", "offline", "cheap", "gemma4"},
-		Capabilities: ModelCapabilities{
+		Capabilities: &ModelCapabilities{
 			SupportsTools:             true,
 			SupportsVision:            true,
 			SupportsJsonSchema:        false,
@@ -101,7 +101,7 @@ var LocalModelPackageDefinitionPackages []LocalModelPackageDefinition = []LocalM
 				InstallByDefault: true,
 			},
 		},
-		Runtime: LocalModelRuntimeDefaults{
+		Runtime: &LocalModelRuntimeDefaults{
 			Backend:                     "llama.cpp",
 			Threads:                     "auto",
 			GpuLayers:                   "auto",
@@ -134,7 +134,7 @@ var LocalModelPackageDefinitionPackages []LocalModelPackageDefinition = []LocalM
 		ContextWindow:    32768,
 		MaxOutputTokens:  4096,
 		Tags:             []string{"local", "private", "offline", "edge", "gemma4", "litert", "experimental"},
-		Capabilities: ModelCapabilities{
+		Capabilities: &ModelCapabilities{
 			SupportsTools:             false,
 			SupportsVision:            false,
 			SupportsJsonSchema:        false,
@@ -160,7 +160,7 @@ var LocalModelPackageDefinitionPackages []LocalModelPackageDefinition = []LocalM
 				InstallByDefault: true,
 			},
 		},
-		Runtime: LocalModelRuntimeDefaults{
+		Runtime: &LocalModelRuntimeDefaults{
 			Backend:      "litert",
 			Threads:      "auto",
 			GpuLayers:    "auto",
@@ -191,7 +191,7 @@ var LocalModelPackageDefinitionPackages []LocalModelPackageDefinition = []LocalM
 		ContextWindow:             128000,
 		MaxOutputTokens:           4096,
 		Tags:                      []string{"local", "private", "offline", "cheap", "gemma4"},
-		Capabilities: ModelCapabilities{
+		Capabilities: &ModelCapabilities{
 			SupportsTools:             true,
 			SupportsVision:            true,
 			SupportsJsonSchema:        false,
@@ -226,7 +226,7 @@ var LocalModelPackageDefinitionPackages []LocalModelPackageDefinition = []LocalM
 				InstallByDefault: true,
 			},
 		},
-		Runtime: LocalModelRuntimeDefaults{
+		Runtime: &LocalModelRuntimeDefaults{
 			Backend:                     "llama.cpp",
 			Threads:                     "auto",
 			GpuLayers:                   "auto",
@@ -259,7 +259,7 @@ var LocalModelPackageDefinitionPackages []LocalModelPackageDefinition = []LocalM
 		ContextWindow:             256000,
 		MaxOutputTokens:           4096,
 		Tags:                      []string{"local", "private", "offline", "gemma4"},
-		Capabilities: ModelCapabilities{
+		Capabilities: &ModelCapabilities{
 			SupportsTools:             true,
 			SupportsVision:            true,
 			SupportsJsonSchema:        false,
@@ -294,7 +294,7 @@ var LocalModelPackageDefinitionPackages []LocalModelPackageDefinition = []LocalM
 				InstallByDefault: true,
 			},
 		},
-		Runtime: LocalModelRuntimeDefaults{
+		Runtime: &LocalModelRuntimeDefaults{
 			Backend:                     "llama.cpp",
 			Threads:                     "auto",
 			GpuLayers:                   "auto",
@@ -327,7 +327,7 @@ var LocalModelPackageDefinitionPackages []LocalModelPackageDefinition = []LocalM
 		ContextWindow:             256000,
 		MaxOutputTokens:           4096,
 		Tags:                      []string{"local", "private", "offline", "moe", "gemma4"},
-		Capabilities: ModelCapabilities{
+		Capabilities: &ModelCapabilities{
 			SupportsTools:             true,
 			SupportsVision:            true,
 			SupportsJsonSchema:        false,
@@ -361,7 +361,7 @@ var LocalModelPackageDefinitionPackages []LocalModelPackageDefinition = []LocalM
 				InstallByDefault: true,
 			},
 		},
-		Runtime: LocalModelRuntimeDefaults{
+		Runtime: &LocalModelRuntimeDefaults{
 			Backend:                     "llama.cpp",
 			Threads:                     "auto",
 			GpuLayers:                   "auto",
@@ -385,7 +385,7 @@ var LocalModelPresetDefinitionPackages []LocalModelPresetDefinition = []LocalMod
 		ModelId:        "gemma-local-small-q4",
 		Installable:    true,
 		Tags:           []string{"local", "private", "offline", "cheap"},
-		Capabilities: ModelCapabilities{
+		Capabilities: &ModelCapabilities{
 			SupportsTools:             false,
 			SupportsVision:            false,
 			SupportsJsonSchema:        false,
@@ -415,7 +415,7 @@ var LocalModelPresetDefinitionPackages []LocalModelPresetDefinition = []LocalMod
 		Label:       "Ollama General",
 		Description: "Balanced local preset for everyday chat and mixed tasks.",
 		Tags:        []string{"local", "private", "generalist"},
-		Capabilities: ModelCapabilities{
+		Capabilities: &ModelCapabilities{
 			SupportsTools:             false,
 			SupportsVision:            false,
 			SupportsJsonSchema:        false,
@@ -445,7 +445,7 @@ var LocalModelPresetDefinitionPackages []LocalModelPresetDefinition = []LocalMod
 		Label:       "Ollama Agentic",
 		Description: "Local-first preset for tool calling with deterministic cloud fallback.",
 		Tags:        []string{"local", "private", "agentic"},
-		Capabilities: ModelCapabilities{
+		Capabilities: &ModelCapabilities{
 			SupportsTools:             true,
 			SupportsVision:            false,
 			SupportsJsonSchema:        false,
@@ -475,7 +475,7 @@ var LocalModelPresetDefinitionPackages []LocalModelPresetDefinition = []LocalMod
 		Label:       "Ollama Vision",
 		Description: "Local preset optimized for image-aware interactions with conservative tool expectations.",
 		Tags:        []string{"local", "private", "vision"},
-		Capabilities: ModelCapabilities{
+		Capabilities: &ModelCapabilities{
 			SupportsTools:             false,
 			SupportsVision:            true,
 			SupportsJsonSchema:        false,

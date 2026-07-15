@@ -322,11 +322,11 @@ func (g *GatewaySetupProfileFactory) configureModelProfiles(
 		}
 	}
 
-	var capabilities ModelCapabilities
+	var capabilities *ModelCapabilities
 	if hasPreset && preset != nil {
 		capabilities = preset.Capabilities
 	} else {
-		capabilities = ModelCapabilities{
+		capabilities = &ModelCapabilities{
 			SupportsStreaming:      true,
 			SupportsSystemMessages: true,
 			MaxContextTokens:       32768,
@@ -382,11 +382,11 @@ func (g *GatewaySetupProfileFactory) configureEmbeddedModelProfile(
 		}
 	}
 
-	var capabilities ModelCapabilities
+	var capabilities *ModelCapabilities
 	if packageDef != nil {
 		capabilities = packageDef.Capabilities
 	} else {
-		capabilities = ModelCapabilities{
+		capabilities = &ModelCapabilities{
 			SupportsStreaming:      true,
 			SupportsSystemMessages: true,
 			MaxContextTokens:       4096,
@@ -430,7 +430,7 @@ func (g *GatewaySetupProfileFactory) configureEmbeddedModelProfile(
 	}
 }
 
-func (g *GatewaySetupProfileFactory) cloneCapabilities(source ModelCapabilities) *ModelCapabilities {
+func (g *GatewaySetupProfileFactory) cloneCapabilities(source *ModelCapabilities) *ModelCapabilities {
 	return &ModelCapabilities{
 		SupportsTools:                  source.SupportsTools,
 		SupportsVision:                 source.SupportsVision,

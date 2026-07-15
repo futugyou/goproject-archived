@@ -387,7 +387,6 @@ type ModelDoctorEvaluator struct{}
 
 // 评估当前的网关配置，并可选地结合注册表与历史调用记录生成诊断报告
 func (m *ModelDoctorEvaluator) Build(config *GatewayConfig, registry IModelProfileRegistry, recentTurns []TurnTokenUsageRecord) *ModelSelectionDoctorResponse {
-
 	if registry != nil {
 		return m.BuildFromRegistry(registry, recentTurns)
 	}
@@ -454,11 +453,18 @@ func (m *ModelDoctorEvaluator) BuildFromRegistry(
 }
 
 func (m *ModelDoctorEvaluator) BuildStatusesFromConfig(config *GatewayConfig) []ModelProfileStatus {
-	var profiles []ModelProfileConfig
+	if config == nil {
+		return []ModelProfileStatus{}
+	}
+
+	profiles := []ModelProfileConfig{}
 	if len(config.Models.Profiles) > 0 {
 		profiles = config.Models.Profiles
 	} else {
-		profiles = []ModelProfileConfig{m.createImplicitProfile(config)}
+		p := m.createImplicitProfile(config)
+		if p != nil {
+			profiles = []ModelProfileConfig{*p}
+		}
 	}
 
 	defaultProfileID := m.ResolveDefaultProfileIDFromConfigs(config, profiles)
@@ -486,7 +492,7 @@ func (m *ModelDoctorEvaluator) BuildStatusesFromConfig(config *GatewayConfig) []
 			modelID = "unknown"
 		}
 
-		validationIssues := m.validateProfile(config, profile, ProviderId)
+		validationIssues := m.validateProfile(config, &profile, ProviderId)
 
 		authMode := m.normalize(profile.AuthMode)
 		if authMode == "" {
@@ -516,16 +522,16 @@ func (m *ModelDoctorEvaluator) BuildStatusesFromConfig(config *GatewayConfig) []
 			IsDefault:                  strings.EqualFold(normalizedID, defaultProfileID),
 			IsImplicit:                 len(config.Models.Profiles) == 0 && strings.EqualFold(normalizedID, "default"),
 			IsAvailable:                len(validationIssues) == 0,
-			ProviderGateway:            m.resolveProviderGateway(profile, ProviderId),
+			ProviderGateway:            m.resolveProviderGateway(&profile, ProviderId),
 			AuthMode:                   authMode,
 			SendRequestMetadata:        sendRequestMetadata,
-			Tags:                       m.resolveTags(profile),
-			Capabilities:               m.resolveCapabilities(profile, ProviderId),
+			Tags:                       m.resolveTags(&profile),
+			Capabilities:               m.resolveCapabilities(&profile, ProviderId),
 			PromptCaching:              m.mergePromptCaching(config.Llm.PromptCaching, profile.PromptCaching),
 			ValidationIssues:           validationIssues,
 			FallbackProfileIds:         m.normalizeDistinct(profile.FallbackProfileIds),
 			FallbackModels:             m.normalizeDistinct(profile.FallbackModels),
-			CompatibilityNotes:         m.resolveCompatibilityNotes(profile, config),
+			CompatibilityNotes:         m.resolveCompatibilityNotes(&profile, config),
 			UsesCompatibilityTransport: usesCompatibilityTransport,
 		})
 	}
@@ -545,7 +551,10 @@ func (m *ModelDoctorEvaluator) BuildStatusesFromConfig(config *GatewayConfig) []
 }
 
 func (m *ModelDoctorEvaluator) ResolveDefaultProfileIDFromConfigs(config *GatewayConfig, profiles []ModelProfileConfig) string {
-	configured := m.normalize(config.Models.DefaultProfile)
+	configured := ""
+	if config != nil {
+		configured = m.normalize(config.Models.DefaultProfile)
+	}
 	if configured != "" {
 		return configured
 	}
@@ -562,7 +571,10 @@ func (m *ModelDoctorEvaluator) ResolveDefaultProfileIDFromConfigs(config *Gatewa
 }
 
 func (m *ModelDoctorEvaluator) ResolveDefaultProfileIDFromStatuses(config *GatewayConfig, statuses []ModelProfileStatus) string {
-	configured := m.normalize(config.Models.DefaultProfile)
+	configured := ""
+	if config != nil {
+		configured = m.normalize(config.Models.DefaultProfile)
+	}
 	if configured != "" {
 		return configured
 	}
@@ -580,8 +592,11 @@ func (m *ModelDoctorEvaluator) ResolveDefaultProfileIDFromStatuses(config *Gatew
 	return ""
 }
 
-func (m *ModelDoctorEvaluator) createImplicitProfile(config *GatewayConfig) ModelProfileConfig {
-	return ModelProfileConfig{
+func (m *ModelDoctorEvaluator) createImplicitProfile(config *GatewayConfig) *ModelProfileConfig {
+	if config == nil {
+		return nil
+	}
+	return &ModelProfileConfig{
 		Id:             "default",
 		Provider:       config.Llm.Provider,
 		Model:          config.Llm.Model,
@@ -593,26 +608,29 @@ func (m *ModelDoctorEvaluator) createImplicitProfile(config *GatewayConfig) Mode
 	}
 }
 
-func (m *ModelDoctorEvaluator) validateProfile(config *GatewayConfig, profile ModelProfileConfig, ProviderId string) []string {
+func (m *ModelDoctorEvaluator) validateProfile(config *GatewayConfig, profile *ModelProfileConfig, providerId string) []string {
 	var issues []string
+	if profile == nil || config == nil {
+		return issues
+	}
 
 	if strings.TrimSpace(profile.Id) == "" {
 		issues = append(issues, "Profile id is required.")
 	}
-	if strings.TrimSpace(ProviderId) == "" {
+	if strings.TrimSpace(providerId) == "" {
 		issues = append(issues, "Provider is required.")
 	}
 	if strings.TrimSpace(profile.Model) == "" && strings.TrimSpace(config.Llm.Model) == "" {
 		issues = append(issues, "Model is required.")
 	}
 
-	if m.requiresEndpoint(ProviderId) &&
+	if m.requiresEndpoint(providerId) &&
 		strings.TrimSpace(m.resolveSecretValue(profile.BaseUrl)) == "" &&
 		strings.TrimSpace(m.resolveSecretValue(config.Llm.Endpoint)) == "" {
 		issues = append(issues, "BaseUrl is required for this provider unless inherited from OpenClaw:Llm:Endpoint.")
 	}
 
-	if m.requiresCredentials(ProviderId, profile, config) &&
+	if m.requiresCredentials(providerId, profile, config) &&
 		strings.TrimSpace(m.resolveSecretValue(profile.ApiKey)) == "" &&
 		strings.TrimSpace(m.resolveSecretValue(config.Llm.ApiKey)) == "" {
 		issues = append(issues, "ApiKey is required for this provider unless inherited from OpenClaw:Llm:ApiKey.")
@@ -621,25 +639,28 @@ func (m *ModelDoctorEvaluator) validateProfile(config *GatewayConfig, profile Mo
 	return issues
 }
 
-func (m *ModelDoctorEvaluator) requiresEndpoint(ProviderId string) bool {
-	switch ProviderId {
+func (m *ModelDoctorEvaluator) requiresEndpoint(providerId string) bool {
+	switch providerId {
 	case "openai-compatible", "aperture", "groq", "together", "lmstudio", "anthropic-vertex", "amazon-bedrock", "azure-openai":
 		return true
 	}
 	return false
 }
 
-func (m *ModelDoctorEvaluator) requiresCredentials(ProviderId string, profile ModelProfileConfig, config *GatewayConfig) bool {
-	if ProviderId == "ollama" || ProviderId == "lmstudio" || ProviderId == "embedded" {
+func (m *ModelDoctorEvaluator) requiresCredentials(providerId string, profile *ModelProfileConfig, config *GatewayConfig) bool {
+	if providerId == "ollama" || providerId == "lmstudio" || providerId == "embedded" {
 		return false
 	}
 
-	authMode := m.normalize(profile.AuthMode)
+	authMode := ""
+	if profile != nil {
+		m.normalize(profile.AuthMode)
+	}
 	if authMode == "" {
 		authMode = m.normalize(config.Llm.AuthMode)
 	}
 
-	if (ProviderId == "aperture" || ProviderId == "openai-compatible") &&
+	if (providerId == "aperture" || providerId == "openai-compatible") &&
 		strings.EqualFold(authMode, "tailnet-identity") {
 		return false
 	}
@@ -647,8 +668,8 @@ func (m *ModelDoctorEvaluator) requiresCredentials(ProviderId string, profile Mo
 	return true
 }
 
-func (m *ModelDoctorEvaluator) guessCapabilities(ProviderId string) *ModelCapabilities {
-	provider := m.normalize(ProviderId)
+func (m *ModelDoctorEvaluator) guessCapabilities(providerId string) *ModelCapabilities {
+	provider := m.normalize(providerId)
 	if provider == "embedded" {
 		return &ModelCapabilities{
 			SupportsStreaming:      true,
@@ -790,20 +811,26 @@ func (m *ModelDoctorEvaluator) resolveSecretValue(value string) string {
 	return value
 }
 
-func (m *ModelDoctorEvaluator) resolveCapabilities(profile ModelProfileConfig, ProviderId string) *ModelCapabilities {
-	if profile.Capabilities != nil {
-		return profile.Capabilities
-	}
+func (m *ModelDoctorEvaluator) resolveCapabilities(profile *ModelProfileConfig, ProviderId string) *ModelCapabilities {
+	if profile != nil {
+		if profile.Capabilities != nil {
+			return profile.Capabilities
+		}
 
-	preset, ok := TryGetLocalModelPreset(profile.PresetId)
-	if ok && preset != nil {
-		return &preset.Capabilities
+		preset, ok := TryGetLocalModelPreset(profile.PresetId)
+		if ok && preset != nil {
+			return preset.Capabilities
+		}
 	}
 
 	return m.guessCapabilities(ProviderId)
 }
 
-func (m *ModelDoctorEvaluator) resolveTags(profile ModelProfileConfig) []string {
+func (m *ModelDoctorEvaluator) resolveTags(profile *ModelProfileConfig) []string {
+	if profile == nil {
+		return []string{}
+	}
+
 	configured := m.normalizeDistinct(profile.Tags)
 	preset, ok := TryGetLocalModelPreset(profile.PresetId)
 	if !ok || preset == nil {
@@ -815,7 +842,10 @@ func (m *ModelDoctorEvaluator) resolveTags(profile ModelProfileConfig) []string 
 	return m.normalizeDistinct(combined)
 }
 
-func (m *ModelDoctorEvaluator) resolveProviderGateway(profile ModelProfileConfig, ProviderId string) string {
+func (m *ModelDoctorEvaluator) resolveProviderGateway(profile *ModelProfileConfig, providerId string) string {
+	if profile == nil {
+		return ""
+	}
 	hasApertureTag := false
 	for _, tag := range profile.Tags {
 		if strings.EqualFold(tag, "aperture") {
@@ -824,7 +854,7 @@ func (m *ModelDoctorEvaluator) resolveProviderGateway(profile ModelProfileConfig
 		}
 	}
 
-	if strings.EqualFold(ProviderId, "aperture") ||
+	if strings.EqualFold(providerId, "aperture") ||
 		hasApertureTag ||
 		strings.Contains(strings.ToLower(profile.BaseUrl), "aperture") {
 		res := "Aperture"
@@ -834,8 +864,11 @@ func (m *ModelDoctorEvaluator) resolveProviderGateway(profile ModelProfileConfig
 	return ""
 }
 
-func (m *ModelDoctorEvaluator) resolveCompatibilityNotes(profile ModelProfileConfig, config *GatewayConfig) []string {
+func (m *ModelDoctorEvaluator) resolveCompatibilityNotes(profile *ModelProfileConfig, config *GatewayConfig) []string {
 	var notes []string
+	if profile == nil || config == nil {
+		return notes
+	}
 
 	provider := m.normalize(profile.Provider)
 	if provider == "" {
@@ -863,11 +896,7 @@ func (m *ModelDoctorEvaluator) resolveCompatibilityNotes(profile ModelProfileCon
 	return m.normalizeDistinct(notes)
 }
 
-func (m *ModelDoctorEvaluator) BuildPresetWarnings(
-	status *ModelProfileStatus,
-	config *GatewayConfig,
-	recentTurns []TurnTokenUsageRecord,
-) []string {
+func (m *ModelDoctorEvaluator) BuildPresetWarnings(status *ModelProfileStatus, config *GatewayConfig, recentTurns []TurnTokenUsageRecord) []string {
 	warnings := make([]string, 0)
 
 	if strings.EqualFold(status.ProviderId, "ollama") && strings.TrimSpace(status.PresetId) == "" {

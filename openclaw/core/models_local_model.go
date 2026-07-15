@@ -11,24 +11,24 @@ const (
 
 // --- LocalModelPresetDefinition ---
 type LocalModelPresetDefinition struct {
-	Id                       string            `json:"id"`
-	Label                    string            `json:"label"`
-	Description              string            `json:"description"`
-	Provider                 string            `json:"provider"`
-	DefaultBaseUrl           string            `json:"default_base_url"`
-	PackageId                string            `json:"package_id"`
-	ModelId                  string            `json:"model_id"`
-	Installable              bool              `json:"installable"`
-	Tags                     []string          `json:"tags"`
-	Capabilities             ModelCapabilities `json:"capabilities"`
-	RecommendedContextTokens int               `json:"recommended_context_tokens"`
-	RecommendedOutputTokens  int               `json:"recommended_output_tokens"`
-	CompatibilityNotes       []string          `json:"compatibility_notes"`
-	DoctorExpectations       []string          `json:"doctor_expectations"`
+	Id                       string             `json:"id"`
+	Label                    string             `json:"label"`
+	Description              string             `json:"description"`
+	Provider                 string             `json:"provider"`
+	DefaultBaseUrl           string             `json:"default_base_url"`
+	PackageId                string             `json:"package_id"`
+	ModelId                  string             `json:"model_id"`
+	Installable              bool               `json:"installable"`
+	Tags                     []string           `json:"tags"`
+	Capabilities             *ModelCapabilities `json:"capabilities"`
+	RecommendedContextTokens int                `json:"recommended_context_tokens"`
+	RecommendedOutputTokens  int                `json:"recommended_output_tokens"`
+	CompatibilityNotes       []string           `json:"compatibility_notes"`
+	DoctorExpectations       []string           `json:"doctor_expectations"`
 }
 
-func DefaultLocalModelPresetDefinition() LocalModelPresetDefinition {
-	return LocalModelPresetDefinition{
+func DefaultLocalModelPresetDefinition() *LocalModelPresetDefinition {
+	return &LocalModelPresetDefinition{
 		Provider:           "ollama",
 		DefaultBaseUrl:     "http://127.0.0.1:11434",
 		Tags:               []string{},
@@ -40,12 +40,6 @@ func DefaultLocalModelPresetDefinition() LocalModelPresetDefinition {
 // --- LocalModelPresetListResponse ---
 type LocalModelPresetListResponse struct {
 	Items []LocalModelPresetDefinition `json:"items"`
-}
-
-func DefaultLocalModelPresetListResponse() LocalModelPresetListResponse {
-	return LocalModelPresetListResponse{
-		Items: []LocalModelPresetDefinition{},
-	}
 }
 
 // --- LocalModelRuntimeDefaults ---
@@ -63,8 +57,8 @@ type LocalModelRuntimeDefaults struct {
 	ReasoningBudget             int    `json:"reasoning_budget"`
 }
 
-func DefaultLocalModelRuntimeDefaults() LocalModelRuntimeDefaults {
-	return LocalModelRuntimeDefaults{
+func DefaultLocalModelRuntimeDefaults() *LocalModelRuntimeDefaults {
+	return &LocalModelRuntimeDefaults{
 		Backend:       "llama.cpp",
 		Threads:       "auto",
 		GpuLayers:     "auto",
@@ -90,8 +84,8 @@ type LocalModelPackageFileDefinition struct {
 	InstallByDefault bool   `json:"install_by_default"`
 }
 
-func DefaultLocalModelPackageFileDefinition() LocalModelPackageFileDefinition {
-	return LocalModelPackageFileDefinition{
+func DefaultLocalModelPackageFileDefinition() *LocalModelPackageFileDefinition {
+	return &LocalModelPackageFileDefinition{
 		Required:         true,
 		InstallByDefault: true,
 	}
@@ -122,12 +116,12 @@ type LocalModelPackageDefinition struct {
 	MaxOutputTokens           int                               `json:"max_output_tokens"`
 	Tags                      []string                          `json:"tags"`
 	Files                     []LocalModelPackageFileDefinition `json:"files"`
-	Capabilities              ModelCapabilities                 `json:"capabilities"`
-	Runtime                   LocalModelRuntimeDefaults         `json:"runtime"`
+	Capabilities              *ModelCapabilities                `json:"capabilities"`
+	Runtime                   *LocalModelRuntimeDefaults        `json:"runtime"`
 }
 
-func DefaultLocalModelPackageDefinition() LocalModelPackageDefinition {
-	return LocalModelPackageDefinition{
+func DefaultLocalModelPackageDefinition() *LocalModelPackageDefinition {
+	return &LocalModelPackageDefinition{
 		Provider:        "embedded",
 		Format:          "gguf",
 		FileName:        "model.gguf",
@@ -162,8 +156,8 @@ type LocalModelInstallManifest struct {
 	Files           []LocalModelInstallFileManifest `json:"files"`
 }
 
-func DefaultLocalModelInstallManifest() LocalModelInstallManifest {
-	return LocalModelInstallManifest{
+func DefaultLocalModelInstallManifest() *LocalModelInstallManifest {
+	return &LocalModelInstallManifest{
 		SchemaVersion:  1,
 		InstalledAtUtc: time.Now().UTC(),
 		Files:          []LocalModelInstallFileManifest{},
@@ -196,8 +190,8 @@ type LocalModelPackageStatus struct {
 	Files       []LocalModelPackageFileStatus `json:"files"`
 }
 
-func DefaultLocalModelPackageStatus() LocalModelPackageStatus {
-	return LocalModelPackageStatus{
+func DefaultLocalModelPackageStatus() *LocalModelPackageStatus {
+	return &LocalModelPackageStatus{
 		Files: []LocalModelPackageFileStatus{},
 	}
 }
@@ -229,8 +223,8 @@ type MaintenanceFinding struct {
 	NumericValue       int64  `json:"numeric_value"`
 }
 
-func DefaultMaintenanceFinding() MaintenanceFinding {
-	return MaintenanceFinding{
+func DefaultMaintenanceFinding() *MaintenanceFinding {
+	return &MaintenanceFinding{
 		Category: MaintenanceFindingCategoriesStorage,
 		Severity: MaintenanceFindingSeveritiesInfo,
 	}
@@ -275,19 +269,19 @@ type MaintenanceDriftSnapshot struct {
 
 // --- MaintenanceReportResponse ---
 type MaintenanceReportResponse struct {
-	GeneratedAtUtc time.Time                       `json:"generated_at_utc"`
-	OverallStatus  string                          `json:"overall_status"`
-	Storage        MaintenanceStorageSnapshot      `json:"storage"`
-	PromptBudget   MaintenancePromptBudgetSnapshot `json:"prompt_budget"`
-	Drift          MaintenanceDriftSnapshot        `json:"drift"`
-	Findings       []MaintenanceFinding            `json:"findings"`
-	Reliability    ReliabilitySnapshot             `json:"reliability"`
+	GeneratedAtUtc time.Time                        `json:"generated_at_utc"`
+	OverallStatus  string                           `json:"overall_status"`
+	Storage        *MaintenanceStorageSnapshot      `json:"storage"`
+	PromptBudget   *MaintenancePromptBudgetSnapshot `json:"prompt_budget"`
+	Drift          *MaintenanceDriftSnapshot        `json:"drift"`
+	Findings       []MaintenanceFinding             `json:"findings"`
+	Reliability    *ReliabilitySnapshot             `json:"reliability"`
 }
 
-func DefaultMaintenanceReportResponse() MaintenanceReportResponse {
-	return MaintenanceReportResponse{
+func DefaultMaintenanceReportResponse() *MaintenanceReportResponse {
+	return &MaintenanceReportResponse{
 		GeneratedAtUtc: time.Now().UTC(),
-		OverallStatus:  "pass", // 假设 SetupCheckStates.Pass 的值为 "pass"
+		OverallStatus:  "pass",
 		Findings:       []MaintenanceFinding{},
 		Reliability:    DefaultReliabilitySnapshot(),
 	}
@@ -299,8 +293,8 @@ type MaintenanceFixRequest struct {
 	Apply  string `json:"apply"`
 }
 
-func DefaultMaintenanceFixRequest() MaintenanceFixRequest {
-	return MaintenanceFixRequest{
+func DefaultMaintenanceFixRequest() *MaintenanceFixRequest {
+	return &MaintenanceFixRequest{
 		DryRun: true,
 		Apply:  "all",
 	}
@@ -320,11 +314,11 @@ type MaintenanceFixResponse struct {
 	Success     bool                   `json:"success"`
 	Actions     []MaintenanceFixAction `json:"actions"`
 	Warnings    []string               `json:"warnings"`
-	Reliability ReliabilitySnapshot    `json:"reliability"`
+	Reliability *ReliabilitySnapshot   `json:"reliability"`
 }
 
-func DefaultMaintenanceFixResponse() MaintenanceFixResponse {
-	return MaintenanceFixResponse{
+func DefaultMaintenanceFixResponse() *MaintenanceFixResponse {
+	return &MaintenanceFixResponse{
 		DryRun:      true,
 		Actions:     []MaintenanceFixAction{},
 		Warnings:    []string{},
@@ -349,8 +343,8 @@ type ReliabilityFactor struct {
 	Findings []string `json:"findings"`
 }
 
-func DefaultReliabilityFactor() ReliabilityFactor {
-	return ReliabilityFactor{
+func DefaultReliabilityFactor() *ReliabilityFactor {
+	return &ReliabilityFactor{
 		Status:   ReliabilityStatesHealthy,
 		Findings: []string{},
 	}
@@ -372,8 +366,8 @@ type ReliabilitySnapshot struct {
 	Recommendations []ReliabilityRecommendation `json:"recommendations"`
 }
 
-func DefaultReliabilitySnapshot() ReliabilitySnapshot {
-	return ReliabilitySnapshot{
+func DefaultReliabilitySnapshot() *ReliabilitySnapshot {
+	return &ReliabilitySnapshot{
 		Status:          ReliabilityStatesHealthy,
 		Factors:         []ReliabilityFactor{},
 		Recommendations: []ReliabilityRecommendation{},
@@ -382,12 +376,12 @@ func DefaultReliabilitySnapshot() ReliabilitySnapshot {
 
 // --- MaintenanceHistorySnapshot ---
 type MaintenanceHistorySnapshot struct {
-	GeneratedAtUtc time.Time                 `json:"generated_at_utc"`
-	Report         MaintenanceReportResponse `json:"report"`
+	GeneratedAtUtc time.Time                  `json:"generated_at_utc"`
+	Report         *MaintenanceReportResponse `json:"report"`
 }
 
-func DefaultMaintenanceHistorySnapshot() MaintenanceHistorySnapshot {
-	return MaintenanceHistorySnapshot{
+func DefaultMaintenanceHistorySnapshot() *MaintenanceHistorySnapshot {
+	return &MaintenanceHistorySnapshot{
 		GeneratedAtUtc: time.Now().UTC(),
 		Report:         DefaultMaintenanceReportResponse(),
 	}

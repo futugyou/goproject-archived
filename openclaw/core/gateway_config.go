@@ -352,38 +352,38 @@ var DefaultTokenCostRates = map[string]float64{
 }
 
 // 转换后的 TokenCostRateResolver 匹配逻辑
-func ResolveTokenCostRate(config *GatewayConfig, providerId, modelId string) TokenCostRateConfig {
+func ResolveTokenCostRate(config *GatewayConfig, providerId, modelId string) *TokenCostRateConfig {
+	if config == nil {
+		return &TokenCostRateConfig{}
+	}
+
 	key := providerId + ":" + modelId
-
-	// Go 的 map 查找默认区分大小写。若需要完全对齐 C# 的 StringComparer.OrdinalIgnoreCase，
-	// 建议在存入 GatewayConfig 时统一转成小写，并在查询前：key = strings.ToLower(key)
-
 	if modelDetailedRate, ok := config.TokenCostRateDetails[key]; ok {
-		return modelDetailedRate
+		return &modelDetailedRate
 	}
 	if providerDetailedRate, ok := config.TokenCostRateDetails[providerId]; ok {
-		return providerDetailedRate
+		return &providerDetailedRate
 	}
 	if modelRate, ok := config.TokenCostRates[key]; ok {
-		return TokenCostRateConfig{InputUsdPer1K: modelRate, OutputUsdPer1K: modelRate}
+		return &TokenCostRateConfig{InputUsdPer1K: modelRate, OutputUsdPer1K: modelRate}
 	}
 	if providerRate, ok := config.TokenCostRates[providerId]; ok {
-		return TokenCostRateConfig{InputUsdPer1K: providerRate, OutputUsdPer1K: providerRate}
+		return &TokenCostRateConfig{InputUsdPer1K: providerRate, OutputUsdPer1K: providerRate}
 	}
 	if defaultModelDetailedRate, ok := DefaultTokenDetailedRates[key]; ok {
-		return defaultModelDetailedRate
+		return &defaultModelDetailedRate
 	}
 	if defaultProviderDetailedRate, ok := DefaultTokenDetailedRates[providerId]; ok {
-		return defaultProviderDetailedRate
+		return &defaultProviderDetailedRate
 	}
 	if defaultModelRate, ok := DefaultTokenCostRates[key]; ok {
-		return TokenCostRateConfig{InputUsdPer1K: defaultModelRate, OutputUsdPer1K: defaultModelRate}
+		return &TokenCostRateConfig{InputUsdPer1K: defaultModelRate, OutputUsdPer1K: defaultModelRate}
 	}
 	if defaultProviderRate, ok := DefaultTokenCostRates[providerId]; ok {
-		return TokenCostRateConfig{InputUsdPer1K: defaultProviderRate, OutputUsdPer1K: defaultProviderRate}
+		return &TokenCostRateConfig{InputUsdPer1K: defaultProviderRate, OutputUsdPer1K: defaultProviderRate}
 	}
 
-	return TokenCostRateConfig{}
+	return &TokenCostRateConfig{}
 }
 
 type MemoryRecallConfig struct {

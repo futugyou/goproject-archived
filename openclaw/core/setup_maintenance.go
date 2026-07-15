@@ -279,16 +279,11 @@ var ProtectedRetentionTags = map[string]struct{}{
 	"retention-exempt": {},
 }
 
+var ReliabilityScorerInstance = &ReliabilityScorer{}
+
 type ReliabilityScorer struct{}
 
-func (s *ReliabilityScorer) Build(
-	config GatewayConfig,
-	inputs *MaintenanceScanInputs,
-	maintenanceReport *MaintenanceReportResponse,
-	modelDoctor *ModelSelectionDoctorResponse,
-	automationStates []AutomationRunState,
-) ReliabilitySnapshot {
-
+func (s *ReliabilityScorer) Build(config *GatewayConfig, inputs *MaintenanceScanInputs, maintenanceReport *MaintenanceReportResponse, modelDoctor *ModelSelectionDoctorResponse, automationStates []AutomationRunState) *ReliabilitySnapshot {
 	if inputs == nil {
 		inputs = &MaintenanceScanInputs{}
 	}
@@ -296,8 +291,7 @@ func (s *ReliabilityScorer) Build(
 		if inputs.ModelDoctor != nil {
 			modelDoctor = inputs.ModelDoctor
 		} else {
-			// 模拟 ModelDoctorEvaluator.Build(config)
-			modelDoctor = &ModelSelectionDoctorResponse{}
+			modelDoctor = ModelDoctorEvaluatorInstance.Build(config, nil, nil)
 		}
 	}
 	if automationStates == nil {
@@ -307,11 +301,26 @@ func (s *ReliabilityScorer) Build(
 	var factors []ReliabilityFactor
 	var recommendations []ReliabilityRecommendation
 
-	factors = append(factors, s.buildReadinessFactor(config, inputs.SetupStatus, &recommendations, inputs.ConfigPath))
-	factors = append(factors, s.buildModelFactor(*modelDoctor, inputs.ProviderRoutes, &recommendations))
-	factors = append(factors, s.buildAutomationFactor(automationStates, &recommendations))
-	factors = append(factors, s.buildMaintenanceFactor(maintenanceReport, &recommendations, inputs.ConfigPath))
-	factors = append(factors, s.buildOperatorFactor(*inputs, &recommendations))
+	factor := s.buildReadinessFactor(config, inputs.SetupStatus, &recommendations, inputs.ConfigPath)
+	if factor != nil {
+		factors = append(factors, *factor)
+	}
+	factor = s.buildModelFactor(*modelDoctor, inputs.ProviderRoutes, &recommendations)
+	if factor != nil {
+		factors = append(factors, *factor)
+	}
+	factor = s.buildAutomationFactor(automationStates, &recommendations)
+	if factor != nil {
+		factors = append(factors, *factor)
+	}
+	factor = s.buildMaintenanceFactor(maintenanceReport, &recommendations, inputs.ConfigPath)
+	if factor != nil {
+		factors = append(factors, *factor)
+	}
+	factor = s.buildOperatorFactor(*inputs, &recommendations)
+	if factor != nil {
+		factors = append(factors, *factor)
+	}
 
 	var score int64 = 0
 	for _, f := range factors {
@@ -327,7 +336,7 @@ func (s *ReliabilityScorer) Build(
 		status = "action_needed"
 	}
 
-	return ReliabilitySnapshot{
+	return &ReliabilitySnapshot{
 		Score:           score,
 		Status:          status,
 		Factors:         factors,
@@ -335,22 +344,25 @@ func (s *ReliabilityScorer) Build(
 	}
 }
 
-func (s *ReliabilityScorer) buildReadinessFactor(
-	config GatewayConfig,
-	setupStatus *SetupStatusResponse,
-	recommendations *[]ReliabilityRecommendation,
-	configPath string,
-) ReliabilityFactor {
+func (s *ReliabilityScorer) buildReadinessFactor(config *GatewayConfig, setupStatus *SetupStatusResponse, recommendations *[]ReliabilityRecommendation, configPath string) *ReliabilityFactor {
 	var weight int64 = 25
 	score := weight
 	var findings []string
 
-	publicBind := s.isNonLoopbackBind(config.BindAddress)
+	publicBind := false
+
+	if config != nil {
+		publicBind = s.isNonLoopbackBind(config.BindAddress)
+	}
+
 	if setupStatus != nil {
 		publicBind = setupStatus.PublicBind
 	}
 
-	workspacePath := config.Tooling.WorkspaceRoot
+	workspacePath := ""
+	if config != nil {
+		workspacePath = config.Tooling.WorkspaceRoot
+	}
 	if setupStatus != nil && setupStatus.WorkspacePath != "" {
 		workspacePath = setupStatus.WorkspacePath
 	}
@@ -365,11 +377,11 @@ func (s *ReliabilityScorer) buildReadinessFactor(
 	providerConfigured := false
 	if setupStatus != nil {
 		providerConfigured = setupStatus.ProviderConfigured
-	} else {
+	} else if config != nil {
 		providerConfigured = ProviderSmokeProbeInstance.IsProviderConfigured(config.Llm, nil)
 	}
 
-	if publicBind && strings.TrimSpace(config.AuthToken) == "" {
+	if publicBind && config != nil && strings.TrimSpace(config.AuthToken) == "" {
 		score -= 10
 		findings = append(findings, "Public bind is missing an auth token.")
 		*recommendations = append(*recommendations, ReliabilityRecommendation{
@@ -405,11 +417,7 @@ func (s *ReliabilityScorer) buildReadinessFactor(
 	return s.buildFactor("readiness", "Readiness & posture", weight, score, findings)
 }
 
-func (s *ReliabilityScorer) buildModelFactor(
-	modelDoctor ModelSelectionDoctorResponse,
-	routes []ProviderRouteHealthSnapshot,
-	recommendations *[]ReliabilityRecommendation,
-) ReliabilityFactor {
+func (s *ReliabilityScorer) buildModelFactor(modelDoctor ModelSelectionDoctorResponse, routes []ProviderRouteHealthSnapshot, recommendations *[]ReliabilityRecommendation) *ReliabilityFactor {
 	var weight int64 = 25
 	score := weight
 	var findings []string
@@ -456,10 +464,7 @@ func (s *ReliabilityScorer) buildModelFactor(
 	return s.buildFactor("model_health", "Model & provider health", weight, score, findings)
 }
 
-func (s *ReliabilityScorer) buildAutomationFactor(
-	automationStates []AutomationRunState,
-	recommendations *[]ReliabilityRecommendation,
-) ReliabilityFactor {
+func (s *ReliabilityScorer) buildAutomationFactor(automationStates []AutomationRunState, recommendations *[]ReliabilityRecommendation) *ReliabilityFactor {
 	var weight int64 = 20
 	score := weight
 	var findings []string
@@ -500,11 +505,7 @@ func (s *ReliabilityScorer) buildAutomationFactor(
 	return s.buildFactor("automation_health", "Automation health", weight, score, findings)
 }
 
-func (s *ReliabilityScorer) buildMaintenanceFactor(
-	maintenanceReport *MaintenanceReportResponse,
-	recommendations *[]ReliabilityRecommendation,
-	configPath string,
-) ReliabilityFactor {
+func (s *ReliabilityScorer) buildMaintenanceFactor(maintenanceReport *MaintenanceReportResponse, recommendations *[]ReliabilityRecommendation, configPath string) *ReliabilityFactor {
 	var weight int64 = 20
 	score := weight
 	var findings []string
@@ -545,10 +546,7 @@ func (s *ReliabilityScorer) buildMaintenanceFactor(
 	return s.buildFactor("maintenance_drift", "Maintenance & drift", weight, score, findings)
 }
 
-func (s *ReliabilityScorer) buildOperatorFactor(
-	inputs MaintenanceScanInputs,
-	recommendations *[]ReliabilityRecommendation,
-) ReliabilityFactor {
+func (s *ReliabilityScorer) buildOperatorFactor(inputs MaintenanceScanInputs, recommendations *[]ReliabilityRecommendation) *ReliabilityFactor {
 	var weight int64 = 10
 	score := weight
 	var findings []string
@@ -577,7 +575,7 @@ func (s *ReliabilityScorer) buildOperatorFactor(
 	return s.buildFactor("operator_hygiene", "Operator & runtime hygiene", weight, score, findings)
 }
 
-func (s *ReliabilityScorer) buildFactor(id, label string, weight, score int64, findings []string) ReliabilityFactor {
+func (s *ReliabilityScorer) buildFactor(id, label string, weight, score int64, findings []string) *ReliabilityFactor {
 	boundedScore := score
 	if boundedScore < 0 {
 		boundedScore = 0
@@ -594,7 +592,7 @@ func (s *ReliabilityScorer) buildFactor(id, label string, weight, score int64, f
 		status = "ActionNeeded"
 	}
 
-	return ReliabilityFactor{
+	return &ReliabilityFactor{
 		Id:       id,
 		Label:    label,
 		Weight:   weight,
@@ -1064,7 +1062,7 @@ func (m *MaintenanceCoordinator) countModelEvaluationArtifacts(adminRoot string)
 	return 0
 }
 
-func (m *MaintenanceCoordinator) saveSnapshot(memoryRoot string, report *MaintenanceReportResponse) {
+func (m *MaintenanceCoordinator) saveSnapshot(memoryRoot string, report *MaintenanceReportResponse) error {
 	var path = filepath.Join(memoryRoot, "admin", "maintenance-history.json")
 	items := []MaintenanceHistorySnapshot{}
 	if FileExists(path) {
@@ -1077,7 +1075,7 @@ func (m *MaintenanceCoordinator) saveSnapshot(memoryRoot string, report *Mainten
 		}
 	}
 
-	items = append(items, MaintenanceHistorySnapshot{GeneratedAtUtc: report.GeneratedAtUtc, Report: *report})
+	items = append(items, MaintenanceHistorySnapshot{GeneratedAtUtc: report.GeneratedAtUtc, Report: report})
 
 	slices.SortFunc(items, func(a, b MaintenanceHistorySnapshot) int {
 		return b.GeneratedAtUtc.Compare(a.GeneratedAtUtc)
@@ -1090,8 +1088,11 @@ func (m *MaintenanceCoordinator) saveSnapshot(memoryRoot string, report *Mainten
 		result = items[:MaintenanceHistoryRetention]
 	}
 
-	os.MkdirAll(filepath.Dir(path), 0755)
-	SaveOneFile(context.Background(), path, result)
+	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+		return err
+	}
+
+	return SaveOneFile(context.Background(), path, result)
 }
 
 func (m *MaintenanceCoordinator) loadPreviousSnapshot(memoryRoot string) *MaintenanceHistorySnapshot {
@@ -1429,4 +1430,93 @@ func (m *MaintenanceCoordinator) normalizeApply(apply string) string {
 		return normalized
 	}
 	return "all"
+}
+
+func (m *MaintenanceCoordinator) Scan(ctx context.Context, config *GatewayConfig, inputs *MaintenanceScanInputs) (*MaintenanceReportResponse, error) {
+	if config == nil {
+		return nil, fmt.Errorf("config can not be nil")
+	}
+	if inputs == nil {
+		inputs = &MaintenanceScanInputs{}
+	}
+
+	memoryRoot, err := filepath.Abs(config.Memory.StoragePath)
+	if err != nil {
+		return nil, err
+	}
+
+	var adminRoot = filepath.Join(memoryRoot, "admin")
+	if err := os.MkdirAll(adminRoot, 0755); err != nil {
+		return nil, err
+	}
+
+	var modelDoctor = inputs.ModelDoctor
+	if modelDoctor == nil {
+		modelDoctor = ModelDoctorEvaluatorInstance.Build(config, nil, nil)
+	}
+
+	var automationStates = inputs.AutomationRunStates
+
+	if len(automationStates) == 0 {
+		r, err := m.loadAutomationRunStates(ctx, config)
+		if err != nil {
+			return nil, err
+		}
+		automationStates = r
+	}
+
+	sessionIds, err := m.loadPersistedSessionIds(ctx, config)
+	if err != nil {
+		return nil, err
+	}
+	var metadata = m.loadSessionMetadata(memoryRoot)
+	orphanedMetadata := 0
+	for _, me := range metadata {
+		if _, ok := sessionIds[me.SessionId]; !ok {
+			orphanedMetadata++
+		}
+	}
+
+	var storage = &MaintenanceStorageSnapshot{
+		MemoryBytes:                    GetDirectorySize(memoryRoot),
+		ArchiveBytes:                   GetDirectorySize(m.pathFor(config.Memory.Retention.ArchivePath, memoryRoot)),
+		OrphanedSessionMetadataEntries: orphanedMetadata,
+		ModelEvaluationArtifacts:       m.countModelEvaluationArtifacts(adminRoot),
+		PromptCacheTraceArtifacts:      m.countPromptCacheTraceArtifacts(config, memoryRoot),
+	}
+
+	var promptBudget = m.buildPromptBudgetSnapshot(
+		inputs.RecentTurns,
+		inputs.LoadedSkills,
+		m.resolveWorkspacePromptPath(config.Tooling.WorkspaceRoot, "AGENTS.md"),
+		m.resolveWorkspacePromptPath(config.Tooling.WorkspaceRoot, "SOUL.md"))
+
+	var previous = m.loadPreviousSnapshot(memoryRoot)
+	var drift = m.buildDriftSnapshot(inputs, automationStates, promptBudget, previous)
+	var findings = m.buildFindings(inputs, modelDoctor, storage, promptBudget, drift)
+	var partial = &MaintenanceReportResponse{
+		GeneratedAtUtc: time.Now().UTC(),
+		OverallStatus:  m.determineOverallStatus(findings),
+		Storage:        storage,
+		PromptBudget:   promptBudget,
+		Drift:          drift,
+		Findings:       findings,
+	}
+
+	var reliability = ReliabilityScorerInstance.Build(config, inputs, partial, modelDoctor, automationStates)
+	var report = &MaintenanceReportResponse{
+		GeneratedAtUtc: partial.GeneratedAtUtc,
+		OverallStatus:  partial.OverallStatus,
+		Storage:        partial.Storage,
+		PromptBudget:   partial.PromptBudget,
+		Drift:          partial.Drift,
+		Findings:       partial.Findings,
+		Reliability:    reliability,
+	}
+
+	if err := m.saveSnapshot(memoryRoot, report); err != nil {
+		return nil, err
+	}
+
+	return report, nil
 }
