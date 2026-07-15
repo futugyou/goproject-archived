@@ -6,8 +6,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"math"
 	"net/http"
 	"net/url"
+	"sort"
 	"strings"
 	"time"
 )
@@ -377,4 +379,584 @@ func (p *ProviderSmokeProbe) SafeReadBody(body io.Reader, ctx context.Context) s
 
 	payload := string(payloadBytes)
 	return strings.TrimSpace(payload)
+}
+
+var ModelDoctorEvaluatorInstance = &ModelDoctorEvaluator{}
+
+type ModelDoctorEvaluator struct{}
+
+// 评估当前的网关配置，并可选地结合注册表与历史调用记录生成诊断报告
+func (m *ModelDoctorEvaluator) Build(config *GatewayConfig, registry IModelProfileRegistry, recentTurns []TurnTokenUsageRecord) *ModelSelectionDoctorResponse {
+
+	if registry != nil {
+		return m.BuildFromRegistry(registry, recentTurns)
+	}
+
+	statuses := m.BuildStatusesFromConfig(config)
+	warnings := make([]string, 0)
+	errors := make([]string, 0)
+	defaultProfileID := m.ResolveDefaultProfileIDFromStatuses(config, statuses)
+
+	if len(statuses) == 0 {
+		errors = append(errors, "No model profiles are registered.")
+	}
+	if strings.TrimSpace(defaultProfileID) == "" {
+		errors = append(errors, "No default model profile is configured.")
+	}
+
+	for _, status := range statuses {
+		if len(status.ValidationIssues) > 0 {
+			warnings = append(warnings, "Profile '"+status.Id+"' has validation issues: "+strings.Join(status.ValidationIssues, "; "))
+		}
+		warnings = append(warnings, m.BuildPresetWarnings(&status, config, recentTurns)...)
+	}
+
+	return &ModelSelectionDoctorResponse{
+		DefaultProfileId: defaultProfileID,
+		Errors:           errors,
+		Warnings:         warnings,
+		Profiles:         statuses,
+	}
+}
+
+// 基于注册表和历史记录构建诊断报告
+func (m *ModelDoctorEvaluator) BuildFromRegistry(
+	registry IModelProfileRegistry,
+	recentTurns []TurnTokenUsageRecord,
+) *ModelSelectionDoctorResponse {
+	statuses, err := registry.ListStatuses()
+	if err != nil {
+		return nil
+	}
+	warnings := make([]string, 0)
+	errors := make([]string, 0)
+
+	if len(statuses) == 0 {
+		errors = append(errors, "No model profiles are registered.")
+	}
+	if strings.TrimSpace(registry.DefaultProfileId()) == "" {
+		errors = append(errors, "No default model profile is configured.")
+	}
+
+	for _, status := range statuses {
+		if len(status.ValidationIssues) > 0 {
+			warnings = append(warnings, "Profile '"+status.Id+"' has validation issues: "+strings.Join(status.ValidationIssues, "; "))
+		}
+		warnings = append(warnings, m.BuildPresetWarnings(&status, nil, recentTurns)...)
+	}
+
+	return &ModelSelectionDoctorResponse{
+		DefaultProfileId: registry.DefaultProfileId(),
+		Errors:           errors,
+		Warnings:         warnings,
+		Profiles:         statuses,
+	}
+}
+
+func (m *ModelDoctorEvaluator) BuildStatusesFromConfig(config *GatewayConfig) []ModelProfileStatus {
+	var profiles []ModelProfileConfig
+	if len(config.Models.Profiles) > 0 {
+		profiles = config.Models.Profiles
+	} else {
+		profiles = []ModelProfileConfig{m.createImplicitProfile(config)}
+	}
+
+	defaultProfileID := m.ResolveDefaultProfileIDFromConfigs(config, profiles)
+	statuses := make([]ModelProfileStatus, 0, len(profiles))
+
+	for _, profile := range profiles {
+		normalizedID := m.normalize(profile.Id)
+		if normalizedID == "" {
+			normalizedID = "default"
+		}
+
+		ProviderId := m.normalize(profile.Provider)
+		if ProviderId == "" {
+			ProviderId = m.normalize(config.Llm.Provider)
+		}
+		if ProviderId == "" {
+			ProviderId = "unknown"
+		}
+
+		modelID := m.normalize(profile.Model)
+		if modelID == "" {
+			modelID = m.normalize(config.Llm.Model)
+		}
+		if modelID == "" {
+			modelID = "unknown"
+		}
+
+		validationIssues := m.validateProfile(config, profile, ProviderId)
+
+		authMode := m.normalize(profile.AuthMode)
+		if authMode == "" {
+			authMode = m.normalize(config.Llm.AuthMode)
+		}
+		if authMode == "" {
+			authMode = "bearer"
+		}
+
+		sendRequestMetadata := config.Llm.SendRequestMetadata
+		if profile.SendRequestMetadata != nil {
+			sendRequestMetadata = *profile.SendRequestMetadata
+		}
+
+		baseURLSecret := m.resolveSecretValue(profile.BaseUrl)
+		if baseURLSecret == "" {
+			baseURLSecret = m.resolveSecretValue(config.Llm.Endpoint)
+		}
+
+		usesCompatibilityTransport := ProviderId == "ollama" && OllamaNormalize(baseURLSecret).UsesCompatibilityEndpoint
+
+		statuses = append(statuses, ModelProfileStatus{
+			Id:                         normalizedID,
+			PresetId:                   m.normalize(profile.PresetId),
+			ProviderId:                 ProviderId,
+			ModelId:                    modelID,
+			IsDefault:                  strings.EqualFold(normalizedID, defaultProfileID),
+			IsImplicit:                 len(config.Models.Profiles) == 0 && strings.EqualFold(normalizedID, "default"),
+			IsAvailable:                len(validationIssues) == 0,
+			ProviderGateway:            m.resolveProviderGateway(profile, ProviderId),
+			AuthMode:                   authMode,
+			SendRequestMetadata:        sendRequestMetadata,
+			Tags:                       m.resolveTags(profile),
+			Capabilities:               m.resolveCapabilities(profile, ProviderId),
+			PromptCaching:              m.mergePromptCaching(config.Llm.PromptCaching, profile.PromptCaching),
+			ValidationIssues:           validationIssues,
+			FallbackProfileIds:         m.normalizeDistinct(profile.FallbackProfileIds),
+			FallbackModels:             m.normalizeDistinct(profile.FallbackModels),
+			CompatibilityNotes:         m.resolveCompatibilityNotes(profile, config),
+			UsesCompatibilityTransport: usesCompatibilityTransport,
+		})
+	}
+
+	// 排序逻辑：优先 IsDefault 降序，其次 ID 升序（不区分大小写）
+	sort.Slice(statuses, func(i, j int) bool {
+		if statuses[i].IsDefault && !statuses[j].IsDefault {
+			return true
+		}
+		if !statuses[i].IsDefault && statuses[j].IsDefault {
+			return false
+		}
+		return strings.ToLower(statuses[i].Id) < strings.ToLower(statuses[j].Id)
+	})
+
+	return statuses
+}
+
+func (m *ModelDoctorEvaluator) ResolveDefaultProfileIDFromConfigs(config *GatewayConfig, profiles []ModelProfileConfig) string {
+	configured := m.normalize(config.Models.DefaultProfile)
+	if configured != "" {
+		return configured
+	}
+
+	if len(profiles) == 0 {
+		return ""
+	}
+
+	id := m.normalize(profiles[0].Id)
+	if id == "" {
+		return "default"
+	}
+	return id
+}
+
+func (m *ModelDoctorEvaluator) ResolveDefaultProfileIDFromStatuses(config *GatewayConfig, statuses []ModelProfileStatus) string {
+	configured := m.normalize(config.Models.DefaultProfile)
+	if configured != "" {
+		return configured
+	}
+
+	for _, item := range statuses {
+		if item.IsDefault {
+			return item.Id
+		}
+	}
+
+	if len(statuses) > 0 {
+		return statuses[0].Id
+	}
+
+	return ""
+}
+
+func (m *ModelDoctorEvaluator) createImplicitProfile(config *GatewayConfig) ModelProfileConfig {
+	return ModelProfileConfig{
+		Id:             "default",
+		Provider:       config.Llm.Provider,
+		Model:          config.Llm.Model,
+		BaseUrl:        config.Llm.Endpoint,
+		ApiKey:         config.Llm.ApiKey,
+		FallbackModels: config.Llm.FallbackModels,
+		Capabilities:   m.guessCapabilities(config.Llm.Provider),
+		PromptCaching:  m.clonePromptCaching(config.Llm.PromptCaching),
+	}
+}
+
+func (m *ModelDoctorEvaluator) validateProfile(config *GatewayConfig, profile ModelProfileConfig, ProviderId string) []string {
+	var issues []string
+
+	if strings.TrimSpace(profile.Id) == "" {
+		issues = append(issues, "Profile id is required.")
+	}
+	if strings.TrimSpace(ProviderId) == "" {
+		issues = append(issues, "Provider is required.")
+	}
+	if strings.TrimSpace(profile.Model) == "" && strings.TrimSpace(config.Llm.Model) == "" {
+		issues = append(issues, "Model is required.")
+	}
+
+	if m.requiresEndpoint(ProviderId) &&
+		strings.TrimSpace(m.resolveSecretValue(profile.BaseUrl)) == "" &&
+		strings.TrimSpace(m.resolveSecretValue(config.Llm.Endpoint)) == "" {
+		issues = append(issues, "BaseUrl is required for this provider unless inherited from OpenClaw:Llm:Endpoint.")
+	}
+
+	if m.requiresCredentials(ProviderId, profile, config) &&
+		strings.TrimSpace(m.resolveSecretValue(profile.ApiKey)) == "" &&
+		strings.TrimSpace(m.resolveSecretValue(config.Llm.ApiKey)) == "" {
+		issues = append(issues, "ApiKey is required for this provider unless inherited from OpenClaw:Llm:ApiKey.")
+	}
+
+	return issues
+}
+
+func (m *ModelDoctorEvaluator) requiresEndpoint(ProviderId string) bool {
+	switch ProviderId {
+	case "openai-compatible", "aperture", "groq", "together", "lmstudio", "anthropic-vertex", "amazon-bedrock", "azure-openai":
+		return true
+	}
+	return false
+}
+
+func (m *ModelDoctorEvaluator) requiresCredentials(ProviderId string, profile ModelProfileConfig, config *GatewayConfig) bool {
+	if ProviderId == "ollama" || ProviderId == "lmstudio" || ProviderId == "embedded" {
+		return false
+	}
+
+	authMode := m.normalize(profile.AuthMode)
+	if authMode == "" {
+		authMode = m.normalize(config.Llm.AuthMode)
+	}
+
+	if (ProviderId == "aperture" || ProviderId == "openai-compatible") &&
+		strings.EqualFold(authMode, "tailnet-identity") {
+		return false
+	}
+
+	return true
+}
+
+func (m *ModelDoctorEvaluator) guessCapabilities(ProviderId string) *ModelCapabilities {
+	provider := m.normalize(ProviderId)
+	if provider == "embedded" {
+		return &ModelCapabilities{
+			SupportsStreaming:      true,
+			SupportsSystemMessages: true,
+			MaxContextTokens:       4096,
+			MaxOutputTokens:        1024,
+		}
+	}
+
+	supportsTools := false
+	switch provider {
+	case "openai", "openai-compatible", "aperture", "azure-openai", "groq", "together", "lmstudio", "anthropic", "claude", "anthropic-vertex", "amazon-bedrock", "gemini", "google":
+		supportsTools = true
+	}
+
+	supportsVision := false
+	switch provider {
+	case "openai", "openai-compatible", "aperture", "azure-openai", "gemini", "google", "ollama", "amazon-bedrock":
+		supportsVision = true
+	}
+
+	supportsPromptCaching := false
+	switch provider {
+	case "openai", "azure-openai", "anthropic", "claude", "anthropic-vertex", "gemini", "google":
+		supportsPromptCaching = true
+	}
+
+	supportsExplicitCacheRetention := provider == "anthropic" || provider == "claude" || provider == "anthropic-vertex"
+
+	supportsJSONSchema := false
+	supportsStructuredOutputs := false
+	supportsParallelToolCalls := false
+	supportsReasoningEffort := false
+	supportsAudioInput := false
+
+	switch provider {
+	case "openai", "openai-compatible", "aperture", "azure-openai":
+		supportsJSONSchema = true
+		supportsStructuredOutputs = true
+		supportsParallelToolCalls = true
+		supportsReasoningEffort = true
+		supportsAudioInput = true
+	}
+
+	reportsCacheWriteTokens := provider == "anthropic" || provider == "claude" || provider == "anthropic-vertex"
+
+	return &ModelCapabilities{
+		SupportsTools:                  supportsTools,
+		SupportsVision:                 supportsVision,
+		SupportsJsonSchema:             supportsJSONSchema,
+		SupportsStructuredOutputs:      supportsStructuredOutputs,
+		SupportsStreaming:              true,
+		SupportsParallelToolCalls:      supportsParallelToolCalls,
+		SupportsReasoningEffort:        supportsReasoningEffort,
+		SupportsSystemMessages:         true,
+		SupportsImageInput:             supportsVision,
+		SupportsVideoInput:             supportsVision,
+		SupportsAudioInput:             supportsAudioInput,
+		SupportsPromptCaching:          supportsPromptCaching,
+		SupportsExplicitCacheRetention: supportsExplicitCacheRetention,
+		ReportsCacheReadTokens:         supportsPromptCaching,
+		ReportsCacheWriteTokens:        reportsCacheWriteTokens,
+	}
+}
+
+func (m *ModelDoctorEvaluator) mergePromptCaching(root *PromptCachingConfig, profile *PromptCachingConfig) *PromptCachingConfig {
+	if root == nil {
+		return nil
+	}
+	res := &PromptCachingConfig{
+		Enabled:                 root.Enabled,
+		Retention:               root.Retention,
+		Dialect:                 root.Dialect,
+		KeepWarmEnabled:         root.KeepWarmEnabled,
+		KeepWarmIntervalMinutes: root.KeepWarmIntervalMinutes,
+		TraceEnabled:            root.TraceEnabled,
+		TraceFilePath:           root.TraceFilePath,
+	}
+
+	if profile != nil {
+		if profile.Enabled != nil {
+			res.Enabled = profile.Enabled
+		}
+		if profile.Retention != "" {
+			res.Retention = profile.Retention
+		}
+		if profile.Dialect != "" {
+			res.Dialect = profile.Dialect
+		}
+		if profile.KeepWarmEnabled != nil {
+			res.KeepWarmEnabled = profile.KeepWarmEnabled
+		}
+		if profile.KeepWarmIntervalMinutes != 0 {
+			res.KeepWarmIntervalMinutes = profile.KeepWarmIntervalMinutes
+		}
+		if profile.TraceEnabled != nil {
+			res.TraceEnabled = profile.TraceEnabled
+		}
+		if profile.TraceFilePath != "" {
+			res.TraceFilePath = profile.TraceFilePath
+		}
+	}
+	return res
+}
+
+func (m *ModelDoctorEvaluator) clonePromptCaching(caching *PromptCachingConfig) *PromptCachingConfig {
+	return m.mergePromptCaching(caching, nil)
+}
+
+func (m *ModelDoctorEvaluator) normalizeDistinct(values []string) []string {
+	seen := make(map[string]bool)
+	var result []string
+
+	for _, val := range values {
+		norm := m.normalize(val)
+		if norm != "" {
+			lower := strings.ToLower(norm)
+			if !seen[lower] {
+				seen[lower] = true
+				result = append(result, norm)
+			}
+		}
+	}
+	return result
+}
+
+func (m *ModelDoctorEvaluator) normalize(value string) string {
+	return strings.TrimSpace(value)
+}
+
+func (m *ModelDoctorEvaluator) resolveSecretValue(value string) string {
+	if strings.TrimSpace(value) == "" {
+		return value
+	}
+	resolved := SecretResolverInstance.Resolve(value)
+	if resolved != "" {
+		return resolved
+	}
+	return value
+}
+
+func (m *ModelDoctorEvaluator) resolveCapabilities(profile ModelProfileConfig, ProviderId string) *ModelCapabilities {
+	if profile.Capabilities != nil {
+		return profile.Capabilities
+	}
+
+	preset, ok := TryGetLocalModelPreset(profile.PresetId)
+	if ok && preset != nil {
+		return &preset.Capabilities
+	}
+
+	return m.guessCapabilities(ProviderId)
+}
+
+func (m *ModelDoctorEvaluator) resolveTags(profile ModelProfileConfig) []string {
+	configured := m.normalizeDistinct(profile.Tags)
+	preset, ok := TryGetLocalModelPreset(profile.PresetId)
+	if !ok || preset == nil {
+		return configured
+	}
+
+	// 拼接并去重
+	combined := append(configured, preset.Tags...)
+	return m.normalizeDistinct(combined)
+}
+
+func (m *ModelDoctorEvaluator) resolveProviderGateway(profile ModelProfileConfig, ProviderId string) string {
+	hasApertureTag := false
+	for _, tag := range profile.Tags {
+		if strings.EqualFold(tag, "aperture") {
+			hasApertureTag = true
+			break
+		}
+	}
+
+	if strings.EqualFold(ProviderId, "aperture") ||
+		hasApertureTag ||
+		strings.Contains(strings.ToLower(profile.BaseUrl), "aperture") {
+		res := "Aperture"
+		return res
+	}
+
+	return ""
+}
+
+func (m *ModelDoctorEvaluator) resolveCompatibilityNotes(profile ModelProfileConfig, config *GatewayConfig) []string {
+	var notes []string
+
+	provider := m.normalize(profile.Provider)
+	if provider == "" {
+		provider = m.normalize(config.Llm.Provider)
+	}
+
+	baseURLSecret := m.resolveSecretValue(profile.BaseUrl)
+	if baseURLSecret == "" {
+		baseURLSecret = m.resolveSecretValue(config.Llm.Endpoint)
+	}
+
+	if provider == "ollama" && OllamaNormalize(baseURLSecret).UsesCompatibilityEndpoint {
+		notes = append(notes, "Using legacy /v1 compatibility endpoint; migrate to the native Ollama base URL.")
+	}
+
+	if provider == "ollama" && strings.TrimSpace(profile.PresetId) == "" {
+		notes = append(notes, "No local preset is configured; setup and doctor guidance will be more limited until a PresetId is added.")
+	}
+
+	preset, ok := TryGetLocalModelPreset(profile.PresetId)
+	if ok && preset != nil {
+		notes = append(notes, preset.CompatibilityNotes...)
+	}
+
+	return m.normalizeDistinct(notes)
+}
+
+func (m *ModelDoctorEvaluator) BuildPresetWarnings(
+	status *ModelProfileStatus,
+	config *GatewayConfig,
+	recentTurns []TurnTokenUsageRecord,
+) []string {
+	warnings := make([]string, 0)
+
+	if strings.EqualFold(status.ProviderId, "ollama") && strings.TrimSpace(status.PresetId) == "" {
+		warnings = append(warnings, "Profile '"+status.Id+"' is an Ollama profile without a PresetId. Use a local preset so doctor and setup can apply local-model guidance.")
+	}
+
+	if strings.EqualFold(status.ProviderId, "embedded") {
+		if strings.TrimSpace(status.PresetId) == "" {
+			warnings = append(warnings, "Profile '"+status.Id+"' is embedded local but has no PresetId. Use an embedded preset so model install and verification can find the package.")
+		}
+		if config != nil && !config.LocalInference.Enabled {
+			warnings = append(warnings, "Profile '"+status.Id+"' uses the embedded provider but OpenClaw:LocalInference:Enabled is false.")
+		}
+		if len(status.FallbackProfileIds) == 0 && len(status.FallbackModels) == 0 {
+			warnings = append(warnings, "Profile '"+status.Id+"' has no fallback profile configured for tool-heavy or long-context routes.")
+		}
+	}
+
+	if status.UsesCompatibilityTransport {
+		warnings = append(warnings, "Profile '"+status.Id+"' is still using the legacy Ollama /v1 compatibility endpoint.")
+	}
+
+	if strings.EqualFold(status.ProviderId, "ollama") &&
+		status.Capabilities.SupportsTools &&
+		len(status.FallbackProfileIds) == 0 &&
+		len(status.FallbackModels) == 0 {
+		warnings = append(warnings, "Profile '"+status.Id+"' is local-agentic but has no fallback profile configured for unsupported features or context overflow.")
+	}
+
+	preset, ok := TryGetLocalModelPreset(status.PresetId)
+	if ok && preset != nil && len(recentTurns) > 0 {
+		var matchingTurns []TurnTokenUsageRecord
+		for _, turn := range recentTurns {
+			if strings.EqualFold(turn.ProviderId, status.ProviderId) &&
+				strings.EqualFold(turn.ModelId, status.ModelId) {
+				matchingTurns = append(matchingTurns, turn)
+			}
+		}
+
+		// 按 TimestampUtc 降序排序并取前 20 条
+		sort.Slice(matchingTurns, func(i, j int) bool {
+			return matchingTurns[i].TimestampUtc.After(matchingTurns[j].TimestampUtc)
+		})
+		if len(matchingTurns) > 20 {
+			matchingTurns = matchingTurns[:20]
+		}
+
+		if len(matchingTurns) > 0 {
+			inputTokens := make([]int64, len(matchingTurns))
+			for i, turn := range matchingTurns {
+				inputTokens[i] = turn.InputTokens
+			}
+			sort.Slice(inputTokens, func(i, j int) bool {
+				return inputTokens[i] < inputTokens[j]
+			})
+
+			// 算 p95 对应的分位数
+			idx := int(math.Floor(float64(len(matchingTurns)-1) * 0.95))
+			p95 := inputTokens[idx]
+			threshold := int64(float64(preset.RecommendedContextTokens) * 0.85)
+
+			if p95 >= threshold {
+				warnings = append(warnings, "Profile '"+status.Id+"' is seeing recent prompt sizes near its effective context headroom (p95 "+
+					fmt.Sprint(p95)+" tokens vs recommended "+fmt.Sprint(preset.RecommendedContextTokens)+").")
+			}
+		}
+	}
+
+	if config != nil && strings.EqualFold(status.ProviderId, "ollama") {
+		for key, route := range config.Routing.Routes {
+			if strings.TrimSpace(route.ModelProfileId) == "" {
+				continue
+			}
+
+			if !strings.EqualFold(route.ModelProfileId, status.Id) {
+				continue
+			}
+
+			if route.ModelRequirements.SupportsTools &&
+				!status.Capabilities.SupportsTools && len(status.FallbackProfileIds) == 0 {
+				warnings = append(warnings, "Route '"+key+"' selects local profile '"+status.Id+"' for tool-required traffic without a compatible fallback profile.")
+			}
+
+			if route.ModelRequirements.SupportsJsonSchema &&
+				!status.Capabilities.SupportsJsonSchema && len(status.FallbackProfileIds) == 0 {
+				warnings = append(warnings, "Route '"+key+"' selects local profile '"+status.Id+"' for structured-output traffic without a compatible fallback profile.")
+			}
+		}
+	}
+
+	return warnings
 }
