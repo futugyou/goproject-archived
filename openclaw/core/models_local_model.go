@@ -224,8 +224,8 @@ type MaintenanceFinding struct {
 	Severity           string  `json:"severity"`
 	Summary            string  `json:"summary"`
 	Detail             *string `json:"detail,omitempty"`
-	Recommendation     *string `json:"recommendation,omitempty"`
-	RecommendedCommand *string `json:"recommended_command,omitempty"`
+	Recommendation     string  `json:"recommendation"`
+	RecommendedCommand string  `json:"recommended_command"`
 	NumericValue       int64   `json:"numeric_value"`
 }
 

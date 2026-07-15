@@ -1,6 +1,7 @@
 package core
 
 import (
+	"cmp"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -1118,4 +1119,215 @@ func (m *MaintenanceCoordinator) loadPreviousSnapshot(memoryRoot string) *Mainte
 
 	return &((*items)[0])
 
+}
+
+func (m *MaintenanceCoordinator) loadAutomationRunStates(ctx context.Context, config *GatewayConfig) ([]AutomationRunState, error) {
+	store, err := m.createAutomationStore(config)
+	if err != nil {
+		return nil, err
+	}
+
+	automations, err := store.ListAutomations(ctx)
+	if err != nil {
+		return nil, err
+	}
+	states := make([]AutomationRunState, 0, len(automations))
+	for _, automation := range automations {
+		state, err := store.GetRunState(ctx, automation.Id)
+		if err != nil {
+			return nil, err
+		}
+		if state != nil {
+			states = append(states, *state)
+		}
+
+	}
+
+	return states, nil
+}
+
+func (m *MaintenanceCoordinator) buildConfigAwareCommand(command, configPath string) string {
+	if IsBinaryOnPath(configPath) {
+		return command
+	}
+
+	return fmt.Sprintf("%s --config %s", command, GatewaySetupPathsIntance.QuoteIfNeeded(configPath))
+}
+
+func (m *MaintenanceCoordinator) severityRank(severity string) int {
+	switch severity {
+	case MaintenanceFindingSeveritiesFail:
+		return 3
+	case MaintenanceFindingSeveritiesWarn:
+		return 2
+
+	}
+	return -1
+}
+
+func (m *MaintenanceCoordinator) determineOverallStatus(findings []MaintenanceFinding) string {
+	warn := false
+	for _, finding := range findings {
+		if finding.Severity == MaintenanceFindingSeveritiesFail {
+			return SetupCheckStatesFail
+		}
+
+		if finding.Severity == MaintenanceFindingSeveritiesWarn {
+			warn = true
+		}
+	}
+
+	if warn {
+		return SetupCheckStatesWarn
+	}
+
+	return SetupCheckStatesPass
+}
+
+func (m *MaintenanceCoordinator) buildFindings(inputs *MaintenanceScanInputs, modelDoctor *ModelSelectionDoctorResponse, storage *MaintenanceStorageSnapshot, promptBudget *MaintenancePromptBudgetSnapshot, drift *MaintenanceDriftSnapshot) []MaintenanceFinding {
+	findings := []MaintenanceFinding{}
+
+	if storage.OrphanedSessionMetadataEntries > 0 {
+		findings = append(findings, MaintenanceFinding{
+			Id:                 "orphaned-session-metadata",
+			Category:           MaintenanceFindingCategoriesStorage,
+			Severity:           MaintenanceFindingSeveritiesWarn,
+			Summary:            fmt.Sprintf("%d orphaned session metadata entries can be pruned.", storage.OrphanedSessionMetadataEntries),
+			Recommendation:     "Run a maintenance fix to remove stale admin metadata.",
+			RecommendedCommand: m.buildConfigAwareCommand("openclaw maintenance fix --dry-run", inputs.ConfigPath),
+			NumericValue:       int64(storage.OrphanedSessionMetadataEntries),
+		})
+	}
+
+	if storage.ModelEvaluationArtifacts > MaxModelEvaluationGroupsToKeep*2 {
+		findings = append(findings, MaintenanceFinding{
+			Id:                 "model-evaluation-artifacts",
+			Category:           MaintenanceFindingCategoriesStorage,
+			Severity:           MaintenanceFindingSeveritiesWarn,
+			Summary:            fmt.Sprintf("%d model evaluation artifacts are stored under memory/admin/model-evaluations.", storage.ModelEvaluationArtifacts),
+			Recommendation:     "Prune older evaluation artifacts if you no longer need historical comparison runs.",
+			RecommendedCommand: m.buildConfigAwareCommand("openclaw maintenance fix --dry-run --apply artifacts", inputs.ConfigPath),
+			NumericValue:       int64(storage.ModelEvaluationArtifacts),
+		})
+	}
+
+	if storage.PromptCacheTraceArtifacts > 0 {
+		findings = append(findings, MaintenanceFinding{
+			Id:                 "prompt-cache-traces",
+			Category:           MaintenanceFindingCategoriesStorage,
+			Severity:           MaintenanceFindingSeveritiesInfo,
+			Summary:            fmt.Sprintf("%d prompt-cache trace artifact(s) are consuming managed storage.", storage.PromptCacheTraceArtifacts),
+			Recommendation:     "Remove trace artifacts once prompt-cache investigation is complete.",
+			RecommendedCommand: m.buildConfigAwareCommand("openclaw maintenance fix --dry-run --apply artifacts", inputs.ConfigPath),
+			NumericValue:       int64(storage.PromptCacheTraceArtifacts),
+		})
+	}
+
+	if promptBudget.AgentsFileBytes > PromptSizeWarningBytes {
+		findings = append(findings, MaintenanceFinding{
+			Id:                 "agents-file-size",
+			Category:           MaintenanceFindingCategoriesPromptBudget,
+			Severity:           MaintenanceFindingSeveritiesWarn,
+			Summary:            fmt.Sprintf("AGENTS.md is %d bytes and may be inflating every turn.", promptBudget.AgentsFileBytes),
+			Recommendation:     "Trim AGENTS.md or move infrequently needed guidance into conditional skills.",
+			RecommendedCommand: "openclaw maintenance scan",
+			NumericValue:       int64(promptBudget.AgentsFileBytes),
+		})
+	}
+
+	if promptBudget.SoulFileBytes > PromptSizeWarningBytes {
+		findings = append(findings, MaintenanceFinding{
+			Id:                 "soul-file-size",
+			Category:           MaintenanceFindingCategoriesPromptBudget,
+			Severity:           MaintenanceFindingSeveritiesWarn,
+			Summary:            fmt.Sprintf("SOUL.md is %d bytes and may be reducing local-model headroom.", promptBudget.SoulFileBytes),
+			Recommendation:     "Keep SOUL.md concise, especially for local models with tight context budgets.",
+			RecommendedCommand: "openclaw maintenance scan",
+			NumericValue:       int64(promptBudget.SoulFileBytes),
+		})
+	}
+
+	if promptBudget.RecentTurnsAnalyzed > 0 && drift.PromptP95Delta > 4_000 {
+		findings = append(findings, MaintenanceFinding{
+			Id:                 "prompt-growth",
+			Category:           MaintenanceFindingCategoriesDrift,
+			Severity:           MaintenanceFindingSeveritiesWarn,
+			Summary:            fmt.Sprintf("Recent prompt p95 grew by %d tokens since the last maintenance scan.", drift.PromptP95Delta),
+			Recommendation:     "Review prompt contributors before latency and local-model reliability degrade further.",
+			RecommendedCommand: "openclaw models doctor",
+			NumericValue:       drift.PromptP95Delta,
+		})
+	}
+
+	if drift.ProviderErrors > 0 || drift.ProviderRetries >= 5 {
+		m := MaintenanceFinding{
+			Id:                 "provider-instability",
+			Category:           MaintenanceFindingCategoriesDrift,
+			Severity:           MaintenanceFindingSeveritiesInfo,
+			Summary:            fmt.Sprintf("Provider routes reported %d errors and {drift.ProviderRetries:N0} retries.", drift.ProviderErrors),
+			Recommendation:     "Run model doctor and inspect provider health before changing model routing.",
+			RecommendedCommand: "openclaw models doctor",
+			NumericValue:       drift.ProviderErrors + drift.ProviderRetries,
+		}
+		if drift.ProviderErrors > 0 {
+			m.Severity = MaintenanceFindingSeveritiesWarn
+		}
+		findings = append(findings, m)
+	}
+
+	if drift.QuarantinedAutomations > 0 || drift.DegradedAutomations > 0 {
+		m := MaintenanceFinding{
+			Id:                 "automation-health",
+			Category:           MaintenanceFindingCategoriesReliability,
+			Severity:           MaintenanceFindingSeveritiesWarn,
+			Summary:            fmt.Sprintf("%d degraded and %d quarantined automations need attention.", drift.DegradedAutomations, drift.QuarantinedAutomations),
+			Recommendation:     "Review automation health and replay or clear quarantine after fixing the underlying issue.",
+			RecommendedCommand: "openclaw maintenance scan",
+			NumericValue:       int64(drift.DegradedAutomations + drift.QuarantinedAutomations),
+		}
+		if drift.QuarantinedAutomations > 0 {
+			m.Severity = MaintenanceFindingSeveritiesFail
+		}
+		findings = append(findings, m)
+	}
+
+	if drift.RetentionFailures > 0 {
+		findings = append(findings, MaintenanceFinding{
+			Id:                 "retention-failures",
+			Category:           MaintenanceFindingCategoriesReliability,
+			Severity:           MaintenanceFindingSeveritiesFail,
+			Summary:            fmt.Sprintf("Retention reported %d recent failures.", drift.RetentionFailures),
+			Recommendation:     "Run a dry-run maintenance fix and inspect storage permissions before enabling more cleanup.",
+			RecommendedCommand: m.buildConfigAwareCommand("openclaw maintenance fix --dry-run --apply retention", inputs.ConfigPath),
+			NumericValue:       drift.RetentionFailures,
+		})
+	}
+
+	if len(modelDoctor.Errors) > 0 || len(modelDoctor.Warnings) > 0 {
+		m := MaintenanceFinding{
+			Id:                 "model-doctor",
+			Category:           MaintenanceFindingCategoriesReliability,
+			Severity:           MaintenanceFindingSeveritiesWarn,
+			Summary:            fmt.Sprintf("Model doctor reported %d error(s) and %d warning(s).", len(modelDoctor.Errors), len(modelDoctor.Warnings)),
+			Recommendation:     "Resolve model doctor findings before relying on local-first routing.",
+			RecommendedCommand: "openclaw models doctor",
+			NumericValue:       int64(len(modelDoctor.Errors) + len(modelDoctor.Warnings)),
+		}
+
+		if len(modelDoctor.Errors) > 0 {
+			m.Severity = MaintenanceFindingSeveritiesFail
+		}
+		findings = append(findings, m)
+	}
+
+	slices.SortFunc(findings, func(a, b MaintenanceFinding) int {
+		f := cmp.Compare(m.severityRank(b.Severity), m.severityRank(a.Severity))
+		if f != 0 {
+			return f
+		}
+
+		return cmp.Compare(b.NumericValue, a.NumericValue)
+	})
+
+	return findings
 }
