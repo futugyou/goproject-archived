@@ -10,12 +10,14 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"math"
 	"math/big"
 	"net"
 	"os"
 	"path/filepath"
 	"regexp"
 	"runtime"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -790,4 +792,51 @@ func SerializeEmbedding(v []float64, needCopy bool) []byte {
 	}
 
 	return srcBytes
+}
+
+// Percentile 计算已排序切片的百分位数
+// sortedValues 必须是升序排好序的
+// percentile 应当在 0.0 到 1.0 之间 (例如 0.95 表示 P95)
+func Percentile(sortedValues []int64, percentile float64) int64 {
+	length := len(sortedValues)
+	if length == 0 {
+		return 0
+	}
+
+	// 计算索引：(N - 1) * percentile，然后向上取整
+	// math.Ceil 返回的是 float64，我们需要转换为 int
+	index := int(math.Ceil(float64(length-1) * percentile))
+
+	// 限制索引边界，防止越界 (相当于 C# 的 Math.Clamp)
+	if index < 0 {
+		index = 0
+	} else if index > length-1 {
+		index = length - 1
+	}
+
+	return sortedValues[index]
+}
+
+// PercentileUnsorted 接收未排序的切片，计算百分位数（不会修改原切片）
+func PercentileUnsorted(values []int64, percentile float64) int64 {
+	length := len(values)
+	if length == 0 {
+		return 0
+	}
+
+	sortedValues := slices.Clone(values)
+
+	// 2. 升序排序
+	slices.Sort(sortedValues)
+
+	// 3. 与Percentile一致
+	index := int(math.Ceil(float64(length-1) * percentile))
+
+	if index < 0 {
+		index = 0
+	} else if index > length-1 {
+		index = length - 1
+	}
+
+	return sortedValues[index]
 }
