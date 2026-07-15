@@ -1331,3 +1331,48 @@ func (m *MaintenanceCoordinator) buildFindings(inputs *MaintenanceScanInputs, mo
 
 	return findings
 }
+
+func (m *MaintenanceCoordinator) buildDriftSnapshot(inputs *MaintenanceScanInputs, automationStates []AutomationRunState, promptBudget *MaintenancePromptBudgetSnapshot, previous *MaintenanceHistorySnapshot) *MaintenanceDriftSnapshot {
+	var providerRetries int64 = 0
+	var providerErrors int64 = 0
+	degradedAutomations := 0
+	quarantinedAutomations := 0
+	if inputs != nil {
+		for _, v := range inputs.ProviderRoutes {
+			providerRetries += v.Retries
+			providerErrors += v.Errors
+		}
+	}
+
+	for _, v := range automationStates {
+		if v.HealthState == "degraded" {
+			degradedAutomations++
+		}
+		if v.HealthState == "quarantined" {
+			quarantinedAutomations++
+		}
+	}
+	var promptDelta int64 = 0
+	if promptBudget != nil && previous != nil {
+		promptDelta = promptBudget.P95InputTokens - previous.Report.PromptBudget.P95InputTokens
+	}
+
+	mm := &MaintenanceDriftSnapshot{
+		ProviderRetries:        providerRetries,
+		ProviderErrors:         providerErrors,
+		DegradedAutomations:    degradedAutomations,
+		QuarantinedAutomations: quarantinedAutomations,
+		PromptP95Delta:         promptDelta,
+	}
+
+	if inputs != nil {
+		if inputs.RuntimeMetrics != nil {
+			mm.RetentionFailures = inputs.RuntimeMetrics.RetentionSweepFailures
+		}
+
+		mm.ChannelDriftCount = inputs.ChannelDriftCount
+		mm.PluginWarningCount = inputs.PluginWarningCount
+		mm.PluginErrorCount = inputs.PluginErrorCount
+	}
+	return mm
+}
