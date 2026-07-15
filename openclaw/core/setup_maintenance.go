@@ -1520,3 +1520,58 @@ func (m *MaintenanceCoordinator) Scan(ctx context.Context, config *GatewayConfig
 
 	return report, nil
 }
+
+func (m *MaintenanceCoordinator) Fix(ctx context.Context, config *GatewayConfig, request *MaintenanceFixRequest, inputs *MaintenanceScanInputs) (*MaintenanceFixResponse, error) {
+	if inputs == nil {
+		inputs = &MaintenanceScanInputs{}
+	}
+	memoryRoot, err := filepath.Abs(config.Memory.StoragePath)
+	if err != nil {
+		return nil, err
+	}
+
+	if err := os.MkdirAll(memoryRoot, 0755); err != nil {
+		return nil, err
+
+	}
+	var actions = []MaintenanceFixAction{}
+	var warnings = []string{}
+	var applyMode = m.normalizeApply(request.Apply)
+
+	if applyMode == "all" || applyMode == "retention" {
+		retentionAction, err := m.runRetentionFix(ctx, config, request.DryRun)
+		if err != nil {
+			warnings = append(warnings, fmt.Sprintf("Retention sweep could not run: %s", err.Error()))
+		} else {
+			actions = append(actions, *retentionAction)
+		}
+	}
+
+	if applyMode == "all" || applyMode == "metadata" {
+		metadataAction, err := m.pruneOrphanedMetadata(ctx, config, request.DryRun)
+		if err != nil {
+			warnings = append(warnings, fmt.Sprintf("Metadata pruning could not run: %s", err.Error()))
+		} else {
+			actions = append(actions, *metadataAction)
+		}
+	}
+
+	if applyMode == "all" || applyMode == "artifacts" {
+		action := m.pruneModelEvaluationArtifacts(config, request.DryRun)
+		actions = append(actions, *action)
+		var traceAction = m.prunePromptCacheTraceArtifacts(config, request.DryRun)
+		actions = append(actions, *traceAction)
+	}
+
+	report, err := m.Scan(ctx, config, inputs)
+	if err != nil {
+		return nil, err
+	}
+	return &MaintenanceFixResponse{
+		DryRun:      request.DryRun,
+		Success:     len(warnings) == 0,
+		Actions:     actions,
+		Warnings:    warnings,
+		Reliability: report.Reliability,
+	}, nil
+}
