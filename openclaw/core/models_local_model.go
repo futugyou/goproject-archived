@@ -246,8 +246,8 @@ type MaintenancePromptBudgetSnapshot struct {
 	HistoryTokens       int64 `json:"history_tokens"`
 	ToolOutputsTokens   int64 `json:"tool_outputs_tokens"`
 	UserInputTokens     int64 `json:"user_input_tokens"`
-	AgentsFileBytes     int   `json:"agents_file_bytes"`
-	SoulFileBytes       int   `json:"soul_file_bytes"`
+	AgentsFileBytes     int64 `json:"agents_file_bytes"`
+	SoulFileBytes       int64 `json:"soul_file_bytes"`
 	LoadedSkillCount    int   `json:"loaded_skill_count"`
 }
 

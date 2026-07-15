@@ -1376,3 +1376,44 @@ func (m *MaintenanceCoordinator) buildDriftSnapshot(inputs *MaintenanceScanInput
 	}
 	return mm
 }
+
+func (m *MaintenanceCoordinator) buildPromptBudgetSnapshot(recentTurns []TurnTokenUsageRecord, loadedSkills []SkillDefinition, agentsPath, soulPath string) *MaintenancePromptBudgetSnapshot {
+	count := len(recentTurns)
+	sortedInputs := make([]int64, 0, count)
+
+	var systemPromptSum int64 = 0
+	var skillsSum int64 = 0
+	var historySum int64 = 0
+	var toolOutputsSum int64 = 0
+	var userInputSum int64 = 0
+	for _, item := range recentTurns {
+		sortedInputs = append(sortedInputs, item.InputTokens)
+		systemPromptSum += item.EstimatedInputTokensByComponent.SystemPrompt
+		skillsSum += item.EstimatedInputTokensByComponent.Skills
+		historySum += item.EstimatedInputTokensByComponent.History
+		toolOutputsSum += item.EstimatedInputTokensByComponent.ToolOutputs
+		userInputSum += item.EstimatedInputTokensByComponent.UserInput
+	}
+
+	slices.Sort(sortedInputs)
+
+	var median = Percentile(sortedInputs, 0.50)
+	var p95 = Percentile(sortedInputs, 0.95)
+
+	result := &MaintenancePromptBudgetSnapshot{
+		RecentTurnsAnalyzed: int64(len(recentTurns)),
+		P50InputTokens:      median,
+		P95InputTokens:      p95,
+		SystemPromptTokens:  systemPromptSum / int64(count),
+		SkillsTokens:        skillsSum / int64(count),
+		HistoryTokens:       historySum / int64(count),
+		ToolOutputsTokens:   toolOutputsSum / int64(count),
+		UserInputTokens:     userInputSum / int64(count),
+
+		LoadedSkillCount: len(loadedSkills),
+	}
+
+	result.AgentsFileBytes = GetDirectorySize(agentsPath)
+	result.SoulFileBytes = GetDirectorySize(soulPath)
+	return result
+}
