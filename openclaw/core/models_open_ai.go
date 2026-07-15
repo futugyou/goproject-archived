@@ -12,7 +12,7 @@ type HealthResponse struct {
 }
 
 type OpenAiChatCompletionRequest struct {
-	Model       *string          `json:"model,omitempty"`
+	Model       string           `json:"model,omitempty"`
 	Messages    []*OpenAiMessage `json:"messages"`
 	Stream      bool             `json:"stream"`
 	Temperature *float32         `json:"temperature,omitempty"`
@@ -31,7 +31,7 @@ type OpenAiMessage struct {
 }
 
 type OpenAiMessageContent struct {
-	Text  *string                     `json:"-"`
+	Text  string                      `json:"-"`
 	Parts []*OpenAiMessageContentPart `json:"-"`
 }
 
@@ -42,9 +42,9 @@ func DefaultOpenAiMessageContent() *OpenAiMessageContent {
 }
 
 type OpenAiMessageContentPart struct {
-	Type     string  `json:"type"`
-	Text     *string `json:"text,omitempty"`
-	ImageUrl *string `json:"image_url,omitempty"`
+	Type     string `json:"type"`
+	Text     string `json:"text,omitempty"`
+	ImageUrl string `json:"image_url,omitempty"`
 }
 
 func DefaultOpenAiMessageContentPart() *OpenAiMessageContentPart {
@@ -55,10 +55,7 @@ func DefaultOpenAiMessageContentPart() *OpenAiMessageContentPart {
 
 func (c *OpenAiMessageContent) MarshalJSON() ([]byte, error) {
 	if len(c.Parts) == 0 {
-		if c.Text != nil {
-			return json.Marshal(*c.Text)
-		}
-		return json.Marshal("")
+		return json.Marshal(c.Text)
 	}
 
 	type ImageUrlWrapper struct {
@@ -74,14 +71,10 @@ func (c *OpenAiMessageContent) MarshalJSON() ([]byte, error) {
 	for i, part := range c.Parts {
 		ap := AliasPart{Type: part.Type}
 		if part.IsText() {
-			if part.Text != nil {
-				ap.Text = *part.Text
-			}
+			ap.Text = part.Text
 		} else if part.IsImage() {
 			urlStr := ""
-			if part.ImageUrl != nil {
-				urlStr = *part.ImageUrl
-			}
+			urlStr = part.ImageUrl
 			ap.ImageUrl = &ImageUrlWrapper{Url: urlStr}
 		}
 		aliasParts[i] = ap
@@ -91,15 +84,14 @@ func (c *OpenAiMessageContent) MarshalJSON() ([]byte, error) {
 
 func (c *OpenAiMessageContent) UnmarshalJSON(data []byte) error {
 	if len(data) == 0 || string(data) == "null" {
-		empty := ""
-		c.Text = &empty
+		c.Text = ""
 		c.Parts = nil
 		return nil
 	}
 
 	var str string
 	if err := json.Unmarshal(data, &str); err == nil {
-		c.Text = &str
+		c.Text = str
 		c.Parts = nil
 		return nil
 	}
@@ -117,27 +109,27 @@ func (c *OpenAiMessageContent) UnmarshalJSON(data []byte) error {
 
 		if typeStr == "text" || typeStr == "input_text" {
 			if textVal, ok := raw["text"].(string); ok {
-				part.Text = &textVal
+				part.Text = textVal
 			}
 			c.Parts = append(c.Parts, part)
 			continue
 		}
 
 		if typeStr == "image_url" || typeStr == "input_image" {
-			var imageUrl *string
+			var imageUrl string
 
 			if imgUrlProp, ok := raw["image_url"]; ok {
 				if strVal, ok := imgUrlProp.(string); ok {
-					imageUrl = &strVal
+					imageUrl = strVal
 				} else if mapVal, ok := imgUrlProp.(map[string]interface{}); ok {
 					if urlVal, ok := mapVal["url"].(string); ok {
-						imageUrl = &urlVal
+						imageUrl = urlVal
 					}
 				}
 			} else if imgProp, ok := raw["image"].(string); ok {
-				imageUrl = &imgProp
+				imageUrl = imgProp
 			} else if urlProp, ok := raw["url"].(string); ok {
-				imageUrl = &urlProp
+				imageUrl = urlProp
 			}
 
 			part.ImageUrl = imageUrl
@@ -157,20 +149,17 @@ func (p *OpenAiMessageContentPart) IsImage() bool {
 
 func (c *OpenAiMessageContent) ToPromptText() string {
 	if len(c.Parts) == 0 {
-		if c.Text != nil {
-			return *c.Text
-		}
-		return ""
+		return c.Text
 	}
 
 	var lines []string
 	for _, part := range c.Parts {
-		if part.IsText() && part.Text != nil && strings.TrimSpace(*part.Text) != "" {
-			lines = append(lines, *part.Text)
+		if part.IsText() && strings.TrimSpace(part.Text) != "" {
+			lines = append(lines, part.Text)
 			continue
 		}
-		if part.IsImage() && part.ImageUrl != nil && strings.TrimSpace(*part.ImageUrl) != "" {
-			lines = append(lines, "[IMAGE_URL:"+*part.ImageUrl+"]")
+		if part.IsImage() && strings.TrimSpace(part.ImageUrl) != "" {
+			lines = append(lines, "[IMAGE_URL:"+part.ImageUrl+"]")
 		}
 	}
 	return strings.TrimSpace(strings.Join(lines, "\n"))
@@ -194,7 +183,7 @@ func DefaultOpenAiChatCompletionResponse() *OpenAiChatCompletionResponse {
 type OpenAiChoice struct {
 	Index        int                    `json:"index"`
 	Message      *OpenAiResponseMessage `json:"message"`
-	FinishReason *string                `json:"finish_reason,omitempty"`
+	FinishReason string                 `json:"finish_reason,omitempty"`
 }
 
 type OpenAiResponseMessage struct {
@@ -225,12 +214,12 @@ func DefaultOpenAiStreamChunk() *OpenAiStreamChunk {
 type OpenAiStreamChoice struct {
 	Index        int          `json:"index"`
 	Delta        *OpenAiDelta `json:"delta"`
-	FinishReason *string      `json:"finish_reason,omitempty"`
+	FinishReason string       `json:"finish_reason,omitempty"`
 }
 
 type OpenAiDelta struct {
-	Role       *string                `json:"role,omitempty"`
-	Content    *string                `json:"content,omitempty"`
+	Role       string                 `json:"role,omitempty"`
+	Content    string                 `json:"content,omitempty"`
 	ToolCalls  []*OpenAiToolCallDelta `json:"tool_calls,omitempty"`
 	ToolDelta  *OpenAiToolOutputDelta `json:"openclaw_tool_delta,omitempty"`
 	ToolResult *OpenAiToolResultDelta `json:"openclaw_claw_result,omitempty"`
@@ -238,7 +227,7 @@ type OpenAiDelta struct {
 
 type OpenAiToolCallDelta struct {
 	Index    int                      `json:"index"`
-	Id       *string                  `json:"id,omitempty"`
+	Id       string                   `json:"id,omitempty"`
 	Type     string                   `json:"type"`
 	Function *OpenAiFunctionCallDelta `json:"function,omitempty"`
 }
@@ -250,18 +239,18 @@ func DefaultOpenAiToolCallDelta() *OpenAiToolCallDelta {
 }
 
 type OpenAiFunctionCallDelta struct {
-	Name      *string `json:"name,omitempty"`
-	Arguments *string `json:"arguments,omitempty"`
+	Name      string `json:"name,omitempty"`
+	Arguments string `json:"arguments,omitempty"`
 }
 
 type OpenAiToolResultDelta struct {
-	CallId         *string `json:"call_id,omitempty"`
-	ToolName       string  `json:"tool_name"`
-	Content        string  `json:"content"`
-	ResultStatus   string  `json:"result_status"`
-	FailureCode    *string `json:"failure_code,omitempty"`
-	FailureMessage *string `json:"failure_message,omitempty"`
-	NextStep       *string `json:"next_step,omitempty"`
+	CallId         string `json:"call_id,omitempty"`
+	ToolName       string `json:"tool_name"`
+	Content        string `json:"content"`
+	ResultStatus   string `json:"result_status"`
+	FailureCode    string `json:"failure_code,omitempty"`
+	FailureMessage string `json:"failure_message,omitempty"`
+	NextStep       string `json:"next_step,omitempty"`
 }
 
 func DefaultOpenAiToolResultDelta() *OpenAiToolResultDelta {
@@ -271,9 +260,9 @@ func DefaultOpenAiToolResultDelta() *OpenAiToolResultDelta {
 }
 
 type OpenAiToolOutputDelta struct {
-	CallId   *string `json:"call_id,omitempty"`
-	ToolName string  `json:"tool_name"`
-	Content  string  `json:"content"`
+	CallId   string `json:"call_id,omitempty"`
+	ToolName string `json:"tool_name"`
+	Content  string `json:"content"`
 }
 
 const (
@@ -288,8 +277,8 @@ const (
 )
 
 type OpenAiResponseRequest struct {
-	Model           *string  `json:"model,omitempty"`
-	Input           *string  `json:"input,omitempty"` // String prompt or structured messages.
+	Model           string   `json:"model,omitempty"`
+	Input           string   `json:"input,omitempty"` // String prompt or structured messages.
 	Stream          bool     `json:"stream"`
 	Temperature     *float32 `json:"temperature,omitempty"`
 	MaxOutputTokens *int     `json:"max_output_tokens,omitempty"`
@@ -299,7 +288,7 @@ type OpenAiResponseResponse struct {
 	Id        string                 `json:"id"`
 	Object    string                 `json:"object"`
 	CreatedAt *int64                 `json:"created_at,omitempty"`
-	Model     *string                `json:"model,omitempty"`
+	Model     string                 `json:"model,omitempty"`
 	Status    string                 `json:"status"`
 	Output    []OpenAiResponseOutput `json:"output"`
 	Usage     *OpenAiUsage           `json:"usage,omitempty"`
@@ -309,13 +298,13 @@ type OpenAiResponseResponse struct {
 type OpenAiResponseOutput struct {
 	Id         string                  `json:"id"`
 	Type       string                  `json:"type"`
-	Status     *string                 `json:"status,omitempty"`
-	Role       *string                 `json:"role,omitempty"`
+	Status     string                  `json:"status,omitempty"`
+	Role       string                  `json:"role,omitempty"`
 	Content    []OpenAiResponseContent `json:"content,omitempty"`
-	CallId     *string                 `json:"call_id,omitempty"`
-	Name       *string                 `json:"name,omitempty"`
-	Arguments  *string                 `json:"arguments,omitempty"`
-	OutputText *string                 `json:"output,omitempty"`
+	CallId     string                  `json:"call_id,omitempty"`
+	Name       string                  `json:"name,omitempty"`
+	Arguments  string                  `json:"arguments,omitempty"`
+	OutputText string                  `json:"output,omitempty"`
 }
 
 type OpenAiResponseContent struct {
@@ -337,13 +326,13 @@ type OpenAiResponseStreamResponse struct {
 type OpenAiResponseStreamItem struct {
 	Id        string                  `json:"id"`
 	Type      string                  `json:"type"`
-	Status    *string                 `json:"status,omitempty"`
-	Role      *string                 `json:"role,omitempty"`
+	Status    string                  `json:"status,omitempty"`
+	Role      string                  `json:"role,omitempty"`
 	Content   []OpenAiResponseContent `json:"content,omitempty"`
-	CallId    *string                 `json:"call_id,omitempty"`
-	Name      *string                 `json:"name,omitempty"`
-	Arguments *string                 `json:"arguments,omitempty"`
-	Output    *string                 `json:"output,omitempty"`
+	CallId    string                  `json:"call_id,omitempty"`
+	Name      string                  `json:"name,omitempty"`
+	Arguments string                  `json:"arguments,omitempty"`
+	Output    string                  `json:"output,omitempty"`
 }
 
 type OpenAiResponseCreatedEvent struct {
@@ -528,11 +517,11 @@ func DefaultOpenAiResponseFunctionCallArgumentsDeltaEvent() *OpenAiResponseFunct
 
 type OpenAiResponseFunctionCallArgumentsDoneEvent struct {
 	BaseEvent
-	Type      string  `json:"type"`
-	ItemId    string  `json:"item_id"`
-	CallId    *string `json:"call_id,omitempty"`
-	Name      *string `json:"name,omitempty"`
-	Arguments string  `json:"arguments"`
+	Type      string `json:"type"`
+	ItemId    string `json:"item_id"`
+	CallId    string `json:"call_id,omitempty"`
+	Name      string `json:"name,omitempty"`
+	Arguments string `json:"arguments"`
 }
 
 func DefaultOpenAiResponseFunctionCallArgumentsDoneEvent() *OpenAiResponseFunctionCallArgumentsDoneEvent {
@@ -543,11 +532,11 @@ func DefaultOpenAiResponseFunctionCallArgumentsDoneEvent() *OpenAiResponseFuncti
 
 type OpenAiResponseToolOutputDeltaEvent struct {
 	BaseEvent
-	Type     string  `json:"type"`
-	ItemId   string  `json:"item_id"`
-	CallId   *string `json:"call_id,omitempty"`
-	ToolName string  `json:"tool_name"`
-	Delta    string  `json:"delta"`
+	Type     string `json:"type"`
+	ItemId   string `json:"item_id"`
+	CallId   string `json:"call_id,omitempty"`
+	ToolName string `json:"tool_name"`
+	Delta    string `json:"delta"`
 }
 
 func DefaultOpenAiResponseToolOutputDeltaEvent() *OpenAiResponseToolOutputDeltaEvent {
@@ -558,15 +547,15 @@ func DefaultOpenAiResponseToolOutputDeltaEvent() *OpenAiResponseToolOutputDeltaE
 
 type OpenAiResponseToolResultEvent struct {
 	BaseEvent
-	Type           string  `json:"type"`
-	ItemId         string  `json:"item_id"`
-	CallId         *string `json:"call_id,omitempty"`
-	ToolName       string  `json:"tool_name"`
-	Content        string  `json:"content"`
-	ResultStatus   string  `json:"result_status"`
-	FailureCode    *string `json:"failure_code,omitempty"`
-	FailureMessage *string `json:"failure_message,omitempty"`
-	NextStep       *string `json:"next_step,omitempty"`
+	Type           string `json:"type"`
+	ItemId         string `json:"item_id"`
+	CallId         string `json:"call_id,omitempty"`
+	ToolName       string `json:"tool_name"`
+	Content        string `json:"content"`
+	ResultStatus   string `json:"result_status"`
+	FailureCode    string `json:"failure_code,omitempty"`
+	FailureMessage string `json:"failure_message,omitempty"`
+	NextStep       string `json:"next_step,omitempty"`
 }
 
 func DefaultOpenAiResponseToolResultEvent() *OpenAiResponseToolResultEvent {

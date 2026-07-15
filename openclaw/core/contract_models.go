@@ -27,13 +27,13 @@ func DefaultVerificationPolicy() *VerificationPolicy {
 }
 
 type VerificationCheckDefinition struct {
-	ID                 string  `json:"id"`
-	Kind               string  `json:"kind"`
-	Path               *string `json:"path,omitempty"`
-	URL                *string `json:"url,omitempty"`
-	Contains           *string `json:"contains,omitempty"`
-	ExpectedStatusCode *int    `json:"expected_status_code,omitempty"`
-	Prompt             *string `json:"prompt,omitempty"`
+	ID                 string `json:"id"`
+	Kind               string `json:"kind"`
+	Path               string `json:"path,omitempty"`
+	URL                string `json:"url,omitempty"`
+	Contains           string `json:"contains,omitempty"`
+	ExpectedStatusCode *int   `json:"expected_status_code,omitempty"`
+	Prompt             string `json:"prompt,omitempty"`
 }
 
 type VerificationCheckResult struct {
@@ -55,8 +55,8 @@ func DefaultVerificationCheckResult() *VerificationCheckResult {
 // pre-flight capability validation, USD cost budgets, and scoped tool access.
 type ContractPolicy struct {
 	ID                  string              `json:"id"`                              // Unique contract identifier (e.g. "ctr_" + guid prefix).
-	Name                *string             `json:"name,omitempty"`                  // Human-readable label for this contract.
-	RequiredRuntimeMode *string             `json:"required_runtime_mode,omitempty"` // Required runtime mode (null = any, "aot", "jit").
+	Name                string              `json:"name,omitempty"`                  // Human-readable label for this contract.
+	RequiredRuntimeMode string              `json:"required_runtime_mode,omitempty"` // Required runtime mode (null = any, "aot", "jit").
 	RequestedTools      []string            `json:"requested_tools"`                 // Tools this contract expects to use.
 	ScopedCapabilities  []*ScopedCapability `json:"scoped_capabilities"`             // Path-scoped tool restrictions.
 	MaxCostUSD          float64             `json:"max_cost_usd"`                    // Maximum USD spend for the session. 0 = unlimited.
@@ -64,7 +64,7 @@ type ContractPolicy struct {
 	MaxTokens           int64               `json:"max_tokens"`                      // Maximum total tokens (input + output). 0 = unlimited.
 	MaxToolCalls        int                 `json:"max_tool_calls"`                  // Maximum number of tool calls. 0 = unlimited.
 	MaxRuntimeSeconds   int                 `json:"max_runtime_seconds"`             // Maximum runtime in seconds. 0 = unlimited.
-	CreatedBy           *string             `json:"created_by,omitempty"`            // Who created this contract (operator, API caller, etc.).
+	CreatedBy           string              `json:"created_by,omitempty"`            // Who created this contract (operator, API caller, etc.).
 	Verification        *VerificationPolicy `json:"verification,omitempty"`          // Optional post-run verification checks.
 	CreatedAtUTC        time.Time           `json:"created_at_utc"`
 }
@@ -96,7 +96,7 @@ type ContractValidationResult struct {
 	DeniedTools          []string `json:"denied_tools"`
 	Errors               []string `json:"errors"`
 	Warnings             []string `json:"warnings"`
-	EffectiveRuntimeMode *string  `json:"effective_runtime_mode,omitempty"`
+	EffectiveRuntimeMode string   `json:"effective_runtime_mode,omitempty"`
 }
 
 func DefaultContractValidationResult() *ContractValidationResult {
@@ -121,7 +121,7 @@ type ContractExecutionSnapshot struct {
 	EndedAtUTC                 *time.Time                 `json:"ended_at_utc,omitempty"`
 	LifecycleState             string                     `json:"lifecycle_state"`
 	VerificationStatus         string                     `json:"verification_status"`
-	VerificationSummary        *string                    `json:"verification_summary,omitempty"`
+	VerificationSummary        string                     `json:"verification_summary,omitempty"`
 	VerificationCompletedAtUTC *time.Time                 `json:"verification_completed_at_utc,omitempty"`
 	VerificationChecks         []*VerificationCheckResult `json:"verification_checks"`
 }

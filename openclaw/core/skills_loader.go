@@ -201,9 +201,9 @@ func (s *SkillLoader) ParseSkillContent(content, skillDir string, source SkillSo
 		Composition:            composition,
 		UserInvocable:          userInvocable,
 		DisableModelInvocation: disableModelInvocation,
-		CommandDispatch:        &commandDispatch,
-		CommandTool:            &commandTool,
-		CommandArgMode:         &commandArgMode,
+		CommandDispatch:        commandDispatch,
+		CommandTool:            commandTool,
+		CommandArgMode:         commandArgMode,
 		Resources:              resources,
 	}, nil
 }
@@ -881,19 +881,19 @@ func (s *SkillLoader) ParseComposition(jsonStr string) (*MetaSkillComposition, s
 			}
 		}
 
-		var skill *string
+		var skill string
 		if skillRaw, ok := stepElement["skill"]; ok {
 			var s string
 			if err := json.Unmarshal(skillRaw, &s); err == nil {
-				skill = &s
+				skill = s
 			}
 		}
 
-		var tool *string
+		var tool string
 		if toolRaw, ok := stepElement["tool"]; ok {
 			var t string
 			if err := json.Unmarshal(toolRaw, &t); err == nil {
-				tool = &t
+				tool = t
 			}
 		}
 
@@ -906,13 +906,13 @@ func (s *SkillLoader) ParseComposition(jsonStr string) (*MetaSkillComposition, s
 			withJson = string(withElement)
 		}
 
-		var when *string
+		var when string
 		if whenElement, ok := stepElement["when"]; ok {
 			var w string
 			if err := json.Unmarshal(whenElement, &w); err != nil || IsBlank(w) {
 				return nil, "invalid_when_expression"
 			}
-			when = &w
+			when = w
 		}
 
 		var stepToolArgsJson, errCode string
@@ -993,20 +993,20 @@ func (s *SkillLoader) ParseComposition(jsonStr string) (*MetaSkillComposition, s
 			Kind:                kind,
 			Skill:               skill,
 			Tool:                tool,
-			SkillExecEntrypoint: &skillExecEntrypoint,
+			SkillExecEntrypoint: skillExecEntrypoint,
 			SkillExecArgs:       skillExecArgs,
-			SkillExecStdin:      &skillExecStdin,
-			SkillExecCwd:        &skillExecCwd,
-			SkillExecParseMode:  &skillExecParseMode,
-			WithJSON:            &withJson,
+			SkillExecStdin:      skillExecStdin,
+			SkillExecCwd:        skillExecCwd,
+			SkillExecParseMode:  skillExecParseMode,
+			WithJSON:            withJson,
 			When:                when,
-			ToolArgsJSON:        &stepToolArgsJson,
+			ToolArgsJSON:        stepToolArgsJson,
 			ToolAllowlist:       toolAllowlist,
 			OutputChoices:       outputChoices,
 			Clarify:             clarify,
 			Routes:              routes,
 			DependsOn:           dependsOn,
-			OnFailure:           &onFailure,
+			OnFailure:           onFailure,
 			TimeoutSeconds:      &timeoutSeconds,
 			Retry:               retry,
 			OutputContract:      outputContract,
@@ -1366,25 +1366,25 @@ func (s *SkillLoader) ValidateComposition(steps []MetaSkillStepDefinition) (bool
 		}
 
 		if strings.EqualFold(step.Kind, "tool_call") {
-			if IsBlankP(step.Tool) || !IsBlankP(step.Skill) {
+			if IsBlank(step.Tool) || !IsBlank(step.Skill) {
 				return false, "invalid_step_kind_fields"
 			}
 		}
 
 		if strings.EqualFold(step.Kind, "skill_exec") {
-			if IsBlankP(step.Skill) || IsBlankP(step.SkillExecEntrypoint) || !IsBlankP(step.Tool) {
+			if IsBlank(step.Skill) || IsBlank(step.SkillExecEntrypoint) || !IsBlank(step.Tool) {
 				return false, "invalid_step_kind_fields"
 			}
 		}
 
 		if strings.EqualFold(step.Kind, "agent") {
-			if !IsBlankP(step.Tool) {
+			if !IsBlank(step.Tool) {
 				return false, "invalid_step_kind_fields"
 			}
 		}
 
 		if strings.EqualFold(step.Kind, "llm_chat") || strings.EqualFold(step.Kind, "llm_classify") || strings.EqualFold(step.Kind, "user_input") {
-			if !IsBlankP(step.Skill) || !IsBlankP(step.Tool) {
+			if !IsBlank(step.Skill) || !IsBlank(step.Tool) {
 				return false, "invalid_step_kind_fields"
 			}
 		}
@@ -1438,10 +1438,10 @@ func (s *SkillLoader) ValidateFailureBranches(steps []MetaSkillStepDefinition, i
 
 	// 第一轮循环：验证 OnFailure 的合法性并收集 fallback 节点
 	for _, step := range steps {
-		if step.OnFailure == nil || strings.TrimSpace(*step.OnFailure) == "" {
+		if strings.TrimSpace(step.OnFailure) == "" {
 			continue
 		}
-		onFailureTrimmed := strings.TrimSpace(*step.OnFailure)
+		onFailureTrimmed := strings.TrimSpace(step.OnFailure)
 		if onFailureTrimmed == "" {
 			continue
 		}
@@ -1455,7 +1455,7 @@ func (s *SkillLoader) ValidateFailureBranches(steps []MetaSkillStepDefinition, i
 
 		// 2. 替代节点（OnFailure 节点）自身不能有 OnFailure 且不能有依赖
 		substitute, exists := stepById[onFailureLower]
-		if !exists || (substitute.OnFailure != nil && strings.TrimSpace(*substitute.OnFailure) != "") || len(substitute.DependsOn) > 0 {
+		if !exists || (strings.TrimSpace(substitute.OnFailure) != "") || len(substitute.DependsOn) > 0 {
 			return false, "invalid_on_failure"
 		}
 
@@ -1493,12 +1493,12 @@ func (s *SkillLoader) ValidateFailureBranches(steps []MetaSkillStepDefinition, i
 	return true, ""
 }
 
-func (s *SkillLoader) containsFallbackTargetInLegacyClassifyRoutes(withJson *string, fallbackTargets map[string]bool) bool {
-	if IsBlankP(withJson) {
+func (s *SkillLoader) containsFallbackTargetInLegacyClassifyRoutes(withJson string, fallbackTargets map[string]bool) bool {
+	if IsBlank(withJson) {
 		return false
 	}
 	var doc map[string]any
-	if err := json.Unmarshal([]byte(*withJson), &doc); err != nil {
+	if err := json.Unmarshal([]byte(withJson), &doc); err != nil {
 		return false
 	}
 	routeRaw, exists := doc["route"]
@@ -1625,13 +1625,13 @@ func (s *SkillLoader) HasDependencyCycle(steps []MetaSkillStepDefinition) bool {
 	return false
 }
 
-func (s *SkillLoader) ValidateClassifyStep(withJSON *string, knownStepIds map[string]bool) bool {
-	if withJSON == nil || strings.TrimSpace(*withJSON) == "" {
+func (s *SkillLoader) ValidateClassifyStep(withJSON string, knownStepIds map[string]bool) bool {
+	if strings.TrimSpace(withJSON) == "" {
 		return false
 	}
 
 	var root map[string]any
-	if err := json.Unmarshal([]byte(*withJSON), &root); err != nil {
+	if err := json.Unmarshal([]byte(withJSON), &root); err != nil {
 		return false
 	}
 
@@ -1972,13 +1972,13 @@ func (s *SkillLoader) TryParseClarify(stepElement map[string]json.RawMessage, wi
 		timeoutSeconds = &parsedTimeout
 	}
 
-	var skipIf *string
+	var skipIf string
 	if skipIfRaw, exists := clarifyObj["skip_if"]; exists {
 		var skipIfStr string
 		if err := json.Unmarshal(skipIfRaw, &skipIfStr); err != nil || strings.TrimSpace(skipIfStr) == "" {
 			return nil, "invalid_clarify_schema", false
 		}
-		skipIf = &skipIfStr
+		skipIf = skipIfStr
 	}
 
 	fields := []MetaClarifyField{}
@@ -2479,7 +2479,7 @@ func (s *SkillLoader) DiagnoseSkillParseFailure(content string) string {
 	return "parse_failed"
 }
 
-func (s *SkillLoader) LoadAll(config *SkillsConfig, workspacePath *string, pluginSkillDirs []string) []*SkillDefinition {
+func (s *SkillLoader) LoadAll(config *SkillsConfig, workspacePath string, pluginSkillDirs []string) []*SkillDefinition {
 	if !config.Enabled {
 		return []*SkillDefinition{}
 	}
@@ -2531,8 +2531,8 @@ func (s *SkillLoader) LoadAll(config *SkillsConfig, workspacePath *string, plugi
 	}
 
 	// 5. Workspace skills (最高优先级)
-	if config.Load.IncludeWorkspace && workspacePath != nil && strings.TrimSpace(*workspacePath) != "" {
-		wsSkillsDir := filepath.Join(*workspacePath, "skills")
+	if config.Load.IncludeWorkspace && strings.TrimSpace(workspacePath) != "" {
+		wsSkillsDir := filepath.Join(workspacePath, "skills")
 		if DirectoryExists(wsSkillsDir) {
 			s.ScanDirectory(wsSkillsDir, SkillSource_Workspace, allSkills, scanSubdirectories)
 		}

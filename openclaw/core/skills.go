@@ -389,8 +389,8 @@ func (s SkillPromptBuilder) BuildSummary(skills []SkillDefinition) string {
 		if skill.Metadata.Always {
 			flags = append(flags, "always")
 		}
-		if skill.CommandDispatch != nil {
-			flags = append(flags, fmt.Sprintf("dispatch:%s", *skill.CommandDispatch))
+		if skill.CommandDispatch != "" {
+			flags = append(flags, fmt.Sprintf("dispatch:%s", skill.CommandDispatch))
 		}
 		if skill.Kind == SkillKind_Meta {
 			flags = append(flags, "kind:meta")
@@ -580,8 +580,8 @@ func (m *MetaInvokeTool) Execute(ctx context.Context, argumentsJson string) (str
 
 	var payload = MetaInvokeIntent{
 		Skill:         matched.Name,
-		Input:         &input,
-		FinalTextMode: &matched.FinalTextMode,
+		Input:         input,
+		FinalTextMode: matched.FinalTextMode,
 		MetaPriority:  &matched.MetaPriority,
 	}
 	steps := []MetaInvokeStepSummary{}
@@ -636,8 +636,8 @@ func (m *MetaInvokeTool) tryParseArguments(jsonStr string) (result bool, skill s
 
 type MetaInvokeIntent struct {
 	Skill         string                  `json:"skill"`
-	Input         *string                 `json:"input,omitempty"`
-	FinalTextMode *string                 `json:"final_text_mode,omitempty"`
+	Input         string                  `json:"input,omitempty"`
+	FinalTextMode string                  `json:"final_text_mode,omitempty"`
 	MetaPriority  *int                    `json:"meta_priority,omitempty"`
 	Steps         []MetaInvokeStepSummary `json:"steps"`
 }

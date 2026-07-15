@@ -42,9 +42,9 @@ const (
 
 type SharedHarnessState struct {
 	ID                  string                      `json:"id"`
-	SessionID           *string                     `json:"session_id,omitempty"`
-	ParentSessionID     *string                     `json:"parent_session_id,omitempty"`
-	HarnessContractID   *string                     `json:"harness_contract_id,omitempty"`
+	SessionID           string                      `json:"session_id,omitempty"`
+	ParentSessionID     string                      `json:"parent_session_id,omitempty"`
+	HarnessContractID   string                      `json:"harness_contract_id,omitempty"`
 	CreatedAtUtc        time.Time                   `json:"created_at_utc"`
 	UpdatedAtUtc        time.Time                   `json:"updated_at_utc"`
 	Status              string                      `json:"status"`
@@ -86,17 +86,17 @@ func NewDefaultSharedHarnessState() SharedHarnessState {
 
 type HarnessParticipant struct {
 	ID                  string     `json:"id"`
-	AgentID             *string    `json:"agent_id,omitempty"`
-	SessionID           *string    `json:"session_id,omitempty"`
+	AgentID             string     `json:"agent_id,omitempty"`
+	SessionID           string     `json:"session_id,omitempty"`
 	Role                string     `json:"role"`
-	DisplayName         *string    `json:"display_name,omitempty"`
-	ModelProfileID      *string    `json:"model_profile_id,omitempty"`
-	ToolPreset          *string    `json:"tool_preset,omitempty"`
+	DisplayName         string     `json:"display_name,omitempty"`
+	ModelProfileID      string     `json:"model_profile_id,omitempty"`
+	ToolPreset          string     `json:"tool_preset,omitempty"`
 	StartedAtUtc        time.Time  `json:"started_at_utc"`
 	CompletedAtUtc      *time.Time `json:"completed_at_utc,omitempty"`
 	Status              string     `json:"status"`
-	ParentParticipantID *string    `json:"parent_participant_id,omitempty"`
-	Notes               *string    `json:"notes,omitempty"`
+	ParentParticipantID string     `json:"parent_participant_id,omitempty"`
+	Notes               string     `json:"notes,omitempty"`
 }
 
 func NewDefaultHarnessParticipant() HarnessParticipant {
@@ -109,19 +109,19 @@ func NewDefaultHarnessParticipant() HarnessParticipant {
 
 type HarnessStateAction struct {
 	ID                  string                      `json:"id"`
-	ParticipantID       *string                     `json:"participant_id,omitempty"`
+	ParticipantID       string                      `json:"participant_id,omitempty"`
 	Title               string                      `json:"title"`
-	Summary             *string                     `json:"summary,omitempty"`
+	Summary             string                      `json:"summary,omitempty"`
 	Status              string                      `json:"status"`
-	ToolName            *string                     `json:"tool_name,omitempty"`
+	ToolName            string                      `json:"tool_name,omitempty"`
 	ReadSet             []HarnessResourceRef        `json:"read_set"`
 	WriteSet            []HarnessResourceRef        `json:"write_set"`
 	Assumptions         []HarnessAssumption         `json:"assumptions"`
 	VersionDependencies []HarnessVersionDependency  `json:"version_dependencies"`
 	VerifierObligations []HarnessVerifierObligation `json:"verifier_obligations"`
-	EvidenceBundleID    *string                     `json:"evidence_bundle_id,omitempty"`
-	HarnessContractID   *string                     `json:"harness_contract_id,omitempty"`
-	RiskLevel           *string                     `json:"risk_level,omitempty"`
+	EvidenceBundleID    string                      `json:"evidence_bundle_id,omitempty"`
+	HarnessContractID   string                      `json:"harness_contract_id,omitempty"`
+	RiskLevel           string                      `json:"risk_level,omitempty"`
 	StartedAtUtc        time.Time                   `json:"started_at_utc"`
 	CompletedAtUtc      *time.Time                  `json:"completed_at_utc,omitempty"`
 }
@@ -151,15 +151,15 @@ func NewDefaultHarnessReadWriteSet() HarnessReadWriteSet {
 }
 
 type HarnessResourceRef struct {
-	Kind        string  `json:"kind"`
-	Path        *string `json:"path,omitempty"`
-	Key         *string `json:"key,omitempty"`
-	ID          *string `json:"id,omitempty"`
-	Uri         *string `json:"uri,omitempty"`
-	Description *string `json:"description,omitempty"`
-	Scope       *string `json:"scope,omitempty"`
-	Version     *string `json:"version,omitempty"`
-	IsSensitive bool    `json:"is_sensitive"`
+	Kind        string `json:"kind"`
+	Path        string `json:"path,omitempty"`
+	Key         string `json:"key,omitempty"`
+	ID          string `json:"id,omitempty"`
+	Uri         string `json:"uri,omitempty"`
+	Description string `json:"description,omitempty"`
+	Scope       string `json:"scope,omitempty"`
+	Version     string `json:"version,omitempty"`
+	IsSensitive bool   `json:"is_sensitive"`
 }
 
 func NewDefaultHarnessResourceRef() HarnessResourceRef {
@@ -170,19 +170,19 @@ func NewDefaultHarnessResourceRef() HarnessResourceRef {
 }
 
 type HarnessAssumption struct {
-	ID               string  `json:"id"`
-	Key              *string `json:"key,omitempty"`
-	Value            *string `json:"value,omitempty"`
-	Text             string  `json:"text"`
-	Verified         bool    `json:"verified"`
-	EvidenceBundleID *string `json:"evidence_bundle_id,omitempty"`
+	ID               string `json:"id"`
+	Key              string `json:"key,omitempty"`
+	Value            string `json:"value,omitempty"`
+	Text             string `json:"text"`
+	Verified         bool   `json:"verified"`
+	EvidenceBundleID string `json:"evidence_bundle_id,omitempty"`
 }
 
 type HarnessVersionDependency struct {
 	ID          string              `json:"id"`
 	Resource    *HarnessResourceRef `json:"resource,omitempty"`
-	Version     *string             `json:"version,omitempty"`
-	Description *string             `json:"description,omitempty"`
+	Version     string              `json:"version,omitempty"`
+	Description string              `json:"description,omitempty"`
 	Required    bool                `json:"required"`
 }
 
@@ -195,12 +195,12 @@ func NewDefaultHarnessVersionDependency() HarnessVersionDependency {
 type HarnessVerifierObligation struct {
 	ID               string              `json:"id"`
 	Title            string              `json:"title"`
-	Verifier         *string             `json:"verifier,omitempty"`
+	Verifier         string              `json:"verifier,omitempty"`
 	Required         bool                `json:"required"`
 	Resource         *HarnessResourceRef `json:"resource,omitempty"`
 	Status           string              `json:"status"`
-	Summary          *string             `json:"summary,omitempty"`
-	EvidenceBundleID *string             `json:"evidence_bundle_id,omitempty"`
+	Summary          string              `json:"summary,omitempty"`
+	EvidenceBundleID string              `json:"evidence_bundle_id,omitempty"`
 }
 
 func NewDefaultHarnessVerifierObligation() HarnessVerifierObligation {
@@ -220,7 +220,7 @@ type HarnessConflict struct {
 	Policy         string               `json:"policy"`
 	Severity       string               `json:"severity"`
 	Status         string               `json:"status"`
-	Recommendation *string              `json:"recommendation,omitempty"`
+	Recommendation string               `json:"recommendation,omitempty"`
 }
 
 func NewDefaultHarnessConflict() HarnessConflict {
@@ -235,11 +235,11 @@ func NewDefaultHarnessConflict() HarnessConflict {
 }
 
 type SharedHarnessStateListQuery struct {
-	SessionID         *string    `json:"session_id,omitempty"`
-	ParentSessionID   *string    `json:"parent_session_id,omitempty"`
-	HarnessContractID *string    `json:"harness_contract_id,omitempty"`
-	Status            *string    `json:"status,omitempty"`
-	Tag               *string    `json:"tag,omitempty"`
+	SessionID         string     `json:"session_id,omitempty"`
+	ParentSessionID   string     `json:"parent_session_id,omitempty"`
+	HarnessContractID string     `json:"harness_contract_id,omitempty"`
+	Status            string     `json:"status,omitempty"`
+	Tag               string     `json:"tag,omitempty"`
 	CreatedFromUtc    *time.Time `json:"created_from_utc,omitempty"`
 	CreatedToUtc      *time.Time `json:"created_to_utc,omitempty"`
 	Limit             int        `json:"limit"`
@@ -269,5 +269,5 @@ type SharedHarnessStateMutationResponse struct {
 	Success bool                `json:"success"`
 	State   *SharedHarnessState `json:"state,omitempty"`
 	Message string              `json:"message"`
-	Error   *string             `json:"error,omitempty"`
+	Error   string              `json:"error,omitempty"`
 }

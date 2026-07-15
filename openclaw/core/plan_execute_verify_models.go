@@ -57,14 +57,14 @@ type PlanExecuteVerifyRun struct {
 	Id                string                     `json:"id"`
 	Status            string                     `json:"status"`
 	Decision          string                     `json:"decision"`
-	HarnessContractId *string                    `json:"harness_contract_id,omitempty"`
-	EvidenceBundleId  *string                    `json:"evidence_bundle_id,omitempty"`
-	SourceSessionId   *string                    `json:"source_session_id,omitempty"`
-	ActorId           *string                    `json:"actor_id,omitempty"`
-	ChannelId         *string                    `json:"channel_id,omitempty"`
-	SenderId          *string                    `json:"sender_id,omitempty"`
+	HarnessContractId string                     `json:"harness_contract_id,omitempty"`
+	EvidenceBundleId  string                     `json:"evidence_bundle_id,omitempty"`
+	SourceSessionId   string                     `json:"source_session_id,omitempty"`
+	ActorId           string                     `json:"actor_id,omitempty"`
+	ChannelId         string                     `json:"channel_id,omitempty"`
+	SenderId          string                     `json:"sender_id,omitempty"`
 	Goal              string                     `json:"goal"`
-	ToolName          *string                    `json:"tool_name,omitempty"`
+	ToolName          string                     `json:"tool_name,omitempty"`
 	RiskLevel         string                     `json:"risk_level"`
 	ApprovalRequired  bool                       `json:"approval_required"`
 	Approved          bool                       `json:"approved"`
@@ -128,12 +128,12 @@ func DefaultHarnessVerificationResult() HarnessVerificationResult {
 }
 
 type HarnessVerificationCheck struct {
-	Id       string  `json:"id"`
-	Name     string  `json:"name"`
-	Status   string  `json:"status"`
-	Required bool    `json:"required"`
-	Summary  string  `json:"summary"`
-	Details  *string `json:"details,omitempty"`
+	Id       string `json:"id"`
+	Name     string `json:"name"`
+	Status   string `json:"status"`
+	Required bool   `json:"required"`
+	Summary  string `json:"summary"`
+	Details  string `json:"details,omitempty"`
 }
 
 func DefaultHarnessVerificationCheck() HarnessVerificationCheck {
@@ -161,5 +161,5 @@ type PlanExecuteVerifyRunMutationResponse struct {
 	Success bool                  `json:"success"`
 	Run     *PlanExecuteVerifyRun `json:"run,omitempty"`
 	Message string                `json:"message"`
-	Error   *string               `json:"error,omitempty"`
+	Error   string                `json:"error,omitempty"`
 }

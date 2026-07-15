@@ -214,7 +214,7 @@ func isValidTransition(current, next GoalStatus) bool {
 }
 
 // UpdateStatus implements [IGoalService].
-func (i *InMemoryGoalService) UpdateStatus(ctx context.Context, sessionId string, newStatus GoalStatus, note *string) error {
+func (i *InMemoryGoalService) UpdateStatus(ctx context.Context, sessionId string, newStatus GoalStatus, note string) error {
 	val, exists := i.goals.Load(sessionId)
 	if !exists {
 		return fmt.Errorf("no goal found for session '%s'", sessionId)
@@ -235,9 +235,7 @@ func (i *InMemoryGoalService) UpdateStatus(ctx context.Context, sessionId string
 
 	goal.Status = newStatus
 	goal.UpdatedAt = time.Now().UTC()
-	if note != nil {
-		goal.StatusNote = *note
-	}
+	goal.StatusNote = note
 
 	if newStatus.IsTerminal() || (newStatus == GoalStatus_Blocked || newStatus == GoalStatus_BudgetLimited) {
 		return i.RecordGoalHistory(ctx, goal)
@@ -433,7 +431,7 @@ func (p *PostgresGoalService) RecordTurnHash(ctx context.Context, sessionId stri
 }
 
 // UpdateStatus implements [IGoalService].
-func (p *PostgresGoalService) UpdateStatus(ctx context.Context, sessionId string, newStatus GoalStatus, note *string) error {
+func (p *PostgresGoalService) UpdateStatus(ctx context.Context, sessionId string, newStatus GoalStatus, note string) error {
 	return p.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		goal, err := gorm.G[SessionGoal](tx).Where("session_id = ? ", sessionId).First(ctx)
 		if err != nil {
@@ -452,8 +450,8 @@ func (p *PostgresGoalService) UpdateStatus(ctx context.Context, sessionId string
 		updatedFields["status"] = newStatus
 		updatedFields["updated_at"] = time.Now().UTC()
 
-		if note != nil {
-			updatedFields["status_note"] = *note
+		if note != "" {
+			updatedFields["status_note"] = note
 		}
 
 		if err = tx.

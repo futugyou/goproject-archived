@@ -20,11 +20,11 @@ const (
 type HeartbeatConfigDto struct {
 	Enabled             bool               `json:"enabled"`
 	CronExpression      string             `json:"cron_expression"`
-	Timezone            *string            `json:"timezone"`
+	Timezone            string             `json:"timezone"`
 	DeliveryChannelId   string             `json:"delivery_channel_id"`
-	DeliveryRecipientId *string            `json:"delivery_recipient_id"`
-	DeliverySubject     *string            `json:"delivery_subject"`
-	ModelId             *string            `json:"model_id"`
+	DeliveryRecipientId string             `json:"delivery_recipient_id"`
+	DeliverySubject     string             `json:"delivery_subject"`
+	ModelId             string             `json:"model_id"`
 	Tasks               []HeartbeatTaskDto `json:"tasks"`
 }
 
@@ -40,8 +40,8 @@ type HeartbeatTaskDto struct {
 	Id            string                  `json:"id"`
 	TemplateKey   string                  `json:"template_key"`
 	Title         string                  `json:"title"`
-	Target        *string                 `json:"target"`
-	Instruction   *string                 `json:"instruction"`
+	Target        string                  `json:"target"`
+	Instruction   string                  `json:"instruction"`
 	Priority      string                  `json:"priority"`
 	Enabled       bool                    `json:"enabled"`
 	ConditionMode string                  `json:"condition_mode"`
@@ -67,26 +67,26 @@ type HeartbeatConditionDto struct {
 }
 
 type HeartbeatTemplateDto struct {
-	Key         string  `json:"key"`
-	Label       string  `json:"label"`
-	Description string  `json:"description"`
-	Available   bool    `json:"available"`
-	Reason      *string `json:"reason"`
+	Key         string `json:"key"`
+	Label       string `json:"label"`
+	Description string `json:"description"`
+	Available   bool   `json:"available"`
+	Reason      string `json:"reason"`
 }
 
 type HeartbeatSuggestionDto struct {
-	TemplateKey   string  `json:"template_key"`
-	Title         string  `json:"title"`
-	Target        *string `json:"target"`
-	Reason        string  `json:"reason"`
-	EvidenceCount int     `json:"evidence_count"`
+	TemplateKey   string `json:"template_key"`
+	Title         string `json:"title"`
+	Target        string `json:"target"`
+	Reason        string `json:"reason"`
+	EvidenceCount int    `json:"evidence_count"`
 }
 
 type HeartbeatValidationIssueDto struct {
-	Severity string  `json:"severity"`
-	Code     string  `json:"code"`
-	Message  string  `json:"message"`
-	TaskId   *string `json:"task_id"`
+	Severity string `json:"severity"`
+	Code     string `json:"code"`
+	Message  string `json:"message"`
+	TaskId   string `json:"task_id"`
 }
 
 func NewDefaultHeartbeatValidationIssueDto() HeartbeatValidationIssueDto {
@@ -118,8 +118,8 @@ type HeartbeatRunStatusDto struct {
 	DeliverySuppressed bool       `json:"delivery_suppressed"`
 	InputTokens        int64      `json:"input_tokens"`
 	OutputTokens       int64      `json:"output_tokens"`
-	SessionId          *string    `json:"session_id"`
-	MessagePreview     *string    `json:"message_preview"`
+	SessionId          string     `json:"session_id"`
+	MessagePreview     string     `json:"message_preview"`
 }
 
 func NewDefaultHeartbeatRunStatusDto() HeartbeatRunStatusDto {

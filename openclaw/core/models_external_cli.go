@@ -71,7 +71,7 @@ type ExternalCliConnectorOptions struct {
 	DisplayName         string                               `json:"display_name"`
 	Executable          string                               `json:"executable"`
 	DefaultArgs         []string                             `json:"default_args"`
-	WorkingDirectory    *string                              `json:"working_directory,omitempty"`
+	WorkingDirectory    string                               `json:"working_directory,omitempty"`
 	Environment         map[string]string                    `json:"environment"`
 	StatusCommand       *ExternalCliStatusCommandOptions     `json:"status_command,omitempty"`
 	VersionCommand      *ExternalCliStatusCommandOptions     `json:"version_command,omitempty"`
@@ -118,11 +118,11 @@ type ExternalCliCommandOptions struct {
 	DryRunArgsTemplate     []string                               `json:"dry_run_args_template"`
 	StructuredOutput       string                                 `json:"structured_output"`
 	TimeoutSeconds         *int                                   `json:"timeout_seconds,omitempty"`
-	WorkingDirectory       *string                                `json:"working_directory,omitempty"`
+	WorkingDirectory       string                                 `json:"working_directory,omitempty"`
 	Environment            map[string]string                      `json:"environment"`
 	RedactionRules         []string                               `json:"redaction_rules"`
 	RequiredScopes         []string                               `json:"required_scopes"`
-	RequiredIdentity       *string                                `json:"required_identity,omitempty"`
+	RequiredIdentity       string                                 `json:"required_identity,omitempty"`
 	Tags                   []string                               `json:"tags"`
 }
 
@@ -164,28 +164,28 @@ func DefaultExternalCliParameterOptions() ExternalCliParameterOptions {
 // --- Request Structs ---
 
 type ExternalCliPreviewRequest struct {
-	Connector     *string                    `json:"connector,omitempty"`
-	Command       *string                    `json:"command,omitempty"`
+	Connector     string                     `json:"connector,omitempty"`
+	Command       string                     `json:"command,omitempty"`
 	Parameters    map[string]json.RawMessage `json:"parameters"`
 	ExecuteDryRun bool                       `json:"execute_dry_run"`
 }
 
 type ExternalCliExecuteRequest struct {
-	Connector           *string                    `json:"connector,omitempty"`
-	Command             *string                    `json:"command,omitempty"`
+	Connector           string                     `json:"connector,omitempty"`
+	Command             string                     `json:"command,omitempty"`
 	Parameters          map[string]json.RawMessage `json:"parameters"`
-	ApprovedFingerprint *string                    `json:"approved_fingerprint,omitempty"`
-	ApprovalReason      *string                    `json:"approval_reason,omitempty"`
+	ApprovedFingerprint string                     `json:"approved_fingerprint,omitempty"`
+	ApprovalReason      string                     `json:"approval_reason,omitempty"`
 }
 
 type ExternalCliToolRequest struct {
 	Action              string                     `json:"action"`
-	Connector           *string                    `json:"connector,omitempty"`
-	Command             *string                    `json:"command,omitempty"`
+	Connector           string                     `json:"connector,omitempty"`
+	Command             string                     `json:"command,omitempty"`
 	Parameters          map[string]json.RawMessage `json:"parameters"`
 	ExecuteDryRun       bool                       `json:"execute_dry_run"`
-	ApprovedFingerprint *string                    `json:"approved_fingerprint,omitempty"`
-	ApprovalReason      *string                    `json:"approval_reason,omitempty"`
+	ApprovedFingerprint string                     `json:"approved_fingerprint,omitempty"`
+	ApprovalReason      string                     `json:"approval_reason,omitempty"`
 }
 
 func DefaultExternalCliToolRequest() ExternalCliToolRequest {
@@ -284,8 +284,8 @@ type ExternalCliInvocationPreview struct {
 	IsDryRun            bool     `json:"is_dry_run"`
 	StructuredOutput    string   `json:"structured_output"`
 	RequiredScopes      []string `json:"required_scopes"`
-	RequiredIdentity    *string  `json:"required_identity,omitempty"`
-	WorkingDirectory    *string  `json:"working_directory,omitempty"`
+	RequiredIdentity    string   `json:"required_identity,omitempty"`
+	WorkingDirectory    string   `json:"working_directory,omitempty"`
 	TimeoutSeconds      int      `json:"timeout_seconds"`
 	Fingerprint         string   `json:"fingerprint"`
 	ParametersHash      string   `json:"parameters_hash"`
@@ -332,11 +332,11 @@ type ExternalCliConnectorStatus struct {
 	Enabled                bool      `json:"enabled"`
 	Executable             string    `json:"executable"`
 	ExecutableFound        bool      `json:"executable_found"`
-	ResolvedExecutablePath *string   `json:"resolved_executable_path,omitempty"`
-	Version                *string   `json:"version,omitempty"`
+	ResolvedExecutablePath string    `json:"resolved_executable_path,omitempty"`
+	Version                string    `json:"version,omitempty"`
 	Authenticated          *bool     `json:"authenticated,omitempty"`
 	AuthenticationStatus   string    `json:"authentication_status"`
-	IdentitySummary        *string   `json:"identity_summary,omitempty"`
+	IdentitySummary        string    `json:"identity_summary,omitempty"`
 	GrantedScopes          []string  `json:"granted_scopes"`
 	Warnings               []string  `json:"warnings"`
 	LastCheckedAtUtc       time.Time `json:"last_checked_at_utc"`
@@ -366,8 +366,8 @@ type ExternalCliAuditEntry struct {
 	ArgsHash            string    `json:"args_hash"`
 	RedactedArgsPreview string    `json:"redacted_args_preview"`
 	ParametersHash      string    `json:"parameters_hash"`
-	ApprovalId          *string   `json:"approval_id,omitempty"`
-	ApprovalFingerprint *string   `json:"approval_fingerprint,omitempty"`
+	ApprovalId          string    `json:"approval_id,omitempty"`
+	ApprovalFingerprint string    `json:"approval_fingerprint,omitempty"`
 	ExitCode            int       `json:"exit_code"`
 	DurationMs          float64   `json:"duration_ms"`
 	TimedOut            bool      `json:"timed_out"`
@@ -376,7 +376,7 @@ type ExternalCliAuditEntry struct {
 	StderrTruncated     bool      `json:"stderr_truncated"`
 	RiskLevel           string    `json:"risk_level"`
 	ReadOnly            bool      `json:"read_only"`
-	WorkingDirectory    *string   `json:"working_directory,omitempty"`
+	WorkingDirectory    string    `json:"working_directory,omitempty"`
 }
 
 func DefaultExternalCliAuditEntry() ExternalCliAuditEntry {

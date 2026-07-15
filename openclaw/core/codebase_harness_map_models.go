@@ -96,8 +96,8 @@ type CodebaseModule struct {
 	Name        string   `json:"name"`
 	Path        string   `json:"path"`
 	Kind        string   `json:"kind"`
-	ProjectID   *string  `json:"project_id,omitempty"`
-	Description *string  `json:"description,omitempty"`
+	ProjectID   string   `json:"project_id,omitempty"`
+	Description string   `json:"description,omitempty"`
 	Tags        []string `json:"tags"`
 }
 
@@ -114,13 +114,13 @@ type CodebaseArtifact struct {
 	ID              string    `json:"id"`
 	Path            string    `json:"path"`
 	Kind            string    `json:"kind"`
-	ProjectID       *string   `json:"project_id,omitempty"`
-	ModuleID        *string   `json:"module_id,omitempty"`
+	ProjectID       string    `json:"project_id,omitempty"`
+	ModuleID        string    `json:"module_id,omitempty"`
 	SizeBytes       int64     `json:"size_bytes"`
 	LastModifiedUtc time.Time `json:"last_modified_utc"`
-	Hash            *string   `json:"hash,omitempty"`
+	Hash            string    `json:"hash,omitempty"`
 	Tags            []string  `json:"tags"`
-	Summary         *string   `json:"summary,omitempty"`
+	Summary         string    `json:"summary,omitempty"`
 }
 
 func DefaultCodebaseArtifact() *CodebaseArtifact {
@@ -138,7 +138,7 @@ type CodebaseEndpoint struct {
 	Path         string   `json:"path"`
 	SourceFile   string   `json:"source_file"`
 	AuthRequired *bool    `json:"auth_required,omitempty"`
-	Scope        *string  `json:"scope,omitempty"`
+	Scope        string   `json:"scope,omitempty"`
 	Tags         []string `json:"tags"`
 }
 
@@ -153,7 +153,7 @@ func DefaultCodebaseEndpoint() *CodebaseEndpoint {
 type CodebaseToolSurface struct {
 	Name             string   `json:"name"`
 	SourceFile       string   `json:"source_file"`
-	Category         *string  `json:"category,omitempty"`
+	Category         string   `json:"category,omitempty"`
 	ReadOnly         bool     `json:"read_only"`
 	Mutating         bool     `json:"mutating"`
 	ApprovalRequired bool     `json:"approval_required"`
@@ -172,7 +172,7 @@ func DefaultCodebaseToolSurface() *CodebaseToolSurface {
 type CodebaseProviderSurface struct {
 	Name              string   `json:"name"`
 	SourceFile        string   `json:"source_file"`
-	ProviderType      *string  `json:"provider_type,omitempty"`
+	ProviderType      string   `json:"provider_type,omitempty"`
 	SupportsStreaming *bool    `json:"supports_streaming,omitempty"`
 	SupportsTools     *bool    `json:"supports_tools,omitempty"`
 	Tags              []string `json:"tags"`
@@ -189,7 +189,7 @@ func DefaultCodebaseProviderSurface() *CodebaseProviderSurface {
 type CodebaseChannelSurface struct {
 	Name                    string   `json:"name"`
 	SourceFile              string   `json:"source_file"`
-	Direction               *string  `json:"direction,omitempty"`
+	Direction               string   `json:"direction,omitempty"`
 	AuthOrSignatureRequired *bool    `json:"auth_or_signature_required,omitempty"`
 	Tags                    []string `json:"tags"`
 }
@@ -203,52 +203,52 @@ func DefaultCodebaseChannelSurface() *CodebaseChannelSurface {
 // --- CodebaseConfigSurface ---
 
 type CodebaseConfigSurface struct {
-	Path        string  `json:"path"`
-	Section     *string `json:"section,omitempty"`
-	Key         string  `json:"key"`
-	Description *string `json:"description,omitempty"`
-	Sensitive   bool    `json:"sensitive"`
+	Path        string `json:"path"`
+	Section     string `json:"section,omitempty"`
+	Key         string `json:"key"`
+	Description string `json:"description,omitempty"`
+	Sensitive   bool   `json:"sensitive"`
 }
 
 type CodebaseTestSurface struct {
-	ProjectName   string  `json:"project_name"`
-	ProjectPath   string  `json:"project_path"`
-	TestFramework *string `json:"test_framework,omitempty"`
-	RelatedModule *string `json:"related_module,omitempty"`
+	ProjectName   string `json:"project_name"`
+	ProjectPath   string `json:"project_path"`
+	TestFramework string `json:"test_framework,omitempty"`
+	RelatedModule string `json:"related_module,omitempty"`
 }
 type CodebaseEvidenceLink struct {
-	EvidenceBundleId string  `json:"evidence_bundle_id"`
-	Path             *string `json:"path"`
-	Summary          *string `json:"summary"`
+	EvidenceBundleId string `json:"evidence_bundle_id"`
+	Path             string `json:"path"`
+	Summary          string `json:"summary"`
 }
 
 type CodebaseContractLink struct {
-	HarnessContractId string  `json:"harness_contract_id"`
-	Path              *string `json:"path"`
-	Summary           *string `json:"summary"`
+	HarnessContractId string `json:"harness_contract_id"`
+	Path              string `json:"path"`
+	Summary           string `json:"summary"`
 }
 
 type CodebaseSharedStateLink struct {
-	SharedStateId string  `json:"shared_state_id"`
-	SessionId     *string `json:"session_id"`
-	Path          *string `json:"path"`
-	Summary       *string `json:"summary"`
+	SharedStateId string `json:"shared_state_id"`
+	SessionId     string `json:"session_id"`
+	Path          string `json:"path"`
+	Summary       string `json:"summary"`
 }
 
 type CodebaseRuntimeTraceLink struct {
-	RuntimeEventId string  `json:"runtime_event_id"`
-	Component      *string `json:"component"`
-	Action         *string `json:"action"`
-	Path           *string `json:"path"`
-	Summary        *string `json:"summary"`
+	RuntimeEventId string `json:"runtime_event_id"`
+	Component      string `json:"component"`
+	Action         string `json:"action"`
+	Path           string `json:"path"`
+	Summary        string `json:"summary"`
 }
 
 type CodebaseMapDiagnostic struct {
-	Severity       string  `json:"severity"`
-	Code           string  `json:"code"`
-	Message        string  `json:"message"`
-	Path           *string `json:"path"`
-	Recommendation *string `json:"recommendation"`
+	Severity       string `json:"severity"`
+	Code           string `json:"code"`
+	Message        string `json:"message"`
+	Path           string `json:"path"`
+	Recommendation string `json:"recommendation"`
 }
 
 func DefaultCodebaseMapDiagnostic() CodebaseMapDiagnostic {
@@ -291,11 +291,11 @@ func DefaultCodebaseMapOptions() CodebaseMapOptions {
 }
 
 type CodebaseMapQuery struct {
-	Root          *string `json:"root"`
-	Category      *string `json:"category"`
-	IncludeHashes bool    `json:"include_hashes"`
-	RecentDays    int     `json:"recent_days"`
-	MaxFiles      int     `json:"max_files"`
+	Root          string `json:"root"`
+	Category      string `json:"category"`
+	IncludeHashes bool   `json:"include_hashes"`
+	RecentDays    int    `json:"recent_days"`
+	MaxFiles      int    `json:"max_files"`
 }
 
 func DefaultCodebaseMapQuery() CodebaseMapQuery {

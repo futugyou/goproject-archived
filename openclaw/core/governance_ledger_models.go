@@ -58,28 +58,28 @@ type GovernanceLedgerEntry struct {
 	Decision           string                    `json:"decision"`
 	Status             string                    `json:"status"`
 	Source             string                    `json:"source"`
-	ActionType         *string                   `json:"action_type,omitempty"`
-	ToolName           *string                   `json:"tool_name,omitempty"`
+	ActionType         string                    `json:"action_type,omitempty"`
+	ToolName           string                    `json:"tool_name,omitempty"`
 	ActionSummary      string                    `json:"action_summary"`
-	ArgumentSummary    *string                   `json:"argument_summary,omitempty"`
-	RedactedArguments  *string                   `json:"redacted_arguments,omitempty"`
+	ArgumentSummary    string                    `json:"argument_summary,omitempty"`
+	RedactedArguments  string                    `json:"redacted_arguments,omitempty"`
 	RiskLevel          string                    `json:"risk_level"`
 	Scope              string                    `json:"scope"`
-	ScopeKey           *string                   `json:"scope_key,omitempty"`
-	SessionId          *string                   `json:"session_id,omitempty"`
-	HarnessContractId  *string                   `json:"harness_contract_id,omitempty"`
-	EvidenceBundleId   *string                   `json:"evidence_bundle_id,omitempty"`
-	LearningProposalId *string                   `json:"learning_proposal_id,omitempty"`
-	ApprovalId         *string                   `json:"approval_id,omitempty"`
-	ActorId            *string                   `json:"actor_id,omitempty"`
-	ChannelId          *string                   `json:"channel_id,omitempty"`
-	SenderId           *string                   `json:"sender_id,omitempty"`
-	DecidedBy          *string                   `json:"decided_by,omitempty"`
-	DecisionReason     *string                   `json:"decision_reason,omitempty"`
+	ScopeKey           string                    `json:"scope_key,omitempty"`
+	SessionId          string                    `json:"session_id,omitempty"`
+	HarnessContractId  string                    `json:"harness_contract_id,omitempty"`
+	EvidenceBundleId   string                    `json:"evidence_bundle_id,omitempty"`
+	LearningProposalId string                    `json:"learning_proposal_id,omitempty"`
+	ApprovalId         string                    `json:"approval_id,omitempty"`
+	ActorId            string                    `json:"actor_id,omitempty"`
+	ChannelId          string                    `json:"channel_id,omitempty"`
+	SenderId           string                    `json:"sender_id,omitempty"`
+	DecidedBy          string                    `json:"decided_by,omitempty"`
+	DecisionReason     string                    `json:"decision_reason,omitempty"`
 	ExpiresAtUtc       *time.Time                `json:"expires_at_utc,omitempty"`
 	RevokedAtUtc       *time.Time                `json:"revoked_at_utc,omitempty"`
-	RevokedBy          *string                   `json:"revoked_by,omitempty"`
-	RevocationReason   *string                   `json:"revocation_reason,omitempty"`
+	RevokedBy          string                    `json:"revoked_by,omitempty"`
+	RevocationReason   string                    `json:"revocation_reason,omitempty"`
 	PolicyHint         *GovernancePolicyHint     `json:"policy_hint,omitempty"`
 	Tags               []string                  `json:"tags"`
 	Metadata           *GovernanceLedgerMetadata `json:"metadata,omitempty"`
@@ -101,11 +101,11 @@ func DefaultGovernanceLedgerEntry() GovernanceLedgerEntry {
 }
 
 type GovernancePolicyHint struct {
-	SuggestedFutureBehavior *string `json:"suggested_future_behavior,omitempty"`
-	SuggestedScope          *string `json:"suggested_scope,omitempty"`
-	Confidence              *string `json:"confidence,omitempty"`
-	RequiresReview          bool    `json:"requires_review"`
-	Notes                   *string `json:"notes,omitempty"`
+	SuggestedFutureBehavior string `json:"suggested_future_behavior,omitempty"`
+	SuggestedScope          string `json:"suggested_scope,omitempty"`
+	Confidence              string `json:"confidence,omitempty"`
+	RequiresReview          bool   `json:"requires_review"`
+	Notes                   string `json:"notes,omitempty"`
 }
 
 // DefaultGovernancePolicyHint
@@ -116,8 +116,8 @@ func DefaultGovernancePolicyHint() GovernancePolicyHint {
 }
 
 type GovernanceLedgerMetadata struct {
-	CreatedBy     *string           `json:"created_by,omitempty"`
-	CorrelationId *string           `json:"correlation_id,omitempty"`
+	CreatedBy     string            `json:"created_by,omitempty"`
+	CorrelationId string            `json:"correlation_id,omitempty"`
 	Properties    map[string]string `json:"properties"`
 }
 
@@ -129,17 +129,17 @@ func DefaultGovernanceLedgerMetadata() GovernanceLedgerMetadata {
 }
 
 type GovernanceLedgerListQuery struct {
-	Decision       *string    `json:"decision,omitempty"`
-	Status         *string    `json:"status,omitempty"`
-	ToolName       *string    `json:"tool_name,omitempty"`
-	ActionType     *string    `json:"action_type,omitempty"`
-	RiskLevel      *string    `json:"risk_level,omitempty"`
-	Scope          *string    `json:"scope,omitempty"`
-	SessionId      *string    `json:"session_id,omitempty"`
-	ActorId        *string    `json:"actor_id,omitempty"`
-	ChannelId      *string    `json:"channel_id,omitempty"`
-	DecidedBy      *string    `json:"decided_by,omitempty"`
-	Tag            *string    `json:"tag,omitempty"`
+	Decision       string     `json:"decision,omitempty"`
+	Status         string     `json:"status,omitempty"`
+	ToolName       string     `json:"tool_name,omitempty"`
+	ActionType     string     `json:"action_type,omitempty"`
+	RiskLevel      string     `json:"risk_level,omitempty"`
+	Scope          string     `json:"scope,omitempty"`
+	SessionId      string     `json:"session_id,omitempty"`
+	ActorId        string     `json:"actor_id,omitempty"`
+	ChannelId      string     `json:"channel_id,omitempty"`
+	DecidedBy      string     `json:"decided_by,omitempty"`
+	Tag            string     `json:"tag,omitempty"`
 	CreatedFromUtc *time.Time `json:"created_from_utc,omitempty"`
 	CreatedToUtc   *time.Time `json:"created_to_utc,omitempty"`
 	Limit          int        `json:"limit"`
@@ -153,8 +153,8 @@ func DefaultGovernanceLedgerListQuery() GovernanceLedgerListQuery {
 }
 
 type GovernanceLedgerRevokeRequest struct {
-	RevokedBy *string `json:"revoked_by,omitempty"`
-	Reason    *string `json:"reason,omitempty"`
+	RevokedBy string `json:"revoked_by,omitempty"`
+	Reason    string `json:"reason,omitempty"`
 }
 
 // --- Payload Responses ---
@@ -171,7 +171,7 @@ type GovernanceLedgerMutationResponse struct {
 	Success bool                   `json:"success"`
 	Entry   *GovernanceLedgerEntry `json:"entry,omitempty"`
 	Message string                 `json:"message"`
-	Error   *string                `json:"error,omitempty"`
+	Error   string                 `json:"error,omitempty"`
 }
 
 type ToolGovernanceDescriptorCatalog struct {
@@ -352,11 +352,8 @@ func (c *ToolGovernanceDescriptorCatalog) maxRisk(left, right ToolGovernanceRisk
 	return right
 }
 
-func (c *ToolGovernanceDescriptorCatalog) parseRisk(riskLevel *string) *ToolGovernanceRiskLevel {
-	if riskLevel == nil {
-		return nil
-	}
-	trimmed := strings.ToLower(strings.TrimSpace(*riskLevel))
+func (c *ToolGovernanceDescriptorCatalog) parseRisk(riskLevel string) *ToolGovernanceRiskLevel {
+	trimmed := strings.ToLower(strings.TrimSpace(riskLevel))
 	if trimmed == "" {
 		return nil
 	}

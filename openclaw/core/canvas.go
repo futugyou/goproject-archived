@@ -405,11 +405,11 @@ func ValidateV09(envelope *WsServerEnvelope) *A2UiValidationResult {
 		panic("envelope cannot be nil")
 	}
 
-	if envelope.Operation == nil || strings.TrimSpace(*envelope.Operation) == "" {
+	if strings.TrimSpace(envelope.Operation) == "" {
 		return NewInvalidResult("A2UI v0.9 operation is required.")
 	}
 
-	opLower := strings.ToLower(*envelope.Operation)
+	opLower := strings.ToLower(envelope.Operation)
 	if !a2uiV09MessageValidatorSupportedOperations[opLower] {
 		return NewInvalidResult(fmt.Sprintf("A2UI v0.9 operation '%s' is not supported.", opLower))
 	}
@@ -439,10 +439,7 @@ func validateCreateSurface(envelope *WsServerEnvelope) *A2UiValidationResult {
 		return NewInvalidResult(errStr)
 	}
 
-	catalogId := ""
-	if envelope.CatalogId != nil {
-		catalogId = *envelope.CatalogId
-	}
+	catalogId := envelope.CatalogId
 
 	catalog, success := A2UiCatalogRegistry_TryChooseCatalog(envelope.SupportedCatalogIds, catalogId)
 	if !success {
@@ -456,10 +453,7 @@ func validateCreateSurface(envelope *WsServerEnvelope) *A2UiValidationResult {
 		}
 	}
 
-	jsonStr := ""
-	if envelope.DataModelJson != nil {
-		jsonStr = *envelope.DataModelJson
-	}
+	jsonStr := envelope.DataModelJson
 	if res := validateOptionalJsonObject(jsonStr, "dataModelJson"); res != nil {
 		return res
 	}
@@ -471,10 +465,7 @@ func validateUpdateComponents(envelope *WsServerEnvelope) *A2UiValidationResult 
 		return NewInvalidResult(errStr)
 	}
 
-	catalogId := ""
-	if envelope.CatalogId != nil {
-		catalogId = *envelope.CatalogId
-	}
+	catalogId := envelope.CatalogId
 	catalog, success := A2UiCatalogRegistry_TryChooseCatalog(envelope.SupportedCatalogIds, catalogId)
 	if !success {
 		return NewInvalidResult("A2UI v0.9 updateComponents uses an unsupported catalog ID.")
@@ -525,12 +516,12 @@ func validateUpdateDataModel(envelope *WsServerEnvelope) *A2UiValidationResult {
 		return NewInvalidResult(errStr)
 	}
 
-	if envelope.DataModelJson == nil || strings.TrimSpace(*envelope.DataModelJson) == "" {
+	if strings.TrimSpace(envelope.DataModelJson) == "" {
 		return NewInvalidResult("A2UI v0.9 updateDataModel requires dataModelJson.")
 	}
 
 	var root map[string]interface{}
-	if err := json.Unmarshal([]byte(*envelope.DataModelJson), &root); err != nil {
+	if err := json.Unmarshal([]byte(envelope.DataModelJson), &root); err != nil {
 		return NewInvalidResult(fmt.Sprintf("A2UI v0.9 dataModelJson is not valid JSON: %s", err.Error()))
 	}
 
@@ -549,10 +540,7 @@ func validateSyncUIToData(envelope *WsServerEnvelope) *A2UiValidationResult {
 		return NewInvalidResult(fmt.Sprintf("A2UI v0.9 syncUIToData %s", errStr))
 	}
 
-	jsonStr := ""
-	if envelope.DataModelJson != nil {
-		jsonStr = *envelope.DataModelJson
-	}
+	jsonStr := envelope.DataModelJson
 	if res := validateOptionalJsonObject(jsonStr, "dataModelJson"); res != nil {
 		return res
 	}
@@ -564,14 +552,11 @@ func validateAction(envelope *WsServerEnvelope) *A2UiValidationResult {
 		return NewInvalidResult(fmt.Sprintf("A2UI v0.9 action %s", errStr))
 	}
 
-	if envelope.Action == nil || strings.TrimSpace(*envelope.Action) == "" {
+	if strings.TrimSpace(envelope.Action) == "" {
 		return NewInvalidResult("A2UI v0.9 action requires action.")
 	}
 
-	jsonStr := ""
-	if envelope.ParametersJson != nil {
-		jsonStr = *envelope.ParametersJson
-	}
+	jsonStr := envelope.ParametersJson
 	if res := validateOptionalJsonObject(jsonStr, "parametersJson"); res != nil {
 		return res
 	}
@@ -579,14 +564,8 @@ func validateAction(envelope *WsServerEnvelope) *A2UiValidationResult {
 }
 
 func validateError(envelope *WsServerEnvelope) *A2UiValidationResult {
-	err := ""
-	if envelope.Error != nil {
-		err = *envelope.Error
-	}
-	code := ""
-	if envelope.DiagnosticCode != nil {
-		code = *envelope.DiagnosticCode
-	}
+	err := envelope.Error
+	code := envelope.DiagnosticCode
 	if strings.TrimSpace(err) == "" && strings.TrimSpace(code) == "" {
 		return NewInvalidResult("A2UI v0.9 error requires error or diagnosticCode.")
 	}
@@ -607,7 +586,7 @@ func validateOptionalJsonObject(jsonStr string, propertyName string) *A2UiValida
 }
 
 func validateSurfaceId(envelope *WsServerEnvelope) string {
-	if envelope.SurfaceId == nil || strings.TrimSpace(*envelope.SurfaceId) == "" {
+	if strings.TrimSpace(envelope.SurfaceId) == "" {
 		return "requires non-empty surfaceId."
 	}
 	return ""

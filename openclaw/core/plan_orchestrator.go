@@ -7,7 +7,7 @@ type HarnessContractRiskLevels string
 type PlanExecuteVerifyToolContext struct {
 	Session                  Session                  `json:"session"`
 	CorrelationID            string                   `json:"correlation_id"`
-	CallID                   *string                  `json:"call_id,omitempty"`
+	CallID                   string                   `json:"call_id,omitempty"`
 	ToolName                 string                   `json:"tool_name"`
 	ArgumentsJSON            string                   `json:"arguments_json"`
 	ActionDescriptor         ToolActionDescriptor     `json:"action_descriptor"`

@@ -51,11 +51,11 @@ func (s *PostgresFeatureStore) ListBackendEvents(ctx context.Context, sessionID 
 }
 
 // ListBackendSessions implements [IBackendSessionStore].
-func (s *PostgresFeatureStore) ListBackendSessions(ctx context.Context, backendID *string) ([]BackendSessionRecord, error) {
-	if IsBlankP(backendID) {
+func (s *PostgresFeatureStore) ListBackendSessions(ctx context.Context, backendID string) ([]BackendSessionRecord, error) {
+	if IsBlank(backendID) {
 		return gorm.G[BackendSessionRecord](s.db).Find(ctx)
 	} else {
-		return gorm.G[BackendSessionRecord](s.db).Where("backend_id = ?", *backendID).Find(ctx)
+		return gorm.G[BackendSessionRecord](s.db).Where("backend_id = ?", backendID).Find(ctx)
 	}
 }
 
@@ -109,7 +109,7 @@ func (s *PostgresFeatureStore) GetProposal(ctx context.Context, proposalId strin
 }
 
 // ListProposals implements [ILearningProposalStore].
-func (s *PostgresFeatureStore) ListProposals(ctx context.Context, status *string, kind *string) ([]LearningProposal, error) {
+func (s *PostgresFeatureStore) ListProposals(ctx context.Context, status string, kind string) ([]LearningProposal, error) {
 	return gorm.G[LearningProposal](s.db).Find(ctx)
 }
 
@@ -477,21 +477,16 @@ func (f *FileFeatureStore) DeleteProfile(ctx context.Context, actorId string) er
 
 // --- Proposals ---
 
-func (f *FileFeatureStore) ListProposals(ctx context.Context, status *string, kind *string) ([]LearningProposal, error) {
+func (f *FileFeatureStore) ListProposals(ctx context.Context, status string, kind string) ([]LearningProposal, error) {
 	all, err := LoadAllFile[LearningProposal](ctx, f.proposalsPath)
 	if err != nil {
 		return nil, err
 	}
 
 	var filtered []LearningProposal
-	statusStr := ""
-	if status != nil {
-		statusStr = strings.TrimSpace(*status)
-	}
-	kindstr := ""
-	if kind != nil {
-		kindstr = strings.TrimSpace(*kind)
-	}
+	statusStr := strings.TrimSpace(status)
+
+	kindstr := strings.TrimSpace(kind)
 
 	for _, item := range all {
 		if statusStr != "" && !strings.EqualFold(item.Status, statusStr) {
@@ -543,16 +538,13 @@ func (f *FileFeatureStore) DeleteAccount(ctx context.Context, accountId string) 
 
 // --- Backend Sessions ---
 
-func (f *FileFeatureStore) ListBackendSessions(ctx context.Context, backendId *string) ([]BackendSessionRecord, error) {
+func (f *FileFeatureStore) ListBackendSessions(ctx context.Context, backendId string) ([]BackendSessionRecord, error) {
 	all, err := LoadAllFile[BackendSessionRecord](ctx, f.backendSessionsPath)
 	if err != nil {
 		return nil, err
 	}
 
-	backendIdStr := ""
-	if backendId != nil {
-		backendIdStr = strings.TrimSpace(*backendId)
-	}
+	backendIdStr := strings.TrimSpace(backendId)
 	if backendIdStr == "" {
 		return all, nil
 	}
@@ -856,21 +848,15 @@ func (s *SqliteFeatureStore) DeleteProfile(ctx context.Context, actorId string) 
 
 // --- Proposals ---
 
-func (s *SqliteFeatureStore) ListProposals(ctx context.Context, status *string, kind *string) ([]LearningProposal, error) {
+func (s *SqliteFeatureStore) ListProposals(ctx context.Context, status string, kind string) ([]LearningProposal, error) {
 	all, err := loadAllSql[LearningProposal](ctx, s.db, "proposals")
 	if err != nil {
 		return nil, err
 	}
 
 	var filtered []LearningProposal
-	statusStr := ""
-	if status != nil {
-		statusStr = strings.TrimSpace(*status)
-	}
-	kindstr := ""
-	if kind != nil {
-		kindstr = strings.TrimSpace(*kind)
-	}
+	statusStr := strings.TrimSpace(status)
+	kindstr := strings.TrimSpace(kind)
 
 	for _, item := range all {
 		if statusStr != "" && !strings.EqualFold(item.Status, statusStr) {
@@ -918,16 +904,13 @@ func (s *SqliteFeatureStore) DeleteAccount(ctx context.Context, accountId string
 
 // --- Backend Sessions ---
 
-func (s *SqliteFeatureStore) ListBackendSessions(ctx context.Context, backendId *string) ([]BackendSessionRecord, error) {
+func (s *SqliteFeatureStore) ListBackendSessions(ctx context.Context, backendId string) ([]BackendSessionRecord, error) {
 	all, err := loadAllSql[BackendSessionRecord](ctx, s.db, "backend_sessions")
 	if err != nil {
 		return nil, err
 	}
 
-	backendIdStr := ""
-	if backendId != nil {
-		backendIdStr = strings.TrimSpace(*backendId)
-	}
+	backendIdStr := strings.TrimSpace(backendId)
 	if backendIdStr == "" {
 		return all, nil
 	}

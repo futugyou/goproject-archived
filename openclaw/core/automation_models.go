@@ -26,20 +26,20 @@ type AutomationDefinition struct {
 	Name                        string                `json:"name"`
 	Enabled                     bool                  `json:"enabled"`
 	Schedule                    string                `json:"schedule"`
-	Timezone                    *string               `json:"timezone,omitempty"`
+	Timezone                    string                `json:"timezone,omitempty"`
 	Prompt                      string                `json:"prompt"`
-	ModelId                     *string               `json:"model_id,omitempty"`
+	ModelId                     string                `json:"model_id,omitempty"`
 	ResponseMode                string                `json:"response_mode"`
 	RunOnStartup                bool                  `json:"run_on_startup"`
-	SessionId                   *string               `json:"session_id,omitempty"`
+	SessionId                   string                `json:"session_id,omitempty"`
 	DeliveryChannelId           string                `json:"delivery_channel_id"`
-	DeliveryRecipientId         *string               `json:"delivery_recipient_id,omitempty"`
-	DeliverySubject             *string               `json:"delivery_subject,omitempty"`
+	DeliveryRecipientId         string                `json:"delivery_recipient_id,omitempty"`
+	DeliverySubject             string                `json:"delivery_subject,omitempty"`
 	Tags                        []string              `json:"tags" gorm:"type:text[];not null;default:'{}'"`
 	IsDraft                     bool                  `json:"is_draft"`
 	Source                      string                `json:"source"`
-	TemplateKey                 *string               `json:"template_key,omitempty"`
-	CreatedByLearningProposalId *string               `json:"created_by_learning_proposal_id,omitempty"`
+	TemplateKey                 string                `json:"template_key,omitempty"`
+	CreatedByLearningProposalId string                `json:"created_by_learning_proposal_id,omitempty"`
 	Verification                *VerificationPolicy   `json:"verification,omitempty" gorm:"serializer:json"`
 	RetryPolicy                 AutomationRetryPolicy `json:"retry_policy" gorm:"serializer:json"`
 	CreatedAtUtc                time.Time             `json:"created_at_utc"`
@@ -80,12 +80,12 @@ type AutomationRunState struct {
 	FailureStreak            int        `json:"failure_streak"`
 	UnverifiedStreak         int        `json:"unverified_streak"`
 	NextRetryAttempt         *int       `json:"next_retry_attempt,omitempty"`
-	LastRunId                *string    `json:"last_run_id,omitempty"`
-	SessionId                *string    `json:"session_id,omitempty"`
-	MessagePreview           *string    `json:"message_preview,omitempty"`
-	VerificationSummary      *string    `json:"verification_summary,omitempty"`
-	QuarantineReason         *string    `json:"quarantine_reason,omitempty"`
-	SignalSeverity           *string    `json:"signal_severity,omitempty"`
+	LastRunId                string     `json:"last_run_id,omitempty"`
+	SessionId                string     `json:"session_id,omitempty"`
+	MessagePreview           string     `json:"message_preview,omitempty"`
+	VerificationSummary      string     `json:"verification_summary,omitempty"`
+	QuarantineReason         string     `json:"quarantine_reason,omitempty"`
+	SignalSeverity           string     `json:"signal_severity,omitempty"`
 }
 
 func DefaultAutomationRunState(automationId string) AutomationRunState {
@@ -104,11 +104,11 @@ type AutomationRunRecord struct {
 	TriggerSource       string                    `json:"trigger_source"`
 	LifecycleState      string                    `json:"lifecycle_state"`
 	VerificationStatus  string                    `json:"verification_status"`
-	ReplayOfRunId       *string                   `json:"replay_of_run_id,omitempty"`
+	ReplayOfRunId       string                    `json:"replay_of_run_id,omitempty"`
 	RetryAttempt        int                       `json:"retry_attempt"`
-	SessionId           *string                   `json:"session_id,omitempty"`
-	MessagePreview      *string                   `json:"message_preview,omitempty"`
-	VerificationSummary *string                   `json:"verification_summary,omitempty"`
+	SessionId           string                    `json:"session_id,omitempty"`
+	MessagePreview      string                    `json:"message_preview,omitempty"`
+	VerificationSummary string                    `json:"verification_summary,omitempty"`
 	VerificationChecks  []VerificationCheckResult `json:"verification_checks"`
 	StartedAtUtc        time.Time                 `json:"started_at_utc"`
 	CompletedAtUtc      *time.Time                `json:"completed_at_utc,omitempty"`
@@ -139,10 +139,10 @@ type AutomationTemplate struct {
 	Schedule          string   `json:"schedule"`
 	Prompt            string   `json:"prompt"`
 	DeliveryChannelId string   `json:"delivery_channel_id"`
-	DeliverySubject   *string  `json:"delivery_subject,omitempty"`
+	DeliverySubject   string   `json:"delivery_subject,omitempty"`
 	Tags              []string `json:"tags"`
 	Available         bool     `json:"available"`
-	Reason            *string  `json:"reason,omitempty"`
+	Reason            string   `json:"reason,omitempty"`
 }
 
 func DefaultAutomationTemplate() AutomationTemplate {

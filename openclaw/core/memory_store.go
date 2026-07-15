@@ -102,11 +102,11 @@ func (s *PostgresMemoryStore) SearchSessions(ctx context.Context, query *Session
 		// 动态拼接过滤条件
 		tx = tx.Where("search_vector @@ websearch_to_tsquery('simplified', ?)", query.Text)
 
-		if query.ChannelID != nil && *query.ChannelID != "" {
-			tx = tx.Where("channel_id = ?", *query.ChannelID)
+		if query.ChannelID != "" {
+			tx = tx.Where("channel_id = ?", query.ChannelID)
 		}
-		if query.SenderID != nil && *query.SenderID != "" {
-			tx = tx.Where("sender_id = ?", *query.SenderID)
+		if query.SenderID != "" {
+			tx = tx.Where("sender_id = ?", query.SenderID)
 		}
 		if query.FromUtc != nil {
 			tx = tx.Where("timestamp >= ?", *query.FromUtc)
@@ -250,11 +250,11 @@ func (s *PostgresMemoryStore) ListSessions(ctx context.Context, page int, pageSi
 	tx := gorm.G[SessionSummary](s.db).Where("1=1")
 
 	if query != nil {
-		if query.ChannelId != nil && *query.ChannelId != "" {
-			tx = tx.Where("channel_id = ?", *query.ChannelId)
+		if query.ChannelId != "" {
+			tx = tx.Where("channel_id = ?", query.ChannelId)
 		}
-		if query.SenderId != nil && *query.SenderId != "" {
-			tx = tx.Where("sender_id = ?", *query.SenderId)
+		if query.SenderId != "" {
+			tx = tx.Where("sender_id = ?", query.SenderId)
 		}
 		if query.FromUtc != nil {
 			tx = tx.Where("last_active_at >= ?", query.FromUtc.Format(time.RFC3339))
@@ -265,8 +265,8 @@ func (s *PostgresMemoryStore) ListSessions(ctx context.Context, page int, pageSi
 		if query.State != nil {
 			tx = tx.Where("state = ? OR state = ?", fmt.Sprintf("%d", *query.State), fmt.Sprintf("%v", *query.State))
 		}
-		if query.Search != nil && *query.Search != "" {
-			searchPattern := "%" + *query.Search + "%"
+		if query.Search != "" {
+			searchPattern := "%" + query.Search + "%"
 			tx = tx.Where(
 				"(id LIKE ? OR channel_id LIKE ? OR sender_id LIKE ?)",
 				searchPattern, searchPattern, searchPattern,
@@ -542,11 +542,7 @@ func (s *PostgresMemoryStore) initialize() error {
 }
 
 // SearchNotes implements [IMemoryNoteSearch].
-func (s *PostgresMemoryStore) SearchNotes(ctx context.Context, query string, prefix *string, limit int) ([]MemoryNoteHit, error) {
-	prefixstr := ""
-	if prefix != nil {
-		prefixstr = *prefix
-	}
+func (s *PostgresMemoryStore) SearchNotes(ctx context.Context, query string, prefix string, limit int) ([]MemoryNoteHit, error) {
 	// Clamp 到 [1, 50]
 	if limit < 1 {
 		limit = 1
@@ -575,7 +571,7 @@ func (s *PostgresMemoryStore) SearchNotes(ctx context.Context, query string, pre
             key, content, updated_at,
             (ts_rank(to_tsvector('english', content), plainto_tsquery('english', ?)) * 0.4 + 
             (1.0 - (embedding <=> ?)) * 0.6) AS score`, query, queryEmbedding).
-				Where("key LIKE ?", prefixstr+"%").
+				Where("key LIKE ?", prefix+"%").
 				Where("(to_tsvector('english', content) @@ plainto_tsquery('english', ?) OR (1.0 - (embedding <=> ?)) > 0.6)", query, queryEmbedding).
 				Order("score DESC").
 				Limit(limit).
@@ -588,7 +584,7 @@ func (s *PostgresMemoryStore) SearchNotes(ctx context.Context, query string, pre
 	// 模式 2: 纯 Postgres FTS 全文检索
 	if s.ftsEnabled {
 		err := tx.Select("key, content, updated_at, ts_rank(to_tsvector('english', content), plainto_tsquery('english', ?)) AS score", query).
-			Where("key LIKE ?", prefixstr+"%").
+			Where("key LIKE ?", prefix+"%").
 			Where("to_tsvector('english', content) @@ plainto_tsquery('english', ?)", query).
 			Order("score DESC, updated_at DESC").
 			Limit(limit).
@@ -598,7 +594,7 @@ func (s *PostgresMemoryStore) SearchNotes(ctx context.Context, query string, pre
 
 	// 模式 3: 基础模糊搜索 (LIKE)
 	err := tx.Select("key, content, updated_at, 1.0 AS score").
-		Where("key LIKE ?", prefixstr+"%").
+		Where("key LIKE ?", prefix+"%").
 		Where("(key ILIKE ? OR content ILIKE ?)", "%"+query+"%", "%"+query+"%").
 		Order("updated_at DESC").
 		Limit(limit).
@@ -1001,11 +997,11 @@ func (s *SqliteMemoryStore) _syncSessionSearchIndex(ctx context.Context, session
 
 		for _, toolCall := range turn.ToolCalls {
 			toolText := toolCall.Result
-			if IsBlankP(toolText) {
-				toolText = &toolCall.Arguments
+			if IsBlank(toolText) {
+				toolText = toolCall.Arguments
 			}
-			if !IsBlankP(toolText) {
-				err = s.insertSessionTurn(ctx, tx, session, "tool", *toolText, turn.Timestamp)
+			if !IsBlank(toolText) {
+				err = s.insertSessionTurn(ctx, tx, session, "tool", toolText, turn.Timestamp)
 				if err != nil {
 					return err
 				}

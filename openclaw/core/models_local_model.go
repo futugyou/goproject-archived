@@ -219,14 +219,14 @@ const (
 
 // --- MaintenanceFinding ---
 type MaintenanceFinding struct {
-	Id                 string  `json:"id"`
-	Category           string  `json:"category"`
-	Severity           string  `json:"severity"`
-	Summary            string  `json:"summary"`
-	Detail             *string `json:"detail,omitempty"`
-	Recommendation     string  `json:"recommendation"`
-	RecommendedCommand string  `json:"recommended_command"`
-	NumericValue       int64   `json:"numeric_value"`
+	Id                 string `json:"id"`
+	Category           string `json:"category"`
+	Severity           string `json:"severity"`
+	Summary            string `json:"summary"`
+	Detail             string `json:"detail,omitempty"`
+	Recommendation     string `json:"recommendation"`
+	RecommendedCommand string `json:"recommended_command"`
+	NumericValue       int64  `json:"numeric_value"`
 }
 
 func DefaultMaintenanceFinding() MaintenanceFinding {

@@ -28,44 +28,44 @@ func (s *PostgresGovernanceLedgerStore) List(ctx context.Context, query *Governa
 	tx := gorm.G[GovernanceLedgerEntry](s.db).Where("1=1")
 
 	if query != nil {
-		if query.Decision != nil && *query.Decision != "" {
-			tx = tx.Where("decision = ?", *query.Decision)
+		if query.Decision != "" {
+			tx = tx.Where("decision = ?", query.Decision)
 		}
 
-		if query.Status != nil && *query.Status != "" {
-			tx = tx.Where("status = ?", *query.Status)
+		if query.Status != "" {
+			tx = tx.Where("status = ?", query.Status)
 		}
 
-		if query.ToolName != nil && *query.ToolName != "" {
-			tx = tx.Where("tool_name = ?", *query.ToolName)
+		if query.ToolName != "" {
+			tx = tx.Where("tool_name = ?", query.ToolName)
 		}
 
-		if query.ActionType != nil && *query.ActionType != "" {
-			tx = tx.Where("action_type = ?", *query.ActionType)
+		if query.ActionType != "" {
+			tx = tx.Where("action_type = ?", query.ActionType)
 		}
 
-		if query.RiskLevel != nil && *query.RiskLevel != "" {
-			tx = tx.Where("risk_level = ?", *query.RiskLevel)
+		if query.RiskLevel != "" {
+			tx = tx.Where("risk_level = ?", query.RiskLevel)
 		}
 
-		if query.Scope != nil && *query.Scope != "" {
-			tx = tx.Where("scope = ?", *query.Scope)
+		if query.Scope != "" {
+			tx = tx.Where("scope = ?", query.Scope)
 		}
 
-		if query.SessionId != nil && *query.SessionId != "" {
-			tx = tx.Where("session_id = ?", *query.SessionId)
+		if query.SessionId != "" {
+			tx = tx.Where("session_id = ?", query.SessionId)
 		}
 
-		if query.ActorId != nil && *query.ActorId != "" {
-			tx = tx.Where("actor_id = ?", *query.ActorId)
+		if query.ActorId != "" {
+			tx = tx.Where("actor_id = ?", query.ActorId)
 		}
 
-		if query.ChannelId != nil && *query.ChannelId != "" {
-			tx = tx.Where("channel_id = ?", *query.ChannelId)
+		if query.ChannelId != "" {
+			tx = tx.Where("channel_id = ?", query.ChannelId)
 		}
 
-		if query.DecidedBy != nil && *query.DecidedBy != "" {
-			tx = tx.Where("decided_by = ?", *query.DecidedBy)
+		if query.DecidedBy != "" {
+			tx = tx.Where("decided_by = ?", query.DecidedBy)
 		}
 
 		if query.CreatedFromUtc != nil {
@@ -75,8 +75,8 @@ func (s *PostgresGovernanceLedgerStore) List(ctx context.Context, query *Governa
 		if query.CreatedToUtc != nil {
 			tx = tx.Where("created_at_utc <= ?", *query.CreatedToUtc)
 		}
-		if query.Tag != nil && *query.Tag != "" {
-			qTag := strings.TrimSpace(*query.Tag)
+		if query.Tag != "" {
+			qTag := strings.TrimSpace(query.Tag)
 			tx = tx.Where("tags in  ?", qTag)
 		}
 	}

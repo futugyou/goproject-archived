@@ -351,8 +351,8 @@ func (s *ReliabilityScorer) buildReadinessFactor(
 	}
 
 	workspacePath := config.Tooling.WorkspaceRoot
-	if setupStatus != nil && setupStatus.WorkspacePath != nil {
-		workspacePath = *setupStatus.WorkspacePath
+	if setupStatus != nil && setupStatus.WorkspacePath != "" {
+		workspacePath = setupStatus.WorkspacePath
 	}
 
 	workspaceExists := false
@@ -735,14 +735,14 @@ func (m *MaintenanceCoordinator) resolveWorkspacePromptPath(workspaceRoot, fileN
 
 func (m *MaintenanceCoordinator) resolvePromptCacheTracePath(config *GatewayConfig, memoryRoot string) string {
 	var raw = config.Llm.PromptCaching.TraceFilePath
-	if IsBlankP(raw) {
+	if IsBlank(raw) {
 		raw = config.Diagnostics.CacheTrace.FilePath
 	}
-	if IsBlankP(raw) {
-		*raw = filepath.Join(memoryRoot, "logs", "cache-trace.jsonl")
+	if IsBlank(raw) {
+		raw = filepath.Join(memoryRoot, "logs", "cache-trace.jsonl")
 	}
 
-	return m.pathFor(*raw, memoryRoot)
+	return m.pathFor(raw, memoryRoot)
 }
 
 func (m *MaintenanceCoordinator) pathFor(configuredPath, basePath string) string {
@@ -1416,4 +1416,17 @@ func (m *MaintenanceCoordinator) buildPromptBudgetSnapshot(recentTurns []TurnTok
 	result.AgentsFileBytes = GetDirectorySize(agentsPath)
 	result.SoulFileBytes = GetDirectorySize(soulPath)
 	return result
+}
+
+func (m *MaintenanceCoordinator) normalizeApply(apply string) string {
+	normalized := strings.ToLower(strings.TrimSpace(apply))
+	if normalized == "" {
+		normalized = "all"
+	}
+
+	switch normalized {
+	case "all", "retention", "metadata", "artifacts":
+		return normalized
+	}
+	return "all"
 }

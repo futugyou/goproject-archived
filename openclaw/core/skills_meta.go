@@ -23,12 +23,10 @@ type MetaExecutionContext struct {
 	steps   map[string]any
 }
 
-func NewMetaExecutionContext(input *string, outputs map[string]string, inputs map[string]any, steps map[string]any) *MetaExecutionContext {
+func NewMetaExecutionContext(input string, outputs map[string]string, inputs map[string]any, steps map[string]any) *MetaExecutionContext {
 	ctx := &MetaExecutionContext{}
 
-	if input != nil {
-		ctx.input = *input
-	}
+	ctx.input = input
 
 	ctx.outputs = make(map[string]string)
 	for k, v := range outputs {
@@ -231,9 +229,9 @@ func NewMetaToolArgumentResolver(renderer *MetaTemplateRenderer) *MetaToolArgume
 }
 
 func (r *MetaToolArgumentResolver) Resolve(
-	compositionToolArgsJSON *string,
-	withJSON *string,
-	stepToolArgsJSON *string,
+	compositionToolArgsJSON string,
+	withJSON string,
+	stepToolArgsJSON string,
 	context *MetaExecutionContext,
 ) (string, error) {
 
@@ -269,13 +267,13 @@ func (r *MetaToolArgumentResolver) Resolve(
 	return string(finalBytes), nil
 }
 
-func mergeInto(target map[string]any, jsonStr *string) error {
-	if jsonStr == nil || strings.TrimSpace(*jsonStr) == "" {
+func mergeInto(target map[string]any, jsonStr string) error {
+	if strings.TrimSpace(jsonStr) == "" {
 		return nil
 	}
 
 	var parsedNode map[string]any
-	if err := json.Unmarshal([]byte(*jsonStr), &parsedNode); err != nil {
+	if err := json.Unmarshal([]byte(jsonStr), &parsedNode); err != nil {
 		return errors.New("invalid_tool_args")
 	}
 
@@ -558,22 +556,22 @@ type MetaSkillStepDefinition struct {
 	ID string `json:"id"`
 	// Step kind (agent, tool_call, llm_chat, etc.).
 	Kind                 string                   `json:"kind"`
-	Skill                *string                  `json:"skill,omitempty"`
-	Tool                 *string                  `json:"tool,omitempty"`
-	SkillExecEntrypoint  *string                  `json:"skill_exec_entrypoint,omitempty"`
+	Skill                string                   `json:"skill,omitempty"`
+	Tool                 string                   `json:"tool,omitempty"`
+	SkillExecEntrypoint  string                   `json:"skill_exec_entrypoint,omitempty"`
 	SkillExecArgs        []string                 `json:"skill_exec_args,omitempty"`
-	SkillExecStdin       *string                  `json:"skill_exec_stdin,omitempty"`
-	SkillExecCwd         *string                  `json:"skill_exec_cwd,omitempty"`
-	SkillExecParseMode   *string                  `json:"skill_exec_parse_mode,omitempty"`
-	WithJSON             *string                  `json:"with_json,omitempty"`
-	When                 *string                  `json:"when,omitempty"`
-	ToolArgsJSON         *string                  `json:"tool_args_json,omitempty"`
+	SkillExecStdin       string                   `json:"skill_exec_stdin,omitempty"`
+	SkillExecCwd         string                   `json:"skill_exec_cwd,omitempty"`
+	SkillExecParseMode   string                   `json:"skill_exec_parse_mode,omitempty"`
+	WithJSON             string                   `json:"with_json,omitempty"`
+	When                 string                   `json:"when,omitempty"`
+	ToolArgsJSON         string                   `json:"tool_args_json,omitempty"`
 	ToolAllowlist        []string                 `json:"tool_allowlist,omitempty"`
 	OutputChoices        []string                 `json:"output_choices,omitempty"`
 	Clarify              *MetaClarifySchema       `json:"clarify,omitempty"`
 	Routes               []MetaRouteDefinition    `json:"routes,omitempty"`
 	DependsOn            []string                 `json:"depends_on,omitempty"`
-	OnFailure            *string                  `json:"on_failure,omitempty"`
+	OnFailure            string                   `json:"on_failure,omitempty"`
 	TimeoutSeconds       *int                     `json:"timeout_seconds,omitempty"`
 	Retry                *MetaStepRetryPolicy     `json:"retry"`
 	OutputContract       *MetaStepOutputContract  `json:"output_contract"`
@@ -589,7 +587,7 @@ type MetaClarifySchema struct {
 	ExtractNaturalLanguage bool               `json:"extract_natural_language"`
 	Fields                 []MetaClarifyField `json:"fields,omitempty"`
 	CancelWords            []string           `json:"cancel_words,omitempty"`
-	SkipIf                 *string            `json:"skip_if,omitempty"`
+	SkipIf                 string             `json:"skip_if,omitempty"`
 	TimeoutSeconds         *int               `json:"timeout_seconds,omitempty"`
 }
 

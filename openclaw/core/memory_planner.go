@@ -113,8 +113,8 @@ func (cb *ContextBudgetPlanner) BuildContext(
 
 	return &StructuredMemoryContextResult{
 		Success:    true,
-		Context:    &contextStr,
-		SourcePath: &sourcePath,
+		Context:    contextStr,
+		SourcePath: sourcePath,
 		Mode:       mode,
 		Truncated:  truncated,
 		Sources:    export.Sources,
@@ -127,8 +127,8 @@ func (cb *ContextBudgetPlanner) resolveBestPath(
 ) (string, error) {
 
 	query := strings.TrimSpace(request.Query)
-	if query == "" && request.SessionId != nil {
-		query = *request.SessionId
+	if query == "" {
+		query = request.SessionId
 	}
 
 	if query != "" {
@@ -257,17 +257,17 @@ func (cb *ContextBudgetPlanner) normalizeAutoContextMode(mode string) string {
 	return strings.ToLower(strings.TrimSpace(mode))
 }
 
-func (cb *ContextBudgetPlanner) normalizePath(path *string) string {
-	if path == nil || strings.TrimSpace(*path) == "" {
+func (cb *ContextBudgetPlanner) normalizePath(path string) string {
+	if strings.TrimSpace(path) == "" {
 		return ""
 	}
-	return strings.TrimSpace(*path)
+	return strings.TrimSpace(path)
 }
 
 func (cb *ContextBudgetPlanner) fail(errorMsg string, sourcePath string) *StructuredMemoryContextResult {
 	return &StructuredMemoryContextResult{
 		Success:    false,
-		SourcePath: &sourcePath,
-		Error:      &errorMsg,
+		SourcePath: sourcePath,
+		Error:      errorMsg,
 	}
 }

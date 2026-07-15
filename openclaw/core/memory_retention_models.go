@@ -101,7 +101,7 @@ type RetentionRunStatus struct {
 	LastRunCompletedAtUtc  *time.Time            `json:"last_run_completed_at_utc,omitempty"`
 	LastRunDurationMs      int64                 `json:"last_run_duration_ms"`
 	LastRunSucceeded       bool                  `json:"last_run_succeeded"`
-	LastError              *string               `json:"last_error,omitempty"`
+	LastError              string                `json:"last_error,omitempty"`
 	TotalRuns              int64                 `json:"total_runs"`
 	TotalSweepErrors       int64                 `json:"total_sweep_errors"`
 	TotalArchivedItems     int64                 `json:"total_archived_items"`

@@ -116,16 +116,16 @@ const (
 // ============================================================================
 
 type ToolGovernanceConfig struct {
-	Enabled                           bool    `json:"enabled"`
-	Provider                          string  `json:"provider"`
-	SidecarBaseUrl                    *string `json:"sidecar_base_url,omitempty"`
-	DecisionEndpoint                  string  `json:"decision_endpoint"`
-	ResultEndpoint                    string  `json:"result_endpoint"`
-	TimeoutMs                         int     `json:"timeout_ms"`
-	AuditResults                      bool    `json:"audit_results"`
-	FailClosed                        bool    `json:"fail_closed"`
-	FailOpenReadOnlyLowRisk           bool    `json:"fail_open_read_only_low_risk"`
-	RequireGovernanceForHighRiskTools bool    `json:"require_governance_for_high_risk_tools"`
+	Enabled                           bool   `json:"enabled"`
+	Provider                          string `json:"provider"`
+	SidecarBaseUrl                    string `json:"sidecar_base_url,omitempty"`
+	DecisionEndpoint                  string `json:"decision_endpoint"`
+	ResultEndpoint                    string `json:"result_endpoint"`
+	TimeoutMs                         int    `json:"timeout_ms"`
+	AuditResults                      bool   `json:"audit_results"`
+	FailClosed                        bool   `json:"fail_closed"`
+	FailOpenReadOnlyLowRisk           bool   `json:"fail_open_read_only_low_risk"`
+	RequireGovernanceForHighRiskTools bool   `json:"require_governance_for_high_risk_tools"`
 }
 
 func DefaultToolGovernanceConfig() ToolGovernanceConfig {
@@ -145,13 +145,13 @@ type GovernanceDecision struct {
 	Allowed                  bool             `json:"allowed"`
 	Reason                   string           `json:"reason,omitempty"`
 	TrustScore               *float64         `json:"trust_score,omitempty"`
-	PolicyId                 *string          `json:"policy_id,omitempty"`
-	RuleId                   *string          `json:"rule_id,omitempty"`
+	PolicyId                 string           `json:"policy_id,omitempty"`
+	RuleId                   string           `json:"rule_id,omitempty"`
 	Action                   GovernanceAction `json:"action"`
 	EvaluationMs             *float64         `json:"evaluation_ms,omitempty"`
 	IsUnavailable            bool             `json:"is_unavailable"`
-	RedactedArgumentsJson    *string          `json:"redacted_arguments_json,omitempty"`
-	ReplacementArgumentsJson *string          `json:"replacement_arguments_json,omitempty"`
+	RedactedArgumentsJson    string           `json:"redacted_arguments_json,omitempty"`
+	ReplacementArgumentsJson string           `json:"replacement_arguments_json,omitempty"`
 }
 
 func DefaultGovernanceDecision() *GovernanceDecision {
@@ -198,7 +198,7 @@ type ToolGovernanceContext struct {
 	ChannelId        string                   `json:"channel_id"`
 	SenderId         string                   `json:"sender_id"`
 	CorrelationId    string                   `json:"correlation_id"`
-	CallId           *string                  `json:"call_id,omitempty"`
+	CallId           string                   `json:"call_id,omitempty"`
 	ToolName         string                   `json:"tool_name"`
 	ArgumentsJson    string                   `json:"arguments_json"`
 	ActionDescriptor ToolActionDescriptor     `json:"action_descriptor"`
@@ -208,8 +208,8 @@ type ToolGovernanceContext struct {
 
 type ToolGovernanceExecutionResult struct {
 	ResultStatus   string  `json:"result_status"`
-	FailureCode    *string `json:"failure_code,omitempty"`
-	FailureMessage *string `json:"failure_message,omitempty"`
+	FailureCode    string  `json:"failure_code,omitempty"`
+	FailureMessage string  `json:"failure_message,omitempty"`
 	Failed         bool    `json:"failed"`
 	TimedOut       bool    `json:"timed_out"`
 	DurationMs     float64 `json:"duration_ms"`
@@ -223,7 +223,7 @@ type ToolGovernanceSidecarRequest struct {
 	ChannelId        string                   `json:"channel_id"`
 	UserId           string                   `json:"user_id"`
 	TraceId          string                   `json:"trace_id"`
-	CallId           *string                  `json:"call_id,omitempty"`
+	CallId           string                   `json:"call_id,omitempty"`
 	ToolName         string                   `json:"tool_name"`
 	ToolCategory     string                   `json:"tool_category"`
 	RiskLevel        string                   `json:"risk_level"`
@@ -236,12 +236,12 @@ type ToolGovernanceSidecarResponse struct {
 	Allowed                  *bool    `json:"allowed,omitempty"`
 	Reason                   string   `json:"reason"`
 	TrustScore               *float64 `json:"trust_score,omitempty"`
-	PolicyId                 *string  `json:"policy_id,omitempty"`
-	RuleId                   *string  `json:"rule_id,omitempty"`
+	PolicyId                 string   `json:"policy_id,omitempty"`
+	RuleId                   string   `json:"rule_id,omitempty"`
 	Action                   string   `json:"action"`
 	EvaluationMs             *float64 `json:"evaluation_ms,omitempty"`
-	RedactedArgumentsJson    *string  `json:"redacted_arguments_json,omitempty"`
-	ReplacementArgumentsJson *string  `json:"replacement_arguments_json,omitempty"`
+	RedactedArgumentsJson    string   `json:"redacted_arguments_json,omitempty"`
+	ReplacementArgumentsJson string   `json:"replacement_arguments_json,omitempty"`
 }
 
 type ToolGovernanceSidecarResultRequest struct {
@@ -251,7 +251,7 @@ type ToolGovernanceSidecarResultRequest struct {
 	ChannelId      string                         `json:"channel_id"`
 	UserId         string                         `json:"user_id"`
 	TraceId        string                         `json:"trace_id"`
-	CallId         *string                        `json:"call_id,omitempty"`
+	CallId         string                         `json:"call_id,omitempty"`
 	ToolName       string                         `json:"tool_name"`
 	Descriptor     ToolGovernanceDescriptor       `json:"descriptor"`
 	Decision       *GovernanceDecision            `json:"decision"`
@@ -318,7 +318,7 @@ type ToolPresetConfig struct {
 	DenyTools             []string `json:"deny_tools"`
 	DenyPrefixes          []string `json:"deny_prefixes"`
 	ApprovalRequiredTools []string `json:"approval_required_tools"`
-	AutonomyMode          *string  `json:"autonomy_mode,omitempty"`
+	AutonomyMode          string   `json:"autonomy_mode,omitempty"`
 	RequireToolApproval   *bool    `json:"require_tool_approval,omitempty"`
 	Description           string   `json:"description"`
 }
@@ -334,13 +334,13 @@ type ResolvedToolPreset struct {
 }
 
 type ToolActionDescriptor struct {
-	Action              string  `json:"action"`
-	IsMutation          bool    `json:"is_mutation"`
-	RequiresApproval    bool    `json:"requires_approval"`
-	Summary             string  `json:"summary"`
-	ApprovalFingerprint *string `json:"approval_fingerprint,omitempty"`
-	RiskLevel           *string `json:"risk_level,omitempty"`
-	ReadOnly            *bool   `json:"read_only,omitempty"`
+	Action              string `json:"action"`
+	IsMutation          bool   `json:"is_mutation"`
+	RequiresApproval    bool   `json:"requires_approval"`
+	Summary             string `json:"summary"`
+	ApprovalFingerprint string `json:"approval_fingerprint,omitempty"`
+	RiskLevel           string `json:"risk_level,omitempty"`
+	ReadOnly            *bool  `json:"read_only,omitempty"`
 }
 
 type ToolExecutionContext struct {

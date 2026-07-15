@@ -63,20 +63,20 @@ type IntegrationSessionSearchResponse struct {
 // ==========================================
 
 type IntegrationMessageRequest struct {
-	ChannelId        *string `json:"channel_id"`
-	SenderId         *string `json:"sender_id"`
-	SessionId        *string `json:"session_id"`
-	Text             string  `json:"text"`
-	MessageId        *string `json:"message_id"`
-	ReplyToMessageId *string `json:"reply_to_message_id"`
+	ChannelId        string `json:"channel_id"`
+	SenderId         string `json:"sender_id"`
+	SessionId        string `json:"session_id"`
+	Text             string `json:"text"`
+	MessageId        string `json:"message_id"`
+	ReplyToMessageId string `json:"reply_to_message_id"`
 }
 
 type IntegrationMessageResponse struct {
-	Accepted  bool    `json:"accepted"`
-	ChannelId string  `json:"channel_id"`
-	SenderId  string  `json:"sender_id"`
-	SessionId string  `json:"session_id"`
-	MessageId *string `json:"message_id"`
+	Accepted  bool   `json:"accepted"`
+	ChannelId string `json:"channel_id"`
+	SenderId  string `json:"sender_id"`
+	SessionId string `json:"session_id"`
+	MessageId string `json:"message_id"`
 }
 
 // ==========================================
@@ -106,19 +106,19 @@ type IntegrationProfileResponse struct {
 // ==========================================
 
 type IntegrationTextToSpeechRequest struct {
-	Text      string  `json:"text"`
-	Provider  *string `json:"provider"`
-	VoiceName *string `json:"voice_name"`
-	VoiceId   *string `json:"voice_id"`
-	Model     *string `json:"model"`
+	Text      string `json:"text"`
+	Provider  string `json:"provider"`
+	VoiceName string `json:"voice_name"`
+	VoiceId   string `json:"voice_id"`
+	Model     string `json:"model"`
 }
 
 type IntegrationTextToSpeechResponse struct {
-	Provider  string  `json:"provider"`
-	AssetId   string  `json:"asset_id"`
-	MediaType string  `json:"media_type"`
-	DataUrl   string  `json:"data_url"`
-	Marker    *string `json:"marker"`
+	Provider  string `json:"provider"`
+	AssetId   string `json:"asset_id"`
+	MediaType string `json:"media_type"`
+	DataUrl   string `json:"data_url"`
+	Marker    string `json:"marker"`
 }
 
 // ==========================================
@@ -126,12 +126,12 @@ type IntegrationTextToSpeechResponse struct {
 // ==========================================
 
 type LearningProposalReviewRequest struct {
-	Reason *string `json:"reason"`
+	Reason string `json:"reason"`
 }
 
 type IntegrationApprovalsResponse struct {
-	ChannelId *string               `json:"channel_id"`
-	SenderId  *string               `json:"sender_id"`
+	ChannelId string                `json:"channel_id"`
+	SenderId  string                `json:"sender_id"`
 	Items     []ToolApprovalRequest `json:"items"`
 }
 

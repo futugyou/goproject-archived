@@ -5,16 +5,16 @@ import "time"
 // --- Auth ---
 
 type AuthSessionRequest struct {
-	Remember     bool    `json:"remember"`
-	Username     *string `json:"username"`
-	Password     *string `json:"password"`
-	AccountToken *string `json:"accountToken"`
+	Remember     bool   `json:"remember"`
+	Username     string `json:"username"`
+	Password     string `json:"password"`
+	AccountToken string `json:"accountToken"`
 }
 
 type OperatorTokenExchangeRequest struct {
-	Username     *string    `json:"username"`
-	Password     *string    `json:"password"`
-	Label        *string    `json:"label"`
+	Username     string     `json:"username"`
+	Password     string     `json:"password"`
+	Label        string     `json:"label"`
 	ExpiresAtUtc *time.Time `json:"expiresAtUtc"`
 }
 
@@ -33,19 +33,19 @@ func DefaultOperatorTokenExchangeResponse() OperatorTokenExchangeResponse {
 
 type AuthSessionResponse struct {
 	AuthMode                          string     `json:"auth_mode"`
-	CsrfToken                         *string    `json:"csrf_token"`
+	CsrfToken                         string     `json:"csrf_token"`
 	ExpiresAtUtc                      *time.Time `json:"expires_at_utc"`
 	Persistent                        bool       `json:"persistent"`
 	Role                              string     `json:"role"`
-	AccountId                         *string    `json:"account_id"`
-	Username                          *string    `json:"username"`
-	DisplayName                       *string    `json:"display_name"`
+	AccountId                         string     `json:"account_id"`
+	Username                          string     `json:"username"`
+	DisplayName                       string     `json:"display_name"`
 	IsBootstrapAdmin                  bool       `json:"is_bootstrap_admin"`
 	PublicBind                        bool       `json:"public_bind"`
 	AllowedAuthModes                  []string   `json:"allowed_auth_modes"`
 	EffectiveToolSurface              string     `json:"effective_tool_surface"`
 	EffectiveToolPresetId             string     `json:"effective_tool_preset_id"`
-	EffectiveToolPresetDescription    *string    `json:"effective_tool_preset_description"`
+	EffectiveToolPresetDescription    string     `json:"effective_tool_preset_description"`
 	BrowserToolRegistered             bool       `json:"browser_tool_registered"`
 	BrowserExecutionBackendConfigured bool       `json:"browser_execution_backend_configured"`
 	BrowserCapabilityReason           string     `json:"browser_capability_reason"`
@@ -68,9 +68,9 @@ type ApprovalListResponse struct {
 
 type ApprovalHistoryQuery struct {
 	Limit     int        `json:"limit"`
-	ChannelId *string    `json:"channel_id"`
-	SenderId  *string    `json:"sender_id"`
-	ToolName  *string    `json:"tool_name"`
+	ChannelId string     `json:"channel_id"`
+	SenderId  string     `json:"sender_id"`
+	ToolName  string     `json:"tool_name"`
 	FromUtc   *time.Time `json:"from_utc"`
 	ToUtc     *time.Time `json:"to_utc"`
 }
@@ -89,16 +89,16 @@ type ApprovalHistoryEntry struct {
 	SenderId         string     `json:"sender_id"`
 	ToolName         string     `json:"tool_name"`
 	ArgumentsPreview string     `json:"arguments_preview"`
-	Action           *string    `json:"action"`
+	Action           string     `json:"action"`
 	IsMutation       bool       `json:"is_mutation"`
 	Summary          string     `json:"summary"`
 	TimestampUtc     time.Time  `json:"timestamp_utc"`
 	DecisionAtUtc    *time.Time `json:"decision_at_utc"`
-	ActorChannelId   *string    `json:"actorChannel_id"`
-	ActorSenderId    *string    `json:"actorSender_id"`
-	ActorRole        *string    `json:"actor_role"`
-	ActorDisplayName *string    `json:"actor_display_name"`
-	DecisionSource   *string    `json:"decision_source"`
+	ActorChannelId   string     `json:"actorChannel_id"`
+	ActorSenderId    string     `json:"actorSender_id"`
+	ActorRole        string     `json:"actor_role"`
+	ActorDisplayName string     `json:"actor_display_name"`
+	DecisionSource   string     `json:"decision_source"`
 	Approved         *bool      `json:"approved"`
 }
 
@@ -124,15 +124,15 @@ type AllowlistSnapshotResponse struct {
 }
 
 type SenderMutationResponse struct {
-	Success  bool    `json:"success"`
-	Error    *string `json:"error"`
-	SenderId *string `json:"sender_id"`
+	Success  bool   `json:"success"`
+	Error    string `json:"error"`
+	SenderId string `json:"sender_id"`
 }
 
 type CountMutationResponse struct {
-	Success bool    `json:"success"`
-	Error   *string `json:"error"`
-	Count   int     `json:"count"`
+	Success bool   `json:"success"`
+	Error   string `json:"error"`
+	Count   int    `json:"count"`
 }
 
 type SkillsReloadResponse struct {

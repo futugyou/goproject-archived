@@ -31,7 +31,7 @@ type PublicCompatibilityCatalog struct{}
 
 var PublicCompatibilityCatalogInstance = &PublicCompatibilityCatalog{}
 
-func (*PublicCompatibilityCatalog) GetCatalog(compatibilityStatus, kind, category *string) (*CompatibilityCatalogResponse, error) {
+func (*PublicCompatibilityCatalog) GetCatalog(compatibilityStatus, kind, category string) (*CompatibilityCatalogResponse, error) {
 	all, err := getPublicCompatibilityCatalog()
 	if err != nil {
 		return nil, err
@@ -73,11 +73,11 @@ func (*PublicCompatibilityCatalog) GetCatalog(compatibilityStatus, kind, categor
 	}, nil
 }
 
-func matchesPublicCompatibilityCatalog(value string, filter *string) bool {
-	if filter == nil || strings.TrimSpace(*filter) == "" {
+func matchesPublicCompatibilityCatalog(value string, filter string) bool {
+	if strings.TrimSpace(filter) == "" {
 		return true
 	}
-	return strings.EqualFold(value, strings.TrimSpace(*filter))
+	return strings.EqualFold(value, strings.TrimSpace(filter))
 }
 
 func loadPublicCompatibilityCatalog() (*CompatibilityCatalogResponse, error) {
@@ -115,12 +115,12 @@ func mapPublicCompatibilityCatalogEntry(entry CompatibilityCatalogManifestEntry)
 	}
 
 	var subject string
-	if entry.Slug != nil {
-		subject = *entry.Slug
-	} else if entry.PackageName != nil {
-		subject = *entry.PackageName
-	} else if entry.PluginId != nil {
-		subject = *entry.PluginId
+	if entry.Slug != "" {
+		subject = entry.Slug
+	} else if entry.PackageName != "" {
+		subject = entry.PackageName
+	} else if entry.PluginId != "" {
+		subject = entry.PluginId
 	} else {
 		subject = entry.Id
 	}
@@ -177,8 +177,8 @@ func buildPublicCompatibilityCatalogInstallCommand(entry CompatibilityCatalogMan
 	if entry.Kind == "clawhub-skill" {
 		slug := requirePublicCompatibilityCatalogField(entry.Slug, entry, "slug")
 		suffix := ""
-		if entry.Version != nil && strings.TrimSpace(*entry.Version) != "" {
-			suffix = fmt.Sprintf(" --version %s", *entry.Version)
+		if strings.TrimSpace(entry.Version) != "" {
+			suffix = fmt.Sprintf(" --version %s", entry.Version)
 		}
 		return fmt.Sprintf("openclaw clawhub install %s%s", slug, suffix)
 	}
@@ -218,8 +218,8 @@ func buildPublicCompatibilityCatalogGuidance(entry CompatibilityCatalogManifestE
 
 	if entry.Kind == "clawhub-skill" {
 		guidance = append(guidance, "Remote upstream skills use the ClawHub install flow; local copies can be installed with `openclaw skills install`.")
-		if entry.ExpectedRelativePath != nil && strings.TrimSpace(*entry.ExpectedRelativePath) != "" {
-			guidance = append(guidance, fmt.Sprintf("Expected installed file: %s.", *entry.ExpectedRelativePath))
+		if strings.TrimSpace(entry.ExpectedRelativePath) != "" {
+			guidance = append(guidance, fmt.Sprintf("Expected installed file: %s.", entry.ExpectedRelativePath))
 		}
 		return guidance
 	}
@@ -230,7 +230,7 @@ func buildPublicCompatibilityCatalogGuidance(entry CompatibilityCatalogManifestE
 		guidance = append(guidance, fmt.Sprintf("Install extra packages in the plugin dependency tree before load: %s.", strings.Join(entry.InstallExtraPackages, ", ")))
 	}
 
-	if entry.ConfigJson != nil && strings.TrimSpace(*entry.ConfigJson) != "" {
+	if strings.TrimSpace(entry.ConfigJson) != "" {
 		guidance = append(guidance, "This scenario pins a specific plugin config example; use it as a starting point when comparing your own configuration.")
 	}
 
@@ -269,8 +269,8 @@ func buildPublicCompatibilityCatalogGuidance(entry CompatibilityCatalogManifestE
 }
 
 func resolvePublicCompatibilityCatalogStatus(entry CompatibilityCatalogManifestEntry) string {
-	if entry.ExpectedStatus != nil && strings.TrimSpace(*entry.ExpectedStatus) != "" {
-		return *entry.ExpectedStatus
+	if strings.TrimSpace(entry.ExpectedStatus) != "" {
+		return entry.ExpectedStatus
 	}
 
 	if entry.Kind == "clawhub-skill" {
@@ -280,9 +280,9 @@ func resolvePublicCompatibilityCatalogStatus(entry CompatibilityCatalogManifestE
 	panic(fmt.Sprintf("Compatibility catalog entry '%s' of kind '%s' must declare expectedStatus.", entry.Id, entry.Kind))
 }
 
-func requirePublicCompatibilityCatalogField(value *string, entry CompatibilityCatalogManifestEntry, fieldName string) string {
-	if value != nil && strings.TrimSpace(*value) != "" {
-		return *value
+func requirePublicCompatibilityCatalogField(value string, entry CompatibilityCatalogManifestEntry, fieldName string) string {
+	if strings.TrimSpace(value) != "" {
+		return value
 	}
 
 	panic(fmt.Sprintf("Compatibility catalog entry '%s' of kind '%s' must declare '%s'.", entry.Id, entry.Kind, fieldName))
@@ -297,14 +297,14 @@ type CompatibilityCatalogManifestEntry struct {
 	Id                      string
 	Category                string
 	Kind                    string
-	Spec                    *string
-	PackageName             *string
-	PluginId                *string
-	Slug                    *string
-	Version                 *string
-	ExpectedStatus          *string
-	ExpectedRelativePath    *string
-	ConfigJson              *string
+	Spec                    string
+	PackageName             string
+	PluginId                string
+	Slug                    string
+	Version                 string
+	ExpectedStatus          string
+	ExpectedRelativePath    string
+	ConfigJson              string
 	InstallExtraPackages    []string
 	ExpectedToolNames       []string
 	ExpectedSkillNames      []string

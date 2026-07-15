@@ -29,22 +29,22 @@ type BackendEvent struct {
 	SessionID    string           `json:"session_id" gorm:"column:session_id;not null"`
 	Sequence     int64            `json:"sequence" gorm:"column:sequence;not null"`
 	TimestampUtc time.Time        `json:"timestamp_utc" gorm:"column:timestamp_utc;not null"`
-	RawLine      *string          `json:"raw_line,omitempty" gorm:"column:raw_line"`
+	RawLine      string           `json:"raw_line,omitempty" gorm:"column:raw_line"`
 	Type         BackendEventType `json:"type" gorm:"column:type;not null"` // 额外的类型字段
 
 	// 派生事件的聚合字段 (使用指针以支持数据库/JSON 中的 NULL/omitempty)
-	Text          *string `json:"text,omitempty" gorm:"column:text"`
-	ToolName      *string `json:"tool_name,omitempty" gorm:"column:tool_name"`
-	ArgumentsJSON *string `json:"arguments_json,omitempty" gorm:"column:arguments_json"`
-	Command       *string `json:"command,omitempty" gorm:"column:command"`
-	ExitCode      *int    `json:"exit_code,omitempty" gorm:"column:exit_code"`
-	Stdout        *string `json:"stdout,omitempty" gorm:"column:stdout"`
-	Stderr        *string `json:"stderr,omitempty" gorm:"column:stderr"`
-	Path          *string `json:"path,omitempty" gorm:"column:path"`
-	Patch         *string `json:"patch,omitempty" gorm:"column:patch"`
-	Summary       *string `json:"summary,omitempty" gorm:"column:summary"`
-	Message       *string `json:"message,omitempty" gorm:"column:message"`
-	Reason        *string `json:"reason,omitempty" gorm:"column:reason"`
+	Text          string `json:"text,omitempty" gorm:"column:text"`
+	ToolName      string `json:"tool_name,omitempty" gorm:"column:tool_name"`
+	ArgumentsJSON string `json:"arguments_json,omitempty" gorm:"column:arguments_json"`
+	Command       string `json:"command,omitempty" gorm:"column:command"`
+	ExitCode      *int   `json:"exit_code,omitempty" gorm:"column:exit_code"`
+	Stdout        string `json:"stdout,omitempty" gorm:"column:stdout"`
+	Stderr        string `json:"stderr,omitempty" gorm:"column:stderr"`
+	Path          string `json:"path,omitempty" gorm:"column:path"`
+	Patch         string `json:"patch,omitempty" gorm:"column:patch"`
+	Summary       string `json:"summary,omitempty" gorm:"column:summary"`
+	Message       string `json:"message,omitempty" gorm:"column:message"`
+	Reason        string `json:"reason,omitempty" gorm:"column:reason"`
 }
 
 // Deprecated: Use BackendEvent struct
@@ -57,7 +57,7 @@ type BackendEventBase struct {
 	SessionID    string    `json:"session_id"`
 	Sequence     int64     `json:"sequence"`
 	TimestampUtc time.Time `json:"timestamp_utc"`
-	RawLine      *string   `json:"raw_line,omitempty"`
+	RawLine      string    `json:"raw_line,omitempty"`
 }
 
 func (b *BackendEventBase) GetBase() *BackendEventBase {
@@ -87,8 +87,8 @@ type BackendStderrOutputEvent struct {
 
 type BackendToolCallRequestedEvent struct {
 	BackendEventBase
-	ToolName      string  `json:"tool_name"`
-	ArgumentsJson *string `json:"arguments_json,omitempty"`
+	ToolName      string `json:"tool_name"`
+	ArgumentsJson string `json:"arguments_json,omitempty"`
 }
 
 type BackendShellCommandProposedEvent struct {
@@ -98,22 +98,22 @@ type BackendShellCommandProposedEvent struct {
 
 type BackendShellCommandExecutedEvent struct {
 	BackendEventBase
-	Command  string  `json:"command"`
-	ExitCode *int    `json:"exit_code,omitempty"`
-	Stdout   *string `json:"stdout,omitempty"`
-	Stderr   *string `json:"stderr,omitempty"`
+	Command  string `json:"command"`
+	ExitCode *int   `json:"exit_code,omitempty"`
+	Stdout   string `json:"stdout,omitempty"`
+	Stderr   string `json:"stderr,omitempty"`
 }
 
 type BackendPatchProposedEvent struct {
 	BackendEventBase
-	Path  *string `json:"path,omitempty"`
-	Patch string  `json:"patch"`
+	Path  string `json:"path,omitempty"`
+	Patch string `json:"patch"`
 }
 
 type BackendPatchAppliedEvent struct {
 	BackendEventBase
-	Path    *string `json:"path,omitempty"`
-	Summary *string `json:"summary,omitempty"`
+	Path    string `json:"path,omitempty"`
+	Summary string `json:"summary,omitempty"`
 }
 
 type BackendFileReadEvent struct {
@@ -133,8 +133,8 @@ type BackendErrorEvent struct {
 
 type BackendSessionCompletedEvent struct {
 	BackendEventBase
-	ExitCode *int    `json:"exit_code,omitempty"`
-	Reason   *string `json:"reason,omitempty"`
+	ExitCode *int   `json:"exit_code,omitempty"`
+	Reason   string `json:"reason,omitempty"`
 }
 
 func UnmarshalBackendEvent(data []byte) (IBackendEvent, error) {
@@ -259,15 +259,15 @@ type CodingCliBackendConfig struct {
 	Enabled                bool                          `json:"enabled"`
 	BackendId              string                        `json:"backend_id"`
 	Provider               string                        `json:"provider"`
-	DisplayName            *string                       `json:"display_name,omitempty"`
-	ExecutablePath         *string                       `json:"executable_path,omitempty"`
+	DisplayName            string                        `json:"display_name,omitempty"`
+	ExecutablePath         string                        `json:"executable_path,omitempty"`
 	Args                   []string                      `json:"args"`
 	ProbeArgs              []string                      `json:"probe_args"`
 	TimeoutSeconds         int                           `json:"timeout_seconds"`
 	Environment            map[string]string             `json:"environment"`
-	DefaultModel           *string                       `json:"default_model,omitempty"`
+	DefaultModel           string                        `json:"default_model,omitempty"`
 	RequireWorkspace       bool                          `json:"require_workspace"`
-	DefaultWorkspacePath   *string                       `json:"default_workspace_path,omitempty"`
+	DefaultWorkspacePath   string                        `json:"default_workspace_path,omitempty"`
 	ReadOnlyByDefault      bool                          `json:"read_only_by_default"`
 	WriteEnabled           bool                          `json:"write_enabled"`
 	PreferStructuredOutput bool                          `json:"prefer_structured_output"`
@@ -292,9 +292,9 @@ func DefaultCodingCliBackendConfig() CodingCliBackendConfig {
 }
 
 type BackendCredentialSourceConfig struct {
-	SecretRef          *string `json:"secret_ref,omitempty"`
-	TokenFilePath      *string `json:"token_file_path,omitempty"`
-	ConnectedAccountId *string `json:"connected_account_id,omitempty"`
+	SecretRef          string `json:"secret_ref,omitempty"`
+	TokenFilePath      string `json:"token_file_path,omitempty"`
+	ConnectedAccountId string `json:"connected_account_id,omitempty"`
 }
 
 func DefaultBackendCredentialSourceConfig() BackendCredentialSourceConfig {
@@ -304,11 +304,11 @@ func DefaultBackendCredentialSourceConfig() BackendCredentialSourceConfig {
 type ConnectedAccount struct {
 	Id                  string            `json:"id"`
 	Provider            string            `json:"provider"`
-	DisplayName         *string           `json:"display_name,omitempty"`
+	DisplayName         string            `json:"display_name,omitempty"`
 	SecretKind          string            `json:"secret_kind"`
-	SecretRef           *string           `json:"secret_ref,omitempty"`
-	EncryptedSecretJson *string           `json:"encrypted_secret_json,omitempty"`
-	TokenFilePath       *string           `json:"token_file_path,omitempty"`
+	SecretRef           string            `json:"secret_ref,omitempty"`
+	EncryptedSecretJson string            `json:"encrypted_secret_json,omitempty"`
+	TokenFilePath       string            `json:"token_file_path,omitempty"`
 	Scopes              []string          `json:"scopes"`
 	ExpiresAt           *time.Time        `json:"expires_at,omitempty"`
 	IsActive            bool              `json:"is_active"`
@@ -330,9 +330,9 @@ func DefaultConnectedAccount() ConnectedAccount {
 }
 
 type ConnectedAccountSecretRef struct {
-	SecretRef          *string `json:"secret_ref,omitempty"`
-	TokenFilePath      *string `json:"token_file_path,omitempty"`
-	ConnectedAccountId *string `json:"connected_account_id,omitempty"`
+	SecretRef          string `json:"secret_ref,omitempty"`
+	TokenFilePath      string `json:"token_file_path,omitempty"`
+	ConnectedAccountId string `json:"connected_account_id,omitempty"`
 }
 
 type ConnectedAccountSecretPayload struct {
@@ -342,10 +342,10 @@ type ConnectedAccountSecretPayload struct {
 type ResolvedBackendCredential struct {
 	Provider      string            `json:"provider"`
 	SourceKind    string            `json:"source_kind"`
-	AccountId     *string           `json:"account_id,omitempty"`
-	DisplayName   *string           `json:"display_name,omitempty"`
-	Secret        *string           `json:"secret,omitempty"`
-	TokenFilePath *string           `json:"token_file_path,omitempty"`
+	AccountId     string            `json:"account_id,omitempty"`
+	DisplayName   string            `json:"display_name,omitempty"`
+	Secret        string            `json:"secret,omitempty"`
+	TokenFilePath string            `json:"token_file_path,omitempty"`
 	Scopes        []string          `json:"scopes"`
 	ExpiresAt     *time.Time        `json:"expires_at,omitempty"`
 	Metadata      map[string]string `json:"metadata"`
@@ -363,8 +363,8 @@ type BackendDefinition struct {
 	Provider       string              `json:"provider"`
 	DisplayName    string              `json:"display_name"`
 	Enabled        bool                `json:"enabled"`
-	ExecutablePath *string             `json:"executable_path,omitempty"`
-	DefaultModel   *string             `json:"default_model,omitempty"`
+	ExecutablePath string              `json:"executable_path,omitempty"`
+	DefaultModel   string              `json:"default_model,omitempty"`
 	Capabilities   BackendCapabilities `json:"capabilities"`
 	AccessPolicy   BackendAccessPolicy `json:"access_policy"`
 }
@@ -428,18 +428,18 @@ type BackendSessionRecord struct {
 	BackendId               string     `json:"backend_id"`
 	Provider                string     `json:"provider"`
 	State                   string     `json:"state"`
-	OwnerSessionId          *string    `json:"owner_session_id,omitempty"`
-	WorkspacePath           *string    `json:"workspace_path,omitempty"`
-	Model                   *string    `json:"model,omitempty"`
+	OwnerSessionId          string     `json:"owner_session_id,omitempty"`
+	WorkspacePath           string     `json:"workspace_path,omitempty"`
+	Model                   string     `json:"model,omitempty"`
 	ReadOnly                bool       `json:"read_only"`
 	StructuredOutputEnabled bool       `json:"structured_output_enabled"`
-	DisplayName             *string    `json:"display_name,omitempty"`
+	DisplayName             string     `json:"display_name,omitempty"`
 	CreatedAtUtc            time.Time  `json:"created_at_utc"`
 	StartedAtUtc            *time.Time `json:"started_at_utc,omitempty"`
 	CompletedAtUtc          *time.Time `json:"completed_at_utc,omitempty"`
 	LastEventSequence       int64      `json:"last_event_sequence"`
 	ExitCode                *int       `json:"exit_code,omitempty"`
-	LastError               *string    `json:"last_error,omitempty"`
+	LastError               string     `json:"last_error,omitempty"`
 }
 
 func DefaultBackendSessionRecord() BackendSessionRecord {
@@ -451,10 +451,10 @@ func DefaultBackendSessionRecord() BackendSessionRecord {
 
 type StartBackendSessionRequest struct {
 	BackendId        string                     `json:"backend_id"`
-	OwnerSessionId   *string                    `json:"owner_session_id,omitempty"`
-	WorkspacePath    *string                    `json:"workspace_path,omitempty"`
-	Prompt           *string                    `json:"prompt,omitempty"`
-	Model            *string                    `json:"model,omitempty"`
+	OwnerSessionId   string                     `json:"owner_session_id,omitempty"`
+	WorkspacePath    string                     `json:"workspace_path,omitempty"`
+	Prompt           string                     `json:"prompt,omitempty"`
+	Model            string                     `json:"model,omitempty"`
 	ReadOnly         *bool                      `json:"read_only,omitempty"`
 	Environment      map[string]string          `json:"environment"`
 	CredentialSource *ConnectedAccountSecretRef `json:"credential_source,omitempty"`
@@ -467,9 +467,9 @@ func DefaultStartBackendSessionRequest() StartBackendSessionRequest {
 }
 
 type BackendInput struct {
-	Text          *string `json:"text,omitempty"`
-	AppendNewline bool    `json:"append_newline"`
-	CloseInput    bool    `json:"close_input"`
+	Text          string `json:"text,omitempty"`
+	AppendNewline bool   `json:"append_newline"`
+	CloseInput    bool   `json:"close_input"`
 }
 
 func DefaultBackendInput() BackendInput {
@@ -479,8 +479,8 @@ func DefaultBackendInput() BackendInput {
 }
 
 type BackendProbeRequest struct {
-	WorkspacePath    *string                    `json:"workspace_path,omitempty"`
-	Model            *string                    `json:"model,omitempty"`
+	WorkspacePath    string                     `json:"workspace_path,omitempty"`
+	Model            string                     `json:"model,omitempty"`
 	Environment      map[string]string          `json:"environment"`
 	CredentialSource *ConnectedAccountSecretRef `json:"credential_source,omitempty"`
 }
@@ -494,21 +494,21 @@ func DefaultBackendProbeRequest() BackendProbeRequest {
 type BackendProbeResult struct {
 	BackendId                 string  `json:"backend_id"`
 	Success                   bool    `json:"success"`
-	Message                   *string `json:"message,omitempty"`
-	ExecutablePath            *string `json:"executable_path,omitempty"`
+	Message                   string  `json:"message,omitempty"`
+	ExecutablePath            string  `json:"executable_path,omitempty"`
 	ExitCode                  *int    `json:"exit_code,omitempty"`
-	Stdout                    *string `json:"stdout,omitempty"`
-	Stderr                    *string `json:"stderr,omitempty"`
+	Stdout                    string  `json:"stdout,omitempty"`
+	Stderr                    string  `json:"stderr,omitempty"`
 	DurationMs                float64 `json:"duration_ms"`
 	StructuredOutputSupported bool    `json:"structured_output_supported"`
 }
 
 type ConnectedAccountCreateRequest struct {
 	Provider      string            `json:"provider"`
-	DisplayName   *string           `json:"display_name,omitempty"`
-	SecretRef     *string           `json:"secret_ref,omitempty"`
-	Secret        *string           `json:"secret,omitempty"`
-	TokenFilePath *string           `json:"token_file_path,omitempty"`
+	DisplayName   string            `json:"display_name,omitempty"`
+	SecretRef     string            `json:"secret_ref,omitempty"`
+	Secret        string            `json:"secret,omitempty"`
+	TokenFilePath string            `json:"token_file_path,omitempty"`
 	Scopes        []string          `json:"scopes"`
 	ExpiresAt     *time.Time        `json:"expires_at,omitempty"`
 	IsActive      *bool             `json:"is_active,omitempty"`
@@ -523,14 +523,14 @@ func DefaultConnectedAccountCreateRequest() ConnectedAccountCreateRequest {
 }
 
 type BackendCredentialResolutionRequest struct {
-	Provider         *string                    `json:"provider,omitempty"`
-	BackendId        *string                    `json:"backend_id,omitempty"`
+	Provider         string                     `json:"provider,omitempty"`
+	BackendId        string                     `json:"backend_id,omitempty"`
 	CredentialSource *ConnectedAccountSecretRef `json:"credential_source,omitempty"`
 }
 
 type BackendCredentialResolutionResponse struct {
 	Success    bool                       `json:"success"`
-	Error      *string                    `json:"error,omitempty"`
+	Error      string                     `json:"error,omitempty"`
 	HasSecret  bool                       `json:"has_secret"`
 	Credential *ResolvedBackendCredential `json:"credential,omitempty"`
 }

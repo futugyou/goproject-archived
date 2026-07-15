@@ -44,8 +44,8 @@ func (p *ProviderSmokeProbe) Probe(ctx context.Context, httpClient *http.Client,
 	}
 
 	apiKey := ""
-	if config.ApiKey != nil {
-		apiKey = SecretResolverInstance.Resolve(*config.ApiKey)
+	if config.ApiKey != "" {
+		apiKey = SecretResolverInstance.Resolve(config.ApiKey)
 	}
 
 	if !p.HasRequiredCredentials(provider, apiKey, config.AuthMode) {
@@ -99,11 +99,7 @@ func (p *ProviderSmokeProbe) Probe(ctx context.Context, httpClient *http.Client,
 		}, nil
 	}
 
-	detailPtr := p.SafeReadBody(response.Body, timeoutCtx)
-	var detail string
-	if detailPtr != nil {
-		detail = *detailPtr
-	}
+	detail := p.SafeReadBody(response.Body, timeoutCtx)
 	summary := fmt.Sprintf("Provider smoke failed for '%s/%s' with HTTP %d.", provider, config.Model, response.StatusCode)
 
 	// 处理需要熔断/跳过的特定临时上游状态码
@@ -127,7 +123,7 @@ func (p *ProviderSmokeProbe) Probe(ctx context.Context, httpClient *http.Client,
 	return &ProviderSmokeProbeResult{
 		Status:  "fail",
 		Summary: summary,
-		Detail:  *detailPtr,
+		Detail:  detail,
 	}, nil
 }
 
@@ -143,8 +139,8 @@ func (p *ProviderSmokeProbe) IsProviderConfigured(config LlmProviderConfig, regi
 	}
 
 	apiKey := ""
-	if config.ApiKey != nil {
-		apiKey = SecretResolverInstance.Resolve(*config.ApiKey)
+	if config.ApiKey != "" {
+		apiKey = SecretResolverInstance.Resolve(config.ApiKey)
 	}
 
 	return p.HasRequiredCredentials(provider, apiKey, config.AuthMode)
@@ -371,17 +367,14 @@ func (p *ProviderSmokeProbe) GetProbeTimeout(configuredTimeoutSeconds int) time.
 	return time.Duration(seconds) * time.Second
 }
 
-func (p *ProviderSmokeProbe) SafeReadBody(body io.Reader, ctx context.Context) *string {
+func (p *ProviderSmokeProbe) SafeReadBody(body io.Reader, ctx context.Context) string {
 	// 使用带 context 的 LimitedReader 避免读取无限的错误报文
 	limitedReader := io.LimitReader(body, 400)
 	payloadBytes, err := io.ReadAll(limitedReader)
 	if err != nil {
-		return nil
+		return ""
 	}
 
 	payload := string(payloadBytes)
-	if strings.TrimSpace(payload) == "" {
-		return nil
-	}
-	return &payload
+	return strings.TrimSpace(payload)
 }

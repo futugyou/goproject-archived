@@ -49,24 +49,24 @@ func (p *PostgresHarnessContractStore) List(ctx context.Context, query *HarnessC
 	tx := gorm.G[HarnessContract](p.db).Where("1=1")
 
 	if query != nil {
-		if query.Status != nil && *query.Status != "" {
-			tx = tx.Where("status = ?", *query.Status)
+		if query.Status != "" {
+			tx = tx.Where("status = ?", query.Status)
 		}
 
-		if query.RiskLevel != nil && *query.RiskLevel != "" {
-			tx = tx.Where("risk_level = ?", *query.RiskLevel)
+		if query.RiskLevel != "" {
+			tx = tx.Where("risk_level = ?", query.RiskLevel)
 		}
 
-		if query.SourceSessionID != nil && *query.SourceSessionID != "" {
-			tx = tx.Where("source_session_id = ?", *query.SourceSessionID)
+		if query.SourceSessionID != "" {
+			tx = tx.Where("source_session_id = ?", query.SourceSessionID)
 		}
 
-		if query.ActorID != nil && *query.ActorID != "" {
-			tx = tx.Where("actor_id = ?", *query.ActorID)
+		if query.ActorID != "" {
+			tx = tx.Where("actor_id = ?", query.ActorID)
 		}
 
-		if query.ChannelID != nil && *query.ChannelID != "" {
-			tx = tx.Where("channel_id = ?", *query.ChannelID)
+		if query.ChannelID != "" {
+			tx = tx.Where("channel_id = ?", query.ChannelID)
 		}
 
 		if query.CreatedFromUtc != nil {
@@ -76,8 +76,9 @@ func (p *PostgresHarnessContractStore) List(ctx context.Context, query *HarnessC
 		if query.CreatedToUtc != nil {
 			tx = tx.Where("created_at_utc <= ?", *query.CreatedToUtc)
 		}
-		if query.Tag != nil && *query.Tag != "" {
-			qTag := strings.TrimSpace(*query.Tag)
+
+		if query.Tag != "" {
+			qTag := strings.TrimSpace(query.Tag)
 			tx = tx.Where("tags in  ?", qTag)
 		}
 	}
@@ -145,20 +146,20 @@ func (p *PostgresSharedHarnessStateStore) GetBySession(ctx context.Context, sess
 func (p *PostgresSharedHarnessStateStore) List(ctx context.Context, query SharedHarnessStateListQuery) ([]SharedHarnessState, error) {
 	tx := gorm.G[SharedHarnessState](p.db).Where("1=1")
 
-	if query.Status != nil && *query.Status != "" {
-		tx = tx.Where("status = ?", *query.Status)
+	if query.Status != "" {
+		tx = tx.Where("status = ?", query.Status)
 	}
 
-	if query.SessionID != nil && *query.SessionID != "" {
-		tx = tx.Where("session_id = ?", *query.SessionID)
+	if query.SessionID != "" {
+		tx = tx.Where("session_id = ?", query.SessionID)
 	}
 
-	if query.ParentSessionID != nil && *query.ParentSessionID != "" {
-		tx = tx.Where("parent_session_id = ?", *query.ParentSessionID)
+	if query.ParentSessionID != "" {
+		tx = tx.Where("parent_session_id = ?", query.ParentSessionID)
 	}
 
-	if query.HarnessContractID != nil && *query.HarnessContractID != "" {
-		tx = tx.Where("harness_contract_id = ?", *query.HarnessContractID)
+	if query.HarnessContractID != "" {
+		tx = tx.Where("harness_contract_id = ?", query.HarnessContractID)
 	}
 
 	if query.CreatedFromUtc != nil {
@@ -168,8 +169,8 @@ func (p *PostgresSharedHarnessStateStore) List(ctx context.Context, query Shared
 	if query.CreatedToUtc != nil {
 		tx = tx.Where("created_at_utc <= ?", *query.CreatedToUtc)
 	}
-	if query.Tag != nil && *query.Tag != "" {
-		qTag := strings.TrimSpace(*query.Tag)
+	if query.Tag != "" {
+		qTag := strings.TrimSpace(query.Tag)
 		tx = tx.Where("tags in  ?", qTag)
 	}
 

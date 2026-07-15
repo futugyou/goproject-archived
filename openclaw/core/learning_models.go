@@ -171,22 +171,22 @@ func DefaultLearningProposalFeedbackEvent() LearningProposalFeedbackEvent {
 }
 
 type LearningToolObservation struct {
-	ToolName             string  `json:"tool_name"`
-	SequenceIndex        int     `json:"sequence_index"`
-	IsReadOnly           *bool   `json:"is_read_only"`
-	IsMutating           *bool   `json:"is_mutating"`
-	IsInteractive        *bool   `json:"is_interactive"`
-	IsApprovalGated      *bool   `json:"is_approval_gated"`
-	IsSandboxCapable     *bool   `json:"is_sandbox_capable"`
-	ClassificationReason *string `json:"classification_reason"`
+	ToolName             string `json:"tool_name"`
+	SequenceIndex        int    `json:"sequence_index"`
+	IsReadOnly           *bool  `json:"is_read_only"`
+	IsMutating           *bool  `json:"is_mutating"`
+	IsInteractive        *bool  `json:"is_interactive"`
+	IsApprovalGated      *bool  `json:"is_approval_gated"`
+	IsSandboxCapable     *bool  `json:"is_sandbox_capable"`
+	ClassificationReason string `json:"classification_reason"`
 }
 
 type ManagedLearningSkillMetadata struct {
 	ManagedByLearning   bool      `json:"managed_by_learning"`
 	CreatedByProposalId string    `json:"created_by_proposal_id"`
-	OriginalDraftHash   *string   `json:"original_draft_hash"`
+	OriginalDraftHash   string    `json:"original_draft_hash"`
 	ApprovedAtUtc       time.Time `json:"approved_at_utc"`
-	SkillName           *string   `json:"skill_name"`
+	SkillName           string    `json:"skill_name"`
 }
 
 func DefaultManagedLearningSkillMetadata() ManagedLearningSkillMetadata {
@@ -198,15 +198,15 @@ func DefaultManagedLearningSkillMetadata() ManagedLearningSkillMetadata {
 
 type HarnessEvolutionProposal struct {
 	Component                  string   `json:"component"`
-	ChangeType                 *string  `json:"change_type"`
+	ChangeType                 string   `json:"change_type"`
 	FailureMode                string   `json:"failure_mode"`
 	ProposedChange             string   `json:"proposed_change"`
-	PredictedImprovement       *string  `json:"predicted_improvement"`
+	PredictedImprovement       string   `json:"predicted_improvement"`
 	InvariantsToPreserve       []string `json:"invariants_to_preserve"`
 	FalsificationTests         []string `json:"falsification_tests"`
-	EvaluationPlan             *string  `json:"evaluation_plan"`
-	CanaryPlan                 *string  `json:"canary_plan"`
-	RollbackPlan               *string  `json:"rollback_plan"`
+	EvaluationPlan             string   `json:"evaluation_plan"`
+	CanaryPlan                 string   `json:"canary_plan"`
+	RollbackPlan               string   `json:"rollback_plan"`
 	RelatedHarnessContractIds  []string `json:"related_harness_contract_ids"`
 	RelatedEvidenceBundleIds   []string `json:"related_evidence_bundle_ids"`
 	RelatedGovernanceLedgerIds []string `json:"related_governance_ledger_ids"`
@@ -215,7 +215,7 @@ type HarnessEvolutionProposal struct {
 	SourceSessionIds           []string `json:"source_session_ids"`
 	RiskLevel                  string   `json:"risk_level"`
 	Confidence                 float32  `json:"confidence"`
-	ProposalFingerprint        *string  `json:"proposal_fingerprint"`
+	ProposalFingerprint        string   `json:"proposal_fingerprint"`
 	ApplyMode                  string   `json:"apply_mode"`
 	IsAutoApplicable           bool     `json:"is_auto_applicable"`
 	RequiresRegression         bool     `json:"requires_regression"`
@@ -231,28 +231,28 @@ func DefaultHarnessEvolutionProposal() HarnessEvolutionProposal {
 }
 
 type HarnessEvolutionProposalCreateRequest struct {
-	ActorId                    *string  `json:"actor_id"`
-	Title                      *string  `json:"title"`
-	Summary                    *string  `json:"summary"`
-	Component                  *string  `json:"component"`
-	ChangeType                 *string  `json:"change_type"`
-	FailureMode                *string  `json:"failure_mode"`
-	ProposedChange             *string  `json:"proposed_change"`
-	PredictedImprovement       *string  `json:"predicted_improvement"`
+	ActorId                    string   `json:"actor_id"`
+	Title                      string   `json:"title"`
+	Summary                    string   `json:"summary"`
+	Component                  string   `json:"component"`
+	ChangeType                 string   `json:"change_type"`
+	FailureMode                string   `json:"failure_mode"`
+	ProposedChange             string   `json:"proposed_change"`
+	PredictedImprovement       string   `json:"predicted_improvement"`
 	InvariantsToPreserve       []string `json:"invariants_to_preserve"`
 	FalsificationTests         []string `json:"falsification_tests"`
-	EvaluationPlan             *string  `json:"evaluation_plan"`
-	CanaryPlan                 *string  `json:"canary_plan"`
-	RollbackPlan               *string  `json:"rollback_plan"`
+	EvaluationPlan             string   `json:"evaluation_plan"`
+	CanaryPlan                 string   `json:"canary_plan"`
+	RollbackPlan               string   `json:"rollback_plan"`
 	RelatedHarnessContractIds  []string `json:"related_harness_contract_ids"`
 	RelatedEvidenceBundleIds   []string `json:"related_evidence_bundle_ids"`
 	RelatedGovernanceLedgerIds []string `json:"related_governance_ledger_ids"`
 	RelatedRegressionReportIds []string `json:"related_regression_report_ids"`
 	SourceRuntimeEventIds      []string `json:"source_runtime_event_ids"`
 	SourceSessionIds           []string `json:"source_session_ids"`
-	RiskLevel                  *string  `json:"risk_level"`
+	RiskLevel                  string   `json:"risk_level"`
 	Confidence                 *float32 `json:"confidence"`
-	ApplyMode                  *string  `json:"apply_mode"`
+	ApplyMode                  string   `json:"apply_mode"`
 	IsAutoApplicable           bool     `json:"is_auto_applicable"`
 	RequiresRegression         *bool    `json:"requires_regression"`
 	RegressionCategories       []string `json:"regression_categories"`
@@ -274,21 +274,21 @@ type LearningProposal struct {
 	Id                          string                               `json:"id"`
 	Kind                        string                               `json:"kind"`
 	Status                      string                               `json:"status"`
-	ActorId                     *string                              `json:"actor_id"`
+	ActorId                     string                               `json:"actor_id"`
 	Title                       string                               `json:"title"`
 	Summary                     string                               `json:"summary"`
-	SkillName                   *string                              `json:"skill_name"`
-	DraftContent                *string                              `json:"draft_content"`
-	DraftContentHash            *string                              `json:"draft_content_hash"`
-	DraftPreview                *string                              `json:"draft_preview"`
+	SkillName                   string                               `json:"skill_name"`
+	DraftContent                string                               `json:"draft_content"`
+	DraftContentHash            string                               `json:"draft_content_hash"`
+	DraftPreview                string                               `json:"draft_preview"`
 	ProfileUpdate               *UserProfile                         `json:"profile_update"`
 	AppliedProfileBefore        *UserProfile                         `json:"applied_profile_before"`
 	AutomationDraft             *AutomationDefinition                `json:"automation_draft"`
 	AutomationIntent            *AutomationSuggestionIntent          `json:"automation_intent"`
 	AutomationQuality           *AutomationSuggestionQualityResult   `json:"automation_quality"`
 	AutomationSuggestionPreview *LearningAutomationSuggestionPreview `json:"automation_suggestion_preview"`
-	AppliedAutomationId         *string                              `json:"applied_automation_id"`
-	ManagedSkillPath            *string                              `json:"managed_skill_path"`
+	AppliedAutomationId         string                               `json:"applied_automation_id"`
+	ManagedSkillPath            string                               `json:"managed_skill_path"`
 	ManagedSkillMetadata        *ManagedLearningSkillMetadata        `json:"managed_skill_metadata"`
 	Metadata                    map[string]string                    `json:"metadata"`
 	HarnessEvolution            *HarnessEvolutionProposal            `json:"harness_evolution"`
@@ -299,20 +299,20 @@ type LearningProposal struct {
 	ToolObservations            []LearningToolObservation            `json:"tool_observations"`
 	FeedbackEvents              []LearningProposalFeedbackEvent      `json:"feedback_events"`
 	RepeatedCount               int                                  `json:"repeated_count"`
-	ProposalFingerprint         *string                              `json:"proposal_fingerprint"`
+	ProposalFingerprint         string                               `json:"proposal_fingerprint"`
 	RiskLevel                   string                               `json:"risk_level"`
 	Confidence                  float32                              `json:"confidence"`
-	CreatedReason               *string                              `json:"created_reason"`
+	CreatedReason               string                               `json:"created_reason"`
 	ValidationStatus            string                               `json:"validation_status"`
 	ValidationWarnings          []string                             `json:"validation_warnings"`
 	ValidationErrors            []string                             `json:"validation_errors"`
 	CreatedAtUtc                time.Time                            `json:"created_at_utc"`
 	UpdatedAtUtc                time.Time                            `json:"updated_at_utc"`
 	ReviewedAtUtc               *time.Time                           `json:"reviewed_at_utc"`
-	ReviewNotes                 *string                              `json:"review_notes"`
+	ReviewNotes                 string                               `json:"review_notes"`
 	RolledBack                  bool                                 `json:"rolled_back"`
 	RolledBackAtUtc             *time.Time                           `json:"rolled_back_at_utc"`
-	RollbackReason              *string                              `json:"rollback_reason"`
+	RollbackReason              string                               `json:"rollback_reason"`
 }
 
 func DefaultLearningProposal() LearningProposal {

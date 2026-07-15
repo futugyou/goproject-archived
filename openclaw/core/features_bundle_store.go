@@ -185,16 +185,16 @@ func (s *FileEvidenceBundleStore) matches(bundle *EvidenceBundle, query *Evidenc
 	if !s.isMatch(query.ChannelID, bundle.ChannelID, false) {
 		return false
 	}
-	if !s.isMatch(query.Confidence, &bundle.Confidence, true) {
+	if !s.isMatch(query.Confidence, bundle.Confidence, true) {
 		return false
 	}
 
-	if query.Tag != nil && strings.TrimSpace(*query.Tag) != "" {
+	if strings.TrimSpace(query.Tag) != "" {
 		if bundle.Tags == nil {
 			return false
 		}
 
-		qTag := strings.TrimSpace(*query.Tag)
+		qTag := strings.TrimSpace(query.Tag)
 		found := false
 		for _, tag := range bundle.Tags {
 			if strings.EqualFold(tag, qTag) {
@@ -217,18 +217,18 @@ func (s *FileEvidenceBundleStore) matches(bundle *EvidenceBundle, query *Evidenc
 	return true
 }
 
-func (s *FileEvidenceBundleStore) isMatch(queryStr, bundleStr *string, caseInsensitive bool) bool {
+func (s *FileEvidenceBundleStore) isMatch(queryStr, bundleStr string, caseInsensitive bool) bool {
 	// 1. 如果 query 没传这个过滤条件（为 nil 或全是空格），视为“不校验该字段”，直接放行
-	if queryStr == nil || strings.TrimSpace(*queryStr) == "" {
+	if strings.TrimSpace(queryStr) == "" {
 		return true
 	}
 	// 2. 如果 query 传了有效值，但 bundle 却是 nil，说明不匹配
-	if bundleStr == nil {
+	if bundleStr == "" {
 		return false
 	}
 	// 3. 两个都有值，安全地解引用并比较
-	qVal := strings.TrimSpace(*queryStr)
-	bVal := strings.TrimSpace(*bundleStr) // 顺便帮 bundle 也做个 Trim，更健壮
+	qVal := strings.TrimSpace(queryStr)
+	bVal := strings.TrimSpace(bundleStr) // 顺便帮 bundle 也做个 Trim，更健壮
 
 	if caseInsensitive {
 		return strings.EqualFold(bVal, qVal)
@@ -246,7 +246,7 @@ func (s *FileEvidenceBundleStore) loadOne(ctx context.Context, filePath string) 
 		if os.IsNotExist(err) || os.IsPermission(err) {
 			return nil, nil
 		}
-		return nil, nil // 仿照 C# 吞掉特定的 IO 异常返回 default
+		return nil, nil
 	}
 	defer file.Close()
 
@@ -383,28 +383,28 @@ func (p *PostgresEvidenceBundleStore) Get(ctx context.Context, id string) (*Evid
 func (p *PostgresEvidenceBundleStore) List(ctx context.Context, query EvidenceBundleListQuery) ([]EvidenceBundle, error) {
 	tx := gorm.G[EvidenceBundle](p.db).Where("1=1")
 
-	if query.SourceSessionID != nil && *query.SourceSessionID != "" {
-		tx = tx.Where("source_session_id = ?", *query.SourceSessionID)
+	if query.SourceSessionID != "" {
+		tx = tx.Where("source_session_id = ?", query.SourceSessionID)
 	}
 
-	if query.HarnessContractID != nil && *query.HarnessContractID != "" {
-		tx = tx.Where("harness_contract_id = ?", *query.HarnessContractID)
+	if query.HarnessContractID != "" {
+		tx = tx.Where("harness_contract_id = ?", query.HarnessContractID)
 	}
 
-	if query.LearningProposalID != nil && *query.LearningProposalID != "" {
-		tx = tx.Where("learning_proposal_id = ?", *query.LearningProposalID)
+	if query.LearningProposalID != "" {
+		tx = tx.Where("learning_proposal_id = ?", query.LearningProposalID)
 	}
 
-	if query.ActorID != nil && *query.ActorID != "" {
-		tx = tx.Where("actor_id = ?", *query.ActorID)
+	if query.ActorID != "" {
+		tx = tx.Where("actor_id = ?", query.ActorID)
 	}
 
-	if query.ChannelID != nil && *query.ChannelID != "" {
-		tx = tx.Where("channel_id = ?", *query.ChannelID)
+	if query.ChannelID != "" {
+		tx = tx.Where("channel_id = ?", query.ChannelID)
 	}
 
-	if query.Confidence != nil && *query.Confidence != "" {
-		tx = tx.Where("confidence = ?", *query.Confidence)
+	if query.Confidence != "" {
+		tx = tx.Where("confidence = ?", query.Confidence)
 	}
 
 	if query.CreatedFromUtc != nil {
@@ -414,8 +414,8 @@ func (p *PostgresEvidenceBundleStore) List(ctx context.Context, query EvidenceBu
 	if query.CreatedToUtc != nil {
 		tx = tx.Where("created_at_utc <= ?", *query.CreatedToUtc)
 	}
-	if query.Tag != nil && *query.Tag != "" {
-		qTag := strings.TrimSpace(*query.Tag)
+	if query.Tag != "" {
+		qTag := strings.TrimSpace(query.Tag)
 		tx = tx.Where("tags in  ?", qTag)
 	}
 

@@ -25,20 +25,20 @@ var DefaultTokenDetailedRates = map[string]TokenCostRateConfig{
 }
 
 type LlmProviderConfig struct {
-	Provider                      string              `json:"provider"`
-	Model                         string              `json:"model"`
-	ApiKey                        *string             `json:"api_key"`
-	Endpoint                      string              `json:"endpoint"`
-	AuthMode                      string              `json:"auth_mode"`
-	SendRequestMetadata           bool                `json:"send_request_metadata"`
-	FallbackModels                []string            `json:"fallback_models"`
-	MaxTokens                     int                 `json:"max_tokens"`
-	Temperature                   float32             `json:"temperature"`
-	TimeoutSeconds                int                 `json:"timeout_seconds"`
-	RetryCount                    int                 `json:"retry_count"`
-	CircuitBreakerThreshold       int                 `json:"circuit_breaker_threshold"`
-	CircuitBreakerCooldownSeconds int                 `json:"circuit_breaker_cooldown_seconds"`
-	PromptCaching                 PromptCachingConfig `json:"prompt_caching"`
+	Provider                      string               `json:"provider"`
+	Model                         string               `json:"model"`
+	ApiKey                        string               `json:"api_key"`
+	Endpoint                      string               `json:"endpoint"`
+	AuthMode                      string               `json:"auth_mode"`
+	SendRequestMetadata           bool                 `json:"send_request_metadata"`
+	FallbackModels                []string             `json:"fallback_models"`
+	MaxTokens                     int                  `json:"max_tokens"`
+	Temperature                   float32              `json:"temperature"`
+	TimeoutSeconds                int                  `json:"timeout_seconds"`
+	RetryCount                    int                  `json:"retry_count"`
+	CircuitBreakerThreshold       int                  `json:"circuit_breaker_threshold"`
+	CircuitBreakerCooldownSeconds int                  `json:"circuit_breaker_cooldown_seconds"`
+	PromptCaching                 *PromptCachingConfig `json:"prompt_caching"`
 }
 
 func DefaultLlmProviderConfig() LlmProviderConfig {
@@ -114,11 +114,11 @@ func DefaultDiagnosticsConfig() DiagnosticsConfig {
 }
 
 type PromptCacheTraceConfig struct {
-	Enabled         bool    `json:"enabled"`
-	FilePath        *string `json:"file_path"`
-	IncludeMessages bool    `json:"include_messages"`
-	IncludePrompt   bool    `json:"include_prompt"`
-	IncludeSystem   bool    `json:"include_system"`
+	Enabled         bool   `json:"enabled"`
+	FilePath        string `json:"file_path"`
+	IncludeMessages bool   `json:"include_messages"`
+	IncludePrompt   bool   `json:"include_prompt"`
+	IncludeSystem   bool   `json:"include_system"`
 }
 
 func DefaultPromptCacheTraceConfig() PromptCacheTraceConfig {
@@ -144,7 +144,7 @@ type MemoryConfig struct {
 	EnableCompaction     bool                   `json:"enable_compaction"`
 	CompactionThreshold  int                    `json:"compaction_threshold"`
 	CompactionKeepRecent int                    `json:"compaction_keep_recent"`
-	ProjectId            *string                `json:"project_id"`
+	ProjectId            string                 `json:"project_id"`
 }
 
 func DefaultMemoryConfig() MemoryConfig {
@@ -252,11 +252,11 @@ func DefaultGatewayConfig() GatewayConfig {
 }
 
 type MemorySqliteConfig struct {
-	DbPath              string  `json:"db_path"`
-	EnableFts           bool    `json:"enable_fts"`
-	EnableVectors       bool    `json:"enable_vectors"`
-	EmbeddingModel      *string `json:"embedding_model"` // Nullable string maps to *string
-	EmbeddingDimensions int     `json:"embedding_dimensions"`
+	DbPath              string `json:"db_path"`
+	EnableFts           bool   `json:"enable_fts"`
+	EnableVectors       bool   `json:"enable_vectors"`
+	EmbeddingModel      string `json:"embedding_model"` // Nullable string maps to string
+	EmbeddingDimensions int    `json:"embedding_dimensions"`
 }
 
 type MemoryPostgresConfig struct {
@@ -267,31 +267,28 @@ func NewDefaultMemorySqliteConfig() *MemorySqliteConfig {
 	return &MemorySqliteConfig{
 		DbPath:              "./memory/openclaw.db",
 		EnableFts:           true,
-		EnableVectors:       false,
-		EmbeddingModel:      nil,
 		EmbeddingDimensions: 1536,
 	}
 }
 
 type MemoryMempalaceConfig struct {
-	BasePath             string  `json:"base_path"`
-	PalaceId             string  `json:"palace_id"`
-	Namespace            *string `json:"namespace"` // Nullable string maps to *string
-	CollectionName       string  `json:"collection_name"`
-	EmbeddingDimensions  int     `json:"embedding_dimensions"`
-	EmbedderIdentifier   string  `json:"embedder_identifier"`
-	DefaultWing          string  `json:"default_wing"`
-	DefaultRoom          string  `json:"default_room"`
-	SessionDbPath        string  `json:"session_db_path"`
-	KnowledgeGraphDbPath string  `json:"knowledge_graph_db_path"`
-	MaxSearchCandidates  int     `json:"max_search_candidates"`
+	BasePath             string `json:"base_path"`
+	PalaceId             string `json:"palace_id"`
+	Namespace            string `json:"namespace"` // Nullable string maps to string
+	CollectionName       string `json:"collection_name"`
+	EmbeddingDimensions  int    `json:"embedding_dimensions"`
+	EmbedderIdentifier   string `json:"embedder_identifier"`
+	DefaultWing          string `json:"default_wing"`
+	DefaultRoom          string `json:"default_room"`
+	SessionDbPath        string `json:"session_db_path"`
+	KnowledgeGraphDbPath string `json:"knowledge_graph_db_path"`
+	MaxSearchCandidates  int    `json:"max_search_candidates"`
 }
 
 func NewDefaultMemoryMempalaceConfig() *MemoryMempalaceConfig {
 	return &MemoryMempalaceConfig{
 		BasePath:             "./memory/mempalace",
 		PalaceId:             "openclaw",
-		Namespace:            nil,
 		CollectionName:       "memories",
 		EmbeddingDimensions:  384,
 		EmbedderIdentifier:   "openclaw:mempalace:hash-v1",
@@ -656,7 +653,7 @@ type PaymentStripeLinkConfig struct {
 	ProviderId           string            `json:"provider_id"`
 	CliPath              string            `json:"cli_path"`
 	TimeoutSeconds       int               `json:"timeout_seconds"`
-	WorkingDirectory     *string           `json:"working_directory"`
+	WorkingDirectory     string            `json:"working_directory"`
 	EnvironmentVariables map[string]string `json:"environment_variables"`
 }
 
@@ -665,7 +662,6 @@ func DefaultPaymentStripeLinkConfig() *PaymentStripeLinkConfig {
 		ProviderId:           "stripe-link",
 		CliPath:              "link-cli",
 		TimeoutSeconds:       30,
-		WorkingDirectory:     nil,
 		EnvironmentVariables: make(map[string]string),
 	}
 }
@@ -707,18 +703,18 @@ type WhatsAppChannelConfig struct {
 	Type                         string                         `json:"type"`      // "official", "bridge", or "first_party_worker"
 	DmPolicy                     string                         `json:"dm_policy"` // open, pairing, closed
 	WebhookPath                  string                         `json:"webhook_path"`
-	WebhookPublicBaseUrl         *string                        `json:"webhook_public_base_url"`
+	WebhookPublicBaseUrl         string                         `json:"webhook_public_base_url"`
 	WebhookVerifyToken           string                         `json:"webhook_verify_token"`
 	WebhookVerifyTokenRef        string                         `json:"webhook_verify_token_ref"`
 	ValidateSignature            bool                           `json:"validate_signature"`
-	WebhookAppSecret             *string                        `json:"webhook_app_secret"`
+	WebhookAppSecret             string                         `json:"webhook_app_secret"`
 	WebhookAppSecretRef          string                         `json:"webhook_app_secret_ref"`
-	CloudApiToken                *string                        `json:"cloud_api_token"`
+	CloudApiToken                string                         `json:"cloud_api_token"`
 	CloudApiTokenRef             string                         `json:"cloud_api_token_ref"`
-	PhoneNumberId                *string                        `json:"phone_number_id"`
-	BusinessAccountId            *string                        `json:"business_account_id"`
-	BridgeUrl                    *string                        `json:"bridge_url"`
-	BridgeToken                  *string                        `json:"bridge_token"`
+	PhoneNumberId                string                         `json:"phone_number_id"`
+	BusinessAccountId            string                         `json:"business_account_id"`
+	BridgeUrl                    string                         `json:"bridge_url"`
+	BridgeToken                  string                         `json:"bridge_token"`
 	BridgeTokenRef               string                         `json:"bridge_token_ref"`
 	BridgeSuppressSendExceptions bool                           `json:"bridge_suppress_send_exceptions"`
 	FirstPartyWorker             WhatsAppFirstPartyWorkerConfig `json:"first_party_worker"`
@@ -733,17 +729,10 @@ func DefaultWhatsAppChannelConfig() *WhatsAppChannelConfig {
 		Type:                         "official",
 		DmPolicy:                     "pairing",
 		WebhookPath:                  "/whatsapp/inbound",
-		WebhookPublicBaseUrl:         nil,
 		WebhookVerifyToken:           "openclaw-verify",
 		WebhookVerifyTokenRef:        "env:WHATSAPP_VERIFY_TOKEN",
-		ValidateSignature:            false,
-		WebhookAppSecret:             nil,
 		WebhookAppSecretRef:          "env:WHATSAPP_APP_SECRET",
 		CloudApiTokenRef:             "env:WHATSAPP_CLOUD_API_TOKEN",
-		PhoneNumberId:                nil,
-		BusinessAccountId:            nil,
-		BridgeUrl:                    nil,
-		BridgeToken:                  nil,
 		BridgeTokenRef:               "env:WHATSAPP_BRIDGE_TOKEN",
 		BridgeSuppressSendExceptions: false,
 		FirstPartyWorker:             *DefaultWhatsAppFirstPartyWorkerConfig(),
@@ -757,41 +746,37 @@ func DefaultWhatsAppChannelConfig() *WhatsAppChannelConfig {
 
 type WhatsAppFirstPartyWorkerConfig struct {
 	Driver           string                        `json:"driver"` // "baileys", "whatsmeow", "simulated"
-	ExecutablePath   *string                       `json:"executable_path"`
-	WorkingDirectory *string                       `json:"working_directory"`
+	ExecutablePath   string                        `json:"executable_path"`
+	WorkingDirectory string                        `json:"working_directory"`
 	StoragePath      string                        `json:"storage_path"`
-	MediaCachePath   *string                       `json:"media_cache_path"`
+	MediaCachePath   string                        `json:"media_cache_path"`
 	HistorySync      bool                          `json:"history_sync"`
-	Proxy            *string                       `json:"proxy"`
+	Proxy            string                        `json:"proxy"`
 	Accounts         []WhatsAppWorkerAccountConfig `json:"accounts"`
 }
 
 func DefaultWhatsAppFirstPartyWorkerConfig() *WhatsAppFirstPartyWorkerConfig {
 	return &WhatsAppFirstPartyWorkerConfig{
-		Driver:           "baileys",
-		ExecutablePath:   nil,
-		WorkingDirectory: nil,
-		StoragePath:      "./memory/whatsapp-worker",
-		MediaCachePath:   nil,
-		HistorySync:      true,
-		Proxy:            nil,
-		Accounts:         []WhatsAppWorkerAccountConfig{},
+		Driver:      "baileys",
+		StoragePath: "./memory/whatsapp-worker",
+		HistorySync: true,
+		Accounts:    []WhatsAppWorkerAccountConfig{},
 	}
 }
 
 // --- WhatsAppWorkerAccountConfig ---
 
 type WhatsAppWorkerAccountConfig struct {
-	AccountId        string  `json:"account_id"`
-	SessionPath      string  `json:"session_path"`
-	DeviceName       string  `json:"device_name"`
-	PairingMode      string  `json:"pairing_mode"` // "qr" or "pairing_code"
-	PhoneNumber      *string `json:"phone_number"`
-	SendReadReceipts bool    `json:"send_read_receipts"`
-	AckReaction      bool    `json:"ack_reaction"`
-	MediaCachePath   *string `json:"media_cache_path"`
-	HistorySync      bool    `json:"history_sync"`
-	Proxy            *string `json:"proxy"`
+	AccountId        string `json:"account_id"`
+	SessionPath      string `json:"session_path"`
+	DeviceName       string `json:"device_name"`
+	PairingMode      string `json:"pairing_mode"` // "qr" or "pairing_code"
+	PhoneNumber      string `json:"phone_number"`
+	SendReadReceipts bool   `json:"send_read_receipts"`
+	AckReaction      bool   `json:"ack_reaction"`
+	MediaCachePath   string `json:"media_cache_path"`
+	HistorySync      bool   `json:"history_sync"`
+	Proxy            string `json:"proxy"`
 }
 
 func DefaultWhatsAppWorkerAccountConfig() *WhatsAppWorkerAccountConfig {
@@ -800,12 +785,8 @@ func DefaultWhatsAppWorkerAccountConfig() *WhatsAppWorkerAccountConfig {
 		SessionPath:      "./session/default",
 		DeviceName:       "OpenClaw",
 		PairingMode:      "qr",
-		PhoneNumber:      nil,
 		SendReadReceipts: true,
-		AckReaction:      false,
-		MediaCachePath:   nil,
 		HistorySync:      true,
-		Proxy:            nil,
 	}
 }
 
@@ -814,11 +795,11 @@ type TeamsChannelConfig struct {
 	Enabled                bool     `json:"enabled"`
 	DmPolicy               string   `json:"dm_policy"`
 	GroupPolicy            string   `json:"group_policy"`
-	AppId                  *string  `json:"app_id"`
+	AppId                  string   `json:"app_id"`
 	AppIdRef               string   `json:"app_id_ref"`
-	AppPassword            *string  `json:"app_password"`
+	AppPassword            string   `json:"app_password"`
 	AppPasswordRef         string   `json:"app_password_ref"`
-	TenantId               *string  `json:"tenant_id"`
+	TenantId               string   `json:"tenant_id"`
 	TenantIdRef            string   `json:"tenant_id_ref"`
 	WebhookPath            string   `json:"webhook_path"`
 	ValidateToken          bool     `json:"validate_token"`
@@ -873,12 +854,12 @@ func DefaultSmsChannelConfig() SmsChannelConfig {
 // TwilioSmsConfig represents Twilio specific configuration.
 type TwilioSmsConfig struct {
 	Enabled                bool     `json:"enabled"`
-	AccountSid             *string  `json:"account_sid"`
-	AuthTokenRef           *string  `json:"auth_token_ref"`
-	MessagingServiceSid    *string  `json:"messaging_service_sid"`
-	FromNumber             *string  `json:"from_number"`
+	AccountSid             string   `json:"account_sid"`
+	AuthTokenRef           string   `json:"auth_token_ref"`
+	MessagingServiceSid    string   `json:"messaging_service_sid"`
+	FromNumber             string   `json:"from_number"`
 	WebhookPath            string   `json:"webhook_path"`
-	WebhookPublicBaseUrl   *string  `json:"webhook_public_base_url"`
+	WebhookPublicBaseUrl   string   `json:"webhook_public_base_url"`
 	ValidateSignature      bool     `json:"validate_signature"`
 	AllowedFromNumbers     []string `json:"allowed_from_numbers"`
 	AllowedToNumbers       []string `json:"allowed_to_numbers"`
@@ -908,15 +889,15 @@ func DefaultTwilioSmsConfig() TwilioSmsConfig {
 type TelegramChannelConfig struct {
 	Enabled               bool     `json:"enabled"`
 	DmPolicy              string   `json:"dm_policy"`
-	BotToken              *string  `json:"bot_token"`
+	BotToken              string   `json:"bot_token"`
 	BotTokenRef           string   `json:"bot_token_ref"`
 	WebhookPath           string   `json:"webhook_path"`
-	WebhookPublicBaseUrl  *string  `json:"webhook_public_base_url"`
+	WebhookPublicBaseUrl  string   `json:"webhook_public_base_url"`
 	AllowedFromUserIds    []string `json:"allowed_from_user_ids"`
 	MaxInboundChars       int      `json:"max_inbound_chars"`
 	MaxRequestBytes       int      `json:"max_request_bytes"`
 	ValidateSignature     bool     `json:"validate_signature"`
-	WebhookSecretToken    *string  `json:"webhook_secret_token"`
+	WebhookSecretToken    string   `json:"webhook_secret_token"`
 	WebhookSecretTokenRef string   `json:"webhook_secret_token_ref"`
 }
 
@@ -938,9 +919,9 @@ func DefaultTelegramChannelConfig() TelegramChannelConfig {
 type SlackChannelConfig struct {
 	Enabled             bool     `json:"enabled"`
 	DmPolicy            string   `json:"dm_policy"`
-	BotToken            *string  `json:"bot_token"`
+	BotToken            string   `json:"bot_token"`
 	BotTokenRef         string   `json:"bot_token_ref"`
-	SigningSecret       *string  `json:"signing_secret"`
+	SigningSecret       string   `json:"signing_secret"`
 	SigningSecretRef    string   `json:"signing_secret_ref"`
 	WebhookPath         string   `json:"webhook_path"`
 	SlashCommandPath    string   `json:"slash_command_path"`
@@ -973,11 +954,11 @@ func DefaultSlackChannelConfig() SlackChannelConfig {
 type DiscordChannelConfig struct {
 	Enabled               bool     `json:"enabled"`
 	DmPolicy              string   `json:"dm_policy"`
-	BotToken              *string  `json:"bot_token"`
+	BotToken              string   `json:"bot_token"`
 	BotTokenRef           string   `json:"bot_token_ref"`
-	ApplicationId         *string  `json:"application_id"`
+	ApplicationId         string   `json:"application_id"`
 	ApplicationIdRef      string   `json:"application_id_ref"`
-	PublicKey             *string  `json:"public_key"`
+	PublicKey             string   `json:"public_key"`
 	PublicKeyRef          string   `json:"public_key_ref"`
 	WebhookPath           string   `json:"webhook_path"`
 	AllowedGuildIds       []string `json:"allowed_guild_ids"`
@@ -1015,8 +996,8 @@ type SignalChannelConfig struct {
 	DmPolicy              string   `json:"dm_policy"`
 	Driver                string   `json:"driver"`
 	SocketPath            string   `json:"socket_path"`
-	SignalCliPath         *string  `json:"signal_cli_path"`
-	AccountPhoneNumber    *string  `json:"account_phone_number"`
+	SignalCliPath         string   `json:"signal_cli_path"`
+	AccountPhoneNumber    string   `json:"account_phone_number"`
 	AccountPhoneNumberRef string   `json:"account_phone_number_ref"`
 	AllowedFromNumbers    []string `json:"allowed_from_numbers"`
 	MaxInboundChars       int      `json:"max_inbound_chars"`
@@ -1081,13 +1062,13 @@ func DefaultWebhooksConfig() WebhooksConfig {
 
 // WebhookEndpointConfig represents a specific webhook endpoint configuration.
 type WebhookEndpointConfig struct {
-	Secret          *string `json:"secret"`
-	ValidateHmac    bool    `json:"validate_hmac"`
-	HmacHeader      string  `json:"hmac_header"`
-	SessionId       *string `json:"session_id"`
-	PromptTemplate  string  `json:"prompt_template"`
-	MaxRequestBytes int     `json:"max_request_bytes"`
-	MaxBodyLength   int     `json:"max_body_length"`
+	Secret          string `json:"secret"`
+	ValidateHmac    bool   `json:"validate_hmac"`
+	HmacHeader      string `json:"hmac_header"`
+	SessionId       string `json:"session_id"`
+	PromptTemplate  string `json:"prompt_template"`
+	MaxRequestBytes int    `json:"max_request_bytes"`
+	MaxBodyLength   int    `json:"max_body_length"`
 }
 
 func DefaultWebhookEndpointConfig() WebhookEndpointConfig {
@@ -1117,15 +1098,15 @@ func DefaultRoutingConfig() RoutingConfig {
 }
 
 type AgentRouteConfig struct {
-	ChannelId               *string                    `json:"channel_id"`
-	SenderId                *string                    `json:"sender_id"`
-	SystemPrompt            *string                    `json:"system_prompt"`
-	ModelOverride           *string                    `json:"model_override"`
-	ModelProfileId          *string                    `json:"model_profile_id"`
+	ChannelId               string                     `json:"channel_id"`
+	SenderId                string                     `json:"sender_id"`
+	SystemPrompt            string                     `json:"system_prompt"`
+	ModelOverride           string                     `json:"model_override"`
+	ModelProfileId          string                     `json:"model_profile_id"`
 	PreferredModelTags      []string                   `json:"preferred_model_tags"`
 	FallbackModelProfileIds []string                   `json:"fallback_model_profile_ids"`
 	ModelRequirements       ModelSelectionRequirements `json:"model_requirements"`
-	PresetId                *string                    `json:"preset_id"`
+	PresetId                string                     `json:"preset_id"`
 	AllowedTools            []string                   `json:"allowed_tools"`
 }
 
@@ -1154,10 +1135,10 @@ func DefaultDeploymentConfig() DeploymentConfig {
 }
 
 type TailscaleConfig struct {
-	Enabled  bool    `json:"enabled"`
-	Mode     string  `json:"mode"` // "off", "serve", "funnel"
-	Port     int     `json:"port"`
-	Hostname *string `json:"hostname"`
+	Enabled  bool   `json:"enabled"`
+	Mode     string `json:"mode"` // "off", "serve", "funnel"
+	Port     int    `json:"port"`
+	Hostname string `json:"hostname"`
 }
 
 func DefaultTailscaleConfig() TailscaleConfig {
@@ -1171,16 +1152,16 @@ func DefaultTailscaleConfig() TailscaleConfig {
 // ── Gmail Pub/Sub ───────────────────────────────────────────────
 
 type GmailPubSubConfig struct {
-	Enabled            bool    `json:"enabled"`
-	CredentialsPath    *string `json:"credentials_path"`
-	CredentialsPathRef string  `json:"credentials_path_ref"`
-	TopicName          *string `json:"topic_name"`
-	SubscriptionName   *string `json:"subscription_name"`
-	WebhookPath        string  `json:"webhook_path"`
-	SessionId          *string `json:"session_id"`
-	Prompt             string  `json:"prompt"`
-	WebhookSecret      *string `json:"webhook_secret"`
-	WebhookSecretRef   string  `json:"webhook_secret_ref"`
+	Enabled            bool   `json:"enabled"`
+	CredentialsPath    string `json:"credentials_path"`
+	CredentialsPathRef string `json:"credentials_path_ref"`
+	TopicName          string `json:"topic_name"`
+	SubscriptionName   string `json:"subscription_name"`
+	WebhookPath        string `json:"webhook_path"`
+	SessionId          string `json:"session_id"`
+	Prompt             string `json:"prompt"`
+	WebhookSecret      string `json:"webhook_secret"`
+	WebhookSecretRef   string `json:"webhook_secret_ref"`
 }
 
 func DefaultGmailPubSubConfig() GmailPubSubConfig {
@@ -1196,10 +1177,10 @@ func DefaultGmailPubSubConfig() GmailPubSubConfig {
 // ── mDNS/Bonjour Discovery ─────────────────────────────────────
 
 type MdnsConfig struct {
-	Enabled      bool    `json:"enabled"`
-	ServiceType  string  `json:"service_type"`
-	InstanceName *string `json:"instance_name"`
-	Port         int     `json:"port"` // 0 = use gateway port
+	Enabled      bool   `json:"enabled"`
+	ServiceType  string `json:"service_type"`
+	InstanceName string `json:"instance_name"`
+	Port         int    `json:"port"` // 0 = use gateway port
 }
 
 func DefaultMdnsConfig() MdnsConfig {

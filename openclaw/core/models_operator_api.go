@@ -10,10 +10,10 @@ const (
 )
 
 type MutationResponse struct {
-	Success         bool    `json:"success"`
-	Message         string  `json:"message"`
-	Error           *string `json:"error"`
-	RestartRequired bool    `json:"restart_required"`
+	Success         bool   `json:"success"`
+	Message         string `json:"message"`
+	Error           string `json:"error"`
+	RestartRequired bool   `json:"restart_required"`
 }
 
 type InputTokenComponentEstimate struct {
@@ -28,9 +28,9 @@ type ProviderPolicyRule struct {
 	Id              string    `json:"id"`
 	Priority        int       `json:"priority"`
 	Enabled         bool      `json:"enabled"`
-	ChannelId       *string   `json:"channel_id"`
-	SenderId        *string   `json:"sender_id"`
-	SessionId       *string   `json:"session_id"`
+	ChannelId       string    `json:"channel_id"`
+	SenderId        string    `json:"sender_id"`
+	SessionId       string    `json:"session_id"`
 	ProviderId      string    `json:"provider_id"`
 	ModelId         string    `json:"model_id"`
 	FallbackModels  []string  `json:"fallback_models"`
@@ -59,12 +59,12 @@ func NewDefaultProviderPolicyListResponse() *ProviderPolicyListResponse {
 }
 
 type ProviderRouteHealthSnapshot struct {
-	ProfileId        *string    `json:"profile_id"`
+	ProfileId        string     `json:"profile_id"`
 	ProviderId       string     `json:"provider_id"`
 	ModelId          string     `json:"model_id"`
 	IsDefaultRoute   bool       `json:"is_default_route"`
 	IsDynamic        bool       `json:"is_dynamic"`
-	OwnerId          *string    `json:"owner_id"`
+	OwnerId          string     `json:"owner_id"`
 	Tags             []string   `json:"tags"`
 	ValidationIssues []string   `json:"validation_issues"`
 	CircuitState     string     `json:"circuit_state"`
@@ -72,7 +72,7 @@ type ProviderRouteHealthSnapshot struct {
 	Retries          int64      `json:"retries"`
 	Errors           int64      `json:"errors"`
 	LastErrorAtUtc   *time.Time `json:"last_error_at_utc"`
-	LastError        *string    `json:"last_error"`
+	LastError        string     `json:"last_error"`
 }
 
 func NewDefaultProviderRouteHealthSnapshot() *ProviderRouteHealthSnapshot {
@@ -122,11 +122,11 @@ func NewDefaultProviderAdminResponse() *ProviderAdminResponse {
 
 type RuntimeEventQuery struct {
 	Limit     int        `json:"limit"`
-	SessionId *string    `json:"session_id"`
-	ChannelId *string    `json:"channel_id"`
-	SenderId  *string    `json:"sender_id"`
-	Component *string    `json:"component"`
-	Action    *string    `json:"action"`
+	SessionId string     `json:"session_id"`
+	ChannelId string     `json:"channel_id"`
+	SenderId  string     `json:"sender_id"`
+	Component string     `json:"component"`
+	Action    string     `json:"action"`
 	FromUtc   *time.Time `json:"from_utc"`
 	ToUtc     *time.Time `json:"to_utc"`
 }
@@ -140,10 +140,10 @@ func NewDefaultRuntimeEventQuery() *RuntimeEventQuery {
 type RuntimeEventEntry struct {
 	Id            string            `json:"id"`
 	TimestampUtc  time.Time         `json:"timestamp_utc"`
-	SessionId     *string           `json:"session_id"`
-	ChannelId     *string           `json:"channel_id"`
-	SenderId      *string           `json:"sender_id"`
-	CorrelationId *string           `json:"correlation_id"`
+	SessionId     string            `json:"session_id"`
+	ChannelId     string            `json:"channel_id"`
+	SenderId      string            `json:"sender_id"`
+	CorrelationId string            `json:"correlation_id"`
 	Component     string            `json:"component"`
 	Action        string            `json:"action"`
 	Severity      string            `json:"severity"`
@@ -172,10 +172,10 @@ type PluginOperatorState struct {
 	PluginId         string    `json:"plugin_id"`
 	Disabled         bool      `json:"disabled"`
 	Quarantined      bool      `json:"quarantined"`
-	QuarantineSource *string   `json:"quarantine_source"`
+	QuarantineSource string    `json:"quarantine_source"`
 	Reviewed         bool      `json:"reviewed"`
-	Reason           *string   `json:"reason"`
-	ReviewNotes      *string   `json:"review_notes"`
+	Reason           string    `json:"reason"`
+	ReviewNotes      string    `json:"review_notes"`
 	UpdatedAtUtc     time.Time `json:"updated_at_utc"`
 }
 
@@ -192,22 +192,22 @@ type PluginHealthSnapshot struct {
 	BlockedByRuntimeMode  bool                             `json:"blocked_by_runtime_mode"`
 	Disabled              bool                             `json:"disabled"`
 	Quarantined           bool                             `json:"quarantined"`
-	QuarantineSource      *string                          `json:"quarantine_source"`
+	QuarantineSource      string                           `json:"quarantine_source"`
 	Reviewed              bool                             `json:"reviewed"`
-	PendingReason         *string                          `json:"pending_reason"`
-	ReviewNotes           *string                          `json:"review_notes"`
-	EffectiveRuntimeMode  *string                          `json:"effective_runtime_mode"`
+	PendingReason         string                           `json:"pending_reason"`
+	ReviewNotes           string                           `json:"review_notes"`
+	EffectiveRuntimeMode  string                           `json:"effective_runtime_mode"`
 	TrustLevel            string                           `json:"trust_level"`
 	TrustReason           string                           `json:"trust_reason"`
 	CompatibilityStatus   string                           `json:"compatibility_status"`
 	ErrorCount            int                              `json:"error_count"`
 	WarningCount          int                              `json:"warning_count"`
 	DeclaredSurface       string                           `json:"declared_surface"`
-	SourcePath            *string                          `json:"source_path"`
-	EntryPath             *string                          `json:"entry_path"`
+	SourcePath            string                           `json:"source_path"`
+	EntryPath             string                           `json:"entry_path"`
 	RequestedCapabilities []string                         `json:"requested_capabilities"`
 	SkillDirectories      []string                         `json:"skill_directories"`
-	LastError             *string                          `json:"last_error"`
+	LastError             string                           `json:"last_error"`
 	LastActivityAtUtc     *time.Time                       `json:"last_activity_at_utc"`
 	RestartCount          int                              `json:"restart_count"`
 	WorkingSetBytes       *int64                           `json:"working_set_bytes"`
@@ -253,11 +253,11 @@ type SkillHealthSnapshot struct {
 	Always                 bool     `json:"always"`
 	UserInvocable          bool     `json:"user_invocable"`
 	DisableModelInvocation bool     `json:"disable_model_invocation"`
-	CommandDispatch        *string  `json:"command_dispatch"`
-	CommandTool            *string  `json:"command_tool"`
-	CommandArgMode         *string  `json:"command_arg_mode"`
-	Homepage               *string  `json:"homepage"`
-	PrimaryEnv             *string  `json:"primary_env"`
+	CommandDispatch        string   `json:"command_dispatch"`
+	CommandTool            string   `json:"command_tool"`
+	CommandArgMode         string   `json:"command_arg_mode"`
+	Homepage               string   `json:"homepage"`
+	PrimaryEnv             string   `json:"primary_env"`
 	RequiredBins           []string `json:"required_bins"`
 	RequiredAnyBins        []string `json:"required_any_bins"`
 	RequiredEnv            []string `json:"required_env"`
@@ -353,8 +353,8 @@ func NewChannelAuthStatusResponse() *ChannelAuthStatusResponse {
 type ChannelAuthStatusItem struct {
 	ChannelId    string    `json:"channel_id"`
 	State        string    `json:"state"`
-	Data         *string   `json:"data,omitempty"`
-	AccountId    *string   `json:"account_id,omitempty"`
+	Data         string    `json:"data,omitempty"`
+	AccountId    string    `json:"account_id,omitempty"`
 	UpdatedAtUtc time.Time `json:"updated_at_utc"`
 }
 
@@ -373,24 +373,24 @@ type WhatsAppSetupRequest struct {
 	Type                         string                          `json:"type"`
 	DmPolicy                     string                          `json:"dm_policy"`
 	WebhookPath                  string                          `json:"webhook_path"`
-	WebhookPublicBaseUrl         *string                         `json:"webhook_public_base_url,omitempty"`
+	WebhookPublicBaseUrl         string                          `json:"webhook_public_base_url,omitempty"`
 	WebhookVerifyToken           string                          `json:"webhook_verify_token"`
 	WebhookVerifyTokenRef        string                          `json:"webhook_verify_token_ref"`
 	ValidateSignature            bool                            `json:"validate_signature"`
-	WebhookAppSecret             *string                         `json:"webhook_app_secret,omitempty"`
+	WebhookAppSecret             string                          `json:"webhook_app_secret,omitempty"`
 	WebhookAppSecretRef          string                          `json:"webhook_app_secret_ref"`
-	CloudApiToken                *string                         `json:"cloud_api_token,omitempty"`
+	CloudApiToken                string                          `json:"cloud_api_token,omitempty"`
 	CloudApiTokenRef             string                          `json:"cloud_api_token_ref"`
-	PhoneNumberId                *string                         `json:"phone_number_id,omitempty"`
-	BusinessAccountId            *string                         `json:"business_account_id,omitempty"`
-	BridgeUrl                    *string                         `json:"bridge_url,omitempty"`
-	BridgeToken                  *string                         `json:"bridge_token,omitempty"`
+	PhoneNumberId                string                          `json:"phone_number_id,omitempty"`
+	BusinessAccountId            string                          `json:"business_account_id,omitempty"`
+	BridgeUrl                    string                          `json:"bridge_url,omitempty"`
+	BridgeToken                  string                          `json:"bridge_token,omitempty"`
 	BridgeTokenRef               string                          `json:"bridge_token_ref"`
 	BridgeSuppressSendExceptions bool                            `json:"bridge_suppress_send_exceptions"`
-	PluginId                     *string                         `json:"plugin_id,omitempty"`
-	PluginConfigJson             *string                         `json:"plugin_config_json,omitempty"`
+	PluginId                     string                          `json:"plugin_id,omitempty"`
+	PluginConfigJson             string                          `json:"plugin_config_json,omitempty"`
 	FirstPartyWorker             *WhatsAppFirstPartyWorkerConfig `json:"first_party_worker,omitempty"`
-	FirstPartyWorkerConfigJson   *string                         `json:"first_party_worker_config_json,omitempty"`
+	FirstPartyWorkerConfigJson   string                          `json:"first_party_worker_config_json,omitempty"`
 }
 
 func NewWhatsAppSetupRequest() *WhatsAppSetupRequest {
@@ -419,36 +419,36 @@ type WhatsAppSetupResponse struct {
 	Enabled                          bool                            `json:"enabled"`
 	DmPolicy                         string                          `json:"dm_policy"`
 	WebhookPath                      string                          `json:"webhook_path"`
-	WebhookPublicBaseUrl             *string                         `json:"webhook_public_base_url,omitempty"`
+	WebhookPublicBaseUrl             string                          `json:"webhook_public_base_url,omitempty"`
 	WebhookVerifyToken               string                          `json:"webhook_verify_token"`
 	WebhookVerifyTokenConfigured     bool                            `json:"webhook_verify_token_configured"`
 	WebhookVerifyTokenRef            string                          `json:"webhook_verify_token_ref"`
 	ValidateSignature                bool                            `json:"validate_signature"`
-	WebhookAppSecret                 *string                         `json:"webhook_app_secret,omitempty"`
+	WebhookAppSecret                 string                          `json:"webhook_app_secret,omitempty"`
 	WebhookAppSecretConfigured       bool                            `json:"webhook_app_secret_configured"`
 	WebhookAppSecretRef              string                          `json:"webhook_app_secret_ref"`
-	CloudApiToken                    *string                         `json:"cloud_api_token,omitempty"`
+	CloudApiToken                    string                          `json:"cloud_api_token,omitempty"`
 	CloudApiTokenConfigured          bool                            `json:"cloud_api_token_configured"`
 	CloudApiTokenRef                 string                          `json:"cloud_api_token_ref"`
-	PhoneNumberId                    *string                         `json:"phone_number_id,omitempty"`
-	BusinessAccountId                *string                         `json:"business_account_id,omitempty"`
-	BridgeUrl                        *string                         `json:"bridge_url,omitempty"`
-	BridgeToken                      *string                         `json:"bridge_token,omitempty"`
+	PhoneNumberId                    string                          `json:"phone_number_id,omitempty"`
+	BusinessAccountId                string                          `json:"business_account_id,omitempty"`
+	BridgeUrl                        string                          `json:"bridge_url,omitempty"`
+	BridgeToken                      string                          `json:"bridge_token,omitempty"`
 	BridgeTokenConfigured            bool                            `json:"bridge_token_configured"`
 	BridgeTokenRef                   string                          `json:"bridge_token_ref"`
 	BridgeSuppressSendExceptions     bool                            `json:"bridge_suppress_send_exceptions"`
 	FirstPartyWorker                 *WhatsAppFirstPartyWorkerConfig `json:"first_party_worker,omitempty"`
-	FirstPartyWorkerConfigJson       *string                         `json:"first_party_worker_config_json,omitempty"`
-	FirstPartyWorkerConfigSchemaJson *string                         `json:"first_party_worker_config_schema_json,omitempty"`
+	FirstPartyWorkerConfigJson       string                          `json:"first_party_worker_config_json,omitempty"`
+	FirstPartyWorkerConfigSchemaJson string                          `json:"first_party_worker_config_schema_json,omitempty"`
 	PluginDetected                   bool                            `json:"plugin_detected"`
-	PluginId                         *string                         `json:"plugin_id,omitempty"`
-	PluginConfigJson                 *string                         `json:"plugin_config_json,omitempty"`
-	PluginConfigSchemaJson           *string                         `json:"plugin_config_schema_json,omitempty"`
-	PluginUiHintsJson                *string                         `json:"plugin_ui_hints_json,omitempty"`
-	PluginWarning                    *string                         `json:"plugin_warning,omitempty"`
+	PluginId                         string                          `json:"plugin_id,omitempty"`
+	PluginConfigJson                 string                          `json:"plugin_config_json,omitempty"`
+	PluginConfigSchemaJson           string                          `json:"plugin_config_schema_json,omitempty"`
+	PluginUiHintsJson                string                          `json:"plugin_ui_hints_json,omitempty"`
+	PluginWarning                    string                          `json:"plugin_warning,omitempty"`
 	RestartSupported                 bool                            `json:"restart_supported"`
-	RestartHint                      *string                         `json:"restart_hint,omitempty"`
-	DerivedWebhookUrl                *string                         `json:"derived_webhook_url,omitempty"`
+	RestartHint                      string                          `json:"restart_hint,omitempty"`
+	DerivedWebhookUrl                string                          `json:"derived_webhook_url,omitempty"`
 	Readiness                        *ChannelReadinessDto            `json:"readiness,omitempty"`
 	AuthStates                       []ChannelAuthStatusItem         `json:"auth_states"`
 	Warnings                         []string                        `json:"warnings"`
@@ -476,7 +476,7 @@ func NewWhatsAppSetupResponse() *WhatsAppSetupResponse {
 // ==========================================
 
 type PluginMutationRequest struct {
-	Reason *string `json:"reason,omitempty"`
+	Reason string `json:"reason,omitempty"`
 }
 
 // ==========================================
@@ -486,9 +486,9 @@ type PluginMutationRequest struct {
 type ToolApprovalGrant struct {
 	Id            string     `json:"id"`
 	Scope         string     `json:"scope"`
-	ChannelId     *string    `json:"channel_id,omitempty"`
-	SenderId      *string    `json:"sender_id,omitempty"`
-	SessionId     *string    `json:"session_id,omitempty"`
+	ChannelId     string     `json:"channel_id,omitempty"`
+	SenderId      string     `json:"sender_id,omitempty"`
+	SessionId     string     `json:"session_id,omitempty"`
 	ToolName      string     `json:"tool_name"`
 	CreatedAtUtc  time.Time  `json:"created_at_utc"`
 	ExpiresAtUtc  *time.Time `json:"expires_at_utc,omitempty"`
@@ -524,9 +524,9 @@ func NewApprovalGrantListResponse() *ApprovalGrantListResponse {
 
 type OperatorAuditQuery struct {
 	Limit      int        `json:"limit"`
-	ActorId    *string    `json:"actor_id,omitempty"`
-	ActionType *string    `json:"action_type,omitempty"`
-	TargetId   *string    `json:"target_id,omitempty"`
+	ActorId    string     `json:"actor_id,omitempty"`
+	ActionType string     `json:"action_type,omitempty"`
+	TargetId   string     `json:"target_id,omitempty"`
 	FromUtc    *time.Time `json:"from_utc,omitempty"`
 	ToUtc      *time.Time `json:"to_utc,omitempty"`
 }
@@ -547,15 +547,15 @@ type OperatorAuditEntry struct {
 	TimestampUtc      time.Time `json:"timestamp_utc"`
 	ActorId           string    `json:"actor_id"`
 	ActorRole         string    `json:"actor_role"`
-	ActorDisplayName  *string   `json:"actor_display_name,omitempty"`
+	ActorDisplayName  string    `json:"actor_display_name,omitempty"`
 	AuthMode          string    `json:"auth_mode"`
 	ActionType        string    `json:"action_type"`
 	TargetId          string    `json:"target_id"`
 	Summary           string    `json:"summary"`
-	PreviousEntryHash *string   `json:"previous_entry_hash,omitempty"`
-	EntryHash         *string   `json:"entry_hash,omitempty"`
-	Before            *string   `json:"before,omitempty"`
-	After             *string   `json:"after,omitempty"`
+	PreviousEntryHash string    `json:"previous_entry_hash,omitempty"`
+	EntryHash         string    `json:"entry_hash,omitempty"`
+	Before            string    `json:"before,omitempty"`
+	After             string    `json:"after,omitempty"`
 	Success           bool      `json:"success"`
 }
 
@@ -588,9 +588,9 @@ type MemoryNoteItem struct {
 	Key          string    `json:"key"`
 	DisplayKey   string    `json:"display_key"`
 	MemoryClass  string    `json:"memory_class"`
-	ProjectId    *string   `json:"project_id,omitempty"`
+	ProjectId    string    `json:"project_id,omitempty"`
 	Preview      string    `json:"preview"`
-	Content      *string   `json:"content,omitempty"`
+	Content      string    `json:"content,omitempty"`
 	UpdatedAtUtc time.Time `json:"updated_at_utc"`
 }
 
@@ -607,10 +607,10 @@ func NewMemoryNoteItem() *MemoryNoteItem {
 // ==========================================
 
 type MemoryNoteListResponse struct {
-	Prefix      *string          `json:"prefix,omitempty"`
-	Query       *string          `json:"query,omitempty"`
-	MemoryClass *string          `json:"memory_class,omitempty"`
-	ProjectId   *string          `json:"project_id,omitempty"`
+	Prefix      string           `json:"prefix,omitempty"`
+	Query       string           `json:"query,omitempty"`
+	MemoryClass string           `json:"memory_class,omitempty"`
+	ProjectId   string           `json:"project_id,omitempty"`
 	Items       []MemoryNoteItem `json:"items"`
 }
 
@@ -633,10 +633,10 @@ type MemoryNoteDetailResponse struct {
 // ==========================================
 
 type MemoryNoteUpsertRequest struct {
-	Key         *string `json:"key,omitempty"`
-	MemoryClass *string `json:"memory_class,omitempty"`
-	ProjectId   *string `json:"project_id,omitempty"`
-	Content     string  `json:"content"`
+	Key         string `json:"key,omitempty"`
+	MemoryClass string `json:"memory_class,omitempty"`
+	ProjectId   string `json:"project_id,omitempty"`
+	Content     string `json:"content"`
 }
 
 // ==========================================
@@ -754,15 +754,15 @@ func NewDefaultAgentBundleImportResponse() *AgentBundleImportResponse {
 // --- LearningProposalProvenance ---
 
 type LearningProposalProvenance struct {
-	ActorId             *string                   `json:"actor_id,omitempty"`
+	ActorId             string                    `json:"actor_id,omitempty"`
 	SourceSessionIds    []string                  `json:"source_session_ids"`
 	SourceTurnIds       []string                  `json:"source_turn_ids"`
 	ToolNames           []string                  `json:"tool_names"`
 	ToolSequence        []string                  `json:"tool_sequence"`
 	ToolObservations    []LearningToolObservation `json:"tool_observations"`
 	RepeatedCount       int                       `json:"repeated_count"`
-	ProposalFingerprint *string                   `json:"proposal_fingerprint,omitempty"`
-	CreatedReason       *string                   `json:"created_reason,omitempty"`
+	ProposalFingerprint string                    `json:"proposal_fingerprint,omitempty"`
+	CreatedReason       string                    `json:"created_reason,omitempty"`
 	Confidence          float32                   `json:"confidence"`
 	CreatedAtUtc        time.Time                 `json:"created_at_utc"`
 	UpdatedAtUtc        time.Time                 `json:"updated_at_utc"`
@@ -782,10 +782,10 @@ func NewDefaultLearningProposalProvenance() *LearningProposalProvenance {
 // --- ProfileDiffEntry ---
 
 type ProfileDiffEntry struct {
-	Path       string  `json:"path"`
-	ChangeType string  `json:"change_type"`
-	Before     *string `json:"before,omitempty"`
-	After      *string `json:"after,omitempty"`
+	Path       string `json:"path"`
+	ChangeType string `json:"change_type"`
+	Before     string `json:"before,omitempty"`
+	After      string `json:"after,omitempty"`
 }
 
 // --- LearningProposalDetailResponse ---
@@ -836,7 +836,7 @@ type SessionMetadataSnapshot struct {
 	SessionId      string            `json:"session_id"`
 	Starred        bool              `json:"starred"`
 	Tags           []string          `json:"tags"`
-	ActivePresetId *string           `json:"active_preset_id,omitempty"`
+	ActivePresetId string            `json:"active_preset_id,omitempty"`
 	TodoItems      []SessionTodoItem `json:"todo_items"`
 }
 
@@ -852,7 +852,7 @@ func NewDefaultSessionMetadataSnapshot() *SessionMetadataSnapshot {
 type SessionMetadataUpdateRequest struct {
 	Starred        *bool             `json:"starred,omitempty"`
 	Tags           []string          `json:"tags,omitempty"`
-	ActivePresetId *string           `json:"active_preset_id,omitempty"`
+	ActivePresetId string            `json:"active_preset_id,omitempty"`
 	TodoItems      []SessionTodoItem `json:"todo_items,omitempty"`
 }
 
@@ -868,20 +868,20 @@ const (
 
 type SessionPromotionRequest struct {
 	Target              string   `json:"target"`
-	Name                *string  `json:"name,omitempty"`
-	Prompt              *string  `json:"prompt,omitempty"`
-	Schedule            *string  `json:"schedule,omitempty"`
-	DeliveryChannelId   *string  `json:"delivery_channel_id,omitempty"`
-	DeliveryRecipientId *string  `json:"delivery_recipient_id,omitempty"`
-	DeliverySubject     *string  `json:"delivery_subject,omitempty"`
+	Name                string   `json:"name,omitempty"`
+	Prompt              string   `json:"prompt,omitempty"`
+	Schedule            string   `json:"schedule,omitempty"`
+	DeliveryChannelId   string   `json:"delivery_channel_id,omitempty"`
+	DeliveryRecipientId string   `json:"delivery_recipient_id,omitempty"`
+	DeliverySubject     string   `json:"delivery_subject,omitempty"`
 	Tags                []string `json:"tags"`
 	Scope               string   `json:"scope"`
-	ProviderId          *string  `json:"provider_id,omitempty"`
-	ModelId             *string  `json:"model_id,omitempty"`
+	ProviderId          string   `json:"provider_id,omitempty"`
+	ModelId             string   `json:"model_id,omitempty"`
 	FallbackModels      []string `json:"fallback_models"`
 	Priority            int      `json:"priority"`
 	Enabled             bool     `json:"enabled"`
-	Summary             *string  `json:"summary,omitempty"`
+	Summary             string   `json:"summary,omitempty"`
 }
 
 func NewDefaultSessionPromotionRequest() *SessionPromotionRequest {
@@ -901,11 +901,11 @@ type SessionPromotionResponse struct {
 	Success        bool                  `json:"success"`
 	Target         string                `json:"target"`
 	Message        string                `json:"message"`
-	CreatedId      *string               `json:"created_id,omitempty"`
+	CreatedId      string                `json:"created_id,omitempty"`
 	Automation     *AutomationDefinition `json:"automation,omitempty"`
 	ProviderPolicy *ProviderPolicyRule   `json:"provider_policy,omitempty"`
 	Proposal       *LearningProposal     `json:"proposal,omitempty"`
-	Error          *string               `json:"error,omitempty"`
+	Error          string                `json:"error,omitempty"`
 }
 
 // --- SessionTodoItem ---
@@ -914,7 +914,7 @@ type SessionTodoItem struct {
 	Id           string    `json:"id"`
 	Text         string    `json:"text"`
 	Completed    bool      `json:"completed"`
-	Notes        *string   `json:"notes,omitempty"`
+	Notes        string    `json:"notes,omitempty"`
 	CreatedAtUtc time.Time `json:"created_at_utc"`
 	UpdatedAtUtc time.Time `json:"updated_at_utc"`
 }
@@ -933,7 +933,7 @@ func NewDefaultSessionTodoItem() *SessionTodoItem {
 type SessionDiffResponse struct {
 	SessionId                string                   `json:"session_id"`
 	BranchId                 string                   `json:"branch_id"`
-	BranchName               *string                  `json:"branch_name,omitempty"`
+	BranchName               string                   `json:"branch_name,omitempty"`
 	SharedPrefixTurns        int                      `json:"shared_prefix_turns"`
 	CurrentTurnCount         int                      `json:"current_turn_count"`
 	BranchTurnCount          int                      `json:"branch_turn_count"`
@@ -995,10 +995,10 @@ type WebhookDeadLetterEntry struct {
 	Id             string     `json:"id"`
 	Source         string     `json:"source"`
 	DeliveryKey    string     `json:"delivery_key"`
-	EndpointName   *string    `json:"endpoint_name"`
-	ChannelId      *string    `json:"channel_id"`
-	SenderId       *string    `json:"sender_id"`
-	SessionId      *string    `json:"session_id"`
+	EndpointName   string     `json:"endpoint_name"`
+	ChannelId      string     `json:"channel_id"`
+	SenderId       string     `json:"sender_id"`
+	SessionId      string     `json:"session_id"`
 	CreatedAtUtc   time.Time  `json:"created_at_utc"`
 	Error          string     `json:"error"`
 	PayloadPreview string     `json:"payload_preview"`
@@ -1031,7 +1031,7 @@ type ActorRateLimitPolicy struct {
 	Id                     string    `json:"id"`
 	ActorType              string    `json:"actor_type"`
 	EndpointScope          string    `json:"endpoint_scope"`
-	MatchValue             *string   `json:"match_value"`
+	MatchValue             string    `json:"match_value"`
 	BurstLimit             int       `json:"burst_limit"`
 	BurstWindowSeconds     int       `json:"burst_window_seconds"`
 	SustainedLimit         int       `json:"sustained_limit"`
@@ -1105,12 +1105,12 @@ func DefaultSecurityPostureResponse() SecurityPostureResponse {
 }
 
 type ApprovalSimulationRequest struct {
-	ToolName              *string  `json:"tool_name"`
-	ArgumentsJson         *string  `json:"arguments_json"`
-	ChannelId             *string  `json:"channel_id"`
-	SenderId              *string  `json:"sender_id"`
-	SessionId             *string  `json:"session_id"`
-	AutonomyMode          *string  `json:"autonomy_mode"`
+	ToolName              string   `json:"tool_name"`
+	ArgumentsJson         string   `json:"arguments_json"`
+	ChannelId             string   `json:"channel_id"`
+	SenderId              string   `json:"sender_id"`
+	SessionId             string   `json:"session_id"`
+	AutonomyMode          string   `json:"autonomy_mode"`
 	RequireToolApproval   *bool    `json:"require_tool_approval"`
 	ApprovalRequiredTools []string `json:"approval_required_tools"`
 }
@@ -1123,11 +1123,11 @@ type ApprovalSimulationResponse struct {
 	AutonomyAllowed           bool     `json:"autonomy_allowed"`
 	RequireToolApproval       bool     `json:"require_tool_approval"`
 	ApprovalRequired          bool     `json:"approval_required"`
-	BlockingPolicy            *string  `json:"blocking_policy"`
-	ExecutionBackend          *string  `json:"execution_backend"`
-	ExecutionFallbackBackend  *string  `json:"execution_fallback_backend"`
-	ExecutionTemplate         *string  `json:"execution_template"`
-	ExecutionSandboxMode      *string  `json:"execution_sandbox_mode"`
+	BlockingPolicy            string   `json:"blocking_policy"`
+	ExecutionBackend          string   `json:"execution_backend"`
+	ExecutionFallbackBackend  string   `json:"execution_fallback_backend"`
+	ExecutionTemplate         string   `json:"execution_template"`
+	ExecutionSandboxMode      string   `json:"execution_sandbox_mode"`
 	ExecutionRequireWorkspace *bool    `json:"execution_require_workspace"`
 	ApprovalRequiredTools     []string `json:"approval_required_tools"`
 }

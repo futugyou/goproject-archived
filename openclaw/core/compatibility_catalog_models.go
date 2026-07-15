@@ -24,13 +24,13 @@ type CompatibilityCatalogEntry struct {
 	InstallSurface          string   `json:"install_surface"`
 	InstallCommand          string   `json:"install_command"`
 	Summary                 string   `json:"summary"`
-	PackageSpec             *string  `json:"package_spec,omitempty"`
-	PackageName             *string  `json:"package_name,omitempty"`
-	PluginID                *string  `json:"plugin_id,omitempty"`
-	SkillSlug               *string  `json:"skill_slug,omitempty"`
-	PackageVersion          *string  `json:"package_version,omitempty"`
-	ExpectedRelativePath    *string  `json:"expected_relative_path,omitempty"`
-	ConfigJSONExample       *string  `json:"config_json_example,omitempty"`
+	PackageSpec             string   `json:"package_spec,omitempty"`
+	PackageName             string   `json:"package_name,omitempty"`
+	PluginID                string   `json:"plugin_id,omitempty"`
+	SkillSlug               string   `json:"skill_slug,omitempty"`
+	PackageVersion          string   `json:"package_version,omitempty"`
+	ExpectedRelativePath    string   `json:"expected_relative_path,omitempty"`
+	ConfigJSONExample       string   `json:"config_json_example,omitempty"`
 	InstallExtraPackages    []string `json:"install_extra_packages"`
 	ExpectedToolNames       []string `json:"expected_tool_names"`
 	ExpectedSkillNames      []string `json:"expected_skill_names"`

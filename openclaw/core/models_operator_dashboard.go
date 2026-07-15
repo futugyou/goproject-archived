@@ -90,7 +90,7 @@ type AutomationItem struct {
 	Enabled           bool       `json:"enabled"`
 	IsDraft           bool       `json:"is_draft"`
 	DeliveryChannelId string     `json:"delivery_channel_id"`
-	TemplateKey       *string    `json:"template_key"`
+	TemplateKey       string     `json:"template_key"`
 	Outcome           string     `json:"outcome"`
 	LastRunAtUtc      *time.Time `json:"last_run_at_utc"`
 }

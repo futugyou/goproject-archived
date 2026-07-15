@@ -12,7 +12,7 @@ type SkillsConfig struct {
 	Load                 SkillLoadConfig              `json:"load"`
 	Entries              map[string]*SkillEntryConfig `json:"entries"`
 	AllowBundled         []string                     `json:"allow_bundled"`
-	InstructionPrompt    *string                      `json:"instruction_prompt,omitempty"`
+	InstructionPrompt    string                       `json:"instruction_prompt,omitempty"`
 	MaxResourceReadBytes int                          `json:"max_resource_read_bytes"`
 }
 
@@ -80,9 +80,9 @@ type SkillDefinition struct {
 	Composition            *MetaSkillComposition `json:"composition,omitempty"`
 	UserInvocable          bool                  `json:"user_invocable"`
 	DisableModelInvocation bool                  `json:"disable_model_invocation"`
-	CommandDispatch        *string               `json:"command_dispatch,omitempty"`
-	CommandTool            *string               `json:"command_tool,omitempty"`
-	CommandArgMode         *string               `json:"command_arg_mode,omitempty"`
+	CommandDispatch        string                `json:"command_dispatch,omitempty"`
+	CommandTool            string                `json:"command_tool,omitempty"`
+	CommandArgMode         string                `json:"command_arg_mode,omitempty"`
 	Resources              []SkillResource       `json:"resources,omitempty"`
 }
 
@@ -104,7 +104,7 @@ type MetaSkillComposition struct {
 
 type SkillMetadata struct {
 	Always         bool     `json:"always"`
-	Emoji          *string  `json:"emoji,omitempty"`
+	Emoji          string   `json:"emoji,omitempty"`
 	Homepage       string   `json:"homepage"`
 	Os             []string `json:"os"`
 	RequireBins    []string `json:"require_bins"`

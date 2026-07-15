@@ -50,7 +50,7 @@ type IConnectedAccountStore interface {
 }
 
 type IBackendSessionStore interface {
-	ListBackendSessions(ctx context.Context, backendID *string) ([]BackendSessionRecord, error)
+	ListBackendSessions(ctx context.Context, backendID string) ([]BackendSessionRecord, error)
 	GetBackendSession(ctx context.Context, sessionID string) (*BackendSessionRecord, error)
 	SaveBackendSession(ctx context.Context, session BackendSessionRecord) error
 	DeleteBackendSession(ctx context.Context, sessionID string) error
@@ -109,8 +109,8 @@ type IBridgedChannelControl interface {
 
 	SelfId() (string, bool)
 	SelfIds() []string
-	SendTyping(ctx context.Context, recipientId string, isTyping bool, accountId *string) error
-	SendReadReceipt(ctx context.Context, messageId string, remoteJid *string, participant *string, accountId *string) error
+	SendTyping(ctx context.Context, recipientId string, isTyping bool, accountId string) error
+	SendReadReceipt(ctx context.Context, messageId string, remoteJid string, participant string, accountId string) error
 }
 
 type IExecutionBackend interface {
@@ -133,14 +133,14 @@ type IHarnessContractStore interface {
 }
 
 type ILearningProposalStore interface {
-	ListProposals(ctx context.Context, status *string, kind *string) ([]LearningProposal, error)
+	ListProposals(ctx context.Context, status string, kind string) ([]LearningProposal, error)
 	GetProposal(ctx context.Context, proposalId string) (*LearningProposal, error)
 	SaveProposal(ctx context.Context, proposal *LearningProposal) error
 }
 
 // IMemoryNoteSearch 搜索笔记
 type IMemoryNoteSearch interface {
-	SearchNotes(ctx context.Context, query string, prefix *string, limit int) ([]MemoryNoteHit, error)
+	SearchNotes(ctx context.Context, query string, prefix string, limit int) ([]MemoryNoteHit, error)
 }
 
 // IMemoryNoteCatalog 笔记目录
@@ -173,7 +173,7 @@ type IMemoryStore interface {
 
 // IModelProfileRegistry 模型配置注册表
 type IModelProfileRegistry interface {
-	DefaultProfileId() *string
+	DefaultProfileId() string
 	TryGet(profileId string) (*ModelProfile, bool)
 	ListStatuses() ([]ModelProfileStatus, error)
 }
@@ -222,9 +222,9 @@ type IStreamingTool interface {
 // IStructuredMemoryProvider 结构化内存提供者
 type IStructuredMemoryProvider interface {
 	GetStatus(ctx context.Context) (*StructuredMemoryStatusResponse, error)
-	Search(ctx context.Context, query string, limit int, scope *string) (*StructuredMemorySearchResult, error)
+	Search(ctx context.Context, query string, limit int, scope string) (*StructuredMemorySearchResult, error)
 	Open(ctx context.Context, path string, depth int, view string) (*StructuredMemoryOpenResult, error)
-	Recent(ctx context.Context, days int, limit int, scope *string) (*StructuredMemoryRecentResult, error)
+	Recent(ctx context.Context, days int, limit int, scope string) (*StructuredMemoryRecentResult, error)
 	Export(ctx context.Context, path string, mode string) (*StructuredMemoryExportResult, error)
 	CreateHandoff(ctx context.Context, path string) (*StructuredMemoryHandoffResult, error)
 	Validate(ctx context.Context) (*StructuredMemoryValidationResult, error)
@@ -312,7 +312,7 @@ type ISentinelSubstitutionService interface {
 type IGoalService interface {
 	CreateGoal(ctx context.Context, sessionId, objective string, tokenBudget, tokensAtStart int64) (*SessionGoal, error)
 	GetGoal(ctx context.Context, sessionId string) (*SessionGoal, error)
-	UpdateStatus(ctx context.Context, sessionId string, newStatus GoalStatus, note *string) error
+	UpdateStatus(ctx context.Context, sessionId string, newStatus GoalStatus, note string) error
 	UpdateTokenUsage(ctx context.Context, sessionId string, sessionTotalTokens int64) error
 	IncrementContinuationCount(ctx context.Context, sessionId string) int
 	RecordTurnHash(ctx context.Context, sessionId, normalizedText string) bool

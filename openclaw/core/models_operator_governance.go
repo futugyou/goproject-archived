@@ -17,11 +17,11 @@ const (
 	OperatorRoleNamesAdmin    = "admin"
 )
 
-func OperatorRoleNamesNormalize(role *string) string {
-	if role == nil {
+func OperatorRoleNamesNormalize(role string) string {
+	if role == "" {
 		return OperatorRoleNamesViewer
 	}
-	r := strings.ToLower(strings.TrimSpace(*role))
+	r := strings.ToLower(strings.TrimSpace(role))
 	switch r {
 	case OperatorRoleNamesViewer:
 		return OperatorRoleNamesViewer
@@ -35,7 +35,7 @@ func OperatorRoleNamesNormalize(role *string) string {
 }
 
 func OperatorRoleNamesCanAccess(grantedRole, requiredRole string) bool {
-	return operatorRoleNamesRank(OperatorRoleNamesNormalize(&grantedRole)) >= operatorRoleNamesRank(OperatorRoleNamesNormalize(&requiredRole))
+	return operatorRoleNamesRank(OperatorRoleNamesNormalize(grantedRole)) >= operatorRoleNamesRank(OperatorRoleNamesNormalize(requiredRole))
 }
 
 func operatorRoleNamesRank(role string) int {
@@ -130,12 +130,12 @@ const (
 // ============================================================================
 
 type OperatorIdentitySnapshot struct {
-	AuthMode         string  `json:"auth_mode"`
-	Role             string  `json:"role"`
-	AccountId        *string `json:"account_id"`
-	Username         *string `json:"username"`
-	DisplayName      *string `json:"display_name"`
-	IsBootstrapAdmin bool    `json:"is_bootstrap_admin"`
+	AuthMode         string `json:"auth_mode"`
+	Role             string `json:"role"`
+	AccountId        string `json:"account_id"`
+	Username         string `json:"username"`
+	DisplayName      string `json:"display_name"`
+	IsBootstrapAdmin bool   `json:"is_bootstrap_admin"`
 }
 
 func DefaultOperatorIdentitySnapshot() OperatorIdentitySnapshot {
@@ -207,11 +207,11 @@ func DefaultOperatorAccountDetailResponse() OperatorAccountDetailResponse {
 }
 
 type OperatorAccountCreateRequest struct {
-	Username    *string `json:"username"`
-	DisplayName *string `json:"display_name"`
-	Role        string  `json:"role"`
-	Password    *string `json:"password"`
-	Enabled     bool    `json:"enabled"`
+	Username    string `json:"username"`
+	DisplayName string `json:"display_name"`
+	Role        string `json:"role"`
+	Password    string `json:"password"`
+	Enabled     bool   `json:"enabled"`
 }
 
 func DefaultOperatorAccountCreateRequest() OperatorAccountCreateRequest {
@@ -222,14 +222,14 @@ func DefaultOperatorAccountCreateRequest() OperatorAccountCreateRequest {
 }
 
 type OperatorAccountUpdateRequest struct {
-	DisplayName *string `json:"display_name"`
-	Role        *string `json:"role"`
-	Password    *string `json:"password"`
-	Enabled     *bool   `json:"enabled"`
+	DisplayName string `json:"display_name"`
+	Role        string `json:"role"`
+	Password    string `json:"password"`
+	Enabled     *bool  `json:"enabled"`
 }
 
 type OperatorAccountTokenCreateRequest struct {
-	Label        *string    `json:"label"`
+	Label        string     `json:"label"`
 	ExpiresAtUtc *time.Time `json:"expires_at_utc"`
 }
 
@@ -280,11 +280,11 @@ func DefaultOrganizationPolicyResponse() OrganizationPolicyResponse {
 }
 
 type SetupArtifactStatusItem struct {
-	Id     string  `json:"id"`
-	Label  string  `json:"label"`
-	Path   *string `json:"path"`
-	Exists bool    `json:"exists"`
-	Status string  `json:"status"`
+	Id     string `json:"id"`
+	Label  string `json:"label"`
+	Path   string `json:"path"`
+	Exists bool   `json:"exists"`
+	Status string `json:"status"`
 }
 
 func DefaultSetupArtifactStatusItem() SetupArtifactStatusItem {
@@ -341,7 +341,7 @@ type SetupStatusResponse struct {
 	MinimumPluginTrustLevel           string                        `json:"minimum_plugin_trust_level"`
 	ReverseProxyRecommended           bool                          `json:"reverse_proxy_recommended"`
 	ReachableBaseUrl                  string                        `json:"reachable_base_url"`
-	WorkspacePath                     *string                       `json:"workspace_path"`
+	WorkspacePath                     string                        `json:"workspace_path"`
 	WorkspaceExists                   bool                          `json:"workspace_exists"`
 	HasOperatorAccounts               bool                          `json:"has_operator_accounts"`
 	OperatorAccountCount              int                           `json:"operator_account_count"`
@@ -352,7 +352,7 @@ type SetupStatusResponse struct {
 	BrowserExecutionBackendConfigured bool                          `json:"browser_execution_backend_configured"`
 	BrowserCapabilityReason           string                        `json:"browser_capability_reason"`
 	LastVerificationAtUtc             *time.Time                    `json:"last_verification_at_utc"`
-	LastVerificationSource            *string                       `json:"last_verification_source"`
+	LastVerificationSource            string                        `json:"last_verification_source"`
 	LastVerificationStatus            string                        `json:"last_verification_status"`
 	LastVerificationHasFailures       bool                          `json:"last_verification_has_failures"`
 	LastVerificationHasWarnings       bool                          `json:"last_verification_has_warnings"`
@@ -381,13 +381,13 @@ func DefaultSetupStatusResponse() SetupStatusResponse {
 }
 
 type SetupVerificationCheck struct {
-	Id       string  `json:"id"`
-	Label    string  `json:"label"`
-	Category string  `json:"category"`
-	Status   string  `json:"status"`
-	Summary  string  `json:"summary"`
-	Detail   *string `json:"detail"`
-	NextStep *string `json:"next_step"`
+	Id       string `json:"id"`
+	Label    string `json:"label"`
+	Category string `json:"category"`
+	Status   string `json:"status"`
+	Summary  string `json:"summary"`
+	Detail   string `json:"detail"`
+	NextStep string `json:"next_step"`
 }
 
 func DefaultSetupVerificationCheck() SetupVerificationCheck {
@@ -434,11 +434,11 @@ func DefaultSetupVerificationSnapshot() SetupVerificationSnapshot {
 }
 
 type UpgradeRollbackSnapshotArtifact struct {
-	Kind                 string  `json:"kind"`
-	TargetPath           string  `json:"target_path"`
-	Exists               bool    `json:"exists"`
-	IsDirectory          bool    `json:"is_directory"`
-	SnapshotRelativePath *string `json:"snapshot_relative_path"`
+	Kind                 string `json:"kind"`
+	TargetPath           string `json:"target_path"`
+	Exists               bool   `json:"exists"`
+	IsDirectory          bool   `json:"is_directory"`
+	SnapshotRelativePath string `json:"snapshot_relative_path"`
 }
 
 type UpgradeRollbackSnapshot struct {
@@ -447,7 +447,7 @@ type UpgradeRollbackSnapshot struct {
 	CreatedAtUtc       time.Time                         `json:"created_at_utc"`
 	CreatedByVersion   string                            `json:"created_by_version"`
 	ConfigPath         string                            `json:"config_path"`
-	WorkspacePath      *string                           `json:"workspace_path"`
+	WorkspacePath      string                            `json:"workspace_path"`
 	VerificationStatus string                            `json:"verification_status"`
 	Offline            bool                              `json:"offline"`
 	RequireProvider    bool                              `json:"require_provider"`
@@ -467,13 +467,13 @@ func DefaultUpgradeRollbackSnapshot() UpgradeRollbackSnapshot {
 }
 
 type DoctorCheckItem struct {
-	Id       string  `json:"id"`
-	Label    string  `json:"label"`
-	Category string  `json:"category"`
-	Status   string  `json:"status"`
-	Summary  string  `json:"summary"`
-	Detail   *string `json:"detail"`
-	NextStep *string `json:"next_step"`
+	Id       string `json:"id"`
+	Label    string `json:"label"`
+	Category string `json:"category"`
+	Status   string `json:"status"`
+	Summary  string `json:"summary"`
+	Detail   string `json:"detail"`
+	NextStep string `json:"next_step"`
 }
 
 func DefaultDoctorCheckItem() DoctorCheckItem {
@@ -660,8 +660,8 @@ type AuditExportManifest struct {
 	RetentionDays                  int                         `json:"retention_days"`
 	OperatorAuditSequenceStart     *int64                      `json:"operator_audit_sequence_start,omitempty"`
 	OperatorAuditSequenceEnd       *int64                      `json:"operator_audit_sequence_end,omitempty"`
-	OperatorAuditPreviousEntryHash *string                     `json:"operator_audit_previous_entry_hash,omitempty"`
-	OperatorAuditLastEntryHash     *string                     `json:"operator_audit_last_entry_hash,omitempty"`
+	OperatorAuditPreviousEntryHash string                      `json:"operator_audit_previous_entry_hash,omitempty"`
+	OperatorAuditLastEntryHash     string                      `json:"operator_audit_last_entry_hash,omitempty"`
 	FileEntryCounts                map[string]int              `json:"file_entry_counts"`
 	Warnings                       []string                    `json:"warnings"`
 }
@@ -683,16 +683,16 @@ type TrajectoryExportRecord struct {
 	ChannelId             string                 `json:"channel_id"`
 	SenderId              string                 `json:"sender_id"`
 	TurnIndex             int                    `json:"turn_index"`
-	Role                  *string                `json:"role,omitempty"`
-	Content               *string                `json:"content,omitempty"`
-	ToolName              *string                `json:"tool_name,omitempty"`
-	CallId                *string                `json:"call_id,omitempty"`
-	Arguments             *string                `json:"arguments,omitempty"`
-	Result                *string                `json:"result,omitempty"`
+	Role                  string                 `json:"role,omitempty"`
+	Content               string                 `json:"content,omitempty"`
+	ToolName              string                 `json:"tool_name,omitempty"`
+	CallId                string                 `json:"call_id,omitempty"`
+	Arguments             string                 `json:"arguments,omitempty"`
+	Result                string                 `json:"result,omitempty"`
 	DurationMs            *int64                 `json:"duration_ms,omitempty"`
-	ResultStatus          *string                `json:"result_status,omitempty"`
-	FailureCode           *string                `json:"failure_code,omitempty"`
-	FailureMessage        *string                `json:"failure_message,omitempty"`
+	ResultStatus          string                 `json:"result_status,omitempty"`
+	FailureCode           string                 `json:"failure_code,omitempty"`
+	FailureMessage        string                 `json:"failure_message,omitempty"`
 	EvidenceBundle        *EvidenceBundle        `json:"evidence_bundle,omitempty"`
 	GovernanceLedgerEntry *GovernanceLedgerEntry `json:"governance_ledger_entry,omitempty"`
 	Anonymized            bool                   `json:"anonymized"`
@@ -727,7 +727,7 @@ func DefaultUpstreamMigrationSkillItem() UpstreamMigrationSkillItem {
 
 type UpstreamMigrationPluginItem struct {
 	Subject     string   `json:"subject"`
-	PackageSpec *string  `json:"package_spec,omitempty"`
+	PackageSpec string   `json:"package_spec,omitempty"`
 	Status      string   `json:"status"`
 	Guidance    []string `json:"guidance"`
 }
@@ -743,9 +743,9 @@ type UpstreamMigrationReport struct {
 	GeneratedAtUtc       time.Time                            `json:"generated_at_utc"`
 	SourcePath           string                               `json:"source_path"`
 	TargetConfigPath     string                               `json:"target_config_path"`
-	DiscoveredConfigPath *string                              `json:"discovered_config_path,omitempty"`
-	ManagedSkillRootPath *string                              `json:"managed_skill_root_path,omitempty"`
-	PluginReviewPlanPath *string                              `json:"plugin_review_plan_path,omitempty"`
+	DiscoveredConfigPath string                               `json:"discovered_config_path,omitempty"`
+	ManagedSkillRootPath string                               `json:"managed_skill_root_path,omitempty"`
+	PluginReviewPlanPath string                               `json:"plugin_review_plan_path,omitempty"`
 	Applied              bool                                 `json:"applied"`
 	Compatibility        []UpstreamMigrationCompatibilityItem `json:"compatibility"`
 	Skills               []UpstreamMigrationSkillItem         `json:"skills"`

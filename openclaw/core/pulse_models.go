@@ -35,13 +35,13 @@ const (
 type PulseConfig struct {
 	Enabled                   bool                    `json:"enabled"`
 	Every                     string                  `json:"every"`
-	Model                     *string                 `json:"model"`
+	Model                     string                  `json:"model"`
 	Prompt                    string                  `json:"prompt"`
 	AckToken                  string                  `json:"ack_token"`
 	AckMaxChars               int                     `json:"ack_max_chars"`
 	Target                    string                  `json:"target"`
-	To                        *string                 `json:"to"`
-	AccountId                 *string                 `json:"account_id"`
+	To                        string                  `json:"to"`
+	AccountId                 string                  `json:"account_id"`
 	DirectPolicy              string                  `json:"direct_policy"`
 	IncludeReasoning          bool                    `json:"include_reasoning"`
 	LightContext              bool                    `json:"light_context"`
@@ -70,9 +70,9 @@ func NewDefaultPulseConfig() *PulseConfig {
 }
 
 type PulseActiveHoursConfig struct {
-	Start    string  `json:"start"`
-	End      string  `json:"end"`
-	Timezone *string `json:"timezone"`
+	Start    string `json:"start"`
+	End      string `json:"end"`
+	Timezone string `json:"timezone"`
 }
 
 func NewDefaultPulseActiveHoursConfig() *PulseActiveHoursConfig {
@@ -97,8 +97,8 @@ func NewDefaultPulseVisibilityConfig() *PulseVisibilityConfig {
 }
 
 type PulseRunRequest struct {
-	Text *string `json:"text"`
-	Mode string  `json:"mode"`
+	Text string `json:"text"`
+	Mode string `json:"mode"`
 }
 
 func NewDefaultPulseRunRequest() *PulseRunRequest {
@@ -108,11 +108,11 @@ func NewDefaultPulseRunRequest() *PulseRunRequest {
 }
 
 type PulseRunResponse struct {
-	Success        bool    `json:"success"`
-	Outcome        string  `json:"outcome"`
-	SkipReason     *string `json:"skip_reason"`
-	SessionId      *string `json:"session_id"`
-	MessagePreview *string `json:"message_preview"`
+	Success        bool   `json:"success"`
+	Outcome        string `json:"outcome"`
+	SkipReason     string `json:"skip_reason"`
+	SessionId      string `json:"session_id"`
+	MessagePreview string `json:"message_preview"`
 }
 
 func NewDefaultPulseRunResponse() *PulseRunResponse {
@@ -132,11 +132,11 @@ type PulseStatusResponse struct {
 	LastCompletedAtUtc *time.Time      `json:"last_completed_at_utc"`
 	NextRunAtUtc       *time.Time      `json:"next_run_at_utc"`
 	LastResult         string          `json:"last_result"`
-	LastSkipReason     *string         `json:"last_skip_reason"`
+	LastSkipReason     string          `json:"last_skip_reason"`
 	RecentAlertCount   int             `json:"recent_alert_count"`
 	RecentOkCount      int             `json:"recent_ok_count"`
 	RecentAlerts       []PulseAlertDto `json:"recent_alerts"`
-	PendingManualText  *string         `json:"pending_manual_text"`
+	PendingManualText  string          `json:"pending_manual_text"`
 }
 
 func NewDefaultPulseStatusResponse() *PulseStatusResponse {
@@ -165,9 +165,9 @@ type PulseState struct {
 	LastCompletedAtUtc *time.Time           `json:"last_completed_at_utc"`
 	NextRunAtUtc       *time.Time           `json:"next_run_at_utc"`
 	LastResult         string               `json:"last_result"`
-	LastSkipReason     *string              `json:"last_skip_reason"`
+	LastSkipReason     string               `json:"last_skip_reason"`
 	RecentOkCount      int                  `json:"recent_ok_count"`
-	PendingManualText  *string              `json:"pending_manual_text"`
+	PendingManualText  string               `json:"pending_manual_text"`
 	RecentAlerts       []PulseAlertDto      `json:"recent_alerts"`
 	TaskLastRunUtc     map[string]time.Time `json:"task_last_run_utc"`
 }

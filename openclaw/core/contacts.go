@@ -12,7 +12,7 @@ import (
 
 type Contact struct {
 	PhoneE164   string    `json:"phone_e164"`
-	DisplayName *string   `json:"display_name"` // 使用指针支持可空类型 string?
+	DisplayName string    `json:"display_name"` // 使用指针支持可空类型 string?
 	DoNotText   bool      `json:"do_not_text"`
 	CreatedAt   time.Time `json:"created_at"`
 	LastSeenAt  time.Time `json:"last_seen_at"`

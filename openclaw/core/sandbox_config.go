@@ -17,8 +17,8 @@ func SandboxProviderNamesNormalize(provider string) string {
 
 type SandboxConfig struct {
 	Provider   string                        `json:"provider"`
-	Endpoint   *string                       `json:"endpoint,omitempty"`
-	ApiKey     *string                       `json:"api_key,omitempty"`
+	Endpoint   string                        `json:"endpoint,omitempty"`
+	ApiKey     string                        `json:"api_key,omitempty"`
 	DefaultTTL int                           `json:"default_ttl"`
 	Tools      map[string]*SandboxToolConfig `json:"tools"`
 }
@@ -32,9 +32,9 @@ func DefaultSandboxConfig() *SandboxConfig {
 }
 
 type SandboxToolConfig struct {
-	Mode     *string `json:"mode,omitempty"`
-	Template *string `json:"template,omitempty"`
-	TTL      *int    `json:"ttl,omitempty"`
+	Mode     string `json:"mode,omitempty"`
+	Template string `json:"template,omitempty"`
+	TTL      *int   `json:"ttl,omitempty"`
 }
 
 type ToolSandboxModeResolution struct {
@@ -94,9 +94,9 @@ func ResolveModeDetailed(config *GatewayConfig, toolName string, defaultMode Too
 		toolConfig, hasConfiguredMode = config.Sandbox.Tools[toolName]
 	}
 
-	if hasConfiguredMode && toolConfig != nil && toolConfig.Mode != nil {
+	if hasConfiguredMode && toolConfig != nil && toolConfig.Mode != "" {
 		hasConfiguredMode = true
-		configuredMode, _ = TryParseMode(*toolConfig.Mode)
+		configuredMode, _ = TryParseMode(toolConfig.Mode)
 	} else {
 		hasConfiguredMode = false
 	}
@@ -142,14 +142,14 @@ func ResolveModeDetailed(config *GatewayConfig, toolName string, defaultMode Too
 	}
 }
 
-func ResolveTemplate(config *GatewayConfig, toolName string) *string {
+func ResolveTemplate(config *GatewayConfig, toolName string) string {
 	if config.Sandbox.Tools == nil {
-		return nil
+		return ""
 	}
 	if toolConfig, ok := config.Sandbox.Tools[toolName]; ok {
 		return toolConfig.Template
 	}
-	return nil
+	return ""
 }
 
 func ResolveTimeToLiveSeconds(config *GatewayConfig, toolName string, requestedTimeToLiveSeconds *int) int {

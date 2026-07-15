@@ -746,17 +746,17 @@ func (r *RedactionPipeline) RedactSessionInPlace(session *Session) error {
 		for j := 0; j < len(session.History[i].ToolCalls); j++ {
 			toolCall := &session.History[i].ToolCalls[j]
 			toolCall.Arguments = r.Redact(toolCall.Arguments)
-			if toolCall.Result != nil {
-				res := r.Redact(*toolCall.Result)
-				toolCall.Result = &res
+			if toolCall.Result != "" {
+				res := r.Redact(toolCall.Result)
+				toolCall.Result = res
 			}
-			if toolCall.NextStep != nil {
-				res := r.Redact(*toolCall.NextStep)
-				toolCall.NextStep = &res
+			if toolCall.NextStep != "" {
+				res := r.Redact(toolCall.NextStep)
+				toolCall.NextStep = res
 			}
-			if toolCall.FailureMessage != nil {
-				res := r.Redact(*toolCall.FailureMessage)
-				toolCall.FailureMessage = &res
+			if toolCall.FailureMessage != "" {
+				res := r.Redact(toolCall.FailureMessage)
+				toolCall.FailureMessage = res
 			}
 		}
 	}

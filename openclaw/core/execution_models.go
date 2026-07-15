@@ -30,17 +30,17 @@ func DefaultExecutionConfig() *ExecutionConfig {
 type ExecutionBackendProfileConfig struct {
 	Type             string            `json:"type"`
 	Enabled          bool              `json:"enabled"`
-	WorkingDirectory *string           `json:"working_directory,omitempty"`
+	WorkingDirectory string            `json:"working_directory,omitempty"`
 	Environment      map[string]string `json:"environment"`
-	Endpoint         *string           `json:"endpoint,omitempty"`
-	ApiKey           *string           `json:"api_key,omitempty"`
-	Image            *string           `json:"image,omitempty"`
-	Host             *string           `json:"host,omitempty"`
+	Endpoint         string            `json:"endpoint,omitempty"`
+	ApiKey           string            `json:"api_key,omitempty"`
+	Image            string            `json:"image,omitempty"`
+	Host             string            `json:"host,omitempty"`
 	Port             int               `json:"port"`
-	Username         *string           `json:"username,omitempty"`
-	PrivateKeyPath   *string           `json:"private_key_path,omitempty"`
+	Username         string            `json:"username,omitempty"`
+	PrivateKeyPath   string            `json:"private_key_path,omitempty"`
 	TimeoutSeconds   int               `json:"timeout_seconds"`
-	WorkspaceRoot    *string           `json:"workspace_root,omitempty"`
+	WorkspaceRoot    string            `json:"workspace_root,omitempty"`
 }
 
 func DefaultExecutionBackendProfileConfig() *ExecutionBackendProfileConfig {
@@ -71,10 +71,10 @@ type ExecutionRequest struct {
 	BackendName        string            `json:"backend_name"`
 	Command            string            `json:"command"`
 	Arguments          []string          `json:"arguments"`
-	LeaseKey           *string           `json:"lease_key,omitempty"`
-	WorkingDirectory   *string           `json:"working_directory,omitempty"`
+	LeaseKey           string            `json:"lease_key,omitempty"`
+	WorkingDirectory   string            `json:"working_directory,omitempty"`
 	Environment        map[string]string `json:"environment"`
-	Template           *string           `json:"template,omitempty"`
+	Template           string            `json:"template,omitempty"`
 	TimeToLiveSeconds  *int              `json:"time_to_live_seconds,omitempty"`
 	RequireWorkspace   bool              `json:"require_workspace"`
 	AllowLocalFallback bool              `json:"allow_local_fallback"`
@@ -131,11 +131,11 @@ type ExecutionProcessStartRequest struct {
 	OwnerSenderId    string            `json:"owner_sender_id"`
 	Command          string            `json:"command"`
 	Arguments        []string          `json:"arguments"`
-	WorkingDirectory *string           `json:"working_directory,omitempty"`
+	WorkingDirectory string            `json:"working_directory,omitempty"`
 	Environment      map[string]string `json:"environment"`
 	TimeoutSeconds   *int              `json:"timeout_seconds,omitempty"`
 	Pty              bool              `json:"pty"`
-	Template         *string           `json:"template,omitempty"`
+	Template         string            `json:"template,omitempty"`
 	RequireWorkspace bool              `json:"require_workspace"`
 }
 
@@ -195,11 +195,11 @@ func DefaultExecutionProcessStatus() *ExecutionProcessStatus {
 }
 
 type ExecutionProcessLogRequest struct {
-	ProcessId      string  `json:"process_id"`
-	OwnerSessionId *string `json:"owner_session_id,omitempty"`
-	StdoutOffset   int     `json:"stdout_offset"`
-	StderrOffset   int     `json:"stderr_offset"`
-	MaxChars       int     `json:"max_chars"`
+	ProcessId      string `json:"process_id"`
+	OwnerSessionId string `json:"owner_session_id,omitempty"`
+	StdoutOffset   int    `json:"stdout_offset"`
+	StderrOffset   int    `json:"stderr_offset"`
+	MaxChars       int    `json:"max_chars"`
 }
 
 func DefaultExecutionProcessLogRequest() *ExecutionProcessLogRequest {
@@ -218,7 +218,7 @@ type ExecutionProcessLogResult struct {
 }
 
 type ExecutionProcessInputRequest struct {
-	ProcessId      string  `json:"process_id"`
-	OwnerSessionId *string `json:"owner_session_id,omitempty"`
-	Data           string  `json:"data"`
+	ProcessId      string `json:"process_id"`
+	OwnerSessionId string `json:"owner_session_id,omitempty"`
+	Data           string `json:"data"`
 }

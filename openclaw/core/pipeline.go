@@ -162,7 +162,7 @@ func (c *ChatCommandProcessor) handleGoalCommand(ctx context.Context, session *S
 		if err != nil {
 			return "No active goal to pause."
 		}
-		if err := c.goalService.UpdateStatus(ctx, session.Id, GoalStatus_Paused, &subargs); err != nil {
+		if err := c.goalService.UpdateStatus(ctx, session.Id, GoalStatus_Paused, subargs); err != nil {
 			return fmt.Sprintf("Error: %s", err.Error())
 		}
 		return "Goal paused. Resume with /goal resume."
@@ -179,7 +179,7 @@ func (c *ChatCommandProcessor) handleGoalCommand(ctx context.Context, session *S
 			return "Cannot resume a completed goal. Start a new one with /goal start."
 		}
 
-		if err := c.goalService.UpdateStatus(ctx, session.Id, GoalStatus_Active, &subargs); err != nil {
+		if err := c.goalService.UpdateStatus(ctx, session.Id, GoalStatus_Active, subargs); err != nil {
 			return fmt.Sprintf("Error: %s", err.Error())
 		}
 		return "Goal resumed."
@@ -189,7 +189,7 @@ func (c *ChatCommandProcessor) handleGoalCommand(ctx context.Context, session *S
 		if err != nil {
 			return "No active goal."
 		}
-		if err := c.goalService.UpdateStatus(ctx, session.Id, GoalStatus_Complete, &subargs); err != nil {
+		if err := c.goalService.UpdateStatus(ctx, session.Id, GoalStatus_Complete, subargs); err != nil {
 			return fmt.Sprintf("Error: %s", err.Error())
 		}
 		return "Goal marked as complete!"
@@ -199,7 +199,7 @@ func (c *ChatCommandProcessor) handleGoalCommand(ctx context.Context, session *S
 		if err != nil {
 			return "No active goal."
 		}
-		if err := c.goalService.UpdateStatus(ctx, session.Id, GoalStatus_Blocked, &subargs); err != nil {
+		if err := c.goalService.UpdateStatus(ctx, session.Id, GoalStatus_Blocked, subargs); err != nil {
 			return fmt.Sprintf("Error: %s", err.Error())
 		}
 		return "Goal marked as blocked. Resume with /goal resume."
@@ -275,9 +275,9 @@ func (c *ChatCommandProcessor) TryProcessCommand(ctx context.Context, session *S
 
 	switch command {
 	case "/status":
-		activeModel := "default"
-		if session.ModelOverride != nil {
-			activeModel = *session.ModelOverride
+		activeModel := session.ModelOverride
+		if IsBlank(activeModel) {
+			activeModel = "default"
 		}
 		statusCacheRead, statusCacheWrite := c.getCacheTotals(session)
 		msg := fmt.Sprintf("Session info:\n- Active Model: %s\n- Turn Count: %d\n- Token Usage: %d in / %d out\n- Prompt Cache: %d read / %d write",
@@ -298,22 +298,22 @@ func (c *ChatCommandProcessor) TryProcessCommand(ctx context.Context, session *S
 
 	case "/model":
 		if args == "" {
-			current := "none (using default)"
-			if session.ModelOverride != nil {
-				current = *session.ModelOverride
+			current := session.ModelOverride
+			if IsBlank(current) {
+				current = "none (using default)"
 			}
 			return true, fmt.Sprintf("Current model override: %s\nUsage: /model <model-name> or /model reset", current), nil
 		}
 
 		if strings.EqualFold(args, "reset") || strings.EqualFold(args, "clear") {
-			session.ModelOverride = nil
+			session.ModelOverride = ""
 			if err := c.sessionManager.Persist(ctx, session, false); err != nil {
 				return true, "", err
 			}
 			return true, "Model override cleared. Back to default.", nil
 		}
 
-		session.ModelOverride = &args
+		session.ModelOverride = args
 		if err := c.sessionManager.Persist(ctx, session, false); err != nil {
 			return true, "", err
 		}
@@ -327,9 +327,9 @@ func (c *ChatCommandProcessor) TryProcessCommand(ctx context.Context, session *S
 
 	case "/think":
 		if args == "" {
-			current := "default"
-			if session.ReasoningEffort != nil {
-				current = *session.ReasoningEffort
+			current := session.ReasoningEffort
+			if IsBlank(current) {
+				current = "default"
 			}
 			return true, fmt.Sprintf("Current reasoning effort: %s\nUsage: /think off|low|medium|high", current), nil
 		}
@@ -337,9 +337,9 @@ func (c *ChatCommandProcessor) TryProcessCommand(ctx context.Context, session *S
 		level := strings.ToLower(args)
 		if level == "off" || level == "low" || level == "medium" || level == "high" {
 			if level == "off" {
-				session.ReasoningEffort = nil
+				session.ReasoningEffort = ""
 			} else {
-				session.ReasoningEffort = &level
+				session.ReasoningEffort = level
 			}
 
 			if err := c.sessionManager.Persist(ctx, session, false); err != nil {

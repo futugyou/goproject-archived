@@ -77,12 +77,12 @@ func (g GatewayConfigFile) Save(config *GatewayConfig, configPath string) error 
 type GatewaySetupArtifacts struct{}
 
 // BuildEnvExample 生成环境示例文件内容
-func (g *GatewaySetupArtifacts) BuildEnvExample(apiKeyRef *string, authToken, workspacePath, baseUrl string) string {
+func (g *GatewaySetupArtifacts) BuildEnvExample(apiKeyRef string, authToken, workspacePath, baseUrl string) string {
 	var lines []string
 
 	// 处理可选的 apiKeyRef
-	if apiKeyRef != nil && strings.TrimSpace(*apiKeyRef) != "" {
-		resolvedKey := g.ResolveProviderEnvVariable(*apiKeyRef)
+	if strings.TrimSpace(apiKeyRef) != "" {
+		resolvedKey := g.ResolveProviderEnvVariable(apiKeyRef)
 		lines = append(lines, fmt.Sprintf("%s=replace-me", resolvedKey))
 	}
 
@@ -202,7 +202,7 @@ func (g *GatewaySetupProfileFactory) CreateProfileConfig(
 	provider string,
 	model string,
 	apiKey string,
-	modelPresetId *string,
+	modelPresetId string,
 	warnings *[]string,
 ) *GatewayConfig {
 
@@ -214,9 +214,9 @@ func (g *GatewaySetupProfileFactory) CreateProfileConfig(
 	localLikeProfile := normalizedProfile == "local" || normalizedProfile == "tailscale-serve"
 	normalizedProvider := strings.TrimSpace(provider)
 
-	var cleanApiKey *string
+	var cleanApiKey string
 	if strings.TrimSpace(apiKey) != "" {
-		cleanApiKey = &apiKey
+		cleanApiKey = apiKey
 	}
 
 	config := &GatewayConfig{
@@ -292,7 +292,7 @@ func (g *GatewaySetupProfileFactory) configureModelProfiles(
 	config *GatewayConfig,
 	provider string,
 	model string,
-	modelPresetId *string,
+	modelPresetId string,
 	warnings *[]string,
 ) {
 	if !strings.EqualFold(provider, "ollama") {
@@ -301,9 +301,9 @@ func (g *GatewaySetupProfileFactory) configureModelProfiles(
 			return
 		}
 
-		if modelPresetId != nil && strings.TrimSpace(*modelPresetId) != "" {
+		if strings.TrimSpace(modelPresetId) != "" {
 			if warnings != nil {
-				*warnings = append(*warnings, "Ignoring model preset '"+*modelPresetId+"' because local presets currently apply only to Ollama or embedded providers.")
+				*warnings = append(*warnings, "Ignoring model preset '"+modelPresetId+"' because local presets currently apply only to Ollama or embedded providers.")
 			}
 		}
 		return
@@ -315,10 +315,10 @@ func (g *GatewaySetupProfileFactory) configureModelProfiles(
 	var preset *LocalModelPresetDefinition
 	var hasPreset bool
 
-	if modelPresetId != nil && strings.TrimSpace(*modelPresetId) != "" {
-		preset, hasPreset = TryGetLocalModelPreset(*modelPresetId)
+	if strings.TrimSpace(modelPresetId) != "" {
+		preset, hasPreset = TryGetLocalModelPreset(modelPresetId)
 		if !hasPreset && warnings != nil {
-			*warnings = append(*warnings, "Unknown model preset '"+*modelPresetId+"'. Falling back to inferred local capabilities.")
+			*warnings = append(*warnings, "Unknown model preset '"+modelPresetId+"'. Falling back to inferred local capabilities.")
 		}
 	}
 
@@ -334,10 +334,10 @@ func (g *GatewaySetupProfileFactory) configureModelProfiles(
 		}
 	}
 
-	var presetId *string
+	var presetId string
 	var tags []string
 	if hasPreset && preset != nil {
-		presetId = &preset.Id
+		presetId = preset.Id
 		tags = preset.Tags
 	} else {
 		tags = []string{"local", "private"}
@@ -359,10 +359,10 @@ func (g *GatewaySetupProfileFactory) configureModelProfiles(
 func (g *GatewaySetupProfileFactory) configureEmbeddedModelProfile(
 	config *GatewayConfig,
 	model string,
-	modelPresetId *string,
+	modelPresetId string,
 	warnings *[]string,
 ) {
-	config.Llm.ApiKey = nil
+	config.Llm.ApiKey = ""
 	config.LocalInference.Enabled = true
 	config.LocalInference.AutoStart = true
 	config.Models.DefaultProfile = "embedded-local"
@@ -370,10 +370,10 @@ func (g *GatewaySetupProfileFactory) configureEmbeddedModelProfile(
 	var packageDef *LocalModelPackageDefinition
 	var hasPackage bool
 
-	if modelPresetId != nil && strings.TrimSpace(*modelPresetId) != "" {
-		packageDef, hasPackage = TryGetLocalModelPackage(*modelPresetId)
+	if strings.TrimSpace(modelPresetId) != "" {
+		packageDef, hasPackage = TryGetLocalModelPackage(modelPresetId)
 		if !hasPackage && warnings != nil {
-			*warnings = append(*warnings, "Unknown embedded local model preset or package '"+*modelPresetId+"'. Falling back to inferred embedded capabilities.")
+			*warnings = append(*warnings, "Unknown embedded local model preset or package '"+modelPresetId+"'. Falling back to inferred embedded capabilities.")
 		}
 	} else {
 		packageDef, hasPackage = TryGetLocalModelPackage(model)
@@ -409,10 +409,10 @@ func (g *GatewaySetupProfileFactory) configureEmbeddedModelProfile(
 		config.LocalInference.ReasoningBudget = packageDef.Runtime.ReasoningBudget
 	}
 
-	var presetId *string
+	var presetId string
 	var tags []string
 	if packageDef != nil {
-		presetId = &packageDef.PresetId
+		presetId = packageDef.PresetId
 		tags = packageDef.Tags
 	} else {
 		tags = []string{"local", "private", "offline", "cheap"}

@@ -54,17 +54,17 @@ type AdminSettingsSnapshot struct {
 	WhatsAppDmPolicy                     string                         `json:"whatsapp_dm_policy"`
 	WhatsAppType                         string                         `json:"whatsapp_type"`
 	WhatsAppWebhookPath                  string                         `json:"whatsapp_webhook_path"`
-	WhatsAppWebhookPublicBaseUrl         *string                        `json:"whatsapp_webhook_public_base_url,omitempty"`
+	WhatsAppWebhookPublicBaseUrl         string                         `json:"whatsapp_webhook_public_base_url,omitempty"`
 	WhatsAppWebhookVerifyToken           string                         `json:"whatsapp_webhook_verify_token"`
 	WhatsAppWebhookVerifyTokenRef        string                         `json:"whatsapp_webhook_verify_token_ref"`
-	WhatsAppWebhookAppSecret             *string                        `json:"whatsapp_webhook_app_secret,omitempty"`
+	WhatsAppWebhookAppSecret             string                         `json:"whatsapp_webhook_app_secret,omitempty"`
 	WhatsAppWebhookAppSecretRef          string                         `json:"whatsapp_webhook_app_secret_ref"`
-	WhatsAppCloudApiToken                *string                        `json:"whatsapp_cloud_api_token,omitempty"`
+	WhatsAppCloudApiToken                string                         `json:"whatsapp_cloud_api_token,omitempty"`
 	WhatsAppCloudApiTokenRef             string                         `json:"whatsapp_cloud_api_token_ref"`
-	WhatsAppPhoneNumberId                *string                        `json:"whatsapp_phone_number_id,omitempty"`
-	WhatsAppBusinessAccountId            *string                        `json:"whatsapp_business_account_id,omitempty"`
-	WhatsAppBridgeUrl                    *string                        `json:"whatsapp_bridge_url,omitempty"`
-	WhatsAppBridgeToken                  *string                        `json:"whatsapp_bridge_token,omitempty"`
+	WhatsAppPhoneNumberId                string                         `json:"whatsapp_phone_number_id,omitempty"`
+	WhatsAppBusinessAccountId            string                         `json:"whatsapp_business_account_id,omitempty"`
+	WhatsAppBridgeUrl                    string                         `json:"whatsapp_bridge_url,omitempty"`
+	WhatsAppBridgeToken                  string                         `json:"whatsapp_bridge_token,omitempty"`
 	WhatsAppBridgeTokenRef               string                         `json:"whatsapp_bridge_token_ref"`
 	WhatsAppBridgeSuppressSendExceptions bool                           `json:"whatsapp_bridge_suppress_send_exceptions"`
 	WhatsAppFirstPartyWorker             WhatsAppFirstPartyWorkerConfig `json:"whatsapp_first_party_worker"`

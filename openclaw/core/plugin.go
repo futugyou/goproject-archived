@@ -906,8 +906,8 @@ func (p *PluginDiscovery) Filter(discovered []DiscoveredPlugin, pluginsConfig *P
 		}
 
 		// Slot exclusivity check
-		if plugin.Manifest.Kind != nil {
-			if slotWinner, ok := pluginsConfig.Slots[*plugin.Manifest.Kind]; ok {
+		if plugin.Manifest.Kind != "" {
+			if slotWinner, ok := pluginsConfig.Slots[plugin.Manifest.Kind]; ok {
 				if slotWinner == "none" || slotWinner != id {
 					continue
 				}

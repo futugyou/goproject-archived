@@ -19,9 +19,9 @@ const (
 	RuntimeOrchestratorMaf    = "maf"
 )
 
-func RuntimeOrchestratorNormalize(orchestrator *string) string {
-	if orchestrator == nil {
+func RuntimeOrchestratorNormalize(orchestrator string) string {
+	if orchestrator == "" {
 		return RuntimeOrchestratorNative
 	}
-	return strings.ToLower(strings.TrimSpace(*orchestrator))
+	return strings.ToLower(strings.TrimSpace(orchestrator))
 }

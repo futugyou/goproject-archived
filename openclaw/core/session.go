@@ -77,15 +77,15 @@ type Session struct {
 	State                        SessionState                    `json:"state"`
 	RunState                     SessionRunState                 `json:"run_state"`
 	BackgroundRun                *BackgroundRunMetadata          `json:"background_run"`
-	ModelOverride                *string                         `json:"model_override,omitempty"`
-	ModelProfileId               *string                         `json:"model_profile_id,omitempty"`
+	ModelOverride                string                          `json:"model_override,omitempty"`
+	ModelProfileId               string                          `json:"model_profile_id,omitempty"`
 	PreferredModelTags           []string                        `json:"preferred_model_tags" gorm:"type:text[];not null;default:'{}'"`
 	FallbackModelProfileIds      []string                        `json:"fallback_model_profile_ids" gorm:"type:text[];not null;default:'{}'"`
 	ModelRequirements            ModelSelectionRequirements      `json:"model_requirements"`
-	SystemPromptOverride         *string                         `json:"system_prompt_override,omitempty"`
-	RoutePresetId                *string                         `json:"route_preset_id,omitempty"`
+	SystemPromptOverride         string                          `json:"system_prompt_override,omitempty"`
+	RoutePresetId                string                          `json:"route_preset_id,omitempty"`
 	RouteAllowedTools            []string                        `json:"route_allowed_tools" gorm:"type:text[];not null;default:'{}'"`
-	ReasoningEffort              *string                         `json:"reasoning_effort,omitempty"`
+	ReasoningEffort              string                          `json:"reasoning_effort,omitempty"`
 	VerboseMode                  bool                            `json:"verbose_mode"`
 	ResponseMode                 string                          `json:"response_mode"`
 	ContractPolicy               *ContractPolicy                 `json:"contract_policy,omitempty"`
@@ -149,20 +149,20 @@ func DefaultChatTurn() *ChatTurn {
 }
 
 type ToolInvocation struct {
-	CallId                 *string       `json:"call_id,omitempty"`
+	CallId                 string        `json:"call_id,omitempty"`
 	ToolName               string        `json:"tool_name"`
 	Arguments              string        `json:"arguments"`
-	Result                 *string       `json:"result,omitempty"`
+	Result                 string        `json:"result,omitempty"`
 	Duration               time.Duration `json:"duration"`
-	ResultStatus           *string       `json:"result_status,omitempty"`
-	FailureCode            *string       `json:"failure_code,omitempty"`
-	FailureMessage         *string       `json:"failure_message,omitempty"`
-	NextStep               *string       `json:"next_step,omitempty"`
+	ResultStatus           string        `json:"result_status,omitempty"`
+	FailureCode            string        `json:"failure_code,omitempty"`
+	FailureMessage         string        `json:"failure_message,omitempty"`
+	NextStep               string        `json:"next_step,omitempty"`
 	GovernanceAllowed      *bool         `json:"governance_allowed,omitempty"`
-	GovernanceAction       *string       `json:"governance_action,omitempty"`
-	GovernanceReason       *string       `json:"governance_reason,omitempty"`
-	GovernancePolicyId     *string       `json:"governance_policy_id,omitempty"`
-	GovernanceRuleId       *string       `json:"governance_rule_id,omitempty"`
+	GovernanceAction       string        `json:"governance_action,omitempty"`
+	GovernanceReason       string        `json:"governance_reason,omitempty"`
+	GovernancePolicyId     string        `json:"governance_policy_id,omitempty"`
+	GovernanceRuleId       string        `json:"governance_rule_id,omitempty"`
 	GovernanceTrustScore   *float64      `json:"governance_trust_score,omitempty"`
 	GovernanceEvaluationMs *float64      `json:"governance_evaluation_ms,omitempty"`
 	GovernanceUnavailable  *bool         `json:"governance_unavailable,omitempty"`
@@ -175,12 +175,12 @@ type SessionExecutionCheckpoint struct {
 	Sequence               int                         `json:"sequence"`
 	Iteration              int                         `json:"iteration"`
 	HistoryCount           int                         `json:"history_count"`
-	CorrelationId          *string                     `json:"correlation_id,omitempty"`
+	CorrelationId          string                      `json:"correlation_id,omitempty"`
 	CreatedAtUtc           time.Time                   `json:"created_at_utc"`
 	PersistedAtUtc         *time.Time                  `json:"persisted_at_utc,omitempty"`
 	LastResumeAttemptAtUtc *time.Time                  `json:"last_resume_attempt_at_utc,omitempty"`
 	CompletedAtUtc         *time.Time                  `json:"completed_at_utc,omitempty"`
-	CompletionReason       *string                     `json:"completion_reason,omitempty"`
+	CompletionReason       string                      `json:"completion_reason,omitempty"`
 	ToolCalls              []SessionCheckpointToolCall `json:"tool_calls"`
 }
 
@@ -253,13 +253,13 @@ const (
 )
 
 type SessionCheckpointToolCall struct {
-	CallId         *string `json:"call_id,omitempty"`
-	ToolName       string  `json:"tool_name"`
-	ResultStatus   string  `json:"result_status"`
-	FailureCode    *string `json:"failure_code,omitempty"`
-	DurationMs     int64   `json:"duration_ms"`
-	ArgumentsBytes int     `json:"arguments_bytes"`
-	ResultBytes    int     `json:"result_bytes"`
+	CallId         string `json:"call_id,omitempty"`
+	ToolName       string `json:"tool_name"`
+	ResultStatus   string `json:"result_status"`
+	FailureCode    string `json:"failure_code,omitempty"`
+	DurationMs     int64  `json:"duration_ms"`
+	ArgumentsBytes int    `json:"arguments_bytes"`
+	ResultBytes    int    `json:"result_bytes"`
 }
 
 func NewDefaultSessionCheckpointToolCall() SessionCheckpointToolCall {
@@ -276,9 +276,9 @@ const (
 )
 
 type SessionDelegationMetadata struct {
-	ParentSessionId      *string                          `json:"parent_session_id,omitempty"`
-	ParentChannelId      *string                          `json:"parent_channel_id,omitempty"`
-	ParentSenderId       *string                          `json:"parent_sender_id,omitempty"`
+	ParentSessionId      string                           `json:"parent_session_id,omitempty"`
+	ParentChannelId      string                           `json:"parent_channel_id,omitempty"`
+	ParentSenderId       string                           `json:"parent_sender_id,omitempty"`
 	Profile              string                           `json:"profile"`
 	RequestedTask        string                           `json:"requested_task"`
 	AllowedTools         []string                         `json:"allowed_tools"`
@@ -286,7 +286,7 @@ type SessionDelegationMetadata struct {
 	StartedAtUtc         time.Time                        `json:"started_at_utc"`
 	CompletedAtUtc       *time.Time                       `json:"completed_at_utc,omitempty"`
 	Status               string                           `json:"status"`
-	FinalResponsePreview *string                          `json:"final_response_preview,omitempty"`
+	FinalResponsePreview string                           `json:"final_response_preview,omitempty"`
 	ToolUsage            []SessionDelegationToolUsage     `json:"tool_usage"`
 	ProposedChanges      []SessionDelegationChangeSummary `json:"proposed_changes"`
 }
@@ -337,7 +337,7 @@ type SessionDelegationChildSummary struct {
 	Status               string                           `json:"status"`
 	ToolUsage            []SessionDelegationToolUsage     `json:"tool_usage"`
 	ProposedChanges      []SessionDelegationChangeSummary `json:"proposed_changes"`
-	FinalResponsePreview *string                          `json:"final_response_preview,omitempty"`
+	FinalResponsePreview string                           `json:"final_response_preview,omitempty"`
 }
 
 func NewDefaultSessionDelegationChildSummary() SessionDelegationChildSummary {
@@ -357,9 +357,9 @@ type SessionSummary struct {
 	Id                     string       `json:"id"`
 	ChannelId              string       `json:"channel_id"`
 	SenderId               string       `json:"sender_id"`
-	StableSessionId        *string      `json:"stable_session_id,omitempty"`
-	StableSessionNamespace *string      `json:"stable_session_namespace,omitempty"`
-	StableSessionOwnerKey  *string      `json:"stable_session_owner_key,omitempty"`
+	StableSessionId        string       `json:"stable_session_id,omitempty"`
+	StableSessionNamespace string       `json:"stable_session_namespace,omitempty"`
+	StableSessionOwnerKey  string       `json:"stable_session_owner_key,omitempty"`
 	CreatedAt              time.Time    `json:"created_at"`
 	LastActiveAt           time.Time    `json:"last_active_at"`
 	State                  SessionState `json:"state"`
@@ -391,14 +391,14 @@ func (p *PagedSessionList) GetReturnedCount() int {
 }
 
 type SessionListQuery struct {
-	Search    *string       `json:"search,omitempty"`
-	ChannelId *string       `json:"channel_id,omitempty"`
-	SenderId  *string       `json:"sender_id,omitempty"`
+	Search    string        `json:"search,omitempty"`
+	ChannelId string        `json:"channel_id,omitempty"`
+	SenderId  string        `json:"sender_id,omitempty"`
 	FromUtc   *time.Time    `json:"from_utc,omitempty"`
 	ToUtc     *time.Time    `json:"to_utc,omitempty"`
 	State     *SessionState `json:"state,omitempty"`
 	Starred   *bool         `json:"starred,omitempty"`
-	Tag       *string       `json:"tag,omitempty"`
+	Tag       string        `json:"tag,omitempty"`
 }
 
 type SessionBranch struct {
@@ -417,8 +417,8 @@ const (
 
 type SessionSearchQuery struct {
 	Text          string     `json:"text"`
-	ChannelID     *string    `json:"channel_id"`
-	SenderID      *string    `json:"sender_id"`
+	ChannelID     string     `json:"channel_id"`
+	SenderID      string     `json:"sender_id"`
 	FromUtc       *time.Time `json:"from_utc"`
 	ToUtc         *time.Time `json:"to_utc"`
 	Limit         int        `json:"limit"`
@@ -799,7 +799,7 @@ func (s *SessionManager) BuildBranchDiff(ctx context.Context, session *Session, 
 	return &SessionDiffResponse{
 		SessionId:                session.Id,
 		BranchId:                 branch.BranchId,
-		BranchName:               &branch.Name,
+		BranchName:               branch.Name,
 		SharedPrefixTurns:        sharedPrefix,
 		CurrentTurnCount:         len(session.History),
 		BranchTurnCount:          len(branch.History),

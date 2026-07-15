@@ -8,10 +8,10 @@ import (
 
 type PluginManifest struct {
 	ID           string           `json:"id"`
-	Name         *string          `json:"name,omitempty"`
-	Description  *string          `json:"description,omitempty"`
-	Version      *string          `json:"version,omitempty"`
-	Kind         *string          `json:"kind,omitempty"`
+	Name         string           `json:"name,omitempty"`
+	Description  string           `json:"description,omitempty"`
+	Version      string           `json:"version,omitempty"`
+	Kind         string           `json:"kind,omitempty"`
 	Channels     []string         `json:"channels"`
 	Providers    []string         `json:"providers"`
 	Skills       []string         `json:"skills"`
@@ -94,15 +94,15 @@ type McpPluginsConfig struct {
 // McpServerConfig 单个 MCP 服务节点的详细配置
 type McpServerConfig struct {
 	Enabled               bool              `json:"enabled"`
-	Name                  *string           `json:"name,omitempty"`
-	Transport             *string           `json:"transport,omitempty"`
-	Command               *string           `json:"command,omitempty"`
+	Name                  string            `json:"name,omitempty"`
+	Transport             string            `json:"transport,omitempty"`
+	Command               string            `json:"command,omitempty"`
 	Arguments             []string          `json:"arguments"`
-	WorkingDirectory      *string           `json:"working_directory,omitempty"`
+	WorkingDirectory      string            `json:"working_directory,omitempty"`
 	Environment           map[string]string `json:"environment"`
-	URL                   *string           `json:"url,omitempty"`
+	URL                   string            `json:"url,omitempty"`
 	Headers               map[string]string `json:"headers"`
-	ToolNamePrefix        *string           `json:"tool_name_prefix,omitempty"`
+	ToolNamePrefix        string            `json:"tool_name_prefix,omitempty"`
 	StartupTimeoutSeconds int               `json:"startup_timeout_seconds"`
 	RequestTimeoutSeconds int               `json:"request_timeout_seconds"`
 }
@@ -119,14 +119,14 @@ func NewDefaultMcpServerConfig() *McpServerConfig {
 }
 
 func (config *McpServerConfig) NormalizeTransport() string {
-	if config.Transport == nil || strings.TrimSpace(*config.Transport) == "" {
-		if config.URL == nil || strings.TrimSpace(*config.URL) == "" {
+	if strings.TrimSpace(config.Transport) == "" {
+		if strings.TrimSpace(config.URL) == "" {
 			return "stdio"
 		}
 		return "http"
 	}
 
-	transport := strings.TrimSpace(*config.Transport)
+	transport := strings.TrimSpace(config.Transport)
 	if strings.EqualFold(transport, "streamable-http") || strings.EqualFold(transport, "streamable_http") {
 		return "http"
 	}
@@ -184,11 +184,11 @@ const (
 )
 
 type PluginCompatibilityDiagnostic struct {
-	Severity string  `json:"severity"`
-	Code     string  `json:"code"`
-	Message  string  `json:"message"`
-	Surface  *string `json:"surface,omitempty"`
-	Path     string  `json:"path"`
+	Severity string `json:"severity"`
+	Code     string `json:"code"`
+	Message  string `json:"message"`
+	Surface  string `json:"surface,omitempty"`
+	Path     string `json:"path"`
 }
 
 func DefaultPluginCompatibilityDiagnostic() PluginCompatibilityDiagnostic {
@@ -208,7 +208,7 @@ type PluginLoadReport struct {
 	EffectiveRuntimeMode   string                          `json:"effective_runtime_mode"`
 	RequestedCapabilities  []string                        `json:"requested_capabilities"`
 	BlockedByRuntimeMode   bool                            `json:"blocked_by_runtime_mode"`
-	BlockedReason          *string                         `json:"blocked_reason,omitempty"`
+	BlockedReason          string                          `json:"blocked_reason,omitempty"`
 	ToolCount              int                             `json:"tool_count"`
 	ChannelCount           int                             `json:"channel_count"`
 	CommandCount           int                             `json:"command_count"`
@@ -216,7 +216,7 @@ type PluginLoadReport struct {
 	ProviderCount          int                             `json:"provider_count"`
 	SkillDirectories       []string                        `json:"skill_directories"`
 	Diagnostics            []PluginCompatibilityDiagnostic `json:"diagnostics"`
-	Error                  *string                         `json:"error,omitempty"`
+	Error                  string                          `json:"error,omitempty"`
 }
 
 func DefaultPluginLoadReport() PluginLoadReport {
@@ -277,10 +277,10 @@ func DefaultHomeAssistantEventsConfig() *HomeAssistantEventsConfig {
 type HomeAssistantEventRule struct {
 	Name              string   `json:"name"`
 	EntityIdGlobs     []string `json:"entity_id_globs"`
-	FromState         *string  `json:"from_state"`
-	ToState           *string  `json:"to_state"`
-	BetweenLocalStart *string  `json:"between_local_start"`
-	BetweenLocalEnd   *string  `json:"between_local_end"`
+	FromState         string   `json:"from_state"`
+	ToState           string   `json:"to_state"`
+	BetweenLocalStart string   `json:"between_local_start"`
+	BetweenLocalEnd   string   `json:"between_local_end"`
 	DaysOfWeek        []string `json:"days_of_week"`
 	PromptTemplate    string   `json:"prompt_template"`
 	CooldownSeconds   int      `json:"cooldown_seconds"`
@@ -305,8 +305,8 @@ type MqttConfig struct {
 	Host            string           `json:"host"`
 	Port            int              `json:"port"`
 	UseTls          bool             `json:"use_tls"`
-	UsernameRef     *string          `json:"username_ref"`
-	PasswordRef     *string          `json:"password_ref"`
+	UsernameRef     string           `json:"username_ref"`
+	PasswordRef     string           `json:"password_ref"`
 	ClientId        string           `json:"client_id"`
 	TimeoutSeconds  int              `json:"timeout_seconds"`
 	MaxPayloadBytes int              `json:"max_payload_bytes"`
@@ -385,8 +385,8 @@ type NotionConfig struct {
 	ApiKeyRef                string   `json:"api_key_ref"`
 	BaseUrl                  string   `json:"base_url"`
 	ApiVersion               string   `json:"api_version"`
-	DefaultPageId            *string  `json:"default_page_id"`
-	DefaultDatabaseId        *string  `json:"default_database_id"`
+	DefaultPageId            string   `json:"default_page_id"`
+	DefaultDatabaseId        string   `json:"default_database_id"`
 	AllowedPageIds           []string `json:"allowed_page_ids"`
 	AllowedDatabaseIds       []string `json:"allowed_database_ids"`
 	MaxSearchResults         int      `json:"max_search_results"`
@@ -419,11 +419,11 @@ const (
 )
 
 type WebSearchConfig struct {
-	Enabled    bool    `json:"enabled"`
-	Provider   string  `json:"provider"`
-	ApiKey     *string `json:"api_key"`
-	Endpoint   *string `json:"endpoint"`
-	MaxResults int     `json:"max_results"`
+	Enabled    bool   `json:"enabled"`
+	Provider   string `json:"provider"`
+	ApiKey     string `json:"api_key"`
+	Endpoint   string `json:"endpoint"`
+	MaxResults int    `json:"max_results"`
 }
 
 func DefaultWebSearchConfig() *WebSearchConfig {
@@ -499,13 +499,13 @@ func DefaultCodeExecConfig() *CodeExecConfig {
 }
 
 type ImageGenConfig struct {
-	Enabled  bool    `json:"enabled"`
-	Provider string  `json:"provider"`           // Provider: "openai" (DALL-E)
-	ApiKey   *string `json:"api_key,omitempty"`  // API key (or env: / raw: secret ref)
-	Endpoint *string `json:"endpoint,omitempty"` // API endpoint (optional, for compatible APIs)
-	Model    string  `json:"model"`              // Model name (e.g. "dall-e-3")
-	Size     string  `json:"size"`               // Default image size
-	Quality  string  `json:"quality"`            // Default quality ("standard" or "hd" for DALL-E 3)
+	Enabled  bool   `json:"enabled"`
+	Provider string `json:"provider"`           // Provider: "openai" (DALL-E)
+	ApiKey   string `json:"api_key,omitempty"`  // API key (or env: / raw: secret ref)
+	Endpoint string `json:"endpoint,omitempty"` // API endpoint (optional, for compatible APIs)
+	Model    string `json:"model"`              // Model name (e.g. "dall-e-3")
+	Size     string `json:"size"`               // Default image size
+	Quality  string `json:"quality"`            // Default quality ("standard" or "hd" for DALL-E 3)
 }
 
 func DefaultImageGenConfig() ImageGenConfig {
@@ -537,11 +537,11 @@ func DefaultPdfReadConfig() PdfReadConfig {
 // --- CalendarConfig ---
 
 type CalendarConfig struct {
-	Enabled         bool    `json:"enabled"`
-	Provider        string  `json:"provider"`                   // Provider: "google"
-	CredentialsPath *string `json:"credentials_path,omitempty"` // Path to service account JSON key or OAuth credentials file
-	CalendarId      string  `json:"calendar_id"`                // Calendar ID to operate on (default: primary)
-	MaxEvents       int     `json:"max_events"`                 // Maximum events to return in list operations
+	Enabled         bool   `json:"enabled"`
+	Provider        string `json:"provider"`                   // Provider: "google"
+	CredentialsPath string `json:"credentials_path,omitempty"` // Path to service account JSON key or OAuth credentials file
+	CalendarId      string `json:"calendar_id"`                // Calendar ID to operate on (default: primary)
+	MaxEvents       int    `json:"max_events"`                 // Maximum events to return in list operations
 }
 
 func DefaultCalendarConfig() CalendarConfig {
@@ -556,22 +556,22 @@ func DefaultCalendarConfig() CalendarConfig {
 // --- EmailConfig ---
 
 type EmailConfig struct {
-	Enabled                   bool    `json:"enabled"`
-	InboundEnabled            bool    `json:"inbound_enabled"`               // Whether the email channel should poll IMAP and emit inbound messages
-	SmtpHost                  *string `json:"smtp_host,omitempty"`           // SMTP server host for sending
-	SmtpPort                  int     `json:"smtp_port"`                     // SMTP server port
-	SmtpUseTls                bool    `json:"smtp_use_tls"`                  // Whether to use TLS for SMTP
-	ImapHost                  *string `json:"imap_host,omitempty"`           // IMAP server host for reading
-	ImapPort                  int     `json:"imap_port"`                     // IMAP server port
-	ImapUseTls                bool    `json:"imap_use_tls"`                  // Whether to use TLS for IMAP
-	InboundFolder             string  `json:"inbound_folder"`                // IMAP folder to poll for inbound messages
-	InboundPollSeconds        int     `json:"inbound_poll_seconds"`          // Polling interval in seconds for inbound IMAP checks
-	InboundMaxMessagesPerPoll int     `json:"inbound_max_messages_per_poll"` // Maximum number of unseen messages to process per poll
-	MarkInboundAsRead         bool    `json:"mark_inbound_as_read"`          // Whether inbound messages should be marked as read after successful handoff
-	Username                  *string `json:"username,omitempty"`            // Email account username
-	PasswordRef               *string `json:"password_ref,omitempty"`        // Email account password (or env: / raw: secret ref)
-	FromAddress               *string `json:"from_address,omitempty"`        // From address for outgoing mail
-	MaxResults                int     `json:"max_results"`                   // Maximum emails to return in list/search operations
+	Enabled                   bool   `json:"enabled"`
+	InboundEnabled            bool   `json:"inbound_enabled"`               // Whether the email channel should poll IMAP and emit inbound messages
+	SmtpHost                  string `json:"smtp_host,omitempty"`           // SMTP server host for sending
+	SmtpPort                  int    `json:"smtp_port"`                     // SMTP server port
+	SmtpUseTls                bool   `json:"smtp_use_tls"`                  // Whether to use TLS for SMTP
+	ImapHost                  string `json:"imap_host,omitempty"`           // IMAP server host for reading
+	ImapPort                  int    `json:"imap_port"`                     // IMAP server port
+	ImapUseTls                bool   `json:"imap_use_tls"`                  // Whether to use TLS for IMAP
+	InboundFolder             string `json:"inbound_folder"`                // IMAP folder to poll for inbound messages
+	InboundPollSeconds        int    `json:"inbound_poll_seconds"`          // Polling interval in seconds for inbound IMAP checks
+	InboundMaxMessagesPerPoll int    `json:"inbound_max_messages_per_poll"` // Maximum number of unseen messages to process per poll
+	MarkInboundAsRead         bool   `json:"mark_inbound_as_read"`          // Whether inbound messages should be marked as read after successful handoff
+	Username                  string `json:"username,omitempty"`            // Email account username
+	PasswordRef               string `json:"password_ref,omitempty"`        // Email account password (or env: / raw: secret ref)
+	FromAddress               string `json:"from_address,omitempty"`        // From address for outgoing mail
+	MaxResults                int    `json:"max_results"`                   // Maximum emails to return in list/search operations
 }
 
 func DefaultEmailConfig() EmailConfig {
@@ -595,7 +595,7 @@ func DefaultEmailConfig() EmailConfig {
 type DatabaseConfig struct {
 	Enabled             bool     `json:"enabled"`
 	Provider            string   `json:"provider"`                    // Database provider: "sqlite", "postgres", "mysql"
-	ConnectionString    *string  `json:"connection_string,omitempty"` // Connection string (or env: / raw: secret ref)
+	ConnectionString    string   `json:"connection_string,omitempty"` // Connection string (or env: / raw: secret ref)
 	AllowWrite          bool     `json:"allow_write"`                 // Whether to allow write operations (INSERT, UPDATE, DELETE, CREATE, DROP)
 	TimeoutSeconds      int      `json:"timeout_seconds"`             // Query timeout in seconds
 	MaxRows             int      `json:"max_rows"`                    // Maximum rows to return
@@ -691,10 +691,10 @@ func DefaultNativeDynamicPluginsConfig() NativeDynamicPluginsConfig {
 // NativeDynamicPluginManifest 动态原生插件清单
 type NativeDynamicPluginManifest struct {
 	Id               string   `json:"id"`
-	Name             *string  `json:"name,omitempty"`
-	Version          *string  `json:"version,omitempty"`
-	MinHostVersion   *string  `json:"min_host_version,omitempty"`
-	PluginApiVersion *string  `json:"plugin_api_version,omitempty"`
+	Name             string   `json:"name,omitempty"`
+	Version          string   `json:"version,omitempty"`
+	MinHostVersion   string   `json:"min_host_version,omitempty"`
+	PluginApiVersion string   `json:"plugin_api_version,omitempty"`
 	AssemblyPath     string   `json:"assembly_path"`
 	TypeName         string   `json:"type_name"`
 	Capabilities     []string `json:"capabilities"`
@@ -771,8 +771,8 @@ func DefaultBridgeInitResult() BridgeInitResult {
 
 // BridgeTransportConfig 插件桥的传输配置。
 type BridgeTransportConfig struct {
-	Mode       string  `json:"mode"` // "stdio" (default), "socket", or "hybrid"
-	SocketPath *string `json:"socket_path,omitempty"`
+	Mode       string `json:"mode"` // "stdio" (default), "socket", or "hybrid"
+	SocketPath string `json:"socket_path,omitempty"`
 }
 
 func DefaultBridgeTransportConfig() BridgeTransportConfig {
@@ -783,11 +783,11 @@ func DefaultBridgeTransportConfig() BridgeTransportConfig {
 
 // BridgeTransportRuntimeConfig 在初始化期间发送给桥进程的运行时传输详情。
 type BridgeTransportRuntimeConfig struct {
-	Mode            string  `json:"mode"`
-	SocketPath      *string `json:"socket_path,omitempty"`
-	SocketDirectory *string `json:"socket_directory,omitempty"`
-	SocketAuthToken *string `json:"socket_auth_token,omitempty"`
-	SecurityMode    string  `json:"security_mode"`
+	Mode            string `json:"mode"`
+	SocketPath      string `json:"socket_path,omitempty"`
+	SocketDirectory string `json:"socket_directory,omitempty"`
+	SocketAuthToken string `json:"socket_auth_token,omitempty"`
+	SecurityMode    string `json:"security_mode"`
 }
 
 func DefaultBridgeTransportRuntimeConfig() BridgeTransportRuntimeConfig {
@@ -829,8 +829,8 @@ type BridgeProviderRequest struct {
 
 // BridgeProviderOptions 转发给插件提供商的 ChatOptions 序列化子集。
 type BridgeProviderOptions struct {
-	ConversationId           *string                    `json:"conversation_id,omitempty"`
-	Instructions             *string                    `json:"instructions,omitempty"`
+	ConversationId           string                     `json:"conversation_id,omitempty"`
+	Instructions             string                     `json:"instructions,omitempty"`
 	Temperature              *float32                   `json:"temperature,omitempty"`
 	MaxOutputTokens          *int                       `json:"max_output_tokens,omitempty"`
 	TopP                     *float32                   `json:"top_p,omitempty"`
@@ -840,13 +840,13 @@ type BridgeProviderOptions struct {
 	Seed                     *int64                     `json:"seed,omitempty"`
 	Reasoning                *BridgeReasoningOptions    `json:"reasoning,omitempty"`
 	ResponseFormat           *BridgeResponseFormat      `json:"response_format,omitempty"`
-	ModelId                  *string                    `json:"model_id,omitempty"`
+	ModelId                  string                     `json:"model_id,omitempty"`
 	StopSequences            []string                   `json:"stop_sequences"`
 	AllowMultipleToolCalls   *bool                      `json:"allow_multiple_tool_calls,omitempty"`
 	ToolMode                 *BridgeToolMode            `json:"tool_mode,omitempty"`
 	Tools                    []BridgeToolDescriptor     `json:"tools"`
 	AllowBackgroundResponses *bool                      `json:"allow_background_responses,omitempty"`
-	ContinuationToken        *string                    `json:"continuation_token,omitempty"`
+	ContinuationToken        string                     `json:"continuation_token,omitempty"`
 	AdditionalProperties     map[string]json.RawMessage `json:"additional_properties"`
 }
 
@@ -860,22 +860,22 @@ func DefaultBridgeProviderOptions() BridgeProviderOptions {
 
 // BridgeReasoningOptions 代表推理选项
 type BridgeReasoningOptions struct {
-	Effort *string `json:"effort,omitempty"`
-	Output *string `json:"output,omitempty"`
+	Effort string `json:"effort,omitempty"`
+	Output string `json:"output,omitempty"`
 }
 
 // BridgeResponseFormat 代表响应格式
 type BridgeResponseFormat struct {
 	Kind              string           `json:"kind"`
 	Schema            *json.RawMessage `json:"schema,omitempty"`
-	SchemaName        *string          `json:"schema_name,omitempty"`
-	SchemaDescription *string          `json:"schema_description,omitempty"`
+	SchemaName        string           `json:"schema_name,omitempty"`
+	SchemaDescription string           `json:"schema_description,omitempty"`
 }
 
 // BridgeToolMode 代表工具模式
 type BridgeToolMode struct {
-	Kind         string  `json:"kind"`
-	FunctionName *string `json:"function_name,omitempty"`
+	Kind         string `json:"kind"`
+	FunctionName string `json:"function_name,omitempty"`
 }
 
 // BridgeToolDescriptor 代表工具描述符
@@ -924,10 +924,10 @@ type BridgeChannelSendRequest struct {
 	ChannelId        string                  `json:"channel_id"`
 	RecipientId      string                  `json:"recipient_id"`
 	Text             string                  `json:"text"`
-	AccountId        *string                 `json:"account_id,omitempty"`
-	SessionId        *string                 `json:"session_id,omitempty"`
-	ReplyToMessageId *string                 `json:"reply_to_message_id,omitempty"`
-	Subject          *string                 `json:"subject,omitempty"`
+	AccountId        string                  `json:"account_id,omitempty"`
+	SessionId        string                  `json:"session_id,omitempty"`
+	ReplyToMessageId string                  `json:"reply_to_message_id,omitempty"`
+	Subject          string                  `json:"subject,omitempty"`
 	Attachments      []BridgeMediaAttachment `json:"attachments,omitempty"`
 }
 
@@ -936,23 +936,23 @@ type BridgeMediaAttachment struct {
 	// Type 媒体类型: "image", "video", "audio", "document", "sticker"
 	Type string `json:"type"`
 	// Url HTTP URL 或文件路径
-	Url *string `json:"url,omitempty"`
+	Url string `json:"url,omitempty"`
 	// Caption 可选的说明文字
-	Caption *string `json:"caption,omitempty"`
+	Caption string `json:"caption,omitempty"`
 	// MimeType MIME 类型提示 (例如 "audio/ogg; codecs=opus")
-	MimeType *string `json:"mime_type,omitempty"`
+	MimeType string `json:"mime_type,omitempty"`
 	// FileName 原始文件名
-	FileName *string `json:"file_name,omitempty"`
+	FileName string `json:"file_name,omitempty"`
 	// GifPlayback 为 true 时，视频应作为动态 GIF 发送
 	GifPlayback bool `json:"gif_playback"`
 }
 
 // BridgeChannelTypingRequest 发送正在输入状态的请求
 type BridgeChannelTypingRequest struct {
-	ChannelId   string  `json:"channel_id"`
-	RecipientId string  `json:"recipient_id"`
-	AccountId   *string `json:"account_id,omitempty"`
-	IsTyping    bool    `json:"is_typing"`
+	ChannelId   string `json:"channel_id"`
+	RecipientId string `json:"recipient_id"`
+	AccountId   string `json:"account_id,omitempty"`
+	IsTyping    bool   `json:"is_typing"`
 }
 
 // DefaultBridgeChannelTypingRequest 设置默认值
@@ -964,21 +964,21 @@ func DefaultBridgeChannelTypingRequest() BridgeChannelTypingRequest {
 
 // BridgeChannelReceiptRequest 发送已读回执的请求
 type BridgeChannelReceiptRequest struct {
-	ChannelId   string  `json:"channel_id"`
-	MessageId   string  `json:"message_id"`
-	AccountId   *string `json:"account_id,omitempty"`
-	RemoteJid   *string `json:"remote_jid,omitempty"`
-	Participant *string `json:"participant,omitempty"`
+	ChannelId   string `json:"channel_id"`
+	MessageId   string `json:"message_id"`
+	AccountId   string `json:"account_id,omitempty"`
+	RemoteJid   string `json:"remote_jid,omitempty"`
+	Participant string `json:"participant,omitempty"`
 }
 
 // BridgeChannelReactionRequest 发送消息回应(Emoji)的请求
 type BridgeChannelReactionRequest struct {
-	ChannelId   string  `json:"channel_id"`
-	MessageId   string  `json:"message_id"`
-	Emoji       string  `json:"emoji"`
-	AccountId   *string `json:"account_id,omitempty"`
-	RemoteJid   *string `json:"remote_jid,omitempty"`
-	Participant *string `json:"participant,omitempty"`
+	ChannelId   string `json:"channel_id"`
+	MessageId   string `json:"message_id"`
+	Emoji       string `json:"emoji"`
+	AccountId   string `json:"account_id,omitempty"`
+	RemoteJid   string `json:"remote_jid,omitempty"`
+	Participant string `json:"participant,omitempty"`
 }
 
 // 常量定义：带有类名前缀以防冲突
@@ -995,9 +995,9 @@ type BridgeChannelAuthEvent struct {
 	// State 认证状态: "qr_code", "connected", "disconnected", "error"
 	State string `json:"state"`
 	// Data 状态特定数据 (二维码字符串、错误信息等)
-	Data *string `json:"data,omitempty"`
+	Data string `json:"data,omitempty"`
 	// AccountId 多账号通道的的账号标识符
-	AccountId *string `json:"account_id,omitempty"`
+	AccountId string `json:"account_id,omitempty"`
 	// UpdatedAtUtc 网关收到认证事件的时间戳
 	UpdatedAtUtc time.Time `json:"updated_at_utc"`
 }
@@ -1053,6 +1053,6 @@ func DefaultBridgeToolResult() BridgeToolResult {
 
 // ToolContentItem 与 MCP 兼容的插件工具返回的内容项
 type ToolContentItem struct {
-	Type string  `json:"type"`
-	Text *string `json:"text,omitempty"`
+	Type string `json:"type"`
+	Text string `json:"text,omitempty"`
 }

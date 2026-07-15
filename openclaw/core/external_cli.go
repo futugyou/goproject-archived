@@ -832,8 +832,8 @@ func (e *ExternalCliPresetCatalog) mergeCommand(preset ExternalCliCommandOptions
 	}
 }
 
-func (e *ExternalCliPresetCatalog) preferNullable(one *string, two *string) *string {
-	if one != nil {
+func (e *ExternalCliPresetCatalog) preferNullable(one string, two string) string {
+	if one != "" {
 		return one
 	}
 

@@ -1,9 +1,9 @@
 package core
 
 type ContractCreateRequest struct {
-	SessionID           *string             `json:"session_id,omitempty"`
-	Name                *string             `json:"name,omitempty"`
-	RequiredRuntimeMode *string             `json:"required_runtime_mode,omitempty"`
+	SessionID           string              `json:"session_id,omitempty"`
+	Name                string              `json:"name,omitempty"`
+	RequiredRuntimeMode string              `json:"required_runtime_mode,omitempty"`
 	RequestedTools      []string            `json:"requested_tools,omitempty"`
 	ScopedCapabilities  []ScopedCapability  `json:"scoped_capabilities,omitempty"`
 	MaxCostUSD          float64             `json:"max_cost_usd"`
@@ -11,7 +11,7 @@ type ContractCreateRequest struct {
 	MaxTokens           int64               `json:"max_tokens"`
 	MaxToolCalls        int                 `json:"max_tool_calls"`
 	MaxRuntimeSeconds   int                 `json:"max_runtime_seconds"`
-	CreatedBy           *string             `json:"created_by,omitempty"`
+	CreatedBy           string              `json:"created_by,omitempty"`
 	Verification        *VerificationPolicy `json:"verification,omitempty"`
 }
 
@@ -21,7 +21,7 @@ type ContractCreateResponse struct {
 }
 
 type ContractValidateRequest struct {
-	RequiredRuntimeMode *string             `json:"required_runtime_mode,omitempty"`
+	RequiredRuntimeMode string              `json:"required_runtime_mode,omitempty"`
 	RequestedTools      []string            `json:"requested_tools,omitempty"`
 	ScopedCapabilities  []ScopedCapability  `json:"scoped_capabilities,omitempty"`
 	MaxCostUSD          float64             `json:"max_cost_usd"`

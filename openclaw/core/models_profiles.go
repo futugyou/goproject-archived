@@ -23,12 +23,12 @@ func DefaultModelsConfig() ModelsConfig {
 
 type ModelProfileConfig struct {
 	Id                  string               `json:"id"`
-	PresetId            *string              `json:"preset_id,omitempty"`
+	PresetId            string               `json:"preset_id"`
 	Provider            string               `json:"provider"`
 	Model               string               `json:"model"`
 	BaseUrl             string               `json:"base_url"`
-	ApiKey              *string              `json:"api_key,omitempty"`
-	AuthMode            *string              `json:"auth_mode,omitempty"`
+	ApiKey              string               `json:"api_key"`
+	AuthMode            string               `json:"auth_mode"`
 	SendRequestMetadata *bool                `json:"send_request_metadata,omitempty"`
 	Tags                []string             `json:"tags"`
 	FallbackProfileIds  []string             `json:"fallback_profile_ids"`
@@ -69,8 +69,8 @@ type ModelCapabilities struct {
 	MaxOutputTokens                int  `json:"max_output_tokens"`
 }
 
-func DefaultModelCapabilities() ModelCapabilities {
-	return ModelCapabilities{
+func DefaultModelCapabilities() *ModelCapabilities {
+	return &ModelCapabilities{
 		SupportsStreaming:      true,
 		SupportsSystemMessages: true,
 	}
@@ -81,19 +81,19 @@ func DefaultModelCapabilities() ModelCapabilities {
 // ==========================================
 
 type ModelSelectionRequirements struct {
-	SupportsTools             *bool `json:"supports_tools,omitempty"`
-	SupportsVision            *bool `json:"supports_vision,omitempty"`
-	SupportsJsonSchema        *bool `json:"supports_json_schema,omitempty"`
-	SupportsStructuredOutputs *bool `json:"supports_structured_outputs,omitempty"`
-	SupportsStreaming         *bool `json:"supports_streaming,omitempty"`
-	SupportsParallelToolCalls *bool `json:"supports_parallel_tool_calls,omitempty"`
-	SupportsReasoningEffort   *bool `json:"supports_reasoning_effort,omitempty"`
-	SupportsSystemMessages    *bool `json:"supports_system_messages,omitempty"`
-	SupportsImageInput        *bool `json:"supports_image_input,omitempty"`
-	SupportsVideoInput        *bool `json:"supports_video_input,omitempty"`
-	SupportsAudioInput        *bool `json:"supports_audio_input,omitempty"`
-	MinContextTokens          *int  `json:"min_context_tokens,omitempty"`
-	MinOutputTokens           *int  `json:"min_output_tokens,omitempty"`
+	SupportsTools             bool `json:"supports_tools"`
+	SupportsVision            bool `json:"supports_vision"`
+	SupportsJsonSchema        bool `json:"supports_json_schema"`
+	SupportsStructuredOutputs bool `json:"supports_structured_outputs"`
+	SupportsStreaming         bool `json:"supports_streaming"`
+	SupportsParallelToolCalls bool `json:"supports_parallel_tool_calls"`
+	SupportsReasoningEffort   bool `json:"supports_reasoning_effort"`
+	SupportsSystemMessages    bool `json:"supports_system_messages"`
+	SupportsImageInput        bool `json:"supports_image_input"`
+	SupportsVideoInput        bool `json:"supports_video_input"`
+	SupportsAudioInput        bool `json:"supports_audio_input"`
+	MinContextTokens          int  `json:"min_context_tokens"`
+	MinOutputTokens           int  `json:"min_output_tokens"`
 }
 
 // ==========================================
@@ -103,20 +103,20 @@ type ModelSelectionRequirements struct {
 const ModelProfileAuthModeBearer = "bearer"
 
 type ModelProfile struct {
-	Id                  string              `json:"id"`
-	PresetId            *string             `json:"preset_id,omitempty"`
-	ProviderId          string              `json:"provider_id"`
-	ModelId             string              `json:"model_id"`
-	BaseUrl             *string             `json:"base_url,omitempty"`
-	ApiKey              *string             `json:"api_key,omitempty"`
-	AuthMode            string              `json:"auth_mode"`
-	SendRequestMetadata bool                `json:"send_request_metadata"`
-	Tags                []string            `json:"tags"`
-	FallbackProfileIds  []string            `json:"fallback_profile_ids"`
-	FallbackModels      []string            `json:"fallback_models"`
-	Capabilities        ModelCapabilities   `json:"capabilities"`
-	PromptCaching       PromptCachingConfig `json:"prompt_caching"`
-	IsImplicit          bool                `json:"is_implicit"`
+	Id                  string               `json:"id"`
+	PresetId            string               `json:"preset_id,omitempty"`
+	ProviderId          string               `json:"provider_id"`
+	ModelId             string               `json:"model_id"`
+	BaseUrl             string               `json:"base_url,omitempty"`
+	ApiKey              string               `json:"api_key,omitempty"`
+	AuthMode            string               `json:"auth_mode"`
+	SendRequestMetadata bool                 `json:"send_request_metadata"`
+	Tags                []string             `json:"tags"`
+	FallbackProfileIds  []string             `json:"fallback_profile_ids"`
+	FallbackModels      []string             `json:"fallback_models"`
+	Capabilities        *ModelCapabilities   `json:"capabilities"`
+	PromptCaching       *PromptCachingConfig `json:"prompt_caching"`
+	IsImplicit          bool                 `json:"is_implicit"`
 }
 
 func DefaultModelProfile() ModelProfile {
@@ -137,24 +137,24 @@ func DefaultModelProfile() ModelProfile {
 const ModelProfileStatusAuthModeBearer = "bearer"
 
 type ModelProfileStatus struct {
-	Id                         string              `json:"id"`
-	PresetId                   *string             `json:"preset_id,omitempty"`
-	ProviderId                 string              `json:"provider_id"`
-	ModelId                    string              `json:"model_id"`
-	IsDefault                  bool                `json:"is_default"`
-	IsImplicit                 bool                `json:"is_implicit"`
-	IsAvailable                bool                `json:"is_available"`
-	ProviderGateway            *string             `json:"provider_gateway,omitempty"`
-	AuthMode                   string              `json:"auth_mode"`
-	SendRequestMetadata        bool                `json:"send_request_metadata"`
-	Tags                       []string            `json:"tags"`
-	Capabilities               ModelCapabilities   `json:"capabilities"`
-	PromptCaching              PromptCachingConfig `json:"prompt_caching"`
-	ValidationIssues           []string            `json:"validation_issues"`
-	FallbackProfileIds         []string            `json:"fallback_profile_ids"`
-	FallbackModels             []string            `json:"fallback_models"`
-	CompatibilityNotes         []string            `json:"compatibility_notes"`
-	UsesCompatibilityTransport bool                `json:"uses_compatibility_transport"`
+	Id                         string               `json:"id"`
+	PresetId                   string               `json:"preset_id"`
+	ProviderId                 string               `json:"provider_id"`
+	ModelId                    string               `json:"model_id"`
+	IsDefault                  bool                 `json:"is_default"`
+	IsImplicit                 bool                 `json:"is_implicit"`
+	IsAvailable                bool                 `json:"is_available"`
+	ProviderGateway            string               `json:"provider_gateway"`
+	AuthMode                   string               `json:"auth_mode"`
+	SendRequestMetadata        bool                 `json:"send_request_metadata"`
+	Tags                       []string             `json:"tags"`
+	Capabilities               *ModelCapabilities   `json:"capabilities"`
+	PromptCaching              *PromptCachingConfig `json:"prompt_caching"`
+	ValidationIssues           []string             `json:"validation_issues"`
+	FallbackProfileIds         []string             `json:"fallback_profile_ids"`
+	FallbackModels             []string             `json:"fallback_models"`
+	CompatibilityNotes         []string             `json:"compatibility_notes"`
+	UsesCompatibilityTransport bool                 `json:"uses_compatibility_transport"`
 }
 
 func DefaultModelProfileStatus() ModelProfileStatus {
@@ -171,17 +171,17 @@ func DefaultModelProfileStatus() ModelProfileStatus {
 }
 
 type PromptCachingConfig struct {
-	Enabled                 *bool   `json:"enabled"`
-	Retention               *string `json:"retention"`
-	Dialect                 *string `json:"dialect"`
-	KeepWarmEnabled         *bool   `json:"keep_warm_enabled"`
-	KeepWarmIntervalMinutes int     `json:"keep_warm_interval_minutes"`
-	TraceEnabled            *bool   `json:"trace_enabled"`
-	TraceFilePath           *string `json:"trace_file_path"`
+	Enabled                 *bool  `json:"enabled"`
+	Retention               string `json:"retention"`
+	Dialect                 string `json:"dialect"`
+	KeepWarmEnabled         *bool  `json:"keep_warm_enabled"`
+	KeepWarmIntervalMinutes int    `json:"keep_warm_interval_minutes"`
+	TraceEnabled            *bool  `json:"trace_enabled"`
+	TraceFilePath           string `json:"trace_file_path"`
 }
 
-func DefaultPromptCachingConfig() PromptCachingConfig {
-	return PromptCachingConfig{
+func DefaultPromptCachingConfig() *PromptCachingConfig {
+	return &PromptCachingConfig{
 		KeepWarmIntervalMinutes: 55,
 	}
 }
@@ -191,7 +191,7 @@ func DefaultPromptCachingConfig() PromptCachingConfig {
 // ==========================================
 
 type ModelSelectionDescriptor struct {
-	ProfileId          *string                    `json:"profile_id,omitempty"`
+	ProfileId          string                     `json:"profile_id,omitempty"`
 	PreferredTags      []string                   `json:"preferred_tags"`
 	FallbackProfileIds []string                   `json:"fallback_profile_ids"`
 	Requirements       ModelSelectionRequirements `json:"requirements"`
@@ -209,7 +209,7 @@ func DefaultModelSelectionDescriptor() ModelSelectionDescriptor {
 // ==========================================
 
 type ModelProfilesStatusResponse struct {
-	DefaultProfileId *string              `json:"default_profile_id,omitempty"`
+	DefaultProfileId string               `json:"default_profile_id,omitempty"`
 	Profiles         []ModelProfileStatus `json:"profiles"`
 }
 
@@ -224,7 +224,7 @@ func DefaultModelProfilesStatusResponse() ModelProfilesStatusResponse {
 // ==========================================
 
 type ModelSelectionDoctorResponse struct {
-	DefaultProfileId *string              `json:"default_profile_id,omitempty"`
+	DefaultProfileId string               `json:"default_profile_id"`
 	Errors           []string             `json:"errors"`
 	Warnings         []string             `json:"warnings"`
 	Profiles         []ModelProfileStatus `json:"profiles"`
@@ -243,7 +243,7 @@ func DefaultModelSelectionDoctorResponse() ModelSelectionDoctorResponse {
 // ==========================================
 
 type ModelEvaluationRequest struct {
-	ProfileId       *string  `json:"profile_id,omitempty"`
+	ProfileId       string   `json:"profile_id"`
 	ProfileIds      []string `json:"profile_ids"`
 	ScenarioIds     []string `json:"scenario_ids"`
 	IncludeMarkdown bool     `json:"include_markdown"`
@@ -264,16 +264,16 @@ func DefaultModelEvaluationRequest() ModelEvaluationRequest {
 const ModelEvaluationScenarioResultStatusUnknown = "unknown"
 
 type ModelEvaluationScenarioResult struct {
-	ScenarioId    string  `json:"scenario_id"`
-	Name          string  `json:"name"`
-	Status        string  `json:"status"`
-	Summary       *string `json:"summary,omitempty"`
-	LatencyMs     int64   `json:"latency_ms"`
-	InputTokens   int64   `json:"input_tokens"`
-	OutputTokens  int64   `json:"output_tokens"`
-	MalformedJson bool    `json:"malformed_json"`
-	ToolCalls     int     `json:"tool_calls"`
-	Error         *string `json:"error,omitempty"`
+	ScenarioId    string `json:"scenario_id"`
+	Name          string `json:"name"`
+	Status        string `json:"status"`
+	Summary       string `json:"summary,omitempty"`
+	LatencyMs     int64  `json:"latency_ms"`
+	InputTokens   int64  `json:"input_tokens"`
+	OutputTokens  int64  `json:"output_tokens"`
+	MalformedJson bool   `json:"malformed_json"`
+	ToolCalls     int    `json:"tool_calls"`
+	Error         string `json:"error,omitempty"`
 }
 
 func DefaultModelEvaluationScenarioResult() ModelEvaluationScenarioResult {
@@ -311,9 +311,9 @@ type ModelEvaluationReport struct {
 	CompletedAtUtc time.Time                      `json:"completed_at_utc"`
 	ScenarioIds    []string                       `json:"scenario_ids"`
 	Profiles       []ModelEvaluationProfileReport `json:"profiles"`
-	JsonPath       *string                        `json:"json_path,omitempty"`
-	MarkdownPath   *string                        `json:"markdown_path,omitempty"`
-	Markdown       *string                        `json:"markdown,omitempty"`
+	JsonPath       string                         `json:"json_path,omitempty"`
+	MarkdownPath   string                         `json:"markdown_path,omitempty"`
+	Markdown       string                         `json:"markdown,omitempty"`
 }
 
 func DefaultModelEvaluationReport() ModelEvaluationReport {

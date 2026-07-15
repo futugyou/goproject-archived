@@ -90,11 +90,11 @@ func NewVideoProcessingConfig() *VideoProcessingConfig {
 }
 
 type TextToSpeechConfig struct {
-	Enabled   bool    `json:"enabled"`
-	Provider  string  `json:"provider"`
-	Model     string  `json:"model"`
-	VoiceName string  `json:"voice_name"`
-	VoiceID   *string `json:"voice_id"`
+	Enabled   bool   `json:"enabled"`
+	Provider  string `json:"provider"`
+	Model     string `json:"model"`
+	VoiceName string `json:"voice_name"`
+	VoiceID   string `json:"voice_id"`
 }
 
 func NewTextToSpeechConfig() *TextToSpeechConfig {
@@ -103,7 +103,6 @@ func NewTextToSpeechConfig() *TextToSpeechConfig {
 		Provider:  "gemini",
 		Model:     "gemini-2.5-flash-preview-tts",
 		VoiceName: "Kore",
-		VoiceID:   nil,
 	}
 }
 
@@ -112,7 +111,7 @@ type GeminiLiveConfig struct {
 	Model               string   `json:"model"`
 	Endpoint            string   `json:"endpoint"`
 	ResponseModalities  []string `json:"response_modalities"`
-	VoiceName           *string  `json:"voice_name"`
+	VoiceName           string   `json:"voice_name"`
 	InputTranscription  bool     `json:"input_transcription"`
 	OutputTranscription bool     `json:"output_transcription"`
 }
@@ -123,26 +122,24 @@ func NewGeminiLiveConfig() *GeminiLiveConfig {
 		Model:               "gemini-2.0-flash-live-001",
 		Endpoint:            "wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent",
 		ResponseModalities:  []string{"TEXT"},
-		VoiceName:           nil,
 		InputTranscription:  true,
 		OutputTranscription: true,
 	}
 }
 
 type ElevenLabsConfig struct {
-	Enabled      bool    `json:"enabled"`
-	Endpoint     string  `json:"endpoint"`
-	ApiKey       *string `json:"api_key"`
-	VoiceID      string  `json:"voice_id"`
-	Model        string  `json:"model"`
-	OutputFormat string  `json:"output_format"`
+	Enabled      bool   `json:"enabled"`
+	Endpoint     string `json:"endpoint"`
+	ApiKey       string `json:"api_key"`
+	VoiceID      string `json:"voice_id"`
+	Model        string `json:"model"`
+	OutputFormat string `json:"output_format"`
 }
 
 func NewElevenLabsConfig() *ElevenLabsConfig {
 	return &ElevenLabsConfig{
 		Enabled:      true,
 		Endpoint:     "https://api.elevenlabs.io",
-		ApiKey:       nil,
 		VoiceID:      "JBFqnCBsd6RMkjVDRZzb",
 		Model:        "eleven_multilingual_v2",
 		OutputFormat: "mp3_44100_128",
@@ -160,18 +157,16 @@ type StoredMediaAsset struct {
 
 func NewStoredMediaAsset() *StoredMediaAsset {
 	return &StoredMediaAsset{
-		FileName:     "",
-		Path:         "",
 		CreatedAtUtc: time.Now().UTC(),
 	}
 }
 
 type LiveSessionOpenRequest struct {
-	Provider           *string  `json:"provider"`
-	Model              *string  `json:"model"`
+	Provider           string   `json:"provider"`
+	Model              string   `json:"model"`
 	ResponseModalities []string `json:"response_modalities"`
-	SystemInstruction  *string  `json:"system_instruction"`
-	VoiceName          *string  `json:"voice_name"`
+	SystemInstruction  string   `json:"system_instruction"`
+	VoiceName          string   `json:"voice_name"`
 }
 
 type LiveSessionOpened struct {
@@ -182,19 +177,19 @@ type LiveSessionOpened struct {
 }
 
 type LiveClientEnvelope struct {
-	Type         string  `json:"type"`
-	Text         *string `json:"text"`
-	Base64Data   *string `json:"base64_data"`
-	MimeType     *string `json:"mime_type"`
-	TurnComplete bool    `json:"turn_complete"`
+	Type         string `json:"type"`
+	Text         string `json:"text"`
+	Base64Data   string `json:"base64_data"`
+	MimeType     string `json:"mime_type"`
+	TurnComplete bool   `json:"turn_complete"`
 }
 
 type LiveServerEnvelope struct {
-	Type         string  `json:"type"`
-	Text         *string `json:"text"`
-	Base64Data   *string `json:"base64_data"`
-	MimeType     *string `json:"mime_type"`
-	TurnComplete bool    `json:"turn_complete"`
-	Interrupted  bool    `json:"interrupted"`
-	Error        *string `json:"error"`
+	Type         string `json:"type"`
+	Text         string `json:"text"`
+	Base64Data   string `json:"base64_data"`
+	MimeType     string `json:"mime_type"`
+	TurnComplete bool   `json:"turn_complete"`
+	Interrupted  bool   `json:"interrupted"`
+	Error        string `json:"error"`
 }
