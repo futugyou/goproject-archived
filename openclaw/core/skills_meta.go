@@ -2,6 +2,7 @@ package core
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -11,6 +12,8 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
+	"time"
 	"unicode"
 
 	"github.com/flosch/pongo2/v7"
@@ -21,9 +24,10 @@ type MetaExecutionContext struct {
 	outputs map[string]string
 	inputs  map[string]any
 	steps   map[string]any
+	tools   []ToolDescriptor
 }
 
-func NewMetaExecutionContext(input string, outputs map[string]string, inputs map[string]any, steps map[string]any) *MetaExecutionContext {
+func NewMetaExecutionContext(input string, outputs map[string]string, inputs map[string]any, steps map[string]any, tools []ToolDescriptor) *MetaExecutionContext {
 	ctx := &MetaExecutionContext{}
 
 	ctx.input = input
@@ -46,6 +50,8 @@ func NewMetaExecutionContext(input string, outputs map[string]string, inputs map
 	for k, v := range steps {
 		ctx.steps[strings.ToLower(k)] = v
 	}
+
+	ctx.tools = tools
 
 	return ctx
 }
@@ -70,6 +76,10 @@ func (m *MetaExecutionContext) Steps() map[string]any {
 	cpy := make(map[string]any, len(m.steps))
 	maps.Copy(cpy, m.steps)
 	return cpy
+}
+
+func (m *MetaExecutionContext) Tools() []ToolDescriptor {
+	return slices.Clone(m.tools)
 }
 
 type MetaTemplateRenderer struct{}
@@ -553,7 +563,7 @@ func (m *MetaConditionEvaluator) IsTruthy(value string) bool {
 }
 
 type MetaSkillStepDefinition struct {
-	ID string `json:"id"`
+	Id string `json:"id"`
 	// Step kind (agent, tool_call, llm_chat, etc.).
 	Kind                 string                   `json:"kind"`
 	Skill                string                   `json:"skill,omitempty"`
@@ -669,7 +679,7 @@ func (m *MetaRoutePlanner) ApplyInitialRoutingBlocks(
 func (m *MetaRoutePlanner) ApplyCompletionRouting(
 	step *MetaSkillStepDefinition,
 	context *MetaExecutionContext,
-	stepById map[string]*MetaSkillStepDefinition,
+	stepById map[string]MetaSkillStepDefinition,
 	blocked map[string]struct{},
 	pending map[string]struct{},
 	dependentsByStep map[string][]string,
@@ -927,4 +937,416 @@ func FailureSkillInspectionResult(errorMessage string) *SkillInspectionResult {
 	return &SkillInspectionResult{
 		ErrorMessage: errorMessage,
 	}
+}
+
+type ToolDescriptor struct {
+	Name            string `json:"name"`
+	Description     string `json:"description"`
+	ParameterSchema string `json:"parameter_schema"`
+}
+
+type MetaStepExecutionResult struct {
+	Id                string                            `json:"id"`
+	Kind              string                            `json:"kind"`
+	Status            string                            `json:"status"`
+	FailureCode       string                            `json:"failure_code"`
+	DurationMs        float64                           `json:"uration_ms"`
+	Continued         bool                              `json:"continued"`
+	ExecutionEvidence *SessionMetaStepExecutionEvidence `json:"execution_evidence"`
+}
+
+type MetaFanOutExecutor struct{}
+
+type FanOutChildExecutor func(
+	ctx context.Context,
+	metaSkill *SkillDefinition,
+	template *MetaSkillStepDefinition,
+	childId string,
+	childInput string,
+	childContext *MetaExecutionContext,
+	session *Session,
+	turnCtx *TurnContext,
+) (output string, failureCode string, err error)
+
+type batchResult struct {
+	id          string
+	output      string
+	status      string
+	failureCode string
+	durationMs  float64
+}
+
+func (m *MetaFanOutExecutor) TryExecuteFanOutStep(
+	ctx context.Context,
+	session *Session,
+	metaSkill *SkillDefinition,
+	steps []MetaSkillStepDefinition,
+	stepById map[string]MetaSkillStepDefinition,
+	dependentsByStep map[string][]string,
+	pending map[string]struct{},
+	blocked map[string]struct{},
+	outputs map[string]string,
+	failureAliases map[string]string,
+	stepResults *[]MetaStepExecutionResult,
+	input string,
+	turnCtx *TurnContext,
+	templateRenderer *MetaTemplateRenderer,
+	conditionEvaluator *MetaConditionEvaluator,
+	toolArgumentResolver *MetaToolArgumentResolver,
+	routePlanner *MetaRoutePlanner,
+	childExecutor FanOutChildExecutor,
+	logger func(string, error),
+) (bool, error) {
+
+	// 查找第一个就绪的 fan_out 步骤
+	var fanOutStep *MetaSkillStepDefinition
+	for _, step := range steps {
+		_, isPending := pending[step.Id]
+		_, isBlocked := blocked[step.Id]
+		if !isPending || isBlocked {
+			continue
+		}
+		if !strings.EqualFold(m.normalizeMetaStepKind(step.Kind), "fan_out") {
+			continue
+		}
+
+		// 检查依赖项是否全部就绪且没有被 block
+		depsSatisfied := true
+		for _, dep := range step.DependsOn {
+			_, hasOutput := outputs[dep]
+			_, isBlocked := blocked[dep]
+			if isBlocked || !hasOutput {
+				depsSatisfied = false
+				break
+			}
+		}
+
+		if depsSatisfied {
+			fanOutStep = &step
+			break
+		}
+	}
+
+	if fanOutStep == nil {
+		return false, nil
+	}
+
+	metaContext := NewMetaExecutionContext(input, outputs, nil, nil, nil)
+	stepArgs := m.deserializeStepArgs(fanOutStep.WithJSON)
+	continueOnError := m.getOptionalBoolean(stepArgs, "continue_on_error")
+
+	// 评估 when 条件
+	if fanOutStep.When != "" && !conditionEvaluator.Evaluate(fanOutStep.When, metaContext) {
+		m.blockStepAndDependents(fanOutStep.Id, blocked, pending, dependentsByStep)
+		*stepResults = append(*stepResults, MetaStepExecutionResult{
+			Id:          fanOutStep.Id,
+			Kind:        fanOutStep.Kind,
+			Status:      "blocked",
+			FailureCode: "condition_false",
+			DurationMs:  0,
+			Continued:   false,
+		})
+		return true, nil
+	}
+
+	// 1. 评估可迭代 (iterable) 表达式
+	var items []string
+	fanSw := time.Now()
+
+	iterableJson := templateRenderer.Render(fanOutStep.Iterable, metaContext)
+
+	if err := json.Unmarshal([]byte(iterableJson), &items); err != nil {
+		if logger != nil {
+			logger(fmt.Sprintf("Fan-out step '%s' iterable JSON deserialization failed.", fanOutStep.Id), err)
+		}
+		m.appendFailedResult(stepResults, fanOutStep, "iterable_eval_failed", 0)
+		delete(pending, fanOutStep.Id)
+		return true, nil
+	}
+
+	if len(items) == 0 {
+		emptyOutput := ""
+		if fanOutStep.FanOutMergeMode == "json_array" {
+			emptyOutput = "[]"
+		}
+		m.completeMetaStepOutput(fanOutStep, emptyOutput, pending, outputs, failureAliases)
+		routePlanner.ApplyCompletionRouting(fanOutStep, NewMetaExecutionContext(input, outputs, nil, nil, nil), stepById, blocked, pending, dependentsByStep)
+		*stepResults = append(*stepResults, MetaStepExecutionResult{
+			Id:         fanOutStep.Id,
+			Kind:       fanOutStep.Kind,
+			Status:     ToolResultStatuses.Completed,
+			DurationMs: 0,
+			Continued:  false,
+		})
+		return true, nil
+	}
+
+	// 2. 为每个 item 启动并发任务
+	template := fanOutStep.FanOutTemplate
+	childOutputs := make(map[string]string)
+
+	maxConcurrency := len(items)
+	if fanOutStep.FanOutMaxConcurrency > 0 {
+		maxConcurrency = fanOutStep.FanOutMaxConcurrency
+	}
+
+	// 分批并发控制
+	for batch := 0; batch < len(items); batch += maxConcurrency {
+		batchEnd := batch + maxConcurrency
+		if batchEnd > len(items) {
+			batchEnd = len(items)
+		}
+		batchSize := batchEnd - batch
+
+		resChan := make(chan batchResult, batchSize)
+		var wg sync.WaitGroup
+
+		for i := batch; i < batchEnd; i++ {
+			wg.Add(1)
+			go func(index int, item string) {
+				defer wg.Done()
+				childId := fmt.Sprintf("%s_%d", fanOutStep.Id, index)
+				childInput := item
+				childSw := time.Now()
+
+				// 监控 Context 取消
+				if ctx.Err() != nil {
+					return
+				}
+
+				childContext := NewMetaExecutionContext(childInput, outputs, nil, nil, nil)
+				childOutput, failureCode, err := childExecutor(
+					ctx, metaSkill, template, childId, childInput, childContext, session, turnCtx,
+				)
+				durationMs := float64(time.Since(childSw).Milliseconds())
+
+				if err != nil {
+					if logger != nil {
+						logger(fmt.Sprintf("Fan-out child step '%s' failed with panic/error", childId), err)
+					}
+					resChan <- batchResult{
+						id:          childId,
+						output:      err.Error(),
+						status:      "failed",
+						failureCode: "child_step_failed",
+						durationMs:  durationMs,
+					}
+					return
+				}
+
+				if !IsBlank(failureCode) {
+					if logger != nil {
+						logger(fmt.Sprintf("Fan-out child step '%s' failed: %s", childId, failureCode), nil)
+					}
+					resChan <- batchResult{
+						id:          childId,
+						output:      childOutput,
+						status:      "failed",
+						failureCode: failureCode,
+						durationMs:  durationMs,
+					}
+					return
+				}
+
+				resChan <- batchResult{
+					id:         childId,
+					output:     childOutput,
+					status:     ToolResultStatuses.Completed,
+					durationMs: durationMs,
+				}
+			}(i, items[i])
+		}
+
+		wg.Wait()
+		close(resChan)
+
+		for res := range resChan {
+			childOutputs[res.id] = res.output
+			*stepResults = append(*stepResults, MetaStepExecutionResult{
+				Id:          res.id,
+				Kind:        template.Kind,
+				Status:      res.status,
+				FailureCode: res.failureCode,
+				DurationMs:  res.durationMs,
+				Continued:   continueOnError,
+			})
+		}
+	}
+
+	totalDurationMs := float64(time.Since(fanSw).Milliseconds())
+
+	// 3. 当不继续报错 (continueOnError == false) 时，检查是否有子步骤失败
+	anyChildFailed := false
+	if !continueOnError {
+		prefix := fanOutStep.Id + "_"
+		for _, result := range *stepResults {
+			if strings.HasPrefix(result.Id, prefix) && result.Status == "failed" {
+				anyChildFailed = true
+				break
+			}
+		}
+	}
+
+	if anyChildFailed {
+		*stepResults = append(*stepResults, MetaStepExecutionResult{
+			Id:          fanOutStep.Id,
+			Kind:        fanOutStep.Kind,
+			Status:      "failed",
+			FailureCode: "child_step_failed",
+			DurationMs:  totalDurationMs,
+			Continued:   false,
+		})
+
+		if m.tryActivateFailureBranch(fanOutStep, stepById, pending, blocked, failureAliases) {
+			return true, nil
+		}
+
+		m.blockStepAndDependents(fanOutStep.Id, blocked, pending, dependentsByStep)
+		return true, nil
+	}
+
+	// 4. 合并输出
+	var mergedOutput string
+
+	// 按子节点索引排序重建输出集合
+	orderedOutputs := make([]string, len(items))
+	for i := 0; i < len(items); i++ {
+		childId := fmt.Sprintf("%s_%d", fanOutStep.Id, i)
+		orderedOutputs[i] = childOutputs[childId]
+	}
+
+	switch fanOutStep.FanOutMergeMode {
+	case "json_array":
+		bytes, _ := json.Marshal(orderedOutputs)
+		mergedOutput = string(bytes)
+	case "first":
+		if len(orderedOutputs) > 0 {
+			mergedOutput = orderedOutputs[0]
+		}
+	case "last":
+		if len(orderedOutputs) > 0 {
+			mergedOutput = orderedOutputs[len(orderedOutputs)-1]
+		}
+	default:
+		mergedOutput = strings.Join(orderedOutputs, "\n")
+	}
+
+	m.completeMetaStepOutput(fanOutStep, mergedOutput, pending, outputs, failureAliases)
+	routePlanner.ApplyCompletionRouting(fanOutStep, NewMetaExecutionContext(input, outputs, nil, nil, nil), stepById, blocked, pending, dependentsByStep)
+	*stepResults = append(*stepResults, MetaStepExecutionResult{
+		Id:         fanOutStep.Id,
+		Kind:       fanOutStep.Kind,
+		Status:     ToolResultStatuses.Completed,
+		DurationMs: totalDurationMs,
+		Continued:  false,
+	})
+
+	return true, nil
+}
+
+// ── Helpers (内部辅助方法，声明为实例方法) ──
+
+func (m *MetaFanOutExecutor) normalizeMetaStepKind(kind string) string {
+	return strings.ToLower(strings.TrimSpace(kind))
+}
+
+func (m *MetaFanOutExecutor) completeMetaStepOutput(
+	step *MetaSkillStepDefinition,
+	output string,
+	pending map[string]struct{},
+	outputs map[string]string,
+	failureAliases map[string]string,
+) {
+	outputs[step.Id] = output
+	if primaryStepId, ok := failureAliases[step.Id]; ok {
+		outputs[primaryStepId] = output
+	}
+	delete(pending, step.Id)
+}
+
+func (m *MetaFanOutExecutor) tryActivateFailureBranch(
+	step *MetaSkillStepDefinition,
+	stepById map[string]MetaSkillStepDefinition,
+	pending map[string]struct{},
+	blocked map[string]struct{},
+	failureAliases map[string]string,
+) bool {
+	fallbackStepId := strings.TrimSpace(step.OnFailure)
+	if fallbackStepId == "" {
+		return false
+	}
+
+	if _, ok := stepById[fallbackStepId]; !ok {
+		return false
+	}
+
+	delete(pending, step.Id)
+	delete(blocked, fallbackStepId)
+	pending[fallbackStepId] = struct{}{}
+	failureAliases[fallbackStepId] = step.Id
+	return true
+}
+
+func (m *MetaFanOutExecutor) blockStepAndDependents(
+	stepId string,
+	blocked map[string]struct{},
+	pending map[string]struct{},
+	dependentsByStep map[string][]string,
+) {
+	stack := []string{stepId}
+	for len(stack) > 0 {
+		current := stack[len(stack)-1]
+		stack = stack[:len(stack)-1]
+
+		if _, ok := blocked[current]; ok {
+			continue
+		}
+		blocked[current] = struct{}{}
+		delete(pending, current)
+
+		if dependents, ok := dependentsByStep[current]; ok {
+			for _, dep := range dependents {
+				stack = append(stack, dep)
+			}
+		}
+	}
+}
+
+func (m *MetaFanOutExecutor) deserializeStepArgs(withJson string) map[string]any {
+	args := make(map[string]any)
+	if strings.TrimSpace(withJson) == "" {
+		return args
+	}
+	_ = json.Unmarshal([]byte(withJson), &args)
+	return args
+}
+
+func (m *MetaFanOutExecutor) getOptionalBoolean(args map[string]any, key string) bool {
+	val, ok := args[key]
+	if !ok || val == nil {
+		return false
+	}
+	if b, ok := val.(bool); ok {
+		return b
+	}
+	if s, ok := val.(string); ok {
+		return strings.ToLower(s) == "true"
+	}
+	return false
+}
+
+func (m *MetaFanOutExecutor) appendFailedResult(
+	results *[]MetaStepExecutionResult,
+	step *MetaSkillStepDefinition,
+	code string,
+	durationMs float64,
+) {
+	*results = append(*results, MetaStepExecutionResult{
+		Id:          step.Id,
+		Kind:        step.Kind,
+		Status:      "failed",
+		FailureCode: code,
+		DurationMs:  durationMs,
+		Continued:   false,
+	})
 }

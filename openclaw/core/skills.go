@@ -588,7 +588,7 @@ func (m *MetaInvokeTool) Execute(ctx context.Context, argumentsJson string) (str
 	if matched.Composition != nil {
 		for _, v := range matched.Composition.Steps {
 			steps = append(steps, MetaInvokeStepSummary{
-				Id:        v.ID,
+				Id:        v.Id,
 				Kind:      v.Kind,
 				DependsOn: v.DependsOn,
 			})

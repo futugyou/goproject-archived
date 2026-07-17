@@ -989,7 +989,7 @@ func (s *SkillLoader) ParseComposition(jsonStr string) (*MetaSkillComposition, s
 		}
 
 		steps = append(steps, MetaSkillStepDefinition{
-			ID:                  id,
+			Id:                  id,
 			Kind:                kind,
 			Skill:               skill,
 			Tool:                tool,
@@ -1354,7 +1354,7 @@ func (s *SkillLoader) ValidateComposition(steps []MetaSkillStepDefinition) (bool
 
 	ids := make(map[string]bool)
 	for _, step := range steps {
-		stepIdLower := strings.ToLower(step.ID)
+		stepIdLower := strings.ToLower(step.Id)
 		if ids[stepIdLower] {
 			return false, "duplicate_step_id"
 		}
@@ -1401,7 +1401,7 @@ func (s *SkillLoader) ValidateComposition(steps []MetaSkillStepDefinition) (bool
 				return false, "invalid_dependency"
 			}
 
-			if strings.EqualFold(step.ID, dependency) {
+			if strings.EqualFold(step.Id, dependency) {
 				return false, "self_dependency"
 			}
 		}
@@ -1425,7 +1425,7 @@ func (s *SkillLoader) ValidateComposition(steps []MetaSkillStepDefinition) (bool
 func (s *SkillLoader) ValidateFailureBranches(steps []MetaSkillStepDefinition, ids map[string]bool) (bool, string) {
 	stepById := make(map[string]MetaSkillStepDefinition, len(steps))
 	for _, step := range steps {
-		stepById[strings.ToLower(step.ID)] = step
+		stepById[strings.ToLower(step.Id)] = step
 	}
 
 	knownStepIds := make(map[string]bool, len(ids))
@@ -1445,7 +1445,7 @@ func (s *SkillLoader) ValidateFailureBranches(steps []MetaSkillStepDefinition, i
 		if onFailureTrimmed == "" {
 			continue
 		}
-		stepIdLower := strings.ToLower(step.ID)
+		stepIdLower := strings.ToLower(step.Id)
 		onFailureLower := strings.ToLower(onFailureTrimmed)
 
 		// 1. 不能指向自己，且必须在已知的节点 ID 中
@@ -1464,7 +1464,7 @@ func (s *SkillLoader) ValidateFailureBranches(steps []MetaSkillStepDefinition, i
 			return false, "invalid_on_failure"
 		}
 
-		designatedBy[onFailureLower] = step.ID
+		designatedBy[onFailureLower] = step.Id
 		fallbackTargets[onFailureLower] = true
 	}
 
@@ -1540,12 +1540,12 @@ func (s *SkillLoader) containsFallbackTargetInLegacyClassifyRoutes(withJson stri
 func (s *SkillLoader) ValidateRouteArrays(steps []MetaSkillStepDefinition) (bool, string) {
 	ids := make(map[string]struct{}, len(steps))
 	for _, step := range steps {
-		ids[strings.ToLower(step.ID)] = struct{}{}
+		ids[strings.ToLower(step.Id)] = struct{}{}
 	}
 
 	for _, step := range steps {
 		fallbackCount := 0
-		stepIdLower := strings.ToLower(step.ID)
+		stepIdLower := strings.ToLower(step.Id)
 		routesCount := len(step.Routes)
 
 		for i, route := range step.Routes {
@@ -1580,7 +1580,7 @@ func (s *SkillLoader) HasDependencyCycle(steps []MetaSkillStepDefinition) bool {
 
 	stepById := make(map[string]MetaSkillStepDefinition)
 	for _, step := range steps {
-		stepById[strings.ToLower(step.ID)] = step
+		stepById[strings.ToLower(step.Id)] = step
 	}
 
 	var dfs func(string) bool
@@ -1612,12 +1612,12 @@ func (s *SkillLoader) HasDependencyCycle(steps []MetaSkillStepDefinition) bool {
 
 	// 遍历所有步骤进行检测
 	for _, step := range steps {
-		lowerId := strings.ToLower(step.ID)
+		lowerId := strings.ToLower(step.Id)
 		if currentState, exists := state[lowerId]; exists && currentState == 2 {
 			continue
 		}
 
-		if dfs(step.ID) {
+		if dfs(step.Id) {
 			return true
 		}
 	}
@@ -1801,7 +1801,7 @@ func (s *SkillLoader) ValidateFinalTextMode(finalTextMode string, steps []MetaSk
 		return false
 	}
 	for _, step := range steps {
-		if step.ID == stepId {
+		if step.Id == stepId {
 			return true
 		}
 	}
