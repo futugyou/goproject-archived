@@ -185,334 +185,79 @@ func securityEscape(s string) string {
 	return sb.String()
 }
 
-type SkillPromptBuilder struct{}
+var _ ITool = (*ListToolsTool)(nil)
 
-func (s SkillPromptBuilder) BuildSkillBody(skill *SkillDefinition) string {
-	if skill == nil || skill.DisableModelInvocation || len(strings.TrimSpace(skill.Instructions)) == 0 {
+type ListToolsTool struct {
+	provider func() []ToolDescriptor
+}
+
+func NewListToolsTool(provider func() []ToolDescriptor) *ListToolsTool {
+	if provider == nil {
+		provider = func() []ToolDescriptor { return nil }
+	}
+	return &ListToolsTool{
+		provider: provider,
+	}
+}
+
+// Description implements [ITool].
+func (l *ListToolsTool) Description() string {
+	return "List all available tools with their names, descriptions, and parameter schemas. " +
+		"Use this to discover which tools are registered before calling them. " +
+		"Optionally filter by a substring in the tool name."
+}
+
+// Name implements [ITool].
+func (l *ListToolsTool) Name() string {
+	return "list_tools"
+}
+
+// ParameterSchema implements [ITool].
+func (l *ListToolsTool) ParameterSchema() string {
+	return `{"type":"object","properties":{"filter":{"type":"string","description":"Optional substring filter for tool names"}}}`
+}
+
+// Execute implements [ITool].
+func (l *ListToolsTool) Execute(ctx context.Context, argumentsJson string) (string, error) {
+	if err := ctx.Err(); err != nil {
+		return "", err
+	}
+
+	var filter = l.tryGetFilter(argumentsJson)
+	var descriptors = l.provider()
+	if !IsBlank(filter) {
+		n := []ToolDescriptor{}
+		for _, v := range descriptors {
+			if strings.Contains(v.Name, filter) {
+				n = append(n, v)
+			}
+		}
+		descriptors = n
+
+	}
+
+	data, err := json.Marshal(descriptors)
+	if err != nil {
+		return "", err
+	}
+
+	return string(data), nil
+}
+
+func (l *ListToolsTool) tryGetFilter(argumentsJson string) string {
+	if IsBlank(argumentsJson) {
 		return ""
 	}
 
-	var sb strings.Builder
-
-	sb.WriteString("\n")
-	sb.WriteString("<skill-instructions>\n")
-	sb.WriteString("\n")
-	sb.WriteString("## Skill: ")
-	sb.WriteString(skill.Name)
-	sb.WriteString("\n")
-	sb.WriteString(skill.Instructions)
-	sb.WriteString("\n")
-	sb.WriteString("</skill-instructions>\n")
-
-	return sb.String()
-}
-
-func (s SkillPromptBuilder) appendSkillEntry(sb *strings.Builder, skill *SkillDefinition) {
-	sb.WriteString("<skill>\n")
-	sb.WriteString("  <name>")
-	sb.WriteString(html.EscapeString(skill.Name))
-	sb.WriteString("</name>\n")
-	sb.WriteString("  <kind>")
-	sb.WriteString(html.EscapeString(skill.Kind.ToString()))
-	sb.WriteString("</kind>\n")
-	sb.WriteString("  <description>")
-	sb.WriteString(html.EscapeString(skill.Description))
-	sb.WriteString("</description>\n")
-	sb.WriteString("  <location>")
-	sb.WriteString(html.EscapeString(skill.Location))
-	sb.WriteString("</location>\n")
-
-	if skill.MetaPriority > 0 {
-		sb.WriteString("  <meta-priority>")
-		fmt.Fprintf(sb, "%d", skill.MetaPriority)
-		sb.WriteString("</meta-priority>\n")
+	var data struct {
+		Filter string `json:"filter"`
 	}
 
-	if len(skill.Triggers) > 0 {
-		sb.WriteString("  <triggers>\n")
-		for _, trigger := range skill.Triggers {
-			sb.WriteString("    <trigger>")
-			sb.WriteString(html.EscapeString(trigger))
-			sb.WriteString("</trigger>\n")
-		}
-
-		sb.WriteString("  </triggers>\n")
-	}
-
-	if len(skill.Resources) > 0 {
-		sb.WriteString("  <resources>\n")
-
-		for _, resource := range skill.Resources {
-			kind := "script"
-			if resource.Kind == SkillResourceKind_Reference {
-				kind = "reference"
-			}
-			sb.WriteString("    <resource kind=\"")
-			sb.WriteString(kind)
-			sb.WriteString("\" path=\"")
-			sb.WriteString(html.EscapeString(resource.RelativePath))
-			sb.WriteString("\" />\n")
-		}
-		sb.WriteString("  </resources>\n")
-	}
-
-	sb.WriteString("</skill>\n")
-}
-
-func (s SkillPromptBuilder) Build(skills []SkillDefinition) string {
-	modelSkills := make([]SkillDefinition, 0)
-	for _, skill := range skills {
-		if !skill.DisableModelInvocation {
-			modelSkills = append(modelSkills, skill)
-		}
-	}
-
-	if len(modelSkills) == 0 {
+	if err := json.Unmarshal([]byte(argumentsJson), &data); err != nil {
 		return ""
 	}
 
-	var sb strings.Builder
-	sb.WriteString("\n")
-	sb.WriteString("<available-skills>\n")
-	sb.WriteString("The following skills are available to help you complete tasks. Use them when relevant.\n")
-	sb.WriteString("\n")
-
-	for _, skill := range modelSkills {
-		s.appendSkillEntry(&sb, &skill)
-	}
-
-	sb.WriteString("</available-skills>\n")
-	sb.WriteString("\n")
-	sb.WriteString("<skill-instructions>\n")
-
-	for _, skill := range modelSkills {
-		if len(skill.Instructions) == 0 {
-			continue
-		}
-
-		sb.WriteString("\n")
-		sb.WriteString("## Skill: ")
-		sb.WriteString(skill.Name)
-		sb.WriteString("\n")
-		sb.WriteString(skill.Instructions)
-		sb.WriteString("\n")
-	}
-
-	sb.WriteString("</skill-instructions>\n")
-
-	return sb.String()
-}
-
-var DefaultIndexTemplate string = `
-        <available-skills>
-        The following skills are available. Only metadata and a resource manifest are shown here.
-        {load_instruction}{resource_instruction}Only load what is needed, when it is needed.
-
-        {skills}
-        </available-skills>
-        `
-
-var LoadInstructionFragment string = "Call the `load_skill` tool with a skill name to fetch its full instructions on demand.\n"
-
-var ResourceInstructionFragment string = "Call the `read_skill_resource` tool with a skill name and resource path to fetch a single reference or script body. " +
-	"Only paths listed inside that skill's <resources> manifest are valid; if a skill has no <resources> node, do not call this tool for it. " +
-	"Note: `SKILL.md` is the skill body itself — use `load_skill` to fetch it, never `read_skill_resource`.\n"
-
-var SkillsPlaceholder string = "{skills}"
-
-func (s SkillPromptBuilder) BuildIndex(skills []SkillDefinition, template string) string {
-	modelSkills := make([]SkillDefinition, 0)
-	hasResources := false
-	for _, skill := range skills {
-		if !skill.DisableModelInvocation {
-			modelSkills = append(modelSkills, skill)
-			if len(skill.Resources) > 0 {
-				hasResources = true
-			}
-		}
-	}
-
-	if len(modelSkills) == 0 {
-		return ""
-	}
-
-	var sb strings.Builder
-	for _, skill := range modelSkills {
-		s.appendSkillEntry(&sb, &skill)
-	}
-
-	var skillsBlock = strings.TrimRight(sb.String(), "\r\n")
-
-	effectiveTemplate := template
-	if template == "" {
-		effectiveTemplate = DefaultIndexTemplate
-	}
-
-	if !strings.Contains(effectiveTemplate, SkillsPlaceholder) {
-		return ""
-	}
-
-	resourceVal := ""
-	if hasResources {
-		resourceVal = ResourceInstructionFragment
-	}
-
-	replacer := strings.NewReplacer(
-		"{load_instruction}", LoadInstructionFragment,
-		"{resource_instruction}", resourceVal,
-		SkillsPlaceholder, skillsBlock,
-	)
-
-	rendered := replacer.Replace(effectiveTemplate)
-
-	// Preserve the original behaviour of leading/trailing newlines around the section
-	// so callers can append it directly to the base prompt with a single separator.
-	return "\n" + rendered + "\n"
-}
-
-func (s SkillPromptBuilder) BuildSummary(skills []SkillDefinition) string {
-	if len(skills) == 0 {
-		return "No skills loaded."
-	}
-
-	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("Loaded skills (%d):", len(skills)))
-
-	for _, skill := range skills {
-		flags := make([]string, 0)
-		if skill.DisableModelInvocation {
-			flags = append(flags, "no-model")
-		}
-		if !skill.UserInvocable {
-			flags = append(flags, "no-slash")
-		}
-		if skill.Metadata.Always {
-			flags = append(flags, "always")
-		}
-		if skill.CommandDispatch != "" {
-			flags = append(flags, fmt.Sprintf("dispatch:%s", skill.CommandDispatch))
-		}
-		if skill.Kind == SkillKind_Meta {
-			flags = append(flags, "kind:meta")
-		}
-		if skill.MetaPriority > 0 {
-			flags = append(flags, fmt.Sprintf("meta-priority:%d", skill.MetaPriority))
-		}
-
-		flagStr := ""
-		if len(flags) > 0 {
-			flagStr = fmt.Sprintf(" [%s]", strings.Join(flags, ", "))
-		}
-		fmt.Fprintf(&sb, "  - %s: %s%s (%s)", skill.Name, skill.Description, flagStr, skill.Source.ToString())
-	}
-
-	return sb.String()
-}
-
-func (s SkillPromptBuilder) EstimateCharacterCost(skills []SkillDefinition) int {
-	modelSkills := make([]SkillDefinition, 0)
-	for _, skill := range skills {
-		if !skill.DisableModelInvocation {
-			modelSkills = append(modelSkills, skill)
-		}
-	}
-
-	if len(modelSkills) == 0 {
-		return 0
-	}
-
-	// Base overhead (XML wrapper + header text)
-	var cost = 195
-	for _, skill := range modelSkills {
-		// Per-skill overhead (XML tags + indentation) + actual content
-		cost += 97 + len(html.EscapeString(skill.Name)) + len(html.EscapeString(skill.Description)) + len(html.EscapeString(skill.Location)) + len(skill.Instructions)
-	}
-
-	return cost
-}
-
-func (s SkillPromptBuilder) EstimateIndexCharacterCost(skills []SkillDefinition, template string) int {
-	modelSkills := make([]SkillDefinition, 0)
-	hasResources := false
-	for _, skill := range skills {
-		if !skill.DisableModelInvocation {
-			modelSkills = append(modelSkills, skill)
-			if len(skill.Resources) > 0 {
-				hasResources = true
-			}
-		}
-	}
-
-	if len(modelSkills) == 0 {
-		return 0
-	}
-
-	effectiveTemplate := template
-	if template == "" {
-		effectiveTemplate = DefaultIndexTemplate
-	}
-
-	var templateOverhead = len(effectiveTemplate) - len(SkillsPlaceholder) - len("{load_instruction}") + len(LoadInstructionFragment) + 2 // BuildIndex prepends and appends "\n"
-
-	if hasResources {
-		templateOverhead += len(ResourceInstructionFragment)
-	}
-
-	if strings.Contains(effectiveTemplate, "{resource_instruction}") {
-		templateOverhead -= len("{resource_instruction}")
-	}
-	var cost = templateOverhead
-
-	for _, skill := range modelSkills {
-		// Per-skill XML overhead (<skill>, <name>, <description>, <location>, closing tags + newlines)
-		cost += 97 + len(html.EscapeString(skill.Name)) + len(html.EscapeString(skill.Description)) + len(html.EscapeString(skill.Location))
-
-		if len(skill.Resources) > 0 {
-			// <resources> + </resources> wrapper (incl. indentation + newlines)
-			cost += 30
-			for _, resource := range skill.Resources {
-				// <resource kind="..." path="..." />
-				cost += 33 + len(html.EscapeString(resource.RelativePath))
-				if resource.Kind == SkillResourceKind_Reference {
-					cost += len("reference")
-				} else {
-					cost += len("script")
-				}
-			}
-		}
-	}
-
-	return cost
-}
-
-func (s SkillPromptBuilder) EstimateSkillEagerCost(skill *SkillDefinition) int {
-	if skill == nil || skill.DisableModelInvocation {
-		return 0
-	}
-
-	return 97 + len(html.EscapeString(skill.Name)) + len(html.EscapeString(skill.Description)) + len(html.EscapeString(skill.Location)) + len(skill.Instructions)
-}
-
-func (s SkillPromptBuilder) EstimateSkillIndexCost(skill *SkillDefinition) int {
-	if skill == nil || skill.DisableModelInvocation {
-		return 0
-	}
-
-	var cost = 97 + len(html.EscapeString(skill.Name)) + len(html.EscapeString(skill.Description)) + len(html.EscapeString(skill.Location))
-
-	if len(skill.Resources) > 0 {
-		cost += 30 // <resources>...</resources> wrapper
-		for _, resource := range skill.Resources {
-			cost += 33 + len(html.EscapeString(resource.RelativePath))
-			if resource.Kind == SkillResourceKind_Reference {
-				cost += len("reference")
-			} else {
-				cost += len("script")
-			}
-		}
-	}
-
-	return cost
+	return data.Filter
 }
 
 var _ ITool = (*MetaInvokeTool)(nil)
@@ -632,121 +377,6 @@ func (m *MetaInvokeTool) tryParseArguments(jsonStr string) (result bool, skill s
 	}
 
 	return true, skill, input, ""
-}
-
-type MetaInvokeIntent struct {
-	Skill         string                  `json:"skill"`
-	Input         string                  `json:"input,omitempty"`
-	FinalTextMode string                  `json:"final_text_mode,omitempty"`
-	MetaPriority  *int                    `json:"meta_priority,omitempty"`
-	Steps         []MetaInvokeStepSummary `json:"steps"`
-}
-
-type MetaInvokeStepSummary struct {
-	Id        string   `json:"id"`
-	Kind      string   `json:"kind"`
-	DependsOn []string `json:"depends_on"`
-}
-
-type MetaSkillResolver struct{}
-
-func (m *MetaSkillResolver) isTriggerMatch(userMessage, trigger string) bool {
-	normalizedTrigger := strings.TrimSpace(trigger)
-	if len(normalizedTrigger) == 0 {
-		return false
-	}
-
-	return strings.Contains(userMessage, normalizedTrigger)
-}
-
-func (m *MetaSkillResolver) TryResolve(skills []SkillDefinition, userMessage string) (matched *SkillDefinition, result bool) {
-	if len(skills) == 0 || len(userMessage) == 0 {
-		return
-	}
-
-	var message = strings.TrimSpace(userMessage)
-
-	var bestSkill *SkillDefinition
-	bestPriority := math.MinInt
-	bestTriggerLength := -1
-	for _, skill := range skills {
-		if skill.Kind != SkillKind_Meta || skill.DisableModelInvocation {
-			continue
-		}
-
-		if len(skill.Triggers) == 0 {
-			continue
-		}
-
-		for _, trigger := range skill.Triggers {
-			if len(trigger) == 0 {
-				continue
-			}
-			if !m.isTriggerMatch(message, trigger) {
-				continue
-			}
-
-			var priority = skill.MetaPriority
-			var triggerLength = len(trigger)
-
-			if priority > bestPriority || (priority == bestPriority && triggerLength > bestTriggerLength) {
-				bestSkill = &skill
-				bestPriority = priority
-				bestTriggerLength = triggerLength
-			}
-		}
-	}
-
-	matched = bestSkill
-	return matched, matched != nil
-}
-
-type SkillInspector struct{}
-
-func (s *SkillInspector) TryLocateSkillRoot(candidatePath string) (string, error) {
-	if !DirectoryExists(candidatePath) {
-		return "", fmt.Errorf("Skill path not found: %s", candidatePath)
-	}
-
-	if FileExists(filepath.Join(candidatePath, "SKILL.md")) {
-		return filepath.Abs(candidatePath)
-	}
-
-	matches, err := FindDirectoriesCantainsFileName(candidatePath, "SKILL.md")
-	if err != nil {
-		return "", err
-	}
-
-	if len(matches) == 0 {
-		return "", fmt.Errorf("No SKILL.md file was found under %s", candidatePath)
-	}
-
-	if len(matches) > 1 {
-		return "", fmt.Errorf("Multiple SKILL.md files were found under %s. Point the command at a single skill directory.", candidatePath)
-	}
-
-	return filepath.Abs(matches[0])
-}
-
-func (s *SkillInspector) InspectPath(candidatePath string, source SkillSource) *SkillInspectionResult {
-	skillRootPath, err := s.TryLocateSkillRoot(candidatePath)
-	if err != nil {
-		return FailureSkillInspectionResult(err.Error())
-	}
-
-	var skillFilePath = filepath.Join(skillRootPath, "SKILL.md")
-	loader := &SkillLoader{}
-	definition, err := loader.ParseSkillFile(skillFilePath, skillRootPath, source)
-	if err != nil || definition == nil {
-		return FailureSkillInspectionResult("failed to parse skill frontmatter at  " + skillFilePath)
-	}
-
-	return &SkillInspectionResult{
-		Success:       true,
-		SkillRootPath: skillRootPath,
-		SkillFilePath: skillFilePath,
-		Definition:    definition,
-	}
 }
 
 var _ ITool = (*ReadSkillResourceTool)(nil)
@@ -1099,4 +729,462 @@ func (r *ReadSkillResourceTool) Execute(ctx context.Context, argumentsJson strin
 	}
 
 	return string(data), nil
+}
+
+type SkillPromptBuilder struct{}
+
+func (s SkillPromptBuilder) BuildSkillBody(skill *SkillDefinition) string {
+	if skill == nil || skill.DisableModelInvocation || len(strings.TrimSpace(skill.Instructions)) == 0 {
+		return ""
+	}
+
+	var sb strings.Builder
+
+	sb.WriteString("\n")
+	sb.WriteString("<skill-instructions>\n")
+	sb.WriteString("\n")
+	sb.WriteString("## Skill: ")
+	sb.WriteString(skill.Name)
+	sb.WriteString("\n")
+	sb.WriteString(skill.Instructions)
+	sb.WriteString("\n")
+	sb.WriteString("</skill-instructions>\n")
+
+	return sb.String()
+}
+
+func (s SkillPromptBuilder) appendSkillEntry(sb *strings.Builder, skill *SkillDefinition) {
+	sb.WriteString("<skill>\n")
+	sb.WriteString("  <name>")
+	sb.WriteString(html.EscapeString(skill.Name))
+	sb.WriteString("</name>\n")
+	sb.WriteString("  <kind>")
+	sb.WriteString(html.EscapeString(skill.Kind.ToString()))
+	sb.WriteString("</kind>\n")
+	sb.WriteString("  <description>")
+	sb.WriteString(html.EscapeString(skill.Description))
+	sb.WriteString("</description>\n")
+	sb.WriteString("  <location>")
+	sb.WriteString(html.EscapeString(skill.Location))
+	sb.WriteString("</location>\n")
+
+	if skill.MetaPriority > 0 {
+		sb.WriteString("  <meta-priority>")
+		fmt.Fprintf(sb, "%d", skill.MetaPriority)
+		sb.WriteString("</meta-priority>\n")
+	}
+
+	if len(skill.Triggers) > 0 {
+		sb.WriteString("  <triggers>\n")
+		for _, trigger := range skill.Triggers {
+			sb.WriteString("    <trigger>")
+			sb.WriteString(html.EscapeString(trigger))
+			sb.WriteString("</trigger>\n")
+		}
+
+		sb.WriteString("  </triggers>\n")
+	}
+
+	if len(skill.Resources) > 0 {
+		sb.WriteString("  <resources>\n")
+
+		for _, resource := range skill.Resources {
+			kind := "script"
+			if resource.Kind == SkillResourceKind_Reference {
+				kind = "reference"
+			}
+			sb.WriteString("    <resource kind=\"")
+			sb.WriteString(kind)
+			sb.WriteString("\" path=\"")
+			sb.WriteString(html.EscapeString(resource.RelativePath))
+			sb.WriteString("\" />\n")
+		}
+		sb.WriteString("  </resources>\n")
+	}
+
+	sb.WriteString("</skill>\n")
+}
+
+func (s SkillPromptBuilder) Build(skills []SkillDefinition) string {
+	modelSkills := make([]SkillDefinition, 0)
+	for _, skill := range skills {
+		if !skill.DisableModelInvocation {
+			modelSkills = append(modelSkills, skill)
+		}
+	}
+
+	if len(modelSkills) == 0 {
+		return ""
+	}
+
+	var sb strings.Builder
+	sb.WriteString("\n")
+	sb.WriteString("<available-skills>\n")
+	sb.WriteString("The following skills are available to help you complete tasks. Use them when relevant.\n")
+	sb.WriteString("\n")
+
+	for _, skill := range modelSkills {
+		s.appendSkillEntry(&sb, &skill)
+	}
+
+	sb.WriteString("</available-skills>\n")
+	sb.WriteString("\n")
+	sb.WriteString("<skill-instructions>\n")
+
+	for _, skill := range modelSkills {
+		if len(skill.Instructions) == 0 {
+			continue
+		}
+
+		sb.WriteString("\n")
+		sb.WriteString("## Skill: ")
+		sb.WriteString(skill.Name)
+		sb.WriteString("\n")
+		sb.WriteString(skill.Instructions)
+		sb.WriteString("\n")
+	}
+
+	sb.WriteString("</skill-instructions>\n")
+
+	return sb.String()
+}
+
+var DefaultIndexTemplate string = `
+        <available-skills>
+        The following skills are available. Only metadata and a resource manifest are shown here.
+        {load_instruction}{resource_instruction}Only load what is needed, when it is needed.
+
+        {skills}
+        </available-skills>
+        `
+
+var LoadInstructionFragment string = "Call the `load_skill` tool with a skill name to fetch its full instructions on demand.\n"
+
+var ResourceInstructionFragment string = "Call the `read_skill_resource` tool with a skill name and resource path to fetch a single reference or script body. " +
+	"Only paths listed inside that skill's <resources> manifest are valid; if a skill has no <resources> node, do not call this tool for it. " +
+	"Note: `SKILL.md` is the skill body itself — use `load_skill` to fetch it, never `read_skill_resource`.\n"
+
+var SkillsPlaceholder string = "{skills}"
+
+func (s SkillPromptBuilder) BuildIndex(skills []SkillDefinition, template string) string {
+	modelSkills := make([]SkillDefinition, 0)
+	hasResources := false
+	for _, skill := range skills {
+		if !skill.DisableModelInvocation {
+			modelSkills = append(modelSkills, skill)
+			if len(skill.Resources) > 0 {
+				hasResources = true
+			}
+		}
+	}
+
+	if len(modelSkills) == 0 {
+		return ""
+	}
+
+	var sb strings.Builder
+	for _, skill := range modelSkills {
+		s.appendSkillEntry(&sb, &skill)
+	}
+
+	var skillsBlock = strings.TrimRight(sb.String(), "\r\n")
+
+	effectiveTemplate := template
+	if template == "" {
+		effectiveTemplate = DefaultIndexTemplate
+	}
+
+	if !strings.Contains(effectiveTemplate, SkillsPlaceholder) {
+		return ""
+	}
+
+	resourceVal := ""
+	if hasResources {
+		resourceVal = ResourceInstructionFragment
+	}
+
+	replacer := strings.NewReplacer(
+		"{load_instruction}", LoadInstructionFragment,
+		"{resource_instruction}", resourceVal,
+		SkillsPlaceholder, skillsBlock,
+	)
+
+	rendered := replacer.Replace(effectiveTemplate)
+
+	// Preserve the original behaviour of leading/trailing newlines around the section
+	// so callers can append it directly to the base prompt with a single separator.
+	return "\n" + rendered + "\n"
+}
+
+func (s SkillPromptBuilder) BuildSummary(skills []SkillDefinition) string {
+	if len(skills) == 0 {
+		return "No skills loaded."
+	}
+
+	var sb strings.Builder
+	sb.WriteString(fmt.Sprintf("Loaded skills (%d):", len(skills)))
+
+	for _, skill := range skills {
+		flags := make([]string, 0)
+		if skill.DisableModelInvocation {
+			flags = append(flags, "no-model")
+		}
+		if !skill.UserInvocable {
+			flags = append(flags, "no-slash")
+		}
+		if skill.Metadata.Always {
+			flags = append(flags, "always")
+		}
+		if skill.CommandDispatch != "" {
+			flags = append(flags, fmt.Sprintf("dispatch:%s", skill.CommandDispatch))
+		}
+		if skill.Kind == SkillKind_Meta {
+			flags = append(flags, "kind:meta")
+		}
+		if skill.MetaPriority > 0 {
+			flags = append(flags, fmt.Sprintf("meta-priority:%d", skill.MetaPriority))
+		}
+
+		flagStr := ""
+		if len(flags) > 0 {
+			flagStr = fmt.Sprintf(" [%s]", strings.Join(flags, ", "))
+		}
+		fmt.Fprintf(&sb, "  - %s: %s%s (%s)", skill.Name, skill.Description, flagStr, skill.Source.ToString())
+	}
+
+	return sb.String()
+}
+
+func (s SkillPromptBuilder) EstimateCharacterCost(skills []SkillDefinition) int {
+	modelSkills := make([]SkillDefinition, 0)
+	for _, skill := range skills {
+		if !skill.DisableModelInvocation {
+			modelSkills = append(modelSkills, skill)
+		}
+	}
+
+	if len(modelSkills) == 0 {
+		return 0
+	}
+
+	// Base overhead (XML wrapper + header text)
+	var cost = 195
+	for _, skill := range modelSkills {
+		// Per-skill overhead (XML tags + indentation) + actual content
+		cost += 97 + len(html.EscapeString(skill.Name)) + len(html.EscapeString(skill.Description)) + len(html.EscapeString(skill.Location)) + len(skill.Instructions)
+	}
+
+	return cost
+}
+
+func (s SkillPromptBuilder) EstimateIndexCharacterCost(skills []SkillDefinition, template string) int {
+	modelSkills := make([]SkillDefinition, 0)
+	hasResources := false
+	for _, skill := range skills {
+		if !skill.DisableModelInvocation {
+			modelSkills = append(modelSkills, skill)
+			if len(skill.Resources) > 0 {
+				hasResources = true
+			}
+		}
+	}
+
+	if len(modelSkills) == 0 {
+		return 0
+	}
+
+	effectiveTemplate := template
+	if template == "" {
+		effectiveTemplate = DefaultIndexTemplate
+	}
+
+	var templateOverhead = len(effectiveTemplate) - len(SkillsPlaceholder) - len("{load_instruction}") + len(LoadInstructionFragment) + 2 // BuildIndex prepends and appends "\n"
+
+	if hasResources {
+		templateOverhead += len(ResourceInstructionFragment)
+	}
+
+	if strings.Contains(effectiveTemplate, "{resource_instruction}") {
+		templateOverhead -= len("{resource_instruction}")
+	}
+	var cost = templateOverhead
+
+	for _, skill := range modelSkills {
+		// Per-skill XML overhead (<skill>, <name>, <description>, <location>, closing tags + newlines)
+		cost += 97 + len(html.EscapeString(skill.Name)) + len(html.EscapeString(skill.Description)) + len(html.EscapeString(skill.Location))
+
+		if len(skill.Resources) > 0 {
+			// <resources> + </resources> wrapper (incl. indentation + newlines)
+			cost += 30
+			for _, resource := range skill.Resources {
+				// <resource kind="..." path="..." />
+				cost += 33 + len(html.EscapeString(resource.RelativePath))
+				if resource.Kind == SkillResourceKind_Reference {
+					cost += len("reference")
+				} else {
+					cost += len("script")
+				}
+			}
+		}
+	}
+
+	return cost
+}
+
+func (s SkillPromptBuilder) EstimateSkillEagerCost(skill *SkillDefinition) int {
+	if skill == nil || skill.DisableModelInvocation {
+		return 0
+	}
+
+	return 97 + len(html.EscapeString(skill.Name)) + len(html.EscapeString(skill.Description)) + len(html.EscapeString(skill.Location)) + len(skill.Instructions)
+}
+
+func (s SkillPromptBuilder) EstimateSkillIndexCost(skill *SkillDefinition) int {
+	if skill == nil || skill.DisableModelInvocation {
+		return 0
+	}
+
+	var cost = 97 + len(html.EscapeString(skill.Name)) + len(html.EscapeString(skill.Description)) + len(html.EscapeString(skill.Location))
+
+	if len(skill.Resources) > 0 {
+		cost += 30 // <resources>...</resources> wrapper
+		for _, resource := range skill.Resources {
+			cost += 33 + len(html.EscapeString(resource.RelativePath))
+			if resource.Kind == SkillResourceKind_Reference {
+				cost += len("reference")
+			} else {
+				cost += len("script")
+			}
+		}
+	}
+
+	return cost
+}
+
+type MetaInvokeIntent struct {
+	Skill         string                  `json:"skill"`
+	Input         string                  `json:"input,omitempty"`
+	FinalTextMode string                  `json:"final_text_mode,omitempty"`
+	MetaPriority  *int                    `json:"meta_priority,omitempty"`
+	Steps         []MetaInvokeStepSummary `json:"steps"`
+}
+
+type MetaInvokeStepSummary struct {
+	Id        string   `json:"id"`
+	Kind      string   `json:"kind"`
+	DependsOn []string `json:"depends_on"`
+}
+
+type MetaSkillResolver struct{}
+
+func (m *MetaSkillResolver) isTriggerMatch(userMessage, trigger string) bool {
+	normalizedTrigger := strings.TrimSpace(trigger)
+	if len(normalizedTrigger) == 0 {
+		return false
+	}
+
+	return strings.Contains(userMessage, normalizedTrigger)
+}
+
+func (m *MetaSkillResolver) TryResolve(skills []SkillDefinition, userMessage string) (matched *SkillDefinition, result bool) {
+	if len(skills) == 0 || len(userMessage) == 0 {
+		return
+	}
+
+	var message = strings.TrimSpace(userMessage)
+
+	var bestSkill *SkillDefinition
+	bestPriority := math.MinInt
+	bestTriggerLength := -1
+	for _, skill := range skills {
+		if skill.Kind != SkillKind_Meta || skill.DisableModelInvocation {
+			continue
+		}
+
+		if len(skill.Triggers) == 0 {
+			continue
+		}
+
+		for _, trigger := range skill.Triggers {
+			if len(trigger) == 0 {
+				continue
+			}
+			if !m.isTriggerMatch(message, trigger) {
+				continue
+			}
+
+			var priority = skill.MetaPriority
+			var triggerLength = len(trigger)
+
+			if priority > bestPriority || (priority == bestPriority && triggerLength > bestTriggerLength) {
+				bestSkill = &skill
+				bestPriority = priority
+				bestTriggerLength = triggerLength
+			}
+		}
+	}
+
+	matched = bestSkill
+	return matched, matched != nil
+}
+
+type SkillInspector struct{}
+
+func (s *SkillInspector) TryLocateSkillRoot(candidatePath string) (string, error) {
+	if !DirectoryExists(candidatePath) {
+		return "", fmt.Errorf("Skill path not found: %s", candidatePath)
+	}
+
+	if FileExists(filepath.Join(candidatePath, "SKILL.md")) {
+		return filepath.Abs(candidatePath)
+	}
+
+	matches, err := FindDirectoriesCantainsFileName(candidatePath, "SKILL.md")
+	if err != nil {
+		return "", err
+	}
+
+	if len(matches) == 0 {
+		return "", fmt.Errorf("No SKILL.md file was found under %s", candidatePath)
+	}
+
+	if len(matches) > 1 {
+		return "", fmt.Errorf("Multiple SKILL.md files were found under %s. Point the command at a single skill directory.", candidatePath)
+	}
+
+	return filepath.Abs(matches[0])
+}
+
+func (s *SkillInspector) InspectPath(candidatePath string, source SkillSource) *SkillInspectionResult {
+	skillRootPath, err := s.TryLocateSkillRoot(candidatePath)
+	if err != nil {
+		return FailureSkillInspectionResult(err.Error())
+	}
+
+	var skillFilePath = filepath.Join(skillRootPath, "SKILL.md")
+	loader := &SkillLoader{}
+	definition, err := loader.ParseSkillFile(skillFilePath, skillRootPath, source)
+	if err != nil || definition == nil {
+		return FailureSkillInspectionResult("failed to parse skill frontmatter at  " + skillFilePath)
+	}
+
+	return &SkillInspectionResult{
+		Success:       true,
+		SkillRootPath: skillRootPath,
+		SkillFilePath: skillFilePath,
+		Definition:    definition,
+	}
+}
+
+type ProjectionScore[T any] struct {
+	Item   T
+	Source int
+}
+
+type ProjectionRouteAttempt struct {
+	Resolution       *SkillProjectionResolution
+	Score            int
+	ProducerPriority int
+	IsAmbiguous      bool
+	AmbiguousReason  string
 }
