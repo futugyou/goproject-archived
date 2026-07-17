@@ -1350,3 +1350,78 @@ func (m *MetaFanOutExecutor) appendFailedResult(
 		Continued:   false,
 	})
 }
+
+var _ ITool = (*ListToolsTool)(nil)
+
+type ListToolsTool struct {
+	provider func() []ToolDescriptor
+}
+
+func NewListToolsTool(provider func() []ToolDescriptor) *ListToolsTool {
+	if provider == nil {
+		provider = func() []ToolDescriptor { return nil }
+	}
+	return &ListToolsTool{
+		provider: provider,
+	}
+}
+
+// Description implements [ITool].
+func (l *ListToolsTool) Description() string {
+	return "List all available tools with their names, descriptions, and parameter schemas. " +
+		"Use this to discover which tools are registered before calling them. " +
+		"Optionally filter by a substring in the tool name."
+}
+
+// Name implements [ITool].
+func (l *ListToolsTool) Name() string {
+	return "list_tools"
+}
+
+// ParameterSchema implements [ITool].
+func (l *ListToolsTool) ParameterSchema() string {
+	return `{"type":"object","properties":{"filter":{"type":"string","description":"Optional substring filter for tool names"}}}`
+}
+
+// Execute implements [ITool].
+func (l *ListToolsTool) Execute(ctx context.Context, argumentsJson string) (string, error) {
+	if err := ctx.Err(); err != nil {
+		return "", err
+	}
+
+	var filter = l.tryGetFilter(argumentsJson)
+	var descriptors = l.provider()
+	if !IsBlank(filter) {
+		n := []ToolDescriptor{}
+		for _, v := range descriptors {
+			if strings.Contains(v.Name, filter) {
+				n = append(n, v)
+			}
+		}
+		descriptors = n
+
+	}
+
+	data, err := json.Marshal(descriptors)
+	if err != nil {
+		return "", err
+	}
+
+	return string(data), nil
+}
+
+func (l *ListToolsTool) tryGetFilter(argumentsJson string) string {
+	if IsBlank(argumentsJson) {
+		return ""
+	}
+
+	var data struct {
+		Filter string `json:"filter"`
+	}
+
+	if err := json.Unmarshal([]byte(argumentsJson), &data); err != nil {
+		return ""
+	}
+
+	return data.Filter
+}
