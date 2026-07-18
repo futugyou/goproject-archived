@@ -9,10 +9,38 @@ import (
 	"math"
 	"net/http"
 	"net/url"
+	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 	"time"
 )
+
+var ConfigPathResolverInstance = &ConfigPathResolver{}
+
+type ConfigPathResolver struct{}
+
+func (c *ConfigPathResolver) Resolve(path string) string {
+	if IsBlank(path) {
+		return ""
+	}
+
+	var resolved = SecretResolverInstance.Resolve(path)
+	if IsBlank(resolved) {
+		return ""
+	}
+
+	if strings.HasPrefix(resolved, "~/") || resolved == "~" {
+		homeDir, _ := os.UserHomeDir()
+		if len(resolved) == 1 {
+			resolved = homeDir
+		} else {
+			resolved = filepath.Join(homeDir, resolved[2:])
+		}
+	}
+
+	return strings.TrimSpace(resolved)
+}
 
 var ProviderSmokeProbeInstance = &ProviderSmokeProbe{}
 
