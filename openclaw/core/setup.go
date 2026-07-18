@@ -301,6 +301,11 @@ func (g *GatewaySetupProfileFactory) configureModelProfiles(
 			return
 		}
 
+		if strings.EqualFold(provider, "deepseek") {
+			g.configureDeepSeekModelProfile(config, model)
+			return
+		}
+
 		if strings.TrimSpace(modelPresetId) != "" {
 			if warnings != nil {
 				*warnings = append(*warnings, "Ignoring model preset '"+modelPresetId+"' because local presets currently apply only to Ollama or embedded providers.")
@@ -352,6 +357,30 @@ func (g *GatewaySetupProfileFactory) configureModelProfiles(
 			BaseUrl:      "http://127.0.0.1:11434",
 			Tags:         tags,
 			Capabilities: g.cloneCapabilities(capabilities),
+		},
+	}
+}
+
+func (g *GatewaySetupProfileFactory) configureDeepSeekModelProfile(config *GatewayConfig, model string) {
+	config.Llm.Endpoint = "https://api.deepseek.com"
+	config.Models.DefaultProfile = "deepseek-default"
+	config.Models.Profiles = []ModelProfileConfig{
+		{
+			Id:       "deepseek-default",
+			Provider: "deepseek",
+			Model:    model,
+			BaseUrl:  "https://api.deepseek.com",
+			Tags:     []string{"cloud", "openai-compatible", "deepseek"},
+			Capabilities: &ModelCapabilities{
+				SupportsTools:             true,
+				SupportsStructuredOutputs: true,
+				SupportsStreaming:         true,
+				SupportsParallelToolCalls: true,
+				SupportsReasoningEffort:   true,
+				SupportsSystemMessages:    true,
+				MaxContextTokens:          64000,
+				MaxOutputTokens:           8192,
+			},
 		},
 	}
 }
