@@ -6,9 +6,12 @@ import (
 	"errors"
 	"fmt"
 	"html"
+	"log/slog"
 	"math"
 	"os"
 	"path/filepath"
+	"runtime"
+	"sort"
 	"strings"
 )
 
@@ -1177,8 +1180,8 @@ func (s *SkillInspector) InspectPath(candidatePath string, source SkillSource) *
 }
 
 type ProjectionScore[T any] struct {
-	Item   T
-	Source int
+	Item  T
+	Score int
 }
 
 type ProjectionRouteAttempt struct {
@@ -1187,4 +1190,705 @@ type ProjectionRouteAttempt struct {
 	ProducerPriority int
 	IsAmbiguous      bool
 	AmbiguousReason  string
+}
+
+func SuccessAttempt(resolution *SkillProjectionResolution, score int, producerPriority int) *ProjectionRouteAttempt {
+	return &ProjectionRouteAttempt{Resolution: resolution, Score: score, ProducerPriority: producerPriority, IsAmbiguous: false}
+}
+
+func BlockedAttempt(resolution *SkillProjectionResolution, score int) *ProjectionRouteAttempt {
+	return &ProjectionRouteAttempt{Resolution: resolution, Score: score, ProducerPriority: 0, IsAmbiguous: false}
+}
+
+func AmbiguousAttempt(reason string) *ProjectionRouteAttempt {
+	return &ProjectionRouteAttempt{Resolution: &SkillProjectionResolution{
+		HasContracts: true,
+		IsBlocked:    true,
+		BlockReason:  reason,
+	}, Score: -1 << 31, ProducerPriority: -1 << 31, IsAmbiguous: true, AmbiguousReason: reason}
+}
+
+func GetExplicitArtifactTerms(targetView string) []string {
+	switch strings.ToLower(strings.TrimSpace(targetView)) {
+	case "json-schema":
+		return []string{"json schema", "schema file", "schema definition", "json schema 文件", "schema 文件", "schema 定义"}
+	case "workflow-contract":
+		return []string{"workflow contract", "工作流契约"}
+	case "domain-model":
+		return []string{"domain model", "领域模型"}
+	case "prompt-constraint":
+		return []string{"prompt policy", "prompt constraint", "提示词策略", "提示词约束"}
+	default:
+		return []string{}
+	}
+}
+
+type SkillProjectionResolver struct{}
+
+func (r SkillProjectionResolver) ResolveForRequest(skill *SkillDefinition, requestText string, logger *slog.Logger) *SkillProjectionResolution {
+	if len(skill.ProjectionContracts) == 0 {
+		return &SkillProjectionResolution{
+			SkillName:    skill.Name,
+			HasContracts: false,
+		}
+	}
+
+	normalizedRequest := strings.ToLower(strings.TrimSpace(requestText))
+	matchedAttempts := make([]ProjectionRouteAttempt, 0, len(skill.ProjectionContracts))
+	var ambiguousAttempts []string
+
+	for _, contract := range skill.ProjectionContracts {
+		attempt, ok := r.tryResolveContract(skill.Name, &contract, normalizedRequest)
+		if !ok {
+			continue
+		}
+
+		if attempt.IsAmbiguous {
+			if strings.TrimSpace(attempt.AmbiguousReason) != "" {
+				ambiguousAttempts = append(ambiguousAttempts, attempt.AmbiguousReason)
+			}
+			continue
+		}
+
+		matchedAttempts = append(matchedAttempts, *attempt)
+	}
+
+	if len(matchedAttempts) == 0 {
+		if len(ambiguousAttempts) > 0 {
+			return r.block(skill.Name, ambiguousAttempts[0])
+		}
+		return r.block(skill.Name, "Projection topic selection did not produce a usable route for this request.")
+	}
+
+	sort.Slice(matchedAttempts, func(i, j int) bool {
+		if matchedAttempts[i].Score != matchedAttempts[j].Score {
+			return matchedAttempts[i].Score > matchedAttempts[j].Score
+		}
+		return matchedAttempts[i].ProducerPriority > matchedAttempts[j].ProducerPriority
+	})
+
+	if len(matchedAttempts) > 1 &&
+		matchedAttempts[0].Score == matchedAttempts[1].Score &&
+		matchedAttempts[0].ProducerPriority == matchedAttempts[1].ProducerPriority {
+		return r.block(skill.Name, "Projection route selection is ambiguous across multiple producers for this request.")
+	}
+
+	return matchedAttempts[0].Resolution
+}
+
+func (r SkillProjectionResolver) BuildPromptPatch(resolution *SkillProjectionResolution) string {
+	if resolution.Projection == nil ||
+		strings.TrimSpace(resolution.SelectedTopic) == "" ||
+		strings.TrimSpace(resolution.SelectedTargetView) == "" ||
+		strings.TrimSpace(resolution.ProjectionFilePath) == "" {
+		return ""
+	}
+
+	var sb strings.Builder
+	sb.WriteString("\n[Projection Route]\n")
+	sb.WriteString(fmt.Sprintf("Selected topic: %s\n", resolution.SelectedTopic))
+	sb.WriteString(fmt.Sprintf("Selected target view: %s\n", resolution.SelectedTargetView))
+	sb.WriteString(fmt.Sprintf("Projection source: %s\n", resolution.ProjectionFilePath))
+
+	promptConstraint := r.buildPromptAssumptionConstraint(resolution.Projection.MappingPolicy.PromptAssumptionPolicy)
+	if strings.TrimSpace(promptConstraint) != "" {
+		sb.WriteString(fmt.Sprintf("Prompt constraint: %s\n", promptConstraint))
+	}
+
+	r.appendList(&sb, "Allowed terms", resolution.Projection.PromptProjection.AllowedTerms)
+	r.appendList(&sb, "Forbidden assumptions", resolution.Projection.PromptProjection.ForbiddenAssumptions)
+	r.appendList(&sb, "Required clarifications", resolution.Projection.PromptProjection.RequiredClarifications)
+	r.appendList(&sb, "Reasoning paths", resolution.Projection.PromptProjection.ReasoningPaths)
+	r.appendList(&sb, "Source digest", resolution.Projection.PromptProjection.SourceDigest)
+
+	var formattedArtifacts []string
+	for _, artifact := range resolution.Projection.DeliveryArtifacts {
+		formattedArtifacts = append(formattedArtifacts, r.formatDeliveryArtifact(&artifact))
+	}
+	r.appendList(&sb, "Delivery artifacts", formattedArtifacts)
+
+	if len(resolution.Projection.DroppedItems) > 0 {
+		r.appendList(&sb, "Dropped items", resolution.Projection.DroppedItems)
+	}
+
+	return strings.TrimRight(sb.String(), "\r\n\t ")
+}
+
+func (r SkillProjectionResolver) block(skillName string, reason string) *SkillProjectionResolution {
+	return &SkillProjectionResolution{
+		SkillName:    skillName,
+		HasContracts: true,
+		IsBlocked:    true,
+		BlockReason:  reason,
+	}
+}
+
+func (r SkillProjectionResolver) tryResolveContract(skillName string, contract *SkillProjectionContractSet, requestText string) (*ProjectionRouteAttempt, bool) {
+	index := contract.Index
+
+	var resolvedTopic ProjectionScore[ProjectionTopicRecord]
+	selectedTopic, foundTopic := r.SelectTopic(index, requestText)
+	if !foundTopic {
+		fallbackTopic, foundFallback := r.tryResolveNoSignalFallback(index)
+		if !foundFallback {
+			return AmbiguousAttempt("Projection topic selection is ambiguous for this request."), true
+		}
+		resolvedTopic = *fallbackTopic
+	} else {
+		resolvedTopic = selectedTopic
+	}
+
+	var resolvedView ProjectionScore[ProjectionViewRecord]
+	selectedView, foundView := r.SelectView(index, &resolvedTopic.Item, requestText)
+	if !foundView {
+		if resolvedTopic.Score == 0 {
+			fallbackView, foundFallbackView := r.tryResolveFallbackView(index, &resolvedTopic.Item)
+			if foundFallbackView {
+				resolvedView = *fallbackView
+				goto VIEW_RESOLVED
+			}
+		}
+		return AmbiguousAttempt(fmt.Sprintf("Projection target view selection is ambiguous for topic '%s'.", resolvedTopic.Item.DomainSlug)), true
+	} else {
+		resolvedView = selectedView
+	}
+
+VIEW_RESOLVED:
+	totalScore := resolvedTopic.Score + resolvedView.Score
+	if index.DefaultSelectionPolicy.PreferReadyOnly && !strings.EqualFold(resolvedView.Item.Status, "READY") {
+		return BlockedAttempt(r.block(skillName, fmt.Sprintf("Projection '%s/%s' is not READY.", resolvedTopic.Item.DomainSlug, resolvedView.Item.TargetView)), totalScore), true
+	}
+
+	projectionPath, pathOk := r.tryResolveProjectionPath(contract.RootPath, resolvedView.Item.Path)
+	if !pathOk {
+		return BlockedAttempt(r.block(skillName, fmt.Sprintf("Projection file '%s' is outside the projection contract root.", resolvedView.Item.Path)), totalScore), true
+	}
+
+	if _, err := os.Stat(projectionPath); os.IsNotExist(err) {
+		return BlockedAttempt(r.block(skillName, fmt.Sprintf("Projection file '%s' was not found.", resolvedView.Item.Path)), totalScore), true
+	}
+
+	projection, err := r.loadProjection(projectionPath)
+	if err != nil {
+		return BlockedAttempt(r.block(skillName, fmt.Sprintf("Projection file '%s' could not be parsed.", resolvedView.Item.Path)), totalScore), true
+	}
+
+	if projection == nil {
+		return BlockedAttempt(r.block(skillName, fmt.Sprintf("Projection file '%s' is missing required route fields.", resolvedView.Item.Path)), totalScore), true
+	}
+
+	if index.DefaultSelectionPolicy.BlockOnOpenQuestions && len(projection.OpenQuestions) > 0 {
+		return BlockedAttempt(r.block(skillName, fmt.Sprintf("Projection '%s/%s' has blocking open questions.", resolvedTopic.Item.DomainSlug, resolvedView.Item.TargetView)), totalScore), true
+	}
+
+	if strings.EqualFold(projection.MappingPolicy.UnresolvedItemPolicy, "block_or_escalate") && len(projection.OpenQuestions) > 0 {
+		return BlockedAttempt(r.block(skillName, fmt.Sprintf("Projection '%s/%s' requires escalation before use.", resolvedTopic.Item.DomainSlug, resolvedView.Item.TargetView)), totalScore), true
+	}
+
+	return SuccessAttempt(&SkillProjectionResolution{
+		SkillName:          skillName,
+		HasContracts:       true,
+		SelectedTopic:      resolvedTopic.Item.DomainSlug,
+		SelectedTargetView: resolvedView.Item.TargetView,
+		ProjectionFilePath: projectionPath,
+		Projection:         projection,
+	}, totalScore, contract.ProducerPriority), true
+}
+
+func (r SkillProjectionResolver) SelectTopic(index *ProjectionContractIndex, requestText string) (ProjectionScore[ProjectionTopicRecord], bool) {
+	if len(index.Topics) == 0 {
+		return ProjectionScore[ProjectionTopicRecord]{}, false
+	}
+
+	dimensionScores := r.toScoreMap(index.TopicScoring.ScoreDimensions)
+	explicitArtifactBonus := r.getDimensionScore(dimensionScores, "explicit_artifact_bonus", 4)
+	primaryIntentMatch := r.getDimensionScore(dimensionScores, "primary_intent_match", 5)
+	strongKeywordMatch := r.getDimensionScore(dimensionScores, "strong_keyword_match", 3)
+	supportingKeywordMatch := r.getDimensionScore(dimensionScores, "supporting_keyword_match", 1)
+	crossTopicPenalty := r.getDimensionScore(dimensionScores, "cross_topic_conflict_penalty", -2)
+
+	threshold := 2
+	if index.TopicScoring != nil && index.TopicScoring.ClarifyWhenScoreGapBelow != 0 {
+		threshold = index.TopicScoring.ClarifyWhenScoreGapBelow
+	}
+
+	topicSignals := make(map[string]ProjectionTopicSignals)
+	if index.TopicScoring != nil {
+		for i := range index.TopicScoring.Topics {
+			t := index.TopicScoring.Topics[i]
+			if key := strings.ToLower(t.DomainSlug); key != "" {
+				if _, ok := topicSignals[key]; !ok {
+					topicSignals[key] = t
+				}
+			}
+		}
+	}
+
+	scored := make([]ProjectionScore[ProjectionTopicRecord], 0, len(index.Topics))
+	for _, topic := range index.Topics {
+		signals := topicSignals[strings.ToLower(topic.DomainSlug)]
+
+		score := r.countMatches(requestText, signals.PrimaryIntentSignals) * strongKeywordMatch
+		score += r.countMatches(requestText, signals.SupportingSignals) * supportingKeywordMatch
+		if r.hasAnyMatch(requestText, signals.ExplicitArtifactSignals) {
+			score += explicitArtifactBonus
+		}
+		if r.hasAnyMatch(requestText, signals.PrimaryIntentSignals) {
+			score += primaryIntentMatch
+		}
+		if r.hasAnyMatch(requestText, signals.DemoteWhenCompetingTopicSignals) {
+			score += crossTopicPenalty
+		}
+		scored = append(scored, ProjectionScore[ProjectionTopicRecord]{Item: topic, Score: score})
+	}
+
+	sort.Slice(scored, func(i, j int) bool {
+		return scored[i].Score > scored[j].Score
+	})
+
+	if len(scored) == 0 || scored[0].Score <= 0 {
+		return ProjectionScore[ProjectionTopicRecord]{}, false
+	}
+
+	if len(scored) > 1 && (scored[0].Score-scored[1].Score) < threshold {
+		return ProjectionScore[ProjectionTopicRecord]{}, false
+	}
+
+	return scored[0], true
+}
+
+func (r SkillProjectionResolver) SelectView(index *ProjectionContractIndex, topic *ProjectionTopicRecord, requestText string) (ProjectionScore[ProjectionViewRecord], bool) {
+	var candidates []ProjectionViewRecord
+	for _, view := range topic.Views {
+		if index.DefaultSelectionPolicy.PreferReadyOnly {
+			if strings.EqualFold(view.Status, "READY") {
+				candidates = append(candidates, view)
+			}
+		} else {
+			candidates = append(candidates, view)
+		}
+	}
+
+	if len(candidates) == 0 {
+		return ProjectionScore[ProjectionViewRecord]{}, false
+	}
+
+	var scoreDimensions []ProjectionScoreDimension
+	var viewScoringViews []ProjectionViewSignals
+	var withinTopicOverrides []ProjectionTopicViewOverride
+	threshold := 2
+	preferExplicit := false
+
+	if index.TargetViewScoring != nil {
+		scoreDimensions = index.TargetViewScoring.ScoreDimensions
+		viewScoringViews = index.TargetViewScoring.Views
+		withinTopicOverrides = index.TargetViewScoring.WithinTopicOverrides
+		if index.TargetViewScoring.ClarifyWhenScoreGapBelow != 0 {
+			threshold = index.TargetViewScoring.ClarifyWhenScoreGapBelow
+		}
+		preferExplicit = index.TargetViewScoring.PreferExplicitUserArtifactRequests
+	}
+
+	dimensionScores := r.toScoreMap(scoreDimensions)
+	explicitOutputMatch := r.getDimensionScore(dimensionScores, "explicit_output_match", 5)
+	strongSignalMatch := r.getDimensionScore(dimensionScores, "strong_signal_match", 3)
+	supportingSignalMatch := r.getDimensionScore(dimensionScores, "supporting_signal_match", 1)
+	crossViewPenalty := r.getDimensionScore(dimensionScores, "cross_view_conflict_penalty", -2)
+	defaultViewBonus := r.getDimensionScore(dimensionScores, "topic_default_view_bonus", 1)
+	explicitArtifactRequestBonus := r.getDimensionScore(dimensionScores, "explicit_user_artifact_request_bonus", 4)
+
+	viewSignals := make(map[string]ProjectionViewSignals)
+	for i := range viewScoringViews {
+		v := viewScoringViews[i]
+		if key := strings.ToLower(v.TargetView); key != "" {
+			if _, ok := viewSignals[key]; !ok {
+				viewSignals[key] = v
+			}
+		}
+	}
+
+	var topicOverride *ProjectionTopicViewOverride
+	for i := range withinTopicOverrides {
+		o := withinTopicOverrides[i]
+		if strings.EqualFold(o.DomainSlug, topic.DomainSlug) {
+			topicOverride = &o
+			break
+		}
+	}
+
+	scored := make([]ProjectionScore[ProjectionViewRecord], 0, len(candidates))
+	for _, view := range candidates {
+		signals := viewSignals[strings.ToLower(view.TargetView)]
+		score := 0
+		if r.hasAnyMatch(requestText, signals.ExplicitOutputSignals) {
+			score += explicitOutputMatch
+		}
+		score += r.countMatches(requestText, signals.StrongSignals) * strongSignalMatch
+		score += r.countMatches(requestText, signals.SupportingSignals) * supportingSignalMatch
+		if r.hasAnyMatch(requestText, signals.DemoteWhenCompetingViewSignals) {
+			score += crossViewPenalty
+		}
+
+		if preferExplicit && r.hasExplicitArtifactRequestForView(requestText, view.TargetView) {
+			score += explicitArtifactRequestBonus
+		}
+
+		if strings.EqualFold(view.TargetView, topic.DefaultTargetView) {
+			score += defaultViewBonus
+		}
+
+		if topicOverride != nil {
+			for _, bonus := range topicOverride.Bonuses {
+				if strings.EqualFold(bonus.TargetView, view.TargetView) {
+					if r.hasAnyMatch(requestText, bonus.WhenRequestSignals) {
+						score += bonus.Score
+					}
+				}
+			}
+		}
+
+		scored = append(scored, ProjectionScore[ProjectionViewRecord]{Item: view, Score: score})
+	}
+
+	sort.Slice(scored, func(i, j int) bool {
+		return scored[i].Score > scored[j].Score
+	})
+
+	if len(scored) == 0 || scored[0].Score <= 0 {
+		return ProjectionScore[ProjectionViewRecord]{}, false
+	}
+
+	if len(scored) > 1 && (scored[0].Score-scored[1].Score) < threshold {
+		return ProjectionScore[ProjectionViewRecord]{}, false
+	}
+
+	return scored[0], true
+}
+
+func (r SkillProjectionResolver) tryResolveNoSignalFallback(index *ProjectionContractIndex) (*ProjectionScore[ProjectionTopicRecord], bool) {
+	for _, targetView := range index.DefaultSelectionPolicy.FallbackOrderByTargetView {
+		if strings.TrimSpace(targetView) == "" {
+			continue
+		}
+
+		for _, topic := range index.Topics {
+			for _, view := range topic.Views {
+				if strings.EqualFold(view.TargetView, targetView) {
+					return &ProjectionScore[ProjectionTopicRecord]{Item: topic, Score: 0}, true
+				}
+			}
+		}
+	}
+	return &ProjectionScore[ProjectionTopicRecord]{}, false
+}
+
+func (r SkillProjectionResolver) tryResolveFallbackView(index *ProjectionContractIndex, topic *ProjectionTopicRecord) (*ProjectionScore[ProjectionViewRecord], bool) {
+	var candidates []ProjectionViewRecord
+	for _, view := range topic.Views {
+		if index.DefaultSelectionPolicy.PreferReadyOnly {
+			if strings.EqualFold(view.Status, "READY") {
+				candidates = append(candidates, view)
+			}
+		} else {
+			candidates = append(candidates, view)
+		}
+	}
+
+	for _, targetView := range index.DefaultSelectionPolicy.FallbackOrderByTargetView {
+		if strings.TrimSpace(targetView) == "" {
+			continue
+		}
+
+		for _, view := range candidates {
+			if strings.EqualFold(view.TargetView, targetView) {
+				return &ProjectionScore[ProjectionViewRecord]{Item: view, Score: 0}, true
+			}
+		}
+	}
+	return &ProjectionScore[ProjectionViewRecord]{}, false
+}
+
+func (r SkillProjectionResolver) loadProjection(projectionPath string) (*ProjectionDocument, error) {
+	data, err := os.ReadFile(projectionPath)
+	if err != nil {
+		return nil, err
+	}
+
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return nil, err
+	}
+
+	doc := &ProjectionDocument{}
+
+	if policyData, ok := raw["mapping_policy"]; ok {
+		var p map[string]string
+		if err := json.Unmarshal(policyData, &p); err == nil {
+			doc.MappingPolicy.UnresolvedItemPolicy = p["unresolved_item_policy"]
+			doc.MappingPolicy.PromptAssumptionPolicy = p["prompt_assumption_policy"]
+		}
+	}
+
+	if payloadData, ok := raw["prompt_projection"]; ok {
+		var payload struct {
+			AllowedTerms           []string `json:"allowed_terms"`
+			ForbiddenAssumptions   []string `json:"forbidden_assumptions"`
+			RequiredClarifications []string `json:"required_clarifications"`
+			ReasoningPaths         []string `json:"reasoning_paths"`
+			SourceDigest           []string `json:"source_digest"`
+		}
+		if err := json.Unmarshal(payloadData, &payload); err == nil {
+			doc.PromptProjection.AllowedTerms = payload.AllowedTerms
+			doc.PromptProjection.ForbiddenAssumptions = payload.ForbiddenAssumptions
+			doc.PromptProjection.RequiredClarifications = payload.RequiredClarifications
+			doc.PromptProjection.ReasoningPaths = payload.ReasoningPaths
+			doc.PromptProjection.SourceDigest = payload.SourceDigest
+		}
+	}
+
+	if artifactsData, ok := raw["delivery_artifacts"]; ok {
+		var list []map[string]string
+		if err := json.Unmarshal(artifactsData, &list); err == nil {
+			for _, item := range list {
+				name := item["artifact_name"]
+				aType := item["artifact_type"]
+				path := item["path"]
+				if strings.TrimSpace(name) == "" || strings.TrimSpace(aType) == "" || strings.TrimSpace(path) == "" {
+					continue
+				}
+				doc.DeliveryArtifacts = append(doc.DeliveryArtifacts, ProjectionDeliveryArtifact{
+					ArtifactName: name,
+					ArtifactType: aType,
+					Path:         path,
+					Status:       item["status"],
+				})
+			}
+		}
+	}
+
+	doc.DroppedItems = r.readDisplayArray(raw["dropped_items"])
+	doc.OpenQuestions = r.readDisplayArray(raw["open_questions"])
+
+	return doc, nil
+}
+
+func (r SkillProjectionResolver) appendList(sb *strings.Builder, label string, items []string) {
+	if len(items) == 0 {
+		return
+	}
+	sb.WriteString("\n")
+	sb.WriteString(label)
+	sb.WriteString(":\n")
+	for _, item := range items {
+		sb.WriteString(fmt.Sprintf("- %s\n", item))
+	}
+}
+
+func (r SkillProjectionResolver) formatDeliveryArtifact(artifact *ProjectionDeliveryArtifact) string {
+	statusSuffix := ""
+	if strings.TrimSpace(artifact.Status) != "" {
+		statusSuffix = fmt.Sprintf(" [%s]", artifact.Status)
+	}
+	return fmt.Sprintf("%s (%s) -> %s%s", artifact.ArtifactName, artifact.ArtifactType, artifact.Path, statusSuffix)
+}
+
+func (r SkillProjectionResolver) buildPromptAssumptionConstraint(policy string) string {
+	switch strings.ToLower(strings.TrimSpace(policy)) {
+	case "disallow_unmapped_terms":
+		return "Do not use unmapped terms or invent terminology beyond this projection."
+	case "warn_on_unmapped_terms":
+		return "If you use terms not mapped by this projection, explicitly warn that they are unmapped assumptions."
+	case "allow_unmapped_terms":
+		return "Unmapped terms are allowed, but prefer mapped terminology when available."
+	case "":
+		return ""
+	default:
+		return fmt.Sprintf("Follow prompt assumption policy '%s' when introducing terms not mapped by this projection.", policy)
+	}
+}
+
+func (r SkillProjectionResolver) toScoreMap(dimensions []ProjectionScoreDimension) map[string]int {
+	m := make(map[string]int)
+	for _, dim := range dimensions {
+		key := strings.ToLower(dim.Dimension)
+		if strings.TrimSpace(key) != "" {
+			if _, exists := m[key]; !exists {
+				m[key] = dim.Score
+			}
+		}
+	}
+	return m
+}
+
+func (r SkillProjectionResolver) tryResolveProjectionPath(rootPath, relativePath string) (string, bool) {
+	if strings.TrimSpace(rootPath) == "" || strings.TrimSpace(relativePath) == "" {
+		return "", false
+	}
+
+	normalizedRelativePath := filepath.FromSlash(relativePath)
+	if filepath.IsAbs(normalizedRelativePath) {
+		return "", false
+	}
+
+	rootFullPath, err := filepath.Abs(rootPath)
+	if err != nil {
+		return "", false
+	}
+
+	candidateFullPath, err := filepath.Abs(filepath.Join(rootFullPath, normalizedRelativePath))
+	if err != nil {
+		return "", false
+	}
+
+	sep := string(filepath.Separator)
+	rootWithSeparator := rootFullPath
+	if !strings.HasSuffix(rootWithSeparator, sep) {
+		rootWithSeparator += sep
+	}
+
+	isWindows := runtime.GOOS == "windows"
+	match := false
+	if isWindows {
+		match = strings.HasPrefix(strings.ToLower(candidateFullPath), strings.ToLower(rootWithSeparator)) ||
+			strings.EqualFold(candidateFullPath, rootFullPath)
+	} else {
+		match = strings.HasPrefix(candidateFullPath, rootWithSeparator) || candidateFullPath == rootFullPath
+	}
+
+	if !match {
+		return "", false
+	}
+
+	return candidateFullPath, true
+}
+
+func (r SkillProjectionResolver) getDimensionScore(scores map[string]int, name string, fallback int) int {
+	if val, ok := scores[strings.ToLower(name)]; ok {
+		return val
+	}
+	return fallback
+}
+
+func (r SkillProjectionResolver) countMatches(requestText string, signals []string) int {
+	count := 0
+	for _, signal := range signals {
+		if r.containsPhrase(requestText, signal) {
+			count++
+		}
+	}
+	return count
+}
+
+func (r SkillProjectionResolver) hasAnyMatch(requestText string, signals []string) bool {
+	for _, signal := range signals {
+		if r.containsPhrase(requestText, signal) {
+			return true
+		}
+	}
+	return false
+}
+
+func (r SkillProjectionResolver) hasExplicitArtifactRequestForView(requestText string, targetView string) bool {
+	terms := GetExplicitArtifactTerms(targetView)
+	for _, signal := range terms {
+		if r.containsPhrase(requestText, signal) {
+			return true
+		}
+	}
+	return false
+}
+
+func (r SkillProjectionResolver) containsPhrase(requestText string, signal string) bool {
+	if strings.TrimSpace(signal) == "" {
+		return false
+	}
+	return strings.Contains(requestText, strings.ToLower(strings.TrimSpace(signal)))
+}
+
+func (r SkillProjectionResolver) readDisplayArray(data json.RawMessage) []string {
+	if len(data) == 0 {
+		return nil
+	}
+	var arr []json.RawMessage
+	if err := json.Unmarshal(data, &arr); err != nil {
+		return nil
+	}
+
+	var values []string
+	for _, item := range arr {
+		if text, ok := r.toDisplayText(item); ok && strings.TrimSpace(text) != "" {
+			values = append(values, text)
+		}
+	}
+	return values
+}
+
+func (r SkillProjectionResolver) toDisplayText(element json.RawMessage) (string, bool) {
+	if len(element) == 0 {
+		return "", false
+	}
+
+	var s string
+	if err := json.Unmarshal(element, &s); err == nil {
+		return s, true
+	}
+
+	var obj map[string]any
+	if err := json.Unmarshal(element, &obj); err != nil {
+		return "", false
+	}
+
+	if text, ok := r.tryBuildOpenQuestionText(obj); ok {
+		return text, true
+	}
+
+	if text, ok := r.tryBuildDroppedItemText(obj); ok {
+		return text, true
+	}
+
+	return string(element), true
+}
+
+func (r SkillProjectionResolver) tryBuildOpenQuestionText(obj map[string]any) (string, bool) {
+	q, ok := obj["question"].(string)
+	if !ok || strings.TrimSpace(q) == "" {
+		return "", false
+	}
+
+	var details []string
+	if impact, ok := obj["impact"].(string); ok && strings.TrimSpace(impact) != "" {
+		details = append(details, fmt.Sprintf("Impact: %s", impact))
+	}
+	if reqInput, ok := obj["required_input"].(string); ok && strings.TrimSpace(reqInput) != "" {
+		details = append(details, fmt.Sprintf("Required input: %s", reqInput))
+	}
+
+	if len(details) > 0 {
+		q = fmt.Sprintf("%s (%s)", q, strings.Join(details, "; "))
+	}
+	return q, true
+}
+
+func (r SkillProjectionResolver) tryBuildDroppedItemText(obj map[string]any) (string, bool) {
+	reason, ok := obj["reason"].(string)
+	if !ok || strings.TrimSpace(reason) == "" {
+		return "", false
+	}
+
+	itemType, _ := obj["item_type"].(string)
+	itemID, _ := obj["item_id"].(string)
+
+	var prefixParts []string
+	if strings.TrimSpace(itemType) != "" {
+		prefixParts = append(prefixParts, itemType)
+	}
+	if strings.TrimSpace(itemID) != "" {
+		prefixParts = append(prefixParts, itemID)
+	}
+
+	prefix := strings.Join(prefixParts, " ")
+	if strings.TrimSpace(prefix) != "" {
+		reason = fmt.Sprintf("%s: %s", prefix, reason)
+	}
+	return reason, true
 }

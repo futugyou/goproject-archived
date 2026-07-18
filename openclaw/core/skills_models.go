@@ -67,23 +67,26 @@ func DefaultSkillEntryConfig() *SkillEntryConfig {
 }
 
 type SkillDefinition struct {
-	Name                   string                `json:"name"`
-	Description            string                `json:"description"`
-	Instructions           string                `json:"instructions"`
-	Location               string                `json:"location"`
-	Source                 SkillSource           `json:"source"`
-	Metadata               *SkillMetadata        `json:"metadata,omitempty"`
-	Kind                   SkillKind             `json:"kind"`
-	Triggers               []string              `json:"triggers"`
-	MetaPriority           int                   `json:"meta_priority"`
-	FinalTextMode          string                `json:"final_text_mode"`
-	Composition            *MetaSkillComposition `json:"composition,omitempty"`
-	UserInvocable          bool                  `json:"user_invocable"`
-	DisableModelInvocation bool                  `json:"disable_model_invocation"`
-	CommandDispatch        string                `json:"command_dispatch,omitempty"`
-	CommandTool            string                `json:"command_tool,omitempty"`
-	CommandArgMode         string                `json:"command_arg_mode,omitempty"`
-	Resources              []SkillResource       `json:"resources,omitempty"`
+	Name                   string                       `json:"name"`
+	Description            string                       `json:"description"`
+	Instructions           string                       `json:"instructions"`
+	Location               string                       `json:"location"`
+	Source                 SkillSource                  `json:"source"`
+	Metadata               *SkillMetadata               `json:"metadata,omitempty"`
+	Kind                   SkillKind                    `json:"kind"`
+	Triggers               []string                     `json:"triggers"`
+	MetaPriority           int                          `json:"meta_priority"`
+	FinalTextMode          string                       `json:"final_text_mode"`
+	Composition            *MetaSkillComposition        `json:"composition,omitempty"`
+	UserInvocable          bool                         `json:"user_invocable"`
+	DisableModelInvocation bool                         `json:"disable_model_invocation"`
+	CommandDispatch        string                       `json:"command_dispatch,omitempty"`
+	CommandTool            string                       `json:"command_tool,omitempty"`
+	CommandArgMode         string                       `json:"command_arg_mode,omitempty"`
+	Resources              []SkillResource              `json:"resources,omitempty"`
+	ProjectionContracts    []SkillProjectionContractSet `json:"projection_contracts"`
+	ArtifactContract       *SkillArtifactContract       `json:"artifact_contract"`
+	ProjectionDiscovery    *SkillProjectionDiscovery    `json:"projection_discovery"`
 }
 
 // DefaultSkillDefinition 返回带默认值的 SkillDefinition 实例
