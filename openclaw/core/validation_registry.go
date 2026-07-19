@@ -2,10 +2,15 @@ package core
 
 import (
 	"context"
+	"encoding/json"
 	"net/url"
+	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 	"sync"
+
+	"github.com/google/uuid"
 )
 
 type ProviderSmokeProbeResult struct {
@@ -140,4 +145,50 @@ func OllamaNormalize(endpoint string) OllamaResult {
 	}
 
 	return OllamaResult{BaseUrl: trimmed, UsesCompatibilityEndpoint: false}
+}
+
+type SetupVerificationSnapshotStore struct {
+	path string
+}
+
+func NewSetupVerificationSnapshotStore(storagePath string) *SetupVerificationSnapshotStore {
+	rootedStorage := storagePath
+	if !filepath.IsAbs(storagePath) {
+		rootedStorage, _ = filepath.Abs(storagePath)
+	}
+
+	result := &SetupVerificationSnapshotStore{}
+	result.path = filepath.Join(rootedStorage, "admin", "setup-verification.json")
+	return result
+}
+
+func (s *SetupVerificationSnapshotStore) Load() *SetupVerificationSnapshot {
+	data, err := os.ReadFile(s.path)
+	if err != nil {
+		return nil
+	}
+
+	var result SetupVerificationSnapshot
+
+	if err := json.Unmarshal(data, &result); err != nil {
+		return nil
+	}
+
+	return &result
+}
+
+func (s *SetupVerificationSnapshotStore) Save(snapshot *SetupVerificationSnapshot) bool {
+	directory := filepath.Dir(s.path)
+	if !IsBlank(directory) {
+		if err := os.MkdirAll(directory, 0755); err != nil {
+			return false
+		}
+	}
+	id := uuid.New()
+	tempPath := s.path + "." + strings.ReplaceAll(id.String(), "-", "") + ".tmp"
+	if err := SaveOneFile(context.Background(), tempPath, snapshot); err != nil {
+		return false
+	}
+
+	return true
 }
