@@ -192,3 +192,65 @@ func (s *SetupVerificationSnapshotStore) Save(snapshot *SetupVerificationSnapsho
 
 	return true
 }
+
+type LocalSetupStateSnapshot struct {
+	OperatorAccountCount int
+	Policy               *OrganizationPolicySnapshot
+	VerificationSnapshot *SetupVerificationSnapshot
+}
+
+type LocalSetupStateLoader struct{}
+
+func (l *LocalSetupStateLoader) readOrganizationPolicy(path string) *OrganizationPolicySnapshot {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil
+	}
+
+	var result OrganizationPolicySnapshot
+
+	if err := json.Unmarshal(data, &result); err != nil {
+		return nil
+	}
+
+	return &result
+}
+
+func (l *LocalSetupStateLoader) readOperatorAccountCount(path string) int {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return 0
+	}
+
+	var result struct {
+		Accounts []json.RawMessage `json:"accounts"`
+	}
+
+	if err := json.Unmarshal(data, &result); err != nil {
+		return 0
+	}
+
+	return len(result.Accounts)
+}
+
+func (l *LocalSetupStateLoader) Load(storagePath string) *LocalSetupStateSnapshot {
+	rootedStorage := storagePath
+	var err error
+	if !filepath.IsAbs(storagePath) {
+		if rootedStorage, err = filepath.Abs(storagePath); err != nil {
+			return nil
+		}
+	}
+
+	var adminDirectory = filepath.Join(rootedStorage, "admin")
+	var operatorAccountsPath = filepath.Join(adminDirectory, "operator-accounts.json")
+	var organizationPolicyPath = filepath.Join(adminDirectory, "organization-policy.json")
+
+	store := NewSetupVerificationSnapshotStore(rootedStorage)
+
+	return &LocalSetupStateSnapshot{
+		OperatorAccountCount: l.readOperatorAccountCount(operatorAccountsPath),
+		Policy:               l.readOrganizationPolicy(organizationPolicyPath),
+		VerificationSnapshot: store.Load(),
+	}
+}
