@@ -74,6 +74,8 @@ func (g GatewayConfigFile) Save(config *GatewayConfig, configPath string) error 
 	return nil
 }
 
+var GatewaySetupArtifactsInstance = &GatewaySetupArtifacts{}
+
 type GatewaySetupArtifacts struct{}
 
 // BuildEnvExample 生成环境示例文件内容

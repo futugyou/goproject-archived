@@ -3,12 +3,16 @@ package core
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"net/url"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"sort"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/google/uuid"
 )
@@ -252,5 +256,267 @@ func (l *LocalSetupStateLoader) Load(storagePath string) *LocalSetupStateSnapsho
 		OperatorAccountCount: l.readOperatorAccountCount(operatorAccountsPath),
 		Policy:               l.readOrganizationPolicy(organizationPolicyPath),
 		VerificationSnapshot: store.Load(),
+	}
+}
+
+type TailscaleServeProbeOptions struct {
+	ForceInclude           bool
+	IdentityHeadersPresent bool
+	CheckCli               bool
+	CommandRunner          func(ctx context.Context, args string) TailscaleCommandResult
+}
+
+type TailscaleCommandResult struct {
+	ExitCode int
+	Output   string
+	Error    string
+}
+
+var TailscaleServeAdvisorInstance = &TailscaleServeAdvisor{}
+
+type TailscaleServeAdvisor struct{}
+
+func (t *TailscaleServeAdvisor) IsTailscaleServeConfigured(config GatewayConfig) bool {
+	return strings.EqualFold(config.Deployment.Mode, "tailscale-serve") ||
+		strings.EqualFold(config.Deployment.ReverseProxy, "tailscale-serve") ||
+		(config.Tailscale.Enabled && strings.EqualFold(config.Tailscale.Mode, "serve"))
+}
+
+func (t *TailscaleServeAdvisor) BuildLocalGatewayUrl(config GatewayConfig) string {
+	if u, err := url.Parse(config.Deployment.ExpectedLocalUrl); err == nil && u.IsAbs() {
+		if strings.EqualFold(u.Scheme, "http") || strings.EqualFold(u.Scheme, "https") {
+			return strings.TrimRight(u.String(), "/")
+		}
+	}
+
+	if IsLoopbackBind(config.BindAddress) {
+		return GatewaySetupArtifactsInstance.BuildReachableBaseUrl(config.BindAddress, config.Port)
+	}
+
+	return fmt.Sprintf("http://127.0.0.1:%d", config.Port)
+}
+
+func (t *TailscaleServeAdvisor) BuildSuggestedServeCommand(localGatewayUrl string) string {
+	return fmt.Sprintf("tailscale serve --bg %s", strings.TrimRight(localGatewayUrl, "/"))
+}
+
+func (t *TailscaleServeAdvisor) BuildStatus(ctx context.Context, config GatewayConfig, options *TailscaleServeProbeOptions) (*TailscaleServeStatusResponse, error) {
+	if options == nil {
+		options = &TailscaleServeProbeOptions{CheckCli: true}
+	}
+
+	if !options.ForceInclude && !options.IdentityHeadersPresent && !t.IsTailscaleServeConfigured(config) {
+		return nil, nil
+	}
+
+	localGatewayUrl := t.BuildLocalGatewayUrl(config)
+	publicBind := !IsLoopbackBind(config.BindAddress)
+	var warnings []string
+	cliDetected := false
+	tailnetReachability := "unknown"
+	serveDetected := "unknown"
+
+	if publicBind {
+		warnings = append(warnings, "Gateway appears to be bound publicly. Tailscale Serve usually works best with loopback binding.")
+	}
+
+	if options.IdentityHeadersPresent {
+		warnings = append(warnings, "Tailscale identity headers are not currently used for operator auth unless Tailscale auth is explicitly enabled.")
+	}
+
+	if options.CheckCli {
+		runner := options.CommandRunner
+		if runner == nil {
+			runner = t.runTailscale
+		}
+
+		// 1. 探测 tailscale status
+		statusResult := runner(ctx, "status")
+		cliDetected = statusResult.ExitCode != -127
+
+		if !cliDetected {
+			warnings = append(warnings, "Tailscale CLI was not found. Install Tailscale or configure Serve manually.")
+		} else {
+			if statusResult.ExitCode == 0 {
+				tailnetReachability = "ok"
+			} else {
+				tailnetReachability = "error"
+				warnings = append(warnings, "Tailscale daemon status could not be confirmed. Run 'tailscale status' and verify this device is connected to the expected tailnet.")
+			}
+
+			// 2. 探测 tailscale serve status
+			serveStatusResult := runner(ctx, "serve status")
+			serveDetected = t.classifyServeStatus(serveStatusResult, localGatewayUrl)
+			if serveDetected != "true" {
+				warnings = append(warnings, "Tailscale Serve status could not be confirmed. Run 'tailscale serve status' after enabling Serve.")
+			}
+		}
+	}
+
+	mode := "detected-by-request"
+	if t.IsTailscaleServeConfigured(config) {
+		mode = "tailscale-serve"
+	}
+
+	return &TailscaleServeStatusResponse{
+		Mode:                   mode,
+		LocalGatewayUrl:        localGatewayUrl,
+		SuggestedServeCommand:  t.BuildSuggestedServeCommand(localGatewayUrl),
+		ServeDetected:          serveDetected,
+		TailscaleCliDetected:   cliDetected,
+		TailnetReachability:    tailnetReachability,
+		IdentityHeadersPresent: options.IdentityHeadersPresent,
+		PublicBind:             publicBind,
+		Warnings:               warnings,
+	}, nil
+}
+
+func (t *TailscaleServeAdvisor) BuildDoctorCheck(status *TailscaleServeStatusResponse, offline bool) DoctorCheckItem {
+	item := DoctorCheckItem{
+		Id:       "tailscale_serve",
+		Label:    "Tailscale Serve advisory",
+		Category: "Network",
+		Detail:   t.buildStatusDetail(status),
+	}
+
+	if offline {
+		item.Status = "Skip"
+		item.Summary = "Tailscale Serve checks were skipped because offline mode is enabled."
+		item.NextStep = "Re-run without --offline to inspect local Tailscale CLI and Serve status."
+		return item
+	}
+
+	if len(status.Warnings) > 0 {
+		item.Status = "Warn"
+		item.Summary = "Tailscale Serve advisory checks found non-blocking warning(s)."
+		item.NextStep = "Review the Tailscale Serve deployment guide and confirm the gateway stays loopback-bound."
+		return item
+	}
+
+	item.Status = "Pass"
+	item.Summary = "Tailscale Serve advisory checks did not find blocking issues."
+	return item
+}
+
+func (t *TailscaleServeAdvisor) buildStatusDetail(status *TailscaleServeStatusResponse) string {
+	var sb strings.Builder
+	sb.WriteString(fmt.Sprintf("- mode: %s\n", status.Mode))
+	sb.WriteString(fmt.Sprintf("- local_gateway: %s\n", status.LocalGatewayUrl))
+	sb.WriteString(fmt.Sprintf("- serve_detected: %s\n", status.ServeDetected))
+	sb.WriteString(fmt.Sprintf("- tailscale_cli_detected: %t\n", status.TailscaleCliDetected))
+	sb.WriteString(fmt.Sprintf("- tailnet_reachability: %s\n", status.TailnetReachability))
+	sb.WriteString(fmt.Sprintf("- identity_headers_present: %t\n", status.IdentityHeadersPresent))
+	sb.WriteString(fmt.Sprintf("- public_bind: %t\n", status.PublicBind))
+	sb.WriteString(fmt.Sprintf("- suggested_command: %s", status.SuggestedServeCommand))
+
+	for _, warning := range status.Warnings {
+		sb.WriteString(fmt.Sprintf("\n- warning: %s", warning))
+	}
+	return sb.String()
+}
+
+func (t *TailscaleServeAdvisor) classifyServeStatus(result TailscaleCommandResult, localGatewayUrl string) string {
+	if result.ExitCode != 0 {
+		return "unknown"
+	}
+
+	text := strings.TrimSpace(result.Output + "\n" + result.Error)
+	if text == "" {
+		return "unknown"
+	}
+
+	lowerText := strings.ToLower(text)
+	if strings.Contains(lowerText, "no serve") ||
+		strings.Contains(lowerText, "not running") ||
+		strings.Contains(lowerText, "not enabled") {
+		return "false"
+	}
+
+	if t.serveStatusTargetsLocalGateway(text, localGatewayUrl) {
+		return "true"
+	}
+
+	return "unknown"
+}
+
+func (t *TailscaleServeAdvisor) serveStatusTargetsLocalGateway(text string, localGatewayUrl string) bool {
+	if strings.Contains(strings.ToLower(text), strings.ToLower(localGatewayUrl)) {
+		return true
+	}
+
+	u, err := url.Parse(localGatewayUrl)
+	if err != nil {
+		return false
+	}
+
+	port := u.Port()
+	if port == "" {
+		return false
+	}
+
+	targets := []string{
+		"127.0.0.1:" + port,
+		"localhost:" + port,
+		"[::1]:" + port,
+	}
+
+	lowerText := strings.ToLower(text)
+	for _, target := range targets {
+		if strings.Contains(lowerText, strings.ToLower(target)) {
+			return true
+		}
+	}
+
+	return false
+}
+
+func (t *TailscaleServeAdvisor) runTailscale(ctx context.Context, arguments string) TailscaleCommandResult {
+	// 创建 3 秒硬超时的 Context
+	subCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
+	defer cancel()
+
+	args := strings.Fields(arguments)
+	cmd := exec.CommandContext(subCtx, "tailscale", args...)
+
+	var stdoutBuf, stderrBuf strings.Builder
+	cmd.Stdout = &stdoutBuf
+	cmd.Stderr = &stderrBuf
+
+	err := cmd.Run()
+
+	// 1. 判断是否因找不到 CLI 工具报错 (对应 Win32Exception)
+	if err != nil && errors.Is(err, exec.ErrNotFound) {
+		return TailscaleCommandResult{
+			ExitCode: -127,
+			Error:    "tailscale command not found",
+		}
+	}
+
+	// 2. 判断是否超时被杀 (对应 OperationCanceledException)
+	if subCtx.Err() == context.DeadlineExceeded {
+		return TailscaleCommandResult{
+			ExitCode: 124,
+			Error:    "tailscale command timed out",
+		}
+	}
+
+	// 3. 正常执行完毕，提取 ExitCode
+	exitCode := 0
+	if err != nil {
+		if exitError, ok := err.(*exec.ExitError); ok {
+			exitCode = exitError.ExitCode()
+		} else {
+			// 其他非进程退出引发的错误（例如无权限等）
+			return TailscaleCommandResult{
+				ExitCode: 1,
+				Error:    err.Error(),
+			}
+		}
+	}
+
+	return TailscaleCommandResult{
+		ExitCode: exitCode,
+		Output:   stdoutBuf.String(),
+		Error:    stderrBuf.String(),
 	}
 }
