@@ -218,6 +218,7 @@ type GatewayConfig struct {
 	Learning                             LearningConfig                 `json:"learning"`
 	Webhooks                             WebhooksConfig                 `json:"webhooks"`
 	Routing                              RoutingConfig                  `json:"routing"`
+	DynamicTurnRouting                   DynamicTurnRoutingConfig       `json:"dynamic_turn_routing"`
 	Deployment                           *DeploymentConfig              `json:"deployment"`
 	Tailscale                            TailscaleConfig                `json:"tailscale"`
 	GmailPubSub                          GmailPubSubConfig              `json:"gmail_pub_sub"`

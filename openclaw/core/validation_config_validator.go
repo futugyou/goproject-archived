@@ -246,3 +246,194 @@ func (c *ConfigValidator) validateWorkflows(config *WorkflowsConfig, errorMsg *[
 		}
 	}
 }
+
+func (c *ConfigValidator) validateApertureProviderConfig(path, endpointPropertyName, provider, endpoint, apiKey, authMode string, errorMsg *[]string) {
+	if provider != "aperture" {
+		return
+	}
+
+	if IsBlank(endpoint) {
+		*errorMsg = append(*errorMsg, fmt.Sprintf("%s.%s must be set when Provider='aperture'.", path, endpointPropertyName))
+	} else {
+		baseURL, err := url.Parse(endpoint)
+		if err != nil || (baseURL != nil && (!baseURL.IsAbs() || (baseURL.Scheme != "http" && baseURL.Scheme != "https"))) {
+			*errorMsg = append(*errorMsg, fmt.Sprintf("%s.%s must be an absolute http(s) URL when Provider='aperture'.", path, endpointPropertyName))
+		}
+	}
+
+	if !c.isTailnetIdentityAuth(authMode) && IsBlank(apiKey) {
+		*errorMsg = append(*errorMsg, fmt.Sprintf("%s.ApiKey must be set when Provider='aperture' and AuthMode is not 'tailnet-identity'.", path))
+	}
+}
+
+func (c *ConfigValidator) resolveConfiguredPath(path string) string {
+	return ConfigPathResolverInstance.Resolve(path)
+}
+
+func (c *ConfigValidator) validateDynamicTurnRoutingTier(tierName string, target *DynamicTurnRoutingTierTarget, profileIds map[string]struct{}, errorMsg *[]string) {
+	if target == nil || IsBlank(target.ModelProfileId) || profileIds == nil {
+		return
+	}
+
+	if _, ok := profileIds[target.ModelProfileId]; ok {
+		return
+	}
+	*errorMsg = append(*errorMsg, fmt.Sprintf("DynamicTurnRouting.%s.ModelProfileId '%s' does not exist in Models.Profiles.", tierName, target.ModelProfileId))
+}
+
+func (c *ConfigValidator) builtInLlmProvidersContains(provider string) bool {
+	_, ok := BuiltInLlmProviders[provider]
+	return ok
+}
+
+func (c *ConfigValidator) validateModelProfiles(config *GatewayConfig, errorMsg *[]string, pluginBackedProvidersPossible bool) {
+	hasExplicitProfiles := len(config.Models.Profiles) > 0
+	profileIds := make(map[string]struct{})
+
+	for _, profile := range config.Models.Profiles {
+		if strings.TrimSpace(profile.Id) == "" {
+			*errorMsg = append(*errorMsg, "Models.Profiles[].Id must be set.")
+			continue
+		}
+
+		// 检查重复 ID（不区分大小写）
+		idLower := strings.ToLower(profile.Id)
+		if _, exists := profileIds[idLower]; exists {
+			*errorMsg = append(*errorMsg, fmt.Sprintf("Models.Profiles contains duplicate id '%s'.", profile.Id))
+		} else {
+			profileIds[idLower] = struct{}{}
+		}
+
+		if strings.TrimSpace(profile.Provider) == "" {
+			*errorMsg = append(*errorMsg, fmt.Sprintf("Models.Profiles.%s.Provider must be set.", profile.Id))
+		} else if !pluginBackedProvidersPossible && !c.builtInLlmProvidersContains(profile.Provider) {
+			*errorMsg = append(*errorMsg, fmt.Sprintf("Models.Profiles.%s.Provider '%s' is not a supported built-in provider.", profile.Id, profile.Provider))
+		}
+
+		if strings.TrimSpace(profile.Model) == "" {
+			*errorMsg = append(*errorMsg, fmt.Sprintf("Models.Profiles.%s.Model must be set.", profile.Id))
+		}
+
+		if strings.TrimSpace(profile.AuthMode) != "" && !c.isValidProviderAuthMode(profile.AuthMode) {
+			*errorMsg = append(*errorMsg, fmt.Sprintf("Models.Profiles.%s.AuthMode must be 'bearer' or 'tailnet-identity'.", profile.Id))
+		} else if c.isTailnetIdentityAuth(profile.AuthMode) && !c.supportsTailnetIdentity(profile.Provider) {
+			*errorMsg = append(*errorMsg, fmt.Sprintf("Models.Profiles.%s.AuthMode 'tailnet-identity' is not supported for provider '%s'.", profile.Id, profile.Provider))
+		}
+
+		c.validateApertureProviderConfig(
+			fmt.Sprintf("Models.Profiles.%s", profile.Id),
+			"BaseUrl",
+			profile.Provider,
+			profile.BaseUrl,
+			profile.ApiKey,
+			profile.AuthMode,
+			errorMsg,
+		)
+
+		if strings.TrimSpace(profile.PresetId) != "" {
+			preset, exists := TryGetLocalModelPackage(profile.PresetId)
+			if !exists {
+				*errorMsg = append(*errorMsg, fmt.Sprintf("Models.Profiles.%s.PresetId '%s' is not a known local model preset.", profile.Id, profile.PresetId))
+			} else if !strings.EqualFold(profile.Provider, preset.Provider) {
+				*errorMsg = append(*errorMsg, fmt.Sprintf("Models.Profiles.%s.PresetId '%s' requires Provider='%s'.", profile.Id, profile.PresetId, preset.Provider))
+			}
+		}
+
+		if profile.Capabilities != nil {
+			if profile.Capabilities.MaxContextTokens < 0 {
+				*errorMsg = append(*errorMsg, fmt.Sprintf("Models.Profiles.%s.Capabilities.MaxContextTokens must be >= 0.", profile.Id))
+			}
+			if profile.Capabilities.MaxOutputTokens < 0 {
+				*errorMsg = append(*errorMsg, fmt.Sprintf("Models.Profiles.%s.Capabilities.MaxOutputTokens must be >= 0.", profile.Id))
+			}
+		}
+
+		isDynamicProvider := pluginBackedProvidersPossible && !c.builtInLlmProvidersContains(profile.Provider)
+		c.validatePromptCaching(
+			fmt.Sprintf("Models.Profiles.%s.PromptCaching", profile.Id),
+			profile.Provider,
+			profile.PromptCaching,
+			errorMsg,
+			isDynamicProvider,
+		)
+	}
+
+	if !hasExplicitProfiles {
+		profileIds["default"] = struct{}{}
+	}
+
+	if strings.TrimSpace(config.Models.DefaultProfile) != "" {
+		if _, exists := profileIds[strings.ToLower(config.Models.DefaultProfile)]; !exists {
+			*errorMsg = append(*errorMsg, fmt.Sprintf("Models.DefaultProfile '%s' does not exist in Models.Profiles.", config.Models.DefaultProfile))
+		}
+	}
+
+	if config.DynamicTurnRouting.Enabled {
+		policy := config.DynamicTurnRouting.Policy
+		tierMap := config.DynamicTurnRouting.Policy.Tiers
+
+		if policy.MarginUpgradeThreshold < 0.0 || policy.MarginUpgradeThreshold > 1.0 {
+			*errorMsg = append(*errorMsg, "DynamicTurnRouting.Policy.MarginUpgradeThreshold must be between 0 and 1.")
+		}
+
+		if policy.R1RescueThreshold < 0.0 || policy.R1RescueThreshold > 1.0 {
+			*errorMsg = append(*errorMsg, "DynamicTurnRouting.Policy.R1RescueThreshold must be between 0 and 1.")
+		}
+
+		if policy.UnderRoutingSafetyThreshold < 0.0 || policy.UnderRoutingSafetyThreshold > 1.0 {
+			*errorMsg = append(*errorMsg, "DynamicTurnRouting.Policy.UnderRoutingSafetyThreshold must be between 0 and 1.")
+		}
+
+		if policy.DeepConversationTurnIndexThreshold < 0 {
+			*errorMsg = append(*errorMsg, "DynamicTurnRouting.Policy.DeepConversationTurnIndexThreshold must be >= 0.")
+		}
+
+		classifierPath := config.DynamicTurnRouting.Assets.ClassifierModelPath
+		embeddingPath := config.DynamicTurnRouting.Assets.EmbeddingModelPath
+		tokenizerPath := config.DynamicTurnRouting.Assets.TokenizerPath
+
+		usesBundlePath := strings.TrimSpace(config.DynamicTurnRouting.BundlePath) != ""
+		if !usesBundlePath {
+			if strings.TrimSpace(classifierPath) != "" && strings.TrimSpace(embeddingPath) == "" {
+				*errorMsg = append(*errorMsg, "DynamicTurnRouting requires an embedding model when classifier routing is enabled.")
+			}
+
+			if strings.TrimSpace(embeddingPath) != "" && strings.TrimSpace(tokenizerPath) == "" {
+				*errorMsg = append(*errorMsg, "DynamicTurnRouting requires a tokenizer path when embeddings are configured.")
+			}
+		}
+
+		c.validateDynamicTurnRoutingTier("Policy.Tiers.T0", tierMap.T0, profileIds, errorMsg)
+		c.validateDynamicTurnRoutingTier("Policy.Tiers.T1", tierMap.T1, profileIds, errorMsg)
+		c.validateDynamicTurnRoutingTier("Policy.Tiers.T2", tierMap.T2, profileIds, errorMsg)
+		c.validateDynamicTurnRoutingTier("Policy.Tiers.T3", tierMap.T3, profileIds, errorMsg)
+	}
+
+	for _, profile := range config.Models.Profiles {
+		for _, fallbackId := range profile.FallbackProfileIds {
+			if strings.TrimSpace(fallbackId) == "" {
+				continue
+			}
+			if _, exists := profileIds[strings.ToLower(fallbackId)]; !exists {
+				*errorMsg = append(*errorMsg, fmt.Sprintf("Models.Profiles.%s.FallbackProfileIds contains unknown profile '%s'.", profile.Id, fallbackId))
+			}
+		}
+	}
+
+	for routeId, route := range config.Routing.Routes {
+		if strings.TrimSpace(route.ModelProfileId) != "" {
+			if _, exists := profileIds[strings.ToLower(route.ModelProfileId)]; !exists {
+				*errorMsg = append(*errorMsg, fmt.Sprintf("Routing.Routes.%s.ModelProfileId '%s' does not exist in Models.Profiles.", routeId, route.ModelProfileId))
+			}
+		}
+
+		for _, fallbackId := range route.FallbackModelProfileIds {
+			if strings.TrimSpace(fallbackId) == "" {
+				continue
+			}
+			if _, exists := profileIds[strings.ToLower(fallbackId)]; !exists {
+				*errorMsg = append(*errorMsg, fmt.Sprintf("Routing.Routes.%s.FallbackModelProfileIds contains unknown profile '%s'.", routeId, fallbackId))
+			}
+		}
+	}
+}
