@@ -203,6 +203,8 @@ type LocalSetupStateSnapshot struct {
 	VerificationSnapshot *SetupVerificationSnapshot
 }
 
+var LocalSetupStateLoaderInstance = &LocalSetupStateLoader{}
+
 type LocalSetupStateLoader struct{}
 
 func (l *LocalSetupStateLoader) readOrganizationPolicy(path string) *OrganizationPolicySnapshot {
