@@ -271,6 +271,25 @@ func NormalizeCronExpression(expression string) string {
 	}
 }
 
+func IsValidCronExpression(expression string) bool {
+	if IsBlank(expression) {
+		return false
+	}
+
+	expression = NormalizeCronExpression(expression)
+
+	var parts = strings.Split(expression, " ")
+	if len(parts) != 5 {
+		return false
+	}
+
+	return IsValidCronField(parts[0], 0, 59) &&
+		IsValidCronField(parts[1], 0, 23) &&
+		IsValidCronField(parts[2], 1, 31) &&
+		IsValidCronField(parts[3], 1, 12) &&
+		IsValidCronField(parts[4], 0, 6)
+}
+
 func IsValidCronField(field string, min, max int) bool {
 	if IsBlank(field) {
 		return false
