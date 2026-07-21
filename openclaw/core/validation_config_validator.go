@@ -546,3 +546,526 @@ func (c *ConfigValidator) validateUrlSafety(path string, config *UrlSafetyConfig
 		}
 	}
 }
+
+func (c *ConfigValidator) validateCodingBackends(config *CodingBackendsConfig, errorMsg *[]string) {
+	if config == nil {
+		return
+	}
+	backendIds := map[string]struct{}{}
+
+	for _, backend := range config.EnumerateConfiguredBackends {
+		if IsBlank(backend.BackendId) {
+			*errorMsg = append(*errorMsg, "CodingBackends entries must set BackendId.")
+			continue
+		}
+
+		if _, ok := backendIds[backend.BackendId]; ok {
+			*errorMsg = append(*errorMsg, fmt.Sprintf("CodingBackends backend id '%s' must be unique.", backend.BackendId))
+		}
+		backendIds[backend.BackendId] = struct{}{}
+
+		if backend.TimeoutSeconds < 1 {
+			*errorMsg = append(*errorMsg, fmt.Sprintf("CodingBackends.%s.TimeoutSeconds must be >= 1 (got {backend.TimeoutSeconds}).", backend.BackendId))
+		}
+
+		if IsBlank(backend.Provider) {
+			*errorMsg = append(*errorMsg, fmt.Sprintf("CodingBackends.%s.Provider must be set.", backend.BackendId))
+		}
+
+		if !backend.WriteEnabled && !backend.ReadOnlyByDefault {
+			*errorMsg = append(*errorMsg, fmt.Sprintf("CodingBackends.%s must set ReadOnlyByDefault=true when WriteEnabled=false.", backend.BackendId))
+		}
+
+		if backend.RequireWorkspace && !IsBlank(backend.DefaultWorkspacePath) && !filepath.IsAbs(backend.DefaultWorkspacePath) {
+			*errorMsg = append(*errorMsg, fmt.Sprintf("CodingBackends.%s.DefaultWorkspacePath must be absolute when set.", backend.BackendId))
+		}
+
+		var credentialSourceCount = 0
+		if !IsBlank(backend.Credentials.SecretRef) {
+			credentialSourceCount++
+		}
+		if !IsBlank(backend.Credentials.TokenFilePath) {
+			credentialSourceCount++
+		}
+		if !IsBlank(backend.Credentials.ConnectedAccountId) {
+			credentialSourceCount++
+		}
+
+		if credentialSourceCount > 1 {
+			*errorMsg = append(*errorMsg, fmt.Sprintf("CodingBackends.%s.Credentials must specify at most one of SecretRef, TokenFilePath, or ConnectedAccountId.", backend.BackendId))
+		}
+	}
+}
+
+func (c *ConfigValidator) validateFractalMemory(config *FractalMemoryConfig, errorMsg *[]string) {
+	if config == nil {
+		return
+	}
+	if !slices.Contains([]string{"mcp"}, config.Mode) {
+		*errorMsg = append(*errorMsg, "Memory.Fractal.Mode must be 'mcp'.")
+	}
+
+	if config.Enabled && IsBlank(config.McpCommand) {
+		*errorMsg = append(*errorMsg, "Memory.Fractal.McpCommand must be set when Fractal Memory is enabled.")
+	}
+
+	if config.DefaultDepth < 0 || config.DefaultDepth > 3 {
+		*errorMsg = append(*errorMsg, fmt.Sprintf("Memory.Fractal.DefaultDepth must be between 0 and 3 (got %d).", config.DefaultDepth))
+	}
+
+	if !slices.Contains([]string{"index", "state", "timeline", "decisions", "children"}, config.DefaultView) {
+		*errorMsg = append(*errorMsg, "Memory.Fractal.DefaultView must be one of 'index', 'state', 'timeline', 'decisions', or 'children'.")
+	}
+
+	if !slices.Contains([]string{"compact", "standard", "verbose"}, config.DefaultExportMode) {
+		*errorMsg = append(*errorMsg, "Memory.Fractal.DefaultExportMode must be one of 'compact', 'standard', or 'verbose'.")
+	}
+
+	if !slices.Contains([]string{"off", "manual", "pulse", "auto"}, config.AutoContextMode) {
+		*errorMsg = append(*errorMsg, "Memory.Fractal.AutoContextMode must be one of 'off', 'manual', 'pulse', or 'auto'.")
+	}
+
+	if config.MaxContextChars < 1024 {
+		*errorMsg = append(*errorMsg, fmt.Sprintf("Memory.Fractal.MaxContextChars must be >= 1024 (got %d).", config.MaxContextChars))
+	}
+
+	if config.MaxContextTokens < 256 {
+		*errorMsg = append(*errorMsg, fmt.Sprintf("Memory.Fractal.MaxContextTokens must be >= 256 (got %d).", config.MaxContextTokens))
+	}
+
+}
+
+func (c *ConfigValidator) Validate(config *GatewayConfig) []string {
+	errorMsg := []string{}
+	if config == nil {
+		return errorMsg
+	}
+
+	// Port
+	if config.Port < 1 || config.Port > 65535 {
+		errorMsg = append(errorMsg, fmt.Sprintf("Port must be between 1 and 65535 (got %d).", config.Port))
+	}
+
+	// LLM
+	if IsBlank(config.Llm.Model) {
+		errorMsg = append(errorMsg, "Llm.Model must be set.")
+	}
+
+	var pluginBackedProvidersPossible = config.Plugins.Enabled || config.Plugins.DynamicNative.Enabled || config.Plugins.Mcp.Enabled
+	_, ok := BuiltInLlmProviders[config.Llm.Provider]
+	if !pluginBackedProvidersPossible && !ok {
+		errorMsg = append(errorMsg, fmt.Sprintf("Llm.Provider '%s' is not a supported built-in provider.", config.Llm.Provider))
+	}
+
+	if config.Llm.MaxTokens < 1 {
+		errorMsg = append(errorMsg, fmt.Sprintf("Llm.MaxTokens must be >= 1 (got %d).", config.Llm.MaxTokens))
+	}
+
+	if config.Llm.Temperature < 0 || config.Llm.Temperature > 2 {
+		errorMsg = append(errorMsg, fmt.Sprintf("Llm.Temperature must be between 0 and 2 (got %f).", config.Llm.Temperature))
+	}
+
+	if config.Llm.TimeoutSeconds < 0 {
+		errorMsg = append(errorMsg, fmt.Sprintf("Llm.TimeoutSeconds must be >= 0 (got %d).", config.Llm.TimeoutSeconds))
+	}
+
+	if config.Llm.RetryCount < 0 {
+		errorMsg = append(errorMsg, fmt.Sprintf("Llm.RetryCount must be >= 0 (got %d).", config.Llm.RetryCount))
+	}
+
+	if config.LocalInference.Port < 0 || config.LocalInference.Port > 65535 {
+		errorMsg = append(errorMsg, fmt.Sprintf("LocalInference.Port must be between 0 and 65535 (got %d).", config.LocalInference.Port))
+	}
+
+	if config.LocalInference.ContextSize < 0 {
+		errorMsg = append(errorMsg, fmt.Sprintf("LocalInference.ContextSize must be >= 0 (got %d).", config.LocalInference.ContextSize))
+	}
+
+	if config.LocalInference.StartupTimeoutSeconds < 1 {
+		errorMsg = append(errorMsg, fmt.Sprintf("LocalInference.StartupTimeoutSeconds must be >= 1 (got %d).", config.LocalInference.StartupTimeoutSeconds))
+	}
+
+	if config.LocalInference.ReasoningBudget < -1 {
+		errorMsg = append(errorMsg, fmt.Sprintf("LocalInference.ReasoningBudget must be >= -1 (got %d).", config.LocalInference.ReasoningBudget))
+	}
+
+	if config.Llm.CircuitBreakerThreshold < 1 {
+		errorMsg = append(errorMsg, fmt.Sprintf("Llm.CircuitBreakerThreshold must be >= 1 (got %d).", config.Llm.CircuitBreakerThreshold))
+	}
+
+	if config.Llm.CircuitBreakerCooldownSeconds < 1 {
+		errorMsg = append(errorMsg, fmt.Sprintf("Llm.CircuitBreakerCooldownSeconds must be >= 1 (got %d).", config.Llm.CircuitBreakerCooldownSeconds))
+	}
+
+	if !c.isValidProviderAuthMode(config.Llm.AuthMode) {
+		errorMsg = append(errorMsg, "Llm.AuthMode must be 'bearer' or 'tailnet-identity'.")
+	} else if c.isTailnetIdentityAuth(config.Llm.AuthMode) && !c.supportsTailnetIdentity(config.Llm.Provider) {
+		errorMsg = append(errorMsg, fmt.Sprintf("Llm.AuthMode 'tailnet-identity' is not supported for provider '%s'.", config.Llm.Provider))
+	}
+
+	c.validateApertureProviderConfig("Llm", "Endpoint", config.Llm.Provider, config.Llm.Endpoint, config.Llm.ApiKey, config.Llm.AuthMode, &errorMsg)
+	c.validatePromptCaching("Llm.PromptCaching", config.Llm.Provider, config.Llm.PromptCaching, &errorMsg, false)
+	c.validateModelProfiles(config, &errorMsg, pluginBackedProvidersPossible)
+
+	// Memory
+	mp := config.Memory.Provider
+	if mp != "file" && mp != "sqlite" && mp != "mempalace" {
+		errorMsg = append(errorMsg, fmt.Sprintf("Memory.Provider '%s' must be 'file', 'sqlite', or 'mempalace'.", config.Memory.Provider))
+	}
+
+	if IsBlank(config.Memory.StoragePath) {
+		errorMsg = append(errorMsg, "Memory.StoragePath must be set.")
+	}
+	if config.Memory.MaxHistoryTurns < 1 {
+		errorMsg = append(errorMsg, fmt.Sprintf("Memory.MaxHistoryTurns must be >= 1 (got %d).", config.Memory.MaxHistoryTurns))
+	}
+	if config.Memory.EnableCompaction {
+		if config.Memory.CompactionThreshold < 4 {
+			errorMsg = append(errorMsg, fmt.Sprintf("Memory.CompactionThreshold must be >= 4 (got %d).", config.Memory.CompactionThreshold))
+		}
+		if config.Memory.CompactionKeepRecent < 2 {
+			errorMsg = append(errorMsg, fmt.Sprintf("Memory.CompactionKeepRecent must be >= 2 (got %d).", config.Memory.CompactionKeepRecent))
+		}
+		if config.Memory.CompactionKeepRecent >= config.Memory.CompactionThreshold {
+			errorMsg = append(errorMsg, "Memory.CompactionKeepRecent must be less than CompactionThreshold.")
+		}
+		if config.Memory.CompactionThreshold <= config.Memory.MaxHistoryTurns {
+			errorMsg = append(errorMsg, "Memory.CompactionThreshold must be greater than MaxHistoryTurns when EnableCompaction=true.")
+		}
+	}
+
+	c.validateFractalMemory(config.Memory.Fractal, &errorMsg)
+
+	if config.Memory.Retention.SweepIntervalMinutes < 5 {
+		errorMsg = append(errorMsg, fmt.Sprintf("Memory.Retention.SweepIntervalMinutes must be >= 5 (got %d).", config.Memory.Retention.SweepIntervalMinutes))
+	}
+	if config.Memory.Retention.SessionTtlDays < 1 {
+		errorMsg = append(errorMsg, fmt.Sprintf("Memory.Retention.SessionTtlDays must be >= 1 (got %d).", config.Memory.Retention.SessionTtlDays))
+	}
+	if config.Memory.Retention.BranchTtlDays < 1 {
+		errorMsg = append(errorMsg, fmt.Sprintf("Memory.Retention.BranchTtlDays must be >= 1 (got %d).", config.Memory.Retention.BranchTtlDays))
+	}
+	if config.Memory.Retention.ArchiveRetentionDays < 1 {
+		errorMsg = append(errorMsg, fmt.Sprintf("Memory.Retention.ArchiveRetentionDays must be >= 1 (got %d).", config.Memory.Retention.ArchiveRetentionDays))
+	}
+	if config.Memory.Retention.MaxItemsPerSweep < 10 {
+		errorMsg = append(errorMsg, fmt.Sprintf("Memory.Retention.MaxItemsPerSweep must be >= 10 (got %d).", config.Memory.Retention.MaxItemsPerSweep))
+	}
+
+	// Sessions
+	if config.MaxConcurrentSessions < 1 {
+		errorMsg = append(errorMsg, fmt.Sprintf("MaxConcurrentSessions must be >= 1 (got %d).", config.MaxConcurrentSessions))
+	}
+	if config.SessionTimeoutMinutes < 1 {
+		errorMsg = append(errorMsg, fmt.Sprintf("SessionTimeoutMinutes must be >= 1 (got %d).", config.SessionTimeoutMinutes))
+	}
+
+	// WebSocket
+	if config.WebSocket.MaxMessageBytes < 256 {
+		errorMsg = append(errorMsg, fmt.Sprintf("WebSocket.MaxMessageBytes must be >= 256 (got %d).", config.WebSocket.MaxMessageBytes))
+	}
+	if config.WebSocket.MaxConnections < 1 {
+		errorMsg = append(errorMsg, fmt.Sprintf("WebSocket.MaxConnections must be >= 1 (got %d).", config.WebSocket.MaxConnections))
+	}
+	if config.WebSocket.MaxConnectionsPerIp < 1 {
+		errorMsg = append(errorMsg, fmt.Sprintf("WebSocket.MaxConnectionsPerIp must be >= 1 (got %d).", config.WebSocket.MaxConnectionsPerIp))
+	}
+
+	// Tooling
+	if config.Tooling.ToolTimeoutSeconds < 0 {
+		errorMsg = append(errorMsg, fmt.Sprintf("Tooling.ToolTimeoutSeconds must be >= 0 (got %d).", config.Tooling.ToolTimeoutSeconds))
+	}
+
+	c.validateExternalCli(&config.ExternalCli, &errorMsg)
+
+	c.validateUrlSafety("Tooling.UrlSafety", &config.Tooling.UrlSafety, &errorMsg)
+
+	if config.Plugins.Native.WebFetch.UrlSafety != nil {
+		c.validateUrlSafety("Plugins.Native.WebFetch.UrlSafety", config.Plugins.Native.WebFetch.UrlSafety, &errorMsg)
+	}
+
+	if config.Tooling.WorkspaceOnly {
+		var resolvedWorkspaceRoot = c.resolveConfiguredPath(config.Tooling.WorkspaceRoot)
+		if IsBlank(resolvedWorkspaceRoot) {
+			errorMsg = append(errorMsg, "Tooling.WorkspaceRoot must resolve to a non-empty absolute path when WorkspaceOnly=true.")
+		} else if !filepath.IsAbs(resolvedWorkspaceRoot) {
+			errorMsg = append(errorMsg, "Tooling.WorkspaceRoot must resolve to an absolute path when WorkspaceOnly=true.")
+		}
+	}
+
+	c.validateRootSet("Tooling.AllowedReadRoots", config.Tooling.AllowedReadRoots, &errorMsg)
+	c.validateRootSet("Tooling.AllowedWriteRoots", config.Tooling.AllowedWriteRoots, &errorMsg)
+
+	// Sandbox
+	var sandboxProvider = SandboxProviderNamesNormalize(config.Sandbox.Provider)
+	if sandboxProvider != SandboxProviderNames_None && sandboxProvider != SandboxProviderNames_OpenSandbox {
+		errorMsg = append(errorMsg, "Sandbox.Provider must be 'None' or 'OpenSandbox'.")
+	}
+
+	if config.Sandbox.DefaultTTL < 1 {
+		errorMsg = append(errorMsg, fmt.Sprintf("Sandbox.DefaultTTL must be >= 1 (got %d).", config.Sandbox.DefaultTTL))
+	}
+
+	if sandboxProvider == SandboxProviderNames_OpenSandbox && IsBlank(config.Sandbox.Endpoint) {
+		errorMsg = append(errorMsg, "Sandbox.Endpoint must be set when Sandbox.Provider='OpenSandbox'.")
+	}
+
+	for toolName, toolConfig := range config.Sandbox.Tools {
+		if !IsBlank(toolConfig.Mode) {
+			if _, ok := TryParseMode(toolConfig.Mode); !ok {
+				errorMsg = append(errorMsg, fmt.Sprintf("Sandbox.Tools.%s.Mode must be 'None', 'Prefer', or 'Require'.", toolName))
+			}
+		}
+
+		if toolConfig.TTL != nil && (*toolConfig.TTL <= 0) {
+			errorMsg = append(errorMsg, fmt.Sprintf("Sandbox.Tools.%s.TTL must be >= 1 when set (got %d).", toolName, *toolConfig.TTL))
+		}
+
+		if sandboxProvider == SandboxProviderNames_OpenSandbox && ResolveMode(config, toolName, SandboxProviderNames_None) != SandboxProviderNames_None && IsBlank(toolConfig.Template) {
+			errorMsg = append(errorMsg, fmt.Sprintf("Sandbox.Tools.%s.Template must be set when sandboxing is enabled for that tool.", toolName))
+		}
+	}
+
+	if sandboxProvider == SandboxProviderNames_OpenSandbox {
+
+		for _, candidate := range EnumerateBuiltInCandidates(config) {
+			if ResolveMode(config, candidate.ToolName, candidate.DefaultMode) != SandboxProviderNames_None && IsBlank(ResolveTemplate(config, candidate.ToolName)) {
+				errorMsg = append(errorMsg, fmt.Sprintf("Sandbox.Tools.%s.Template must be set because %s defaults to sandbox mode '%s'.", candidate.ToolName, candidate.ToolName, ResolveMode(config, candidate.ToolName, candidate.DefaultMode)))
+			}
+		}
+	}
+
+	c.validateCodingBackends(&config.CodingBackends, &errorMsg)
+
+	// Delegation
+	if config.Delegation.Enabled {
+		if config.Delegation.MaxDepth < 1 {
+			errorMsg = append(errorMsg, fmt.Sprintf("Delegation.MaxDepth must be >= 1 (got %d).", config.Delegation.MaxDepth))
+		}
+		if len(config.Delegation.Profiles) == 0 {
+			errorMsg = append(errorMsg, "Delegation is enabled but no profiles are configured.")
+		}
+		for name, profile := range config.Delegation.Profiles {
+			if IsBlank(profile.Name) {
+				errorMsg = append(errorMsg, fmt.Sprintf("Delegation profile '%s' has no Name.", name))
+			}
+			if profile.MaxIterations < 1 {
+				errorMsg = append(errorMsg, fmt.Sprintf("Delegation profile '%s' has MaxIterations < 1.", name))
+			}
+		}
+	}
+
+	c.validateWorkflows(&config.Workflows, &errorMsg)
+
+	// Middleware
+	if config.SessionTokenBudget < 0 {
+		errorMsg = append(errorMsg, fmt.Sprintf("SessionTokenBudget must be >= 0 (got %d).", config.SessionTokenBudget))
+	}
+	if config.SessionRateLimitPerMinute < 0 {
+		errorMsg = append(errorMsg, fmt.Sprintf("SessionRateLimitPerMinute must be >= 0 (got %d).", config.SessionRateLimitPerMinute))
+	}
+
+	// Plugin bridge transport
+	var transportMode = config.Plugins.Transport.Mode
+	if IsBlank(transportMode) {
+		transportMode = "stdio"
+	}
+	if transportMode != "stdio" && transportMode != "socket" && transportMode != "hybrid" {
+		errorMsg = append(errorMsg, "Plugins.Transport.Mode must be 'stdio', 'socket', or 'hybrid'.")
+	}
+
+	var runtimeOrchestrator = RuntimeOrchestratorNormalize(config.Runtime.Orchestrator)
+	if runtimeOrchestrator != RuntimeOrchestratorNative && runtimeOrchestrator != RuntimeOrchestratorMaf {
+		errorMsg = append(errorMsg, "Runtime.Orchestrator must be 'native' or 'maf'.")
+	}
+
+	c.validateNotionConfig(&config.Plugins.Native.Notion, &errorMsg)
+	// MCP plugin servers
+	if config.Plugins.Mcp.Enabled {
+		if config.Plugins.Mcp.Servers == nil {
+			errorMsg = append(errorMsg, "Plugins.Mcp.Servers must be provided when MCP is enabled.")
+		} else {
+			for serverId, server := range config.Plugins.Mcp.Servers {
+				if !server.Enabled {
+					continue
+				}
+				var transport = server.NormalizeTransport()
+				if transport != "stdio" && transport != "http" {
+					errorMsg = append(errorMsg, fmt.Sprintf("Plugins.Mcp.Servers.%s.Transport must be 'stdio' or 'http'.", serverId))
+					continue
+				}
+
+				if server.StartupTimeoutSeconds < 1 {
+					errorMsg = append(errorMsg, fmt.Sprintf("Plugins.Mcp.Servers.%s.StartupTimeoutSeconds must be >= 1 (got %d).", serverId, server.StartupTimeoutSeconds))
+				}
+				if server.RequestTimeoutSeconds < 1 {
+					errorMsg = append(errorMsg, fmt.Sprintf("Plugins.Mcp.Servers.%s.RequestTimeoutSeconds must be >= 1 (got %d).", serverId, server.RequestTimeoutSeconds))
+				}
+
+				if transport == "stdio" {
+					if IsBlank(server.Command) {
+						errorMsg = append(errorMsg, fmt.Sprintf("Plugins.Mcp.Servers.%s.Command must be set when Transport='stdio'.", serverId))
+					}
+				} else {
+					baseURL, err := url.Parse(server.URL)
+					if err != nil || (baseURL != nil && (!baseURL.IsAbs() || (baseURL.Scheme != "http" && baseURL.Scheme != "https"))) {
+						errorMsg = append(errorMsg, fmt.Sprintf("Plugins.Mcp.Servers.%s.Url must be an absolute http(s) URL when Transport='http'.", serverId))
+					}
+
+				}
+			}
+		}
+	}
+
+	// Channels
+	if config.Channels.Sms.Twilio.MaxInboundChars < 1 {
+		errorMsg = append(errorMsg, fmt.Sprintf("Channels.Sms.Twilio.MaxInboundChars must be >= 1 (got %d).", config.Channels.Sms.Twilio.MaxInboundChars))
+	}
+
+	if config.Channels.Sms.Twilio.MaxRequestBytes < 1024 {
+		errorMsg = append(errorMsg, fmt.Sprintf("Channels.Sms.Twilio.MaxRequestBytes must be >= 1024 (got %d).", config.Channels.Sms.Twilio.MaxRequestBytes))
+	}
+
+	if config.Channels.Telegram.MaxInboundChars < 1 {
+		errorMsg = append(errorMsg, fmt.Sprintf("Channels.Telegram.MaxInboundChars must be >= 1 (got %d).", config.Channels.Telegram.MaxInboundChars))
+	}
+
+	if config.Channels.Telegram.MaxRequestBytes < 1024 {
+		errorMsg = append(errorMsg, fmt.Sprintf("Channels.Telegram.MaxRequestBytes must be >= 1024 (got %d).", config.Channels.Telegram.MaxRequestBytes))
+	}
+
+	if config.Channels.WhatsApp.MaxInboundChars < 1 {
+		errorMsg = append(errorMsg, fmt.Sprintf("Channels.WhatsApp.MaxInboundChars must be >= 1 (got %d).", config.Channels.WhatsApp.MaxInboundChars))
+	}
+
+	if config.Channels.WhatsApp.MaxRequestBytes < 1024 {
+		errorMsg = append(errorMsg, fmt.Sprintf("Channels.WhatsApp.MaxRequestBytes must be >= 1024 (got %d).", config.Channels.WhatsApp.MaxRequestBytes))
+	}
+
+	if !slices.Contains([]string{"official", "bridge", "first_party_worker"}, config.Channels.WhatsApp.Type) {
+		errorMsg = append(errorMsg, "Channels.WhatsApp.Type must be 'official', 'bridge', or 'first_party_worker'.")
+	}
+
+	if config.Channels.WhatsApp.ValidateSignature {
+		var appSecret = SecretResolverInstance.Resolve(config.Channels.WhatsApp.WebhookAppSecretRef)
+		if IsBlank(appSecret) {
+			appSecret = config.Channels.WhatsApp.WebhookAppSecret
+		}
+
+		if IsBlank(appSecret) {
+			errorMsg = append(errorMsg, "Channels.WhatsApp.ValidateSignature is true but WebhookAppSecret/WebhookAppSecretRef is not configured.")
+		}
+	}
+
+	if config.Channels.WhatsApp.Type == "first_party_worker" {
+		var worker = config.Channels.WhatsApp.FirstPartyWorker
+		if !slices.Contains([]string{"baileys", "baileys_csharp", "whatsmeow", "simulated"}, worker.Driver) {
+			errorMsg = append(errorMsg, "Channels.WhatsApp.FirstPartyWorker.Driver must be 'baileys', 'baileys_csharp', 'whatsmeow', or 'simulated'.")
+		}
+		if len(worker.Accounts) == 0 {
+			errorMsg = append(errorMsg, "Channels.WhatsApp.FirstPartyWorker.Accounts must contain at least one account.")
+		}
+
+		for _, account := range worker.Accounts {
+			if IsBlank(account.AccountId) {
+				errorMsg = append(errorMsg, "Channels.WhatsApp.FirstPartyWorker.Accounts[].AccountId must be set.")
+			}
+			if IsBlank(account.SessionPath) {
+				errorMsg = append(errorMsg, fmt.Sprintf("Channels.WhatsApp.FirstPartyWorker account '%s' must set SessionPath.", account.AccountId))
+			}
+			if account.PairingMode != "qr" && account.PairingMode != "pairing_code" {
+				errorMsg = append(errorMsg, fmt.Sprintf("Channels.WhatsApp.FirstPartyWorker account '%s' PairingMode must be 'qr' or 'pairing_code'.", account.AccountId))
+			}
+			if account.PairingMode == "pairing_code" && IsBlank(account.PhoneNumber) {
+				errorMsg = append(errorMsg, fmt.Sprintf("Channels.WhatsApp.FirstPartyWorker account '%s' requires PhoneNumber for pairing_code mode.", account.AccountId))
+			}
+		}
+	}
+	if config.Channels.Teams.MaxInboundChars < 1 {
+		errorMsg = append(errorMsg, fmt.Sprintf("Channels.Teams.MaxInboundChars must be >= 1 (got %d).", config.Channels.Teams.MaxInboundChars))
+	}
+	if config.Channels.Teams.MaxRequestBytes < 1024 {
+		errorMsg = append(errorMsg, fmt.Sprintf("Channels.Teams.MaxRequestBytes must be >= 1024 (got %d).", config.Channels.Teams.MaxRequestBytes))
+	}
+	if !slices.Contains([]string{"open", "allowlist", "disabled"}, config.Channels.Teams.GroupPolicy) {
+		errorMsg = append(errorMsg, "Channels.Teams.GroupPolicy must be 'open', 'allowlist', or 'disabled'.")
+	}
+	if config.Channels.Teams.ReplyStyle != "thread" && config.Channels.Teams.ReplyStyle != "top-level" {
+		errorMsg = append(errorMsg, "Channels.Teams.ReplyStyle must be 'thread' or 'top-level'.")
+	}
+	if config.Channels.Teams.ChunkMode != "length" && config.Channels.Teams.ChunkMode != "newline" {
+		errorMsg = append(errorMsg, "Channels.Teams.ChunkMode must be 'length' or 'newline'.")
+	}
+	if config.Channels.Teams.TextChunkLimit < 1 {
+		errorMsg = append(errorMsg, fmt.Sprintf("Channels.Teams.TextChunkLimit must be >= 1 (got %d).", config.Channels.Teams.TextChunkLimit))
+	}
+	if config.Channels.Teams.Enabled {
+		var teamsAppId = SecretResolverInstance.Resolve(config.Channels.Teams.AppIdRef)
+		if IsBlank(teamsAppId) {
+			teamsAppId = config.Channels.Teams.AppId
+		}
+		var teamsAppPassword = SecretResolverInstance.Resolve(config.Channels.Teams.AppPasswordRef)
+		if IsBlank(teamsAppPassword) {
+			teamsAppPassword = config.Channels.Teams.AppPassword
+		}
+		var teamsTenantId = SecretResolverInstance.Resolve(config.Channels.Teams.TenantIdRef)
+		if IsBlank(teamsTenantId) {
+			teamsTenantId = config.Channels.Teams.TenantId
+		}
+		if IsBlank(teamsAppId) {
+			errorMsg = append(errorMsg, "Channels.Teams.AppId/AppIdRef must be configured when Teams is enabled.")
+		}
+		if IsBlank(teamsAppPassword) {
+			errorMsg = append(errorMsg, "Channels.Teams.AppPassword/AppPasswordRef must be configured when Teams is enabled.")
+		}
+		if IsBlank(teamsTenantId) {
+			errorMsg = append(errorMsg, "Channels.Teams.TenantId/TenantIdRef must be configured when Teams is enabled.")
+		}
+	}
+	if config.Channels.AllowlistSemantics != "legacy" && config.Channels.AllowlistSemantics != "strict" {
+		errorMsg = append(errorMsg, "Channels.AllowlistSemantics must be 'legacy' or 'strict'.")
+	}
+
+	c.validateDmPolicy("Channels.Sms.DmPolicy", config.Channels.Sms.DmPolicy, &errorMsg)
+	c.validateDmPolicy("Channels.Telegram.DmPolicy", config.Channels.Telegram.DmPolicy, &errorMsg)
+	c.validateDmPolicy("Channels.WhatsApp.DmPolicy", config.Channels.WhatsApp.DmPolicy, &errorMsg)
+	c.validateDmPolicy("Channels.Teams.DmPolicy", config.Channels.Teams.DmPolicy, &errorMsg)
+	c.validateDmPolicy("Channels.Slack.DmPolicy", config.Channels.Slack.DmPolicy, &errorMsg)
+	c.validateDmPolicy("Channels.Discord.DmPolicy", config.Channels.Discord.DmPolicy, &errorMsg)
+	c.validateDmPolicy("Channels.Signal.DmPolicy", config.Channels.Signal.DmPolicy, &errorMsg)
+
+	// Cron
+	if config.Cron.Enabled {
+		for _, job := range config.Cron.Jobs {
+			if IsBlank(job.Name) {
+				errorMsg = append(errorMsg, "Cron job name must be set.")
+			}
+			if IsBlank(job.Prompt) {
+				errorMsg = append(errorMsg, fmt.Sprintf("Cron job '%s' prompt must be set.", job.Name))
+			}
+			if !IsValidCronExpression(job.CronExpression) {
+				errorMsg = append(errorMsg, fmt.Sprintf("Cron job '%s' has invalid CronExpression '%s'.", job.Name, job.CronExpression))
+			}
+		}
+	}
+
+	// Webhooks
+	if config.Webhooks.Enabled {
+		for name, endpoint := range config.Webhooks.Endpoints {
+			if endpoint.MaxBodyLength < 1 {
+				errorMsg = append(errorMsg, fmt.Sprintf("Webhook endpoint '%s' MaxBodyLength must be >= 1 (got {endpoint.MaxBodyLength}).", name))
+			}
+			if endpoint.MaxRequestBytes < 1024 {
+				errorMsg = append(errorMsg, fmt.Sprintf("Webhook endpoint '%s' MaxRequestBytes must be >= 1024 (got {endpoint.MaxRequestBytes}).", name))
+			}
+			if endpoint.ValidateHmac {
+				var secret = SecretResolverInstance.Resolve(endpoint.Secret)
+				if IsBlank(secret) {
+					errorMsg = append(errorMsg, fmt.Sprintf("Webhook endpoint '%s' has ValidateHmac=true but no Secret is configured.  Set OpenClaw:Webhooks:Endpoints:<name>:Secret.", name))
+				}
+			}
+		}
+	}
+
+	return errorMsg
+}

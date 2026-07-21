@@ -16,18 +16,18 @@ func SandboxProviderNamesNormalize(provider string) string {
 }
 
 type SandboxConfig struct {
-	Provider   string                        `json:"provider"`
-	Endpoint   string                        `json:"endpoint,omitempty"`
-	ApiKey     string                        `json:"api_key,omitempty"`
-	DefaultTTL int                           `json:"default_ttl"`
-	Tools      map[string]*SandboxToolConfig `json:"tools"`
+	Provider   string                       `json:"provider"`
+	Endpoint   string                       `json:"endpoint,omitempty"`
+	ApiKey     string                       `json:"api_key,omitempty"`
+	DefaultTTL int                          `json:"default_ttl"`
+	Tools      map[string]SandboxToolConfig `json:"tools"`
 }
 
 func DefaultSandboxConfig() *SandboxConfig {
 	return &SandboxConfig{
 		Provider:   SandboxProviderNames_None,
 		DefaultTTL: 300,
-		Tools:      make(map[string]*SandboxToolConfig),
+		Tools:      make(map[string]SandboxToolConfig),
 	}
 }
 
@@ -89,12 +89,12 @@ func ResolveModeDetailed(config *GatewayConfig, toolName string, defaultMode Too
 	configuredMode := ToolSandboxMode_None
 	hasConfiguredMode := false
 
-	var toolConfig *SandboxToolConfig
+	var toolConfig SandboxToolConfig
 	if config.Sandbox.Tools != nil {
 		toolConfig, hasConfiguredMode = config.Sandbox.Tools[toolName]
 	}
 
-	if hasConfiguredMode && toolConfig != nil && toolConfig.Mode != "" {
+	if hasConfiguredMode && toolConfig.Mode != "" {
 		hasConfiguredMode = true
 		configuredMode, _ = TryParseMode(toolConfig.Mode)
 	} else {
