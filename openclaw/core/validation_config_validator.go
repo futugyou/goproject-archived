@@ -2,8 +2,11 @@ package core
 
 import (
 	"fmt"
+	"net/netip"
 	"net/url"
+	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 )
 
@@ -434,6 +437,112 @@ func (c *ConfigValidator) validateModelProfiles(config *GatewayConfig, errorMsg 
 			if _, exists := profileIds[strings.ToLower(fallbackId)]; !exists {
 				*errorMsg = append(*errorMsg, fmt.Sprintf("Routing.Routes.%s.FallbackModelProfileIds contains unknown profile '%s'.", routeId, fallbackId))
 			}
+		}
+	}
+}
+
+func (c *ConfigValidator) validateRootSet(field string, roots []string, errorMsg *[]string) {
+	if len(roots) == 0 {
+		return
+	}
+	wildcardCount := 0
+
+	for _, v := range roots {
+		if v == "*" {
+			wildcardCount++
+		}
+	}
+
+	if wildcardCount > 0 && len(roots) > wildcardCount {
+		*errorMsg = append(*errorMsg, fmt.Sprintf("%s cannot mix '*' with explicit paths.", field))
+	}
+
+	for _, root := range roots {
+		if root == "*" {
+			continue
+		}
+
+		var resolved = c.resolveConfiguredPath(root)
+		if IsBlank(resolved) {
+			*errorMsg = append(*errorMsg, fmt.Sprintf("%s entries must resolve to non-empty absolute paths.", field))
+			continue
+		}
+
+		if !filepath.IsAbs(resolved) {
+			*errorMsg = append(*errorMsg, fmt.Sprintf("%s entries must be absolute paths (got '%s').", field, root))
+		}
+	}
+}
+
+func (c *ConfigValidator) validateDmPolicy(field, value string, errorMsg *[]string) {
+	if IsBlank(value) {
+		*errorMsg = append(*errorMsg, fmt.Sprintf("%s must be 'open', 'pairing', or 'closed'.", field))
+		return
+	}
+
+	if value != "open" && value != "pairing" && value != "closed" {
+		*errorMsg = append(*errorMsg, fmt.Sprintf("%s must be 'open', 'pairing', or 'closed'.", field))
+	}
+}
+
+func (c *ConfigValidator) validateNotionConfig(config *NotionConfig, errorMsg *[]string) {
+	if config == nil || !config.Enabled {
+		return
+	}
+
+	if IsBlank(SecretResolverInstance.Resolve(config.ApiKeyRef)) {
+		*errorMsg = append(*errorMsg, "Plugins.Native.Notion.ApiKeyRef must resolve to a token when Notion is enabled.")
+	}
+
+	baseURL, err := url.Parse(config.BaseUrl)
+	if err != nil || (baseURL != nil && !baseURL.IsAbs()) {
+		*errorMsg = append(*errorMsg, "Plugins.Native.Notion.BaseUrl must be a valid absolute URL when Notion is enabled.")
+	}
+
+	if IsBlank(config.ApiVersion) {
+		*errorMsg = append(*errorMsg, "Plugins.Native.Notion.ApiVersion must be set when Notion is enabled.")
+	}
+
+	if config.MaxSearchResults < 1 {
+		*errorMsg = append(*errorMsg, fmt.Sprintf("Plugins.Native.Notion.MaxSearchResults must be >= 1 (got %d).", config.MaxSearchResults))
+	}
+
+	hasAnyTarget := !IsBlank(config.DefaultPageId) ||
+		!IsBlank(config.DefaultDatabaseId) ||
+		slices.IndexFunc(config.AllowedPageIds, func(s string) bool { return !IsBlank(s) }) != -1 ||
+		slices.IndexFunc(config.AllowedDatabaseIds, func(s string) bool { return !IsBlank(s) }) != -1
+
+	if !hasAnyTarget {
+		*errorMsg = append(*errorMsg, "Plugins.Native.Notion requires at least one allowed/default page or database id when enabled.")
+	}
+}
+
+func (c *ConfigValidator) validateUrlSafety(path string, config *UrlSafetyConfig, errorMsg *[]string) {
+	if config == nil {
+		return
+	}
+
+	for _, cidr := range config.BlockedCidrs {
+		if IsBlank(cidr) {
+			continue
+		}
+
+		prefix, err := netip.ParsePrefix(cidr)
+		if err != nil {
+			*errorMsg = append(*errorMsg, fmt.Sprintf("%s.BlockedCidrs entry '%s' must be a valid CIDR block.", path, cidr))
+			continue
+		}
+
+		addr := prefix.Addr()
+		prefixLength := prefix.Bits()
+
+		var maxPrefix = 128
+		if addr.Is4() {
+			maxPrefix = 32
+		}
+
+		if prefixLength < 0 || prefixLength > maxPrefix {
+			*errorMsg = append(*errorMsg, fmt.Sprintf("%s.BlockedCidrs entry '%s' has an invalid prefix length.", path, cidr))
 		}
 	}
 }
