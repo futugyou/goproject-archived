@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"os/exec"
 	"syscall"
+
+	"golang.org/x/sys/windows"
 )
 
 // 在 Windows 下，利用系统的 taskkill /T /F 斩草除根
@@ -21,4 +23,17 @@ func configureSysProcAttr(cmd *exec.Cmd) {
 	cmd.SysProcAttr = &syscall.SysProcAttr{
 		HideWindow: true,
 	}
+}
+
+func getDiskFreeSpace(path string) (uint64, error) {
+	var freeBytesAvailable uint64
+	pathPtr, err := windows.UTF16PtrFromString(path)
+	if err != nil {
+		return 0, err
+	}
+	err = windows.GetDiskFreeSpaceEx(pathPtr, &freeBytesAvailable, nil, nil)
+	if err != nil {
+		return 0, err
+	}
+	return freeBytesAvailable, nil
 }
