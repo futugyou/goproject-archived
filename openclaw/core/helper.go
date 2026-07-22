@@ -933,3 +933,15 @@ func PercentileUnsorted(values []int64, percentile float64) int64 {
 
 	return sortedValues[index]
 }
+
+func DistinctStrings(input []string) []string {
+	keys := make(map[string]bool)
+	var list []string
+	for _, entry := range input {
+		if _, value := keys[entry]; !value {
+			keys[entry] = true
+			list = append(list, entry)
+		}
+	}
+	return list
+}

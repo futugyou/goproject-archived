@@ -331,6 +331,8 @@ func (g *GlobMatcher) IsAllowed(allowGlobs, denyGlobs []string, value string) bo
 	return false
 }
 
+var BrowserToolCapabilityEvaluatorInstance = &BrowserToolCapabilityEvaluator{}
+
 type BrowserToolCapabilityEvaluator struct{}
 
 func (b *BrowserToolCapabilityEvaluator) isNonLocalBackendAvailable(config *GatewayConfig, backendName string) bool {

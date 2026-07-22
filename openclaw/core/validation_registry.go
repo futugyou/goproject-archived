@@ -278,13 +278,13 @@ var TailscaleServeAdvisorInstance = &TailscaleServeAdvisor{}
 
 type TailscaleServeAdvisor struct{}
 
-func (t *TailscaleServeAdvisor) IsTailscaleServeConfigured(config GatewayConfig) bool {
+func (t *TailscaleServeAdvisor) IsTailscaleServeConfigured(config *GatewayConfig) bool {
 	return strings.EqualFold(config.Deployment.Mode, "tailscale-serve") ||
 		strings.EqualFold(config.Deployment.ReverseProxy, "tailscale-serve") ||
 		(config.Tailscale.Enabled && strings.EqualFold(config.Tailscale.Mode, "serve"))
 }
 
-func (t *TailscaleServeAdvisor) BuildLocalGatewayUrl(config GatewayConfig) string {
+func (t *TailscaleServeAdvisor) BuildLocalGatewayUrl(config *GatewayConfig) string {
 	if u, err := url.Parse(config.Deployment.ExpectedLocalUrl); err == nil && u.IsAbs() {
 		if strings.EqualFold(u.Scheme, "http") || strings.EqualFold(u.Scheme, "https") {
 			return strings.TrimRight(u.String(), "/")
@@ -302,7 +302,7 @@ func (t *TailscaleServeAdvisor) BuildSuggestedServeCommand(localGatewayUrl strin
 	return fmt.Sprintf("tailscale serve --bg %s", strings.TrimRight(localGatewayUrl, "/"))
 }
 
-func (t *TailscaleServeAdvisor) BuildStatus(ctx context.Context, config GatewayConfig, options *TailscaleServeProbeOptions) (*TailscaleServeStatusResponse, error) {
+func (t *TailscaleServeAdvisor) BuildStatus(ctx context.Context, config *GatewayConfig, options *TailscaleServeProbeOptions) (*TailscaleServeStatusResponse, error) {
 	if options == nil {
 		options = &TailscaleServeProbeOptions{CheckCli: true}
 	}
@@ -348,7 +348,7 @@ func (t *TailscaleServeAdvisor) BuildStatus(ctx context.Context, config GatewayC
 
 			// 2. 探测 tailscale serve status
 			serveStatusResult := runner(ctx, "serve status")
-			serveDetected = t.classifyServeStatus(serveStatusResult, localGatewayUrl)
+			serveDetected = t.classifyServeStatus(&serveStatusResult, localGatewayUrl)
 			if serveDetected != "true" {
 				warnings = append(warnings, "Tailscale Serve status could not be confirmed. Run 'tailscale serve status' after enabling Serve.")
 			}
@@ -373,8 +373,8 @@ func (t *TailscaleServeAdvisor) BuildStatus(ctx context.Context, config GatewayC
 	}, nil
 }
 
-func (t *TailscaleServeAdvisor) BuildDoctorCheck(status *TailscaleServeStatusResponse, offline bool) DoctorCheckItem {
-	item := DoctorCheckItem{
+func (t *TailscaleServeAdvisor) BuildDoctorCheck(status *TailscaleServeStatusResponse, offline bool) *DoctorCheckItem {
+	item := &DoctorCheckItem{
 		Id:       "tailscale_serve",
 		Label:    "Tailscale Serve advisory",
 		Category: "Network",
@@ -417,7 +417,7 @@ func (t *TailscaleServeAdvisor) buildStatusDetail(status *TailscaleServeStatusRe
 	return sb.String()
 }
 
-func (t *TailscaleServeAdvisor) classifyServeStatus(result TailscaleCommandResult, localGatewayUrl string) string {
+func (t *TailscaleServeAdvisor) classifyServeStatus(result *TailscaleCommandResult, localGatewayUrl string) string {
 	if result.ExitCode != 0 {
 		return "unknown"
 	}
