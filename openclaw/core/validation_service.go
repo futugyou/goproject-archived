@@ -2,11 +2,14 @@ package core
 
 import (
 	"context"
+	"fmt"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -197,4 +200,220 @@ func (s *SetupVerificationService) hasValidModelProfileConfiguration(config *Gat
 	}
 
 	return true
+}
+
+func (s *SetupVerificationService) hasValidRootSet(roots []string) bool {
+	wildcardCount := 0
+	for _, v := range roots {
+		if v == "*" {
+			wildcardCount++
+		}
+	}
+
+	if wildcardCount > 0 && len(roots) > wildcardCount {
+		return false
+	}
+
+	for _, root := range roots {
+		if root == "*" {
+			continue
+		}
+
+		var resolved = s.resolveConfiguredPath(root)
+		if IsBlank(resolved) || !filepath.IsAbs(resolved) {
+			return false
+		}
+	}
+
+	return true
+}
+
+func (s *SetupVerificationService) hasValidPromptCacheConfiguration(config GatewayConfig) bool {
+	requiresExplicitDialect := func(provider string) bool {
+		return strings.EqualFold(provider, "openai-compatible") ||
+			strings.EqualFold(provider, "groq") ||
+			strings.EqualFold(provider, "together") ||
+			strings.EqualFold(provider, "lmstudio")
+	}
+
+	supportsKeepWarm := func(provider, dialect string) bool {
+		isAnthropicDialect := strings.EqualFold(dialect, "anthropic")
+		isAnthropicProvider := strings.EqualFold(provider, "anthropic") ||
+			strings.EqualFold(provider, "claude") ||
+			strings.EqualFold(provider, "anthropic-vertex") ||
+			strings.EqualFold(provider, "amazon-bedrock")
+
+		isGeminiDialect := strings.EqualFold(dialect, "gemini")
+		isGeminiProvider := strings.EqualFold(provider, "gemini") ||
+			strings.EqualFold(provider, "google")
+
+		return (isAnthropicDialect && isAnthropicProvider) || (isGeminiDialect && isGeminiProvider)
+	}
+
+	isValid := func(provider string, caching *PromptCachingConfig) bool {
+		if caching == nil || caching.Enabled == nil || !*caching.Enabled {
+			return true
+		}
+
+		dialect := "auto"
+		if !IsBlank(caching.Dialect) {
+			dialect = strings.TrimSpace(caching.Dialect)
+		}
+
+		if requiresExplicitDialect(provider) && strings.EqualFold(dialect, "auto") {
+			return false
+		}
+
+		keepWarm := caching.KeepWarmEnabled != nil && *caching.KeepWarmEnabled
+		return !keepWarm || supportsKeepWarm(provider, dialect)
+	}
+
+	if !isValid(config.Llm.Provider, config.Llm.PromptCaching) {
+		return false
+	}
+
+	for _, profile := range config.Models.Profiles {
+		if !isValid(profile.Provider, profile.PromptCaching) {
+			return false
+		}
+	}
+
+	return true
+}
+
+func (s *SetupVerificationService) normalizePortProbeHost(bindAddress string) string {
+	if IsBlank(bindAddress) {
+		return "127.0.0.1"
+	}
+
+	switch bindAddress {
+	case "0.0.0.0":
+		return "127.0.0.1"
+	case "::", "[::]":
+		return "::1"
+	}
+
+	return bindAddress
+}
+
+func (s *SetupVerificationService) toBoolWord(value bool) string {
+	if value {
+		return "yes"
+	}
+	return "no"
+}
+
+func (s *SetupVerificationService) appendAllowlistLine(lines *[]string, channelId string, values []string) {
+	if len(values) == 0 {
+		return
+	}
+	*lines = append(*lines, fmt.Sprintf("- %s: %s", channelId, strings.Join(values, ", ")))
+}
+
+func (s *SetupVerificationService) buildStorageFreeSpaceCheck(config *GatewayConfig) *DoctorCheckItem {
+	item := &DoctorCheckItem{
+		Id:       "storage_free_space",
+		Label:    "Storage free space",
+		Category: "storage",
+	}
+
+	absPath, err := filepath.Abs(config.Memory.StoragePath)
+	if err != nil {
+		item.Status = "skip"
+		item.Summary = "Storage free space could not be determined."
+		return item
+	}
+
+	availableBytes, err := getDiskFreeSpace(absPath)
+	if err != nil {
+		item.Status = "skip"
+		item.Summary = "Storage free space could not be determined."
+		return item
+	}
+
+	const threshold = 100 * 1024 * 1024 // 100 MB
+
+	if availableBytes > threshold {
+		item.Status = "pass"
+		item.Summary = "Storage volume has sufficient free space."
+	} else {
+		item.Status = "warn"
+		item.Summary = "Storage volume has less than 100 MB free space."
+		item.NextStep = "Free disk space before running heavier workloads."
+	}
+
+	return item
+}
+
+func (s *SetupVerificationService) buildPortAvailabilityCheck(config *GatewayConfig) *DoctorCheckItem {
+	item := &DoctorCheckItem{
+		Id:       "port_availability",
+		Label:    "TCP port availability",
+		Category: "network",
+	}
+
+	host := s.normalizePortProbeHost(config.BindAddress)
+	address := net.JoinHostPort(host, strconv.Itoa(config.Port))
+
+	conn, err := net.DialTimeout("tcp", address, 2*time.Second)
+	if err == nil {
+		conn.Close()
+		item.Status = "fail"
+		item.Summary = "The configured TCP port is already in use."
+		item.NextStep = "Free the port or change OpenClaw:Port before launching the gateway."
+		return item
+	}
+
+	if netErr, ok := err.(*net.OpError); ok {
+		_ = netErr
+		item.Status = "pass"
+		item.Summary = "The configured TCP port is available."
+		return item
+	}
+
+	// 其他未知异常
+	item.Status = "skip"
+	item.Summary = "TCP port availability could not be determined."
+	item.Detail = err.Error()
+	return item
+}
+
+func (s *SetupVerificationService) buildRecommendedNextActionsFromDoctorChecks(checks []DoctorCheckItem) []string {
+	seen := make(map[string]bool)
+	var actions []string
+
+	for _, check := range checks {
+		if (check.Status == "fail" || check.Status == "warn") && check.NextStep != "" {
+			if !seen[check.NextStep] {
+				seen[check.NextStep] = true
+				actions = append(actions, check.NextStep)
+			}
+		}
+	}
+	return actions
+}
+
+func (s *SetupVerificationService) buildRecommendedNextActionsFromSetupChecks(checks []SetupVerificationCheck) []string {
+	seen := make(map[string]bool)
+	var actions []string
+
+	for _, check := range checks {
+		if (check.Status == "fail" || check.Status == "warn") && check.NextStep != "" {
+			if !seen[check.NextStep] {
+				seen[check.NextStep] = true
+				actions = append(actions, check.NextStep)
+			}
+		}
+	}
+	return actions
+}
+
+func (s *SetupVerificationService) buildBrowserCapabilityDetail(browser *BrowserToolCapabilitySummary) string {
+	return fmt.Sprintf(
+		"- browser_tool: configured=%s registered=%s local_supported=%s backend_configured=%s",
+		s.toBoolWord(browser.ConfiguredEnabled),
+		s.toBoolWord(browser.Registered),
+		s.toBoolWord(browser.LocalExecutionSupported),
+		s.toBoolWord(browser.ExecutionBackendConfigured),
+	)
 }
