@@ -146,3 +146,55 @@ func (s *SetupVerificationService) pingOpenSandbox(ctx context.Context, httpCLie
 	// 5. Check for 2xx status code
 	return resp.StatusCode >= 200 && resp.StatusCode < 300
 }
+
+func (s *SetupVerificationService) hasValidModelProfileConfiguration(config *GatewayConfig) bool {
+	profileIds := make(map[string]bool)
+
+	for _, profile := range config.Models.Profiles {
+		trimmedId := strings.TrimSpace(profile.Id)
+		if trimmedId == "" {
+			return false
+		}
+
+		lowerId := strings.ToLower(trimmedId)
+		if profileIds[lowerId] {
+			return false
+		}
+		profileIds[lowerId] = true
+	}
+
+	if len(profileIds) == 0 {
+		profileIds["default"] = true
+	}
+
+	trimmedDefaultProfile := strings.TrimSpace(config.Models.DefaultProfile)
+	if trimmedDefaultProfile != "" && !profileIds[strings.ToLower(trimmedDefaultProfile)] {
+		return false
+	}
+
+	for _, profile := range config.Models.Profiles {
+		for _, fallbackId := range profile.FallbackProfileIds {
+			trimmedFallback := strings.TrimSpace(fallbackId)
+			if trimmedFallback != "" && !profileIds[strings.ToLower(trimmedFallback)] {
+				return false
+			}
+		}
+	}
+
+	// 5. 校验 Routing 路由中的 ModelProfileId 与 FallbackModelProfileIds 是否合法
+	for _, route := range config.Routing.Routes {
+		trimmedRouteProfile := strings.TrimSpace(route.ModelProfileId)
+		if trimmedRouteProfile != "" && !profileIds[strings.ToLower(trimmedRouteProfile)] {
+			return false
+		}
+
+		for _, fallbackId := range route.FallbackModelProfileIds {
+			trimmedFallback := strings.TrimSpace(fallbackId)
+			if trimmedFallback != "" && !profileIds[strings.ToLower(fallbackId)] {
+				return false
+			}
+		}
+	}
+
+	return true
+}
