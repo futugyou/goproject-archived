@@ -1423,3 +1423,68 @@ func (c *CronScheduler) RunStartupJobs(ctx context.Context) error {
 
 	return nil
 }
+
+type SessionAbortRegistry struct {
+	mu     sync.RWMutex
+	active map[string]context.CancelFunc
+}
+
+func NewSessionAbortRegistry() *SessionAbortRegistry {
+	return &SessionAbortRegistry{
+		active: make(map[string]context.CancelFunc),
+	}
+}
+
+func (r *SessionAbortRegistry) Register(sessionId string, parentCtx context.Context) (context.Context, context.CancelFunc) {
+	ctx, cancel := context.WithCancel(parentCtx)
+
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	if existingCancel, exists := r.active[sessionId]; exists {
+		existingCancel()
+	}
+
+	r.active[sessionId] = cancel
+	return ctx, cancel
+}
+
+func (r *SessionAbortRegistry) Unregister(sessionId string) {
+	if sessionId == "" {
+		return
+	}
+
+	r.mu.Lock()
+	cancel, exists := r.active[sessionId]
+	if exists {
+		delete(r.active, sessionId)
+	}
+	r.mu.Unlock()
+
+	if exists {
+		cancel()
+	}
+}
+
+func (r *SessionAbortRegistry) TryAbort(sessionId string) bool {
+	r.mu.RLock()
+	cancel, exists := r.active[sessionId]
+	r.mu.RUnlock()
+
+	if exists {
+		cancel()
+		return true
+	}
+	return false
+}
+
+func (r *SessionAbortRegistry) ActiveSessionIds() []string {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	ids := make([]string, 0, len(r.active))
+	for id := range r.active {
+		ids = append(ids, id)
+	}
+	return ids
+}
