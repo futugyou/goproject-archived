@@ -142,6 +142,8 @@ type NativePluginsConfig struct {
 	CodeExec      CodeExecConfig      `json:"code_exec"`
 	ImageGen      ImageGenConfig      `json:"image_gen"`
 	PdfRead       PdfReadConfig       `json:"pdf_read"`
+	ImageAnalyze  ImageAnalyzeConfig  `json:"image_analyze"`
+	MinerUPdf     MinerUPdfConfig     `json:"miner_updf"`
 	Calendar      CalendarConfig      `json:"calendar"`
 	Email         EmailConfig         `json:"email"`
 	Database      DatabaseConfig      `json:"database"`
@@ -1055,4 +1057,52 @@ func DefaultBridgeToolResult() BridgeToolResult {
 type ToolContentItem struct {
 	Type string `json:"type"`
 	Text string `json:"text,omitempty"`
+}
+
+type ImageAnalyzeConfig struct {
+	Enabled          bool   `json:"enabled"`
+	Provider         string `json:"provider"`
+	ApiKey           string `json:"api_key"`
+	Endpoint         string `json:"endpoint"`
+	Model            string `json:"model"`
+	MaxImagesPerCall int    `json:"max_images_per_call"`
+	MaxOutputChars   int    `json:"max_output_chars"`
+	TimeoutSeconds   int    `json:"timeout_seconds"`
+}
+
+type MinerUPdfConfig struct {
+	Enabled         bool   `json:"enabled"`
+	Url             string `json:"url"`
+	Backend         string `json:"backend"`
+	ParseMethod     string `json:"parse_method"`
+	Lang            string `json:"lang"`
+	FormulaEnable   bool   `json:"formula_enable"`
+	TableEnable     bool   `json:"table_enable"`
+	SglangServerUrl string `json:"sglang_server_url"`
+	TimeoutSeconds  int    `json:"timeout_seconds"`
+	MaxOutputChars  int    `json:"max_output_chars"`
+	ExtractImages   bool   `json:"extract_images"`
+}
+
+func DefaultImageAnalyzeConfig() *ImageAnalyzeConfig {
+	return &ImageAnalyzeConfig{
+		Provider:         "openai",
+		Model:            "gpt-4o",
+		MaxImagesPerCall: 5,
+		MaxOutputChars:   8000,
+		TimeoutSeconds:   60,
+	}
+}
+
+func DefaultMinerUPdfConfig() *MinerUPdfConfig {
+	return &MinerUPdfConfig{
+		Url:            "http://localhost:8888",
+		Backend:        "pipeline",
+		ParseMethod:    "auto",
+		Lang:           "ch",
+		FormulaEnable:  true,
+		TableEnable:    true,
+		TimeoutSeconds: 300,
+		MaxOutputChars: 200000,
+	}
 }
