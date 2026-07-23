@@ -1473,8 +1473,8 @@ func (s *SetupVerificationService) RenderDoctorText(report *DoctorReportResponse
 	var sb strings.Builder
 
 	sb.WriteString("OpenClaw Doctor\n")
-	sb.WriteString(fmt.Sprintf("- generated_at_utc: %s\n", report.GeneratedAtUtc.Format(time.RFC3339Nano)))
-	sb.WriteString(fmt.Sprintf("- overall_status: %s\n\n", report.OverallStatus))
+	fmt.Fprintf(&sb, "- generated_at_utc: %s\n", report.GeneratedAtUtc.Format(time.RFC3339Nano))
+	fmt.Fprintf(&sb, "- overall_status: %s\n\n", report.OverallStatus)
 
 	s.writeDoctorSection(&sb, "Failed checks", filterChecks(report.Checks, SetupCheckStatesFail))
 	s.writeDoctorSection(&sb, "Warnings", filterChecks(report.Checks, SetupCheckStatesWarn))
@@ -1484,7 +1484,7 @@ func (s *SetupVerificationService) RenderDoctorText(report *DoctorReportResponse
 	if len(report.RecommendedNextActions) > 0 {
 		sb.WriteString("Recommended next actions\n")
 		for _, action := range report.RecommendedNextActions {
-			sb.WriteString(fmt.Sprintf("- %s\n", action))
+			fmt.Fprintf(&sb, "- %s\n", action)
 		}
 	}
 
@@ -1529,4 +1529,35 @@ func filterChecks(checks []DoctorCheckItem, status string) []DoctorCheckItem {
 		}
 	}
 	return result
+}
+
+var DoctorCheckInstance = &DoctorCheck{}
+
+type DoctorCheck struct{}
+
+func (d *DoctorCheck) Run(config *GatewayConfig, configSources *ConfigSourceDiagnostics, client *http.Client) bool {
+	var localState = LocalSetupStateLoaderInstance.Load(config.Memory.StoragePath)
+	report, err := SetupVerificationServiceInstance.BuildDoctorReport(context.Background(), &DoctorReportRequest{
+		Config:                config,
+		Policy:                localState.Policy,
+		OperatorAccountCount:  localState.OperatorAccountCount,
+		CheckPortAvailability: true,
+		WorkspacePath:         config.Tooling.WorkspaceRoot,
+		ModelDoctor:           ModelDoctorEvaluatorInstance.Build(config, nil, nil),
+		ConfigSources:         configSources,
+	}, client)
+
+	if err != nil {
+		return false
+	}
+
+	fmt.Println(SetupVerificationServiceInstance.RenderDoctorText(report))
+	fmt.Println("")
+	if report.HasFailures {
+		fmt.Println("Doctor result: blocking issues found")
+	} else {
+		fmt.Println("Doctor result: no blocking issues found")
+	}
+
+	return !report.HasFailures
 }
