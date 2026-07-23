@@ -11,7 +11,9 @@ import (
 	"maps"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"regexp"
+	"runtime"
 	"slices"
 	"sort"
 	"strings"
@@ -1243,4 +1245,468 @@ func parseStructuredOutput(outputFormat, stdout string) (json.RawMessage, error)
 	}
 
 	return nil, nil
+}
+
+var PlaceholderRegex = regexp.MustCompile(`\{\{\s*(?P<name>[A-Za-z_][A-Za-z0-9_\-]*)\s*\}\}`)
+
+type ExternalCliConnectorRegistry struct {
+	options   *ExternalCliOptions
+	redaction IRedactionPipeline
+}
+
+func NewExternalCliConnectorRegistry(config *GatewayConfig, redaction IRedactionPipeline) *ExternalCliConnectorRegistry {
+	options := ExternalCliPresetCatalogInstance.Apply(config.ExternalCli)
+	return &ExternalCliConnectorRegistry{
+		options:   &options,
+		redaction: redaction,
+	}
+}
+
+// GetCommandSchema implements [IExternalCliConnectorRegistry].
+func (e *ExternalCliConnectorRegistry) GetCommandSchema(connectorName string, commandName string) (*ExternalCliCommandSchemaResponse, error) {
+	connectorResolvedName, connector, err := e.getConnector(connectorName)
+	if err != nil {
+		return nil, err
+	}
+	commandResolvedName, command, err := e.getCommand(connector, commandName)
+	if err != nil {
+		return nil, err
+	}
+
+	parameterKeys := []string{}
+	for key, v := range command.Parameters {
+		if v.Required {
+			parameterKeys = append(parameterKeys, key)
+		}
+	}
+
+	var required = DistinctStrings(append(e.findPlaceholders(command.ArgsTemplate), parameterKeys...))
+	slices.SortFunc(required, func(a, b string) int {
+		return strings.Compare(a, b)
+	})
+
+	return &ExternalCliCommandSchemaResponse{
+		Connector:          connectorResolvedName,
+		Command:            commandResolvedName,
+		Description:        command.Description,
+		Parameters:         command.Parameters,
+		RequiredParameters: required,
+		RiskLevel:          NormalizeRiskLevel(command.RiskLevel),
+		ReadOnly:           command.ReadOnly,
+		RequiresApproval:   e.requiresApproval(connector, command),
+		SupportsDryRun:     command.SupportsDryRun,
+		StructuredOutput:   e.resolveOutputFormat(connector, command),
+	}, nil
+}
+
+// ListCommands implements [IExternalCliConnectorRegistry].
+func (e *ExternalCliConnectorRegistry) ListCommands(connectorName string) (*ExternalCliCommandListResponse, error) {
+	name, connector, err := e.getConnector(connectorName)
+	if err != nil {
+		return nil, err
+	}
+
+	result := make([]ExternalCliCommandSummary, 0, len(e.options.Connectors))
+	for key, command := range connector.Commands {
+		summary := ExternalCliCommandSummary{
+			Name:             key,
+			Description:      command.Description,
+			RiskLevel:        NormalizeRiskLevel(command.RiskLevel),
+			ReadOnly:         command.ReadOnly,
+			RequiresApproval: e.requiresApproval(connector, &command),
+			SupportsDryRun:   command.SupportsDryRun,
+			StructuredOutput: e.resolveOutputFormat(connector, &command),
+			Tags:             command.Tags,
+		}
+
+		result = append(result, summary)
+	}
+
+	slices.SortFunc(result, func(a, b ExternalCliCommandSummary) int {
+		return strings.Compare(a.Name, b.Name)
+	})
+
+	return &ExternalCliCommandListResponse{
+		Connector: name,
+		Items:     result,
+	}, nil
+}
+
+// ListConnectors implements [IExternalCliConnectorRegistry].
+func (e *ExternalCliConnectorRegistry) ListConnectors() ([]ExternalCliConnectorSummary, error) {
+	result := make([]ExternalCliConnectorSummary, 0, len(e.options.Connectors))
+	for key, v := range e.options.Connectors {
+		summary := ExternalCliConnectorSummary{
+			Name:         key,
+			DisplayName:  v.DisplayName,
+			Enabled:      v.Enabled,
+			Executable:   v.Executable,
+			CommandCount: len(v.Commands),
+		}
+		if IsBlank(summary.DisplayName) {
+			summary.DisplayName = key
+		}
+
+		result = append(result, summary)
+	}
+
+	slices.SortFunc(result, func(a, b ExternalCliConnectorSummary) int {
+		return strings.Compare(a.Name, b.Name)
+	})
+	return result, nil
+}
+
+func (e *ExternalCliConnectorRegistry) getConnector(connectorName string) (name string, connector *ExternalCliConnectorOptions, err error) {
+	if IsBlank(connectorName) {
+		err = errors.New("External CLI connector is required")
+		return
+	}
+
+	conn, ok := e.options.Connectors[connectorName]
+	if !ok {
+		err = fmt.Errorf("Unknown external CLI connector '%s'", connectorName)
+		return
+	}
+	name = connectorName
+	connector = &conn
+	return
+}
+
+func (e *ExternalCliConnectorRegistry) requiresApproval(connector *ExternalCliConnectorOptions, command *ExternalCliCommandOptions) bool {
+	return connector.RequiresApproval || command.RequiresApproval || NormalizeRiskLevel(command.RiskLevel) == ExternalCliRiskLevelHigh || (!command.ReadOnly && e.options.RequireApprovalForMutatingCommands)
+}
+
+func (e *ExternalCliConnectorRegistry) resolveOutputFormat(connector *ExternalCliConnectorOptions, command *ExternalCliCommandOptions) string {
+	if IsBlank(command.StructuredOutput) {
+		return NormalizeOutputFormat(connector.DefaultOutputFormat)
+	}
+
+	return NormalizeOutputFormat(command.StructuredOutput)
+}
+
+func (e *ExternalCliConnectorRegistry) getCommand(connector *ExternalCliConnectorOptions, commandName string) (name string, command *ExternalCliCommandOptions, err error) {
+	if IsBlank(commandName) {
+		err = errors.New("External CLI command is required")
+		return
+	}
+
+	comm, ok := connector.Commands[commandName]
+	if !ok {
+		err = fmt.Errorf("Unknown external CLI command '%s'", commandName)
+		return
+	}
+	name = commandName
+	command = &comm
+	return
+}
+
+func (e *ExternalCliConnectorRegistry) findPlaceholders(template []string) []string {
+	seen := make(map[string]bool)
+	var result []string
+
+	for _, item := range template {
+		// FindAllStringSubmatchIndex / FindAllStringSubmatch 可以获取匹配组
+		matches := PlaceholderRegex.FindAllStringSubmatch(item, -1)
+		for _, match := range matches {
+			// match[0] 是完整匹配 ({{ name }})
+			// match[1] 是第 1 个括号捕获的内容 (name)
+			rawName := match[1]
+
+			lowerName := strings.ToLower(rawName)
+			if !seen[lowerName] {
+				seen[lowerName] = true
+				result = append(result, rawName)
+			}
+		}
+	}
+
+	return result
+}
+
+func getEnvIgnoreCase(env map[string]string, target string) string {
+	if env == nil {
+		return ""
+	}
+	for k, v := range env {
+		if strings.EqualFold(k, target) {
+			return v
+		}
+	}
+	return ""
+}
+
+func (e *ExternalCliConnectorRegistry) resolveExecutable(executable string, environment map[string]string) string {
+	if strings.TrimSpace(executable) == "" {
+		return ""
+	}
+
+	if filepath.IsAbs(executable) {
+		if FileExists(executable) {
+			return executable
+		}
+		return ""
+	}
+
+	pathVal := getEnvIgnoreCase(environment, "PATH")
+	if pathVal == "" {
+		pathVal = os.Getenv("PATH")
+	}
+	if strings.TrimSpace(pathVal) == "" {
+		return ""
+	}
+
+	candidates := []string{}
+	if runtime.GOOS == "windows" {
+		pathext := getEnvIgnoreCase(environment, "PATHEXT")
+		if pathext == "" {
+			pathext = os.Getenv("PATHEXT")
+		}
+		if strings.TrimSpace(pathext) == "" {
+			pathext = ".EXE;.BAT;.CMD"
+		}
+
+		exts := strings.Split(pathext, ";")
+		seen := make(map[string]bool)
+
+		for _, ext := range exts {
+			ext = strings.TrimSpace(ext)
+			if ext == "" {
+				continue
+			}
+
+			var candidate string
+			if strings.HasSuffix(strings.ToLower(executable), strings.ToLower(ext)) {
+				candidate = executable
+			} else {
+				candidate = executable + ext
+			}
+
+			key := strings.ToLower(candidate)
+			if !seen[key] {
+				seen[key] = true
+				candidates = append(candidates, candidate)
+			}
+		}
+
+		key := strings.ToLower(executable)
+		if !seen[key] {
+			seen[key] = true
+			candidates = append(candidates, executable)
+		}
+	} else {
+		candidates = []string{executable}
+	}
+
+	dirs := filepath.SplitList(pathVal)
+	for _, dir := range dirs {
+		dir = strings.TrimSpace(dir)
+		if dir == "" {
+			continue
+		}
+
+		for _, candidate := range candidates {
+			fullPath := filepath.Join(dir, candidate)
+			if FileExists(fullPath) {
+				return fullPath
+			}
+		}
+	}
+
+	return ""
+}
+
+// GetStatus implements [IExternalCliConnectorRegistry].
+func (e *ExternalCliConnectorRegistry) GetStatus(ctx context.Context, connectorName string) (*ExternalCliConnectorStatus, error) {
+	name, connector, err := e.getConnector(connectorName)
+	if err != nil {
+		return nil, err
+	}
+
+	warnings := []string{}
+	var resolvedExecutable = e.resolveExecutable(connector.Executable, connector.Environment)
+	if IsBlank(resolvedExecutable) {
+		warnings = append(warnings, fmt.Sprintf("Executable '%s' was not found on PATH", connector.Executable))
+	}
+
+	version := ""
+	if !e.options.Enabled {
+		warnings = append(warnings, "External CLI connectors are disabled.")
+	}
+
+	if !connector.Enabled {
+		warnings = append(warnings, fmt.Sprintf("External CLI connector '%s' is disabled", name))
+	}
+	var executableForStatus = ""
+	if e.options.Enabled && connector.Enabled {
+		executableForStatus = resolvedExecutable
+	}
+
+	if executableForStatus != "" && connector.VersionCommand != nil && len(connector.VersionCommand.Args) > 0 {
+		version, err = e.runStatusCommand(ctx, executableForStatus, connector.VersionCommand, connector, false)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	authStatus := "unknown"
+	authenticated := false
+	if executableForStatus != "" && connector.StatusCommand != nil && len(connector.StatusCommand.Args) > 0 {
+		statusOutput, err := e.runStatusCommand(ctx, executableForStatus, connector.StatusCommand, connector, true)
+		if err != nil {
+			return nil, err
+		}
+		if strings.HasPrefix(statusOutput, "exit=0\n") {
+			authenticated = true
+			authStatus = "authenticated"
+		} else if strings.HasPrefix(statusOutput, "exit=") {
+			authenticated = false
+			authStatus = "not_authenticated"
+		}
+	}
+
+	displayName := connector.DisplayName
+	if IsBlank(displayName) {
+		displayName = name
+	}
+	return &ExternalCliConnectorStatus{
+		Connector:              name,
+		DisplayName:            displayName,
+		Enabled:                connector.Enabled,
+		Executable:             connector.Executable,
+		ExecutableFound:        resolvedExecutable != "",
+		ResolvedExecutablePath: resolvedExecutable,
+		Version:                version,
+		Authenticated:          &authenticated,
+		AuthenticationStatus:   authStatus,
+		Warnings:               warnings,
+		LastCheckedAtUtc:       time.Now().UTC(),
+	}, nil
+}
+
+func (e *ExternalCliConnectorRegistry) runStatusCommand(parentCtx context.Context, executable string, command *ExternalCliStatusCommandOptions, connector *ExternalCliConnectorOptions, captureExitCode bool) (string, error) {
+	timeoutSec := e.options.DefaultTimeoutSeconds
+	if timeoutSec > 20 {
+		timeoutSec = 20
+	}
+	if command.TimeoutSeconds > 0 {
+		timeoutSec = command.TimeoutSeconds
+	}
+	if timeoutSec < 1 {
+		timeoutSec = 1
+	} else if timeoutSec > 120 {
+		timeoutSec = 120
+	}
+
+	ctx, cancel := context.WithTimeout(parentCtx, time.Duration(timeoutSec)*time.Second)
+	defer cancel()
+
+	args := append([]string{}, connector.DefaultArgs...)
+	args = append(args, command.Args...)
+
+	cmd := exec.CommandContext(ctx, executable, args...)
+	workDir, err := e.resolveWorkingDirectory(connector.WorkingDirectory)
+	if err != nil {
+		return "", err
+	}
+	cmd.Dir = workDir
+
+	if len(connector.Environment) > 0 {
+		for k, v := range connector.Environment {
+			cmd.Env = append(cmd.Env, fmt.Sprintf("%s=%s", k, v))
+		}
+	}
+
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+
+	err = cmd.Run()
+
+	if errors.Is(ctx.Err(), context.DeadlineExceeded) && !errors.Is(parentCtx.Err(), context.Canceled) {
+		if captureExitCode {
+			return "exit=-1\ntimeout", nil
+		}
+		return "timeout", nil
+	}
+	outStr := strings.TrimSpace(stdout.String())
+	if outStr == "" {
+		outStr = strings.TrimSpace(stderr.String())
+	}
+
+	outStr = e.redact(outStr, connector.RedactionRules)
+
+	if captureExitCode {
+		exitCode := 0
+		if err != nil {
+			var exitErr *exec.ExitError
+			if errors.As(err, &exitErr) {
+				exitCode = exitErr.ExitCode()
+			} else {
+				exitCode = -1
+			}
+		}
+		return fmt.Sprintf("exit=%d\n%s", exitCode, outStr), nil
+	}
+
+	return outStr, nil
+}
+
+func (s *ExternalCliConnectorRegistry) redact(value string, redactionRules []string) string {
+	if !s.options.RedactSecrets {
+		return value
+	}
+
+	current := s.redaction.Redact(value)
+	for _, pattern := range redactionRules {
+		if strings.TrimSpace(pattern) == "" {
+			continue
+		}
+		re, err := regexp.Compile(pattern)
+		if err != nil {
+			continue
+		}
+
+		current = re.ReplaceAllString(current, "[REDACTED:external-cli]")
+	}
+
+	return current
+}
+
+func (e *ExternalCliConnectorRegistry) resolveWorkingDirectory(configured string) (string, error) {
+	if strings.TrimSpace(configured) == "" {
+		return "", nil
+	}
+	expanded := os.ExpandEnv(configured)
+
+	if expanded == "~" || strings.HasPrefix(expanded, "~/") || strings.HasPrefix(expanded, "~\\") {
+		homeDir, err := os.UserHomeDir()
+		if err != nil {
+			return "", fmt.Errorf("failed to get user home directory: %w", err)
+		}
+
+		if expanded == "~" {
+			expanded = homeDir
+		} else {
+			expanded = filepath.Join(homeDir, expanded[2:])
+		}
+	}
+
+	fullPath, err := filepath.Abs(expanded)
+	if err != nil {
+		return "", fmt.Errorf("failed to resolve absolute path for '%s': %w", configured, err)
+	}
+
+	info, err := os.Stat(fullPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return "", fmt.Errorf("external CLI working directory '%s' does not exist", configured)
+		}
+		return "", fmt.Errorf("failed to check working directory '%s': %w", configured, err)
+	}
+
+	if !info.IsDir() {
+		return "", fmt.Errorf("external CLI working directory '%s' is a file, not a directory", configured)
+	}
+
+	return fullPath, nil
 }
