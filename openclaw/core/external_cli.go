@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"cmp"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -16,10 +18,12 @@ import (
 	"runtime"
 	"slices"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"syscall"
 	"time"
+	"unicode"
 )
 
 const (
@@ -1249,6 +1253,8 @@ func parseStructuredOutput(outputFormat, stdout string) (json.RawMessage, error)
 
 var PlaceholderRegex = regexp.MustCompile(`\{\{\s*(?P<name>[A-Za-z_][A-Za-z0-9_\-]*)\s*\}\}`)
 
+var _ IExternalCliConnectorRegistry = (*ExternalCliConnectorRegistry)(nil)
+
 type ExternalCliConnectorRegistry struct {
 	options   *ExternalCliOptions
 	redaction IRedactionPipeline
@@ -1709,4 +1715,428 @@ func (e *ExternalCliConnectorRegistry) resolveWorkingDirectory(configured string
 	}
 
 	return fullPath, nil
+}
+
+// BuildPreview implements [IExternalCliConnectorRegistry].
+func (e *ExternalCliConnectorRegistry) BuildPreview(request *ExternalCliPreviewRequest, dryRun bool) (*ExternalCliPreparedCommand, error) {
+	if !e.options.Enabled {
+		return nil, fmt.Errorf("external CLI connectors are disabled")
+	}
+	if e.options.AllowFreeformCommands {
+		return nil, fmt.Errorf("external CLI free-form commands are not supported by this native connector")
+	}
+
+	connectorName, connector, err := e.getConnector(request.Connector)
+	if err != nil {
+		return nil, err
+	}
+	if !connector.Enabled {
+		return nil, fmt.Errorf("external CLI connector '%s' is disabled", connectorName)
+	}
+	if strings.TrimSpace(connector.Executable) == "" {
+		return nil, fmt.Errorf("external CLI connector '%s' has no executable configured", connectorName)
+	}
+
+	commandName, command, err := e.getCommand(connector, request.Command)
+	if err != nil {
+		return nil, err
+	}
+	workDir := command.WorkingDirectory
+	if workDir == "" {
+		workDir = connector.WorkingDirectory
+	}
+	workingDirectory, err := e.resolveWorkingDirectory(workDir)
+	if err != nil {
+		return nil, err
+	}
+	if dryRun && (!command.SupportsDryRun || len(command.DryRunArgsTemplate) == 0) {
+		return nil, fmt.Errorf("external CLI command '%s/%s' does not have an explicit dry-run template", connectorName, commandName)
+	}
+
+	template := command.ArgsTemplate
+	if dryRun {
+		template = command.DryRunArgsTemplate
+	}
+	if len(template) == 0 {
+		return nil, fmt.Errorf("external CLI command '%s/%s' has no argument template", connectorName, commandName)
+	}
+
+	if err := e.validateParameters(command, template, request.Parameters); err != nil {
+		return nil, err
+	}
+
+	expandedArgs, err := e.expandTemplate(template, request.Parameters)
+	if err != nil {
+		return nil, err
+	}
+	args := append(append([]string{}, connector.DefaultArgs...), expandedArgs...)
+
+	redactionRules := append(append([]string{}, connector.RedactionRules...), command.RedactionRules...)
+	redactedArgs := e.redactArgs(args, redactionRules)
+
+	timeoutSeconds := e.options.DefaultTimeoutSeconds
+	if command.TimeoutSeconds != nil {
+		timeoutSeconds = *command.TimeoutSeconds
+	}
+	timeout := ClampInt(timeoutSeconds, 1, 3600)
+
+	outputFormat := e.resolveOutputFormat(connector, command)
+
+	environment := make(map[string]string, len(connector.Environment)+len(command.Environment))
+	for k, v := range connector.Environment {
+		environment[k] = v
+	}
+	for k, v := range command.Environment {
+		environment[k] = v
+	}
+
+	resolvedExecutable := e.resolveExecutable(connector.Executable, environment)
+	if resolvedExecutable == "" {
+		resolvedExecutable = connector.Executable
+	}
+
+	fingerprint := e.computeFingerprint(
+		connectorName,
+		commandName,
+		resolvedExecutable,
+		args,
+		workingDirectory,
+		timeout,
+		outputFormat,
+		dryRun,
+		command,
+	)
+	parametersHash := e.computeParametersHash(request.Parameters)
+	requiresApproval := e.requiresApproval(connector, command)
+
+	preview := ExternalCliInvocationPreview{
+		Connector:           connectorName,
+		Command:             commandName,
+		Executable:          resolvedExecutable,
+		Arguments:           args,
+		RedactedArguments:   redactedArgs,
+		RedactedCommandLine: e.buildCommandLine(resolvedExecutable, redactedArgs),
+		RiskLevel:           NormalizeRiskLevel(command.RiskLevel),
+		ReadOnly:            command.ReadOnly,
+		RequiresApproval:    requiresApproval,
+		SupportsDryRun:      command.SupportsDryRun,
+		IsDryRun:            dryRun,
+		StructuredOutput:    outputFormat,
+		RequiredScopes:      command.RequiredScopes,
+		RequiredIdentity:    command.RequiredIdentity,
+		WorkingDirectory:    workingDirectory,
+		TimeoutSeconds:      timeout,
+		Fingerprint:         fingerprint,
+		ParametersHash:      parametersHash,
+		Warnings:            e.buildPreviewWarnings(connector.Executable, environment),
+	}
+
+	return &ExternalCliPreparedCommand{
+		ConnectorName:     connectorName,
+		CommandName:       commandName,
+		Connector:         connector,
+		Command:           command,
+		Executable:        resolvedExecutable,
+		Arguments:         args,
+		RedactedArguments: redactedArgs,
+		WorkingDirectory:  workingDirectory,
+		Environment:       environment,
+		Preview:           &preview,
+		MaxStdoutBytes:    ClampInt(e.options.MaxStdoutBytes, 1, 16*1024*1024),
+		MaxStderrBytes:    ClampInt(e.options.MaxStderrBytes, 1, 4*1024*1024),
+		RedactionRules:    redactionRules,
+	}, nil
+}
+
+func (e *ExternalCliConnectorRegistry) buildPreviewWarnings(executable string, environment map[string]string) []string {
+	warnings := []string{}
+	if e.resolveExecutable(executable, environment) == "" {
+		warnings = append(warnings, fmt.Sprintf("Executable '%s' was not found on PATH.", executable))
+	}
+	return warnings
+}
+
+func (e *ExternalCliConnectorRegistry) buildCommandLine(executable string, args []string) string {
+	if len(args) == 0 {
+		return executable
+	}
+
+	quotedArgs := make([]string, len(args))
+	for i, arg := range args {
+		quotedArgs[i] = e.quoteForPreview(arg)
+	}
+
+	return executable + " " + strings.Join(quotedArgs, " ")
+}
+
+func (e *ExternalCliConnectorRegistry) quoteForPreview(arg string) string {
+	hasSpace := false
+	for _, r := range arg {
+		if unicode.IsSpace(r) {
+			hasSpace = true
+			break
+		}
+	}
+
+	if hasSpace {
+		escaped := strings.ReplaceAll(arg, `"`, `\"`)
+		return `"` + escaped + `"`
+	}
+
+	return arg
+}
+
+func (e *ExternalCliConnectorRegistry) computeParametersHash(parameters map[string]json.RawMessage) string {
+	keys := make([]string, 0, len(parameters))
+	for k := range parameters {
+		keys = append(keys, k)
+	}
+
+	sort.Slice(keys, func(i, j int) bool {
+		lowerI := strings.ToLower(keys[i])
+		lowerJ := strings.ToLower(keys[j])
+		if lowerI == lowerJ {
+			return keys[i] < keys[j]
+		}
+		return lowerI < lowerJ
+	})
+
+	var builder strings.Builder
+	for _, k := range keys {
+		builder.WriteString(k)
+		builder.WriteByte('=')
+		builder.Write(parameters[k])
+		builder.WriteByte('\n')
+	}
+
+	hash := sha256.Sum256([]byte(builder.String()))
+	return hex.EncodeToString(hash[:])
+}
+
+func (e *ExternalCliConnectorRegistry) computeFingerprint(connectorName string, commandName string, resolvedExecutable string, args []string, workingDirectory string, timeout int, outputFormat string, dryRun bool, command *ExternalCliCommandOptions) string {
+	var builder strings.Builder
+
+	builder.WriteString(connectorName)
+	builder.WriteByte('\n')
+
+	builder.WriteString(commandName)
+	builder.WriteByte('\n')
+
+	builder.WriteString(resolvedExecutable)
+	builder.WriteByte('\n')
+
+	builder.WriteString(workingDirectory)
+	builder.WriteByte('\n')
+
+	builder.WriteString(strconv.Itoa(timeout))
+	builder.WriteByte('\n')
+
+	builder.WriteString(outputFormat)
+	builder.WriteByte('\n')
+
+	if dryRun {
+		builder.WriteString("dry-run\n")
+	} else {
+		builder.WriteString("execute\n")
+	}
+
+	builder.WriteString(NormalizeRiskLevel(command.RiskLevel))
+	builder.WriteByte('\n')
+
+	if command.ReadOnly {
+		builder.WriteString("readonly\n")
+	} else {
+		builder.WriteString("mutation\n")
+	}
+
+	for _, arg := range args {
+		builder.WriteString(arg)
+		builder.WriteByte('\n')
+	}
+	hash := sha256.Sum256([]byte(builder.String()))
+	return hex.EncodeToString(hash[:])
+}
+
+func (e *ExternalCliConnectorRegistry) redactArgs(args []string, redactionRules []string) []string {
+	result := []string{}
+	for _, a := range args {
+		result = append(result, e.redact(a, redactionRules))
+	}
+	return result
+}
+
+func (e *ExternalCliConnectorRegistry) expandTemplate(template []string, parameters map[string]json.RawMessage) ([]string, error) {
+	result := make([]string, len(template))
+
+	for i, arg := range template {
+		var err error
+		expanded := PlaceholderRegex.ReplaceAllStringFunc(arg, func(match string) string {
+			if err != nil {
+				return match
+			}
+
+			submatches := PlaceholderRegex.FindStringSubmatch(match)
+			nameIndex := PlaceholderRegex.SubexpIndex("name")
+			if nameIndex < 0 || len(submatches) <= nameIndex {
+				return match
+			}
+			name := submatches[nameIndex]
+
+			value, ok := e.tryGetParameter(parameters, name)
+			if !ok {
+				err = fmt.Errorf("External CLI parameter '%s' is required.", name)
+				return match
+			}
+
+			r, _ := e.toParameterString(name, value)
+			return r
+		})
+
+		if err != nil {
+			return nil, err
+		}
+
+		result[i] = expanded
+	}
+
+	return result, nil
+}
+
+func (e *ExternalCliConnectorRegistry) validateParameters(command *ExternalCliCommandOptions, template []string, parameters map[string]json.RawMessage) error {
+	placeholderNames := make(map[string]bool)
+	for _, ph := range e.findPlaceholders(template) {
+		placeholderNames[strings.ToLower(ph)] = true
+	}
+
+	declaredNames := make(map[string]bool)
+	for paramName := range command.Parameters {
+		declaredNames[strings.ToLower(paramName)] = true
+	}
+
+	allowedNames := make(map[string]bool)
+	for name := range placeholderNames {
+		allowedNames[name] = true
+	}
+	for name := range declaredNames {
+		allowedNames[name] = true
+	}
+
+	for _, rawPh := range e.findPlaceholders(template) {
+		if _, ok := e.tryGetParameter(parameters, rawPh); !ok {
+			return fmt.Errorf("external CLI parameter '%s' is required", rawPh)
+		}
+	}
+
+	for paramName, schema := range command.Parameters {
+		if schema.Required {
+			if _, ok := e.tryGetParameter(parameters, paramName); !ok {
+				return fmt.Errorf("external CLI parameter '%s' is required", paramName)
+			}
+		}
+	}
+
+	if !command.AllowUnknownParameters {
+		for key := range parameters {
+			if !allowedNames[strings.ToLower(key)] {
+				return fmt.Errorf("external CLI parameter '%s' is not allowed for this command", key)
+			}
+		}
+	}
+
+	for key, value := range parameters {
+		paramStr, err := e.toParameterString(key, value)
+		if err != nil {
+			return err
+		}
+
+		if schema, ok := e.tryGetParameterSchema(command.Parameters, key); ok {
+			if err := e.validateParameterValue(key, paramStr, schema); err != nil {
+				return err
+			}
+		}
+	}
+
+	return nil
+}
+
+func (e *ExternalCliConnectorRegistry) validateParameterValue(name string, value string, schema *ExternalCliParameterOptions) error {
+	if schema.MaxLength != 0 && len(value) > schema.MaxLength {
+		return fmt.Errorf("external CLI parameter '%s' exceeds max length %d", name, schema.MaxLength)
+	}
+
+	if len(schema.AllowedValues) > 0 {
+		allowed := false
+		for _, item := range schema.AllowedValues {
+			if item == value {
+				allowed = true
+				break
+			}
+		}
+		if !allowed {
+			return fmt.Errorf("external CLI parameter '%s' has a value that is not allowed", name)
+		}
+	}
+
+	if strings.TrimSpace(schema.Pattern) != "" {
+		matched, err := regexp.MatchString(schema.Pattern, value)
+		if err != nil || !matched {
+			return fmt.Errorf("external CLI parameter '%s' does not match the required pattern", name)
+		}
+	}
+
+	return nil
+}
+
+func (e *ExternalCliConnectorRegistry) tryGetParameterSchema(parameters map[string]ExternalCliParameterOptions, key string) (*ExternalCliParameterOptions, bool) {
+	if schema, ok := parameters[key]; ok {
+		return &schema, true
+	}
+	for k, candidate := range parameters {
+		if strings.EqualFold(k, key) {
+			return &candidate, true
+		}
+	}
+
+	return nil, false
+}
+
+func (e *ExternalCliConnectorRegistry) toParameterString(key string, value json.RawMessage) (string, error) {
+	trimmed := bytes.TrimSpace(value)
+
+	if len(trimmed) == 0 {
+		return "", fmt.Errorf("external CLI parameter '%s' must be a string, number, or boolean", key)
+	}
+
+	if trimmed[0] == '"' {
+		var s string
+		if err := json.Unmarshal(trimmed, &s); err != nil {
+			return "", fmt.Errorf("invalid string format for parameter '%s': %w", key, err)
+		}
+		return s, nil
+	}
+
+	if string(trimmed) == "true" || string(trimmed) == "false" {
+		return string(trimmed), nil
+	}
+
+	var num json.Number
+	if err := json.Unmarshal(trimmed, &num); err == nil {
+		return num.String(), nil
+	}
+
+	return "", fmt.Errorf("external CLI parameter '%s' must be a string, number, or boolean", key)
+}
+
+func (e *ExternalCliConnectorRegistry) tryGetParameter(parameters map[string]json.RawMessage, name string) (json.RawMessage, bool) {
+	if val, ok := parameters[name]; ok {
+		return val, true
+	}
+
+	for key, candidate := range parameters {
+		if strings.EqualFold(key, name) {
+			return candidate, true
+		}
+	}
+
+	return nil, false
 }
