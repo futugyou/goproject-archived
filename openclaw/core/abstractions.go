@@ -159,6 +159,8 @@ type IMemoryRetentionStore interface {
 type IMemoryStore interface {
 	GetSession(ctx context.Context, sessionId string) (*Session, error)
 	SaveSession(ctx context.Context, session Session) error
+	DeleteSession(ctx context.Context, sessionId string) error
+
 	LoadNote(ctx context.Context, key string) (string, error)
 	SaveNote(ctx context.Context, key string, content string) error
 	DeleteNote(ctx context.Context, key string) error

@@ -31,6 +31,12 @@ type PostgresMemoryStore struct {
 	embeddingGenerator embeddings.IEmbeddingGenerator[string, embeddings.EmbeddingT[float64]]
 }
 
+// DeleteSession implements [IMemoryStore].
+func (s *PostgresMemoryStore) DeleteSession(ctx context.Context, sessionId string) error {
+	_, err := gorm.G[Session](s.db).Where("id = ?", sessionId).Delete(ctx)
+	return err
+}
+
 // ListBackgroundRunnableSessions implements [IBackgroundSessionStore].
 func (s *PostgresMemoryStore) ListBackgroundRunnableSessions(ctx context.Context, limit int) ([]Session, error) {
 	limit = max(min(limit, 500), 1)
@@ -880,6 +886,12 @@ func (s *SqliteMemoryStore) Close() error {
 	return nil
 }
 
+// DeleteSession implements [IMemoryStore].
+func (s *SqliteMemoryStore) DeleteSession(ctx context.Context, sessionId string) error {
+	_, err := s.db.ExecContext(ctx, "DELETE FROM sessions WHERE id = ?;", sessionId)
+	return err
+}
+
 func (s *SqliteMemoryStore) GetSession(ctx context.Context, sessionId string) (*Session, error) {
 	if sessionId == "" {
 		return nil, nil
@@ -1319,6 +1331,32 @@ func (f *FileMemoryStore) GetSession(ctx context.Context, sessionId string) (*Se
 	}
 
 	return session, nil
+}
+
+// DeleteSession implements [IMemoryStore].
+func (f *FileMemoryStore) DeleteSession(ctx context.Context, sessionId string) error {
+	if strings.TrimSpace(sessionId) == "" {
+		return nil
+	}
+
+	stripe := f.resolveSessionLoadStripe(sessionId)
+	stripe.Lock()
+	defer stripe.Unlock()
+
+	f.cacheMu.Lock()
+	delete(f.sessionCache, sessionId)
+	f.cacheMu.Unlock()
+
+	encodedId := f.encodeKey(sessionId)
+	filePath := filepath.Join(f.sessionsPath, encodedId+".json")
+
+	if err := os.Remove(filePath); err != nil && !os.IsNotExist(err) {
+		return err
+	}
+
+	_ = os.Remove(filePath + ".tmp")
+
+	return nil
 }
 
 func (f *FileMemoryStore) SaveSession(ctx context.Context, session Session) error {
