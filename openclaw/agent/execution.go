@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/futugyou/openclaw/core"
+	"github.com/google/uuid"
 )
 
 type ManagedExecutionProcess struct {
@@ -393,4 +394,148 @@ func clamp(val, low, high int) int {
 		return high
 	}
 	return val
+}
+
+type ExecutionRouteResolution struct {
+	BackendName      string
+	FallbackBackend  *string
+	Template         *string
+	RequireWorkspace bool
+	SandboxMode      core.ToolSandboxMode
+}
+
+type IProcessCommandBuilder interface {
+	CreateCmd(ctx context.Context, req core.ExecutionRequest) (*exec.Cmd, error)
+}
+
+type ProcessExecutionBackendBase struct {
+	capabilities core.ExecutionBackendCapabilities
+	builder      IProcessCommandBuilder
+}
+
+func NewProcessExecutionBackendBase(builder IProcessCommandBuilder) ProcessExecutionBackendBase {
+	return ProcessExecutionBackendBase{
+		builder: builder,
+		capabilities: core.ExecutionBackendCapabilities{
+			SupportsOneShotCommands:  true,
+			SupportsProcesses:        true,
+			SupportsPty:              false,
+			SupportsInteractiveInput: true,
+		},
+	}
+}
+
+func (b *ProcessExecutionBackendBase) Capabilities() core.ExecutionBackendCapabilities {
+	return b.capabilities
+}
+
+func (b *ProcessExecutionBackendBase) StartProcess(ctx context.Context, request core.ExecutionProcessStartRequest) (*ManagedExecutionProcess, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+
+	execReq := core.ExecutionRequest{
+		ToolName:         request.ToolName,
+		BackendName:      request.BackendName,
+		Command:          request.Command,
+		Arguments:        request.Arguments,
+		WorkingDirectory: request.WorkingDirectory,
+		Environment:      request.Environment,
+		Template:         request.Template,
+		RequireWorkspace: request.RequireWorkspace,
+	}
+
+	cmd, err := b.builder.CreateCmd(ctx, execReq)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create command: %w", err)
+	}
+
+	if err := cmd.Start(); err != nil {
+		return nil, fmt.Errorf("failed to start process: %w", err)
+	}
+
+	pid := 0
+	if cmd.Process != nil {
+		pid = cmd.Process.Pid
+	}
+
+	rawUUID := uuid.New().String()
+	cleanUUID := strings.ReplaceAll(rawUUID, "-", "")
+	managedID := fmt.Sprintf("proc_%s", cleanUUID[:16])
+
+	managed := NewManagedExecutionProcess(managedID, request, cmd, &pid, b.capabilities.SupportsPty)
+
+	managed.BeginCapture()
+	return managed, nil
+}
+
+func ExecuteProcess(ctx context.Context, backendName string, cmd *exec.Cmd, standardInput string, timeoutSeconds int) (*core.ExecutionResult, error) {
+	start := time.Now()
+
+	// 超时 Context 管理
+	var cancel context.CancelFunc
+	if timeoutSeconds > 0 {
+		ctx, cancel = context.WithTimeout(ctx, time.Duration(timeoutSeconds)*time.Second)
+		defer cancel()
+	}
+
+	// 利用 Pipe 或 Buffer 捕获 Stdout/Stderr/Stdin
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+
+	if standardInput != "" {
+		cmd.Stdin = bytes.NewBufferString(standardInput)
+	}
+
+	// 启动进程
+	if err := cmd.Start(); err != nil {
+		return nil, fmt.Errorf("process start failed: %w", err)
+	}
+
+	// 关联取消通知：如果 context 被取消或超时，杀死进程树
+	done := make(chan error, 1)
+	go func() {
+		done <- cmd.Wait()
+	}()
+
+	var waitErr error
+	timedOut := false
+
+	select {
+	case <-ctx.Done():
+		if errors.Is(ctx.Err(), context.DeadlineExceeded) {
+			timedOut = true
+		}
+		// 强制杀掉包含子树在内的进程
+		if cmd.Process != nil {
+			_ = cmd.Process.Kill()
+		}
+		waitErr = ctx.Err()
+	case err := <-done:
+		waitErr = err
+	}
+
+	durationMs := float64(time.Since(start).Milliseconds())
+
+	// 提取 ExitCode
+	exitCode := 0
+	if waitErr != nil {
+		var exitErr *exec.ExitError
+		if errors.As(waitErr, &exitErr) {
+			exitCode = exitErr.ExitCode()
+		} else {
+			exitCode = -1
+		}
+	}
+
+	return &core.ExecutionResult{
+		BackendName:  backendName,
+		ExitCode:     exitCode,
+		Stdout:       stdout.String(),
+		Stderr:       stderr.String(),
+		TimedOut:     timedOut,
+		FallbackUsed: false,
+		DurationMs:   durationMs,
+	}, nil
 }
