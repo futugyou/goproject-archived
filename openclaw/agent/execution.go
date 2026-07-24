@@ -860,3 +860,103 @@ func (o *OpenSandboxExecutionBackend) Execute(ctx context.Context, request *core
 		DurationMs:   float64(time.Since(start).Milliseconds()),
 	}, nil
 }
+
+var _ core.IExecutionBackend = (*SshExecutionBackend)(nil)
+var _ IExecutionProcessBackend = (*SshExecutionBackend)(nil)
+
+type SshExecutionBackend struct {
+	ProcessExecutionBackendBase
+	name    string
+	profile core.ExecutionBackendProfileConfig
+}
+
+func NewSshExecutionBackend(name string, profile core.ExecutionBackendProfileConfig) *SshExecutionBackend {
+	backend := &SshExecutionBackend{
+		name:    name,
+		profile: profile,
+	}
+	backend.ProcessExecutionBackendBase = NewProcessExecutionBackendBase(backend)
+	return backend
+}
+
+func (s *SshExecutionBackend) Name() string {
+	return s.name
+}
+
+func (s *SshExecutionBackend) Execute(ctx context.Context, request *core.ExecutionRequest) (*core.ExecutionResult, error) {
+	cmd, err := s.CreateProcessStartInfo(ctx, request)
+	if err != nil {
+		return nil, err
+	}
+
+	return ExecuteProcess(
+		ctx,
+		s.Name(),
+		cmd,
+		request.StandardInput,
+		s.profile.TimeoutSeconds,
+	)
+}
+
+func (s *SshExecutionBackend) CreateProcessStartInfo(ctx context.Context, req *core.ExecutionRequest) (*exec.Cmd, error) {
+	if strings.TrimSpace(s.profile.Host) == "" || strings.TrimSpace(s.profile.Username) == "" {
+		return nil, fmt.Errorf("execution backend '%s' requires Host and Username", s.name)
+	}
+
+	var args []string
+
+	port := s.profile.Port
+	if port <= 0 {
+		port = 22
+	}
+	args = append(args, "-p", fmt.Sprintf("%d", port))
+
+	if strings.TrimSpace(s.profile.PrivateKeyPath) != "" {
+		args = append(args, "-i", s.profile.PrivateKeyPath)
+	}
+
+	args = append(args, fmt.Sprintf("%s@%s", s.profile.Username, s.profile.Host))
+
+	remoteCommand := req.Command
+	if len(req.Arguments) > 0 {
+		quotedArgs := make([]string, len(req.Arguments))
+		for i, arg := range req.Arguments {
+			quotedArgs[i] = quoteIfNeeded(arg)
+		}
+		remoteCommand += " " + strings.Join(quotedArgs, " ")
+	}
+
+	workDir := req.WorkingDirectory
+	if workDir == "" {
+		workDir = s.profile.WorkingDirectory
+	}
+	if strings.TrimSpace(workDir) != "" {
+		remoteCommand = fmt.Sprintf("cd %s && %s", quoteIfNeeded(workDir), remoteCommand)
+	}
+
+	mergedEnv := make(map[string]string)
+	maps.Copy(mergedEnv, s.profile.Environment)
+	maps.Copy(mergedEnv, req.Environment)
+
+	var envString strings.Builder
+	for k, v := range mergedEnv {
+		fmt.Fprintf(&envString, "%s=%s ", k, quoteIfNeeded(v))
+	}
+	if envString.String() != "" {
+		remoteCommand = envString.String() + remoteCommand
+	}
+
+	args = append(args, remoteCommand)
+
+	cmd := exec.Command("ssh", args...)
+
+	return cmd, nil
+}
+
+func quoteIfNeeded(value string) string {
+	if strings.ContainsAny(value, " \t\n\r") {
+		escaped := strings.ReplaceAll(value, `"`, `\"`)
+		return fmt.Sprintf(`"%s"`, escaped)
+	}
+	return value
+}
