@@ -71,6 +71,7 @@ type ExecutionRequest struct {
 	BackendName        string            `json:"backend_name"`
 	Command            string            `json:"command"`
 	Arguments          []string          `json:"arguments"`
+	StandardInput      string            `json:"standard_input"`
 	LeaseKey           string            `json:"lease_key,omitempty"`
 	WorkingDirectory   string            `json:"working_directory,omitempty"`
 	Environment        map[string]string `json:"environment"`

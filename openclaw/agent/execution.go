@@ -57,7 +57,7 @@ type ManagedExecutionProcess struct {
 
 func NewManagedExecutionProcess(
 	processID string,
-	req core.ExecutionProcessStartRequest,
+	req *core.ExecutionProcessStartRequest,
 	cmd *exec.Cmd,
 	nativePid *int,
 	supportsPty bool,
@@ -405,18 +405,18 @@ type ExecutionRouteResolution struct {
 }
 
 type IProcessCommandBuilder interface {
-	CreateCmd(ctx context.Context, req core.ExecutionRequest) (*exec.Cmd, error)
+	CreateProcessStartInfo(ctx context.Context, req *core.ExecutionRequest) (*exec.Cmd, error)
 }
 
 type ProcessExecutionBackendBase struct {
-	capabilities core.ExecutionBackendCapabilities
+	capabilities *core.ExecutionBackendCapabilities
 	builder      IProcessCommandBuilder
 }
 
 func NewProcessExecutionBackendBase(builder IProcessCommandBuilder) ProcessExecutionBackendBase {
 	return ProcessExecutionBackendBase{
 		builder: builder,
-		capabilities: core.ExecutionBackendCapabilities{
+		capabilities: &core.ExecutionBackendCapabilities{
 			SupportsOneShotCommands:  true,
 			SupportsProcesses:        true,
 			SupportsPty:              false,
@@ -425,16 +425,16 @@ func NewProcessExecutionBackendBase(builder IProcessCommandBuilder) ProcessExecu
 	}
 }
 
-func (b *ProcessExecutionBackendBase) Capabilities() core.ExecutionBackendCapabilities {
+func (b *ProcessExecutionBackendBase) Capabilities() *core.ExecutionBackendCapabilities {
 	return b.capabilities
 }
 
-func (b *ProcessExecutionBackendBase) StartProcess(ctx context.Context, request core.ExecutionProcessStartRequest) (*ManagedExecutionProcess, error) {
+func (b *ProcessExecutionBackendBase) StartProcess(ctx context.Context, request *core.ExecutionProcessStartRequest) (*ManagedExecutionProcess, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
 
-	execReq := core.ExecutionRequest{
+	execReq := &core.ExecutionRequest{
 		ToolName:         request.ToolName,
 		BackendName:      request.BackendName,
 		Command:          request.Command,
@@ -445,7 +445,7 @@ func (b *ProcessExecutionBackendBase) StartProcess(ctx context.Context, request 
 		RequireWorkspace: request.RequireWorkspace,
 	}
 
-	cmd, err := b.builder.CreateCmd(ctx, execReq)
+	cmd, err := b.builder.CreateProcessStartInfo(ctx, execReq)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create command: %w", err)
 	}
@@ -521,8 +521,7 @@ func ExecuteProcess(ctx context.Context, backendName string, cmd *exec.Cmd, stan
 	// 提取 ExitCode
 	exitCode := 0
 	if waitErr != nil {
-		var exitErr *exec.ExitError
-		if errors.As(waitErr, &exitErr) {
+		if exitErr, ok := errors.AsType[*exec.ExitError](waitErr); ok {
 			exitCode = exitErr.ExitCode()
 		} else {
 			exitCode = -1
@@ -538,4 +537,83 @@ func ExecuteProcess(ctx context.Context, backendName string, cmd *exec.Cmd, stan
 		FallbackUsed: false,
 		DurationMs:   durationMs,
 	}, nil
+}
+
+type IExecutionProcessBackend interface {
+	Name() string
+	Capabilities() *core.ExecutionBackendCapabilities
+	StartProcess(ctx context.Context, request *core.ExecutionProcessStartRequest) (*ManagedExecutionProcess, error)
+}
+
+var _ core.IExecutionBackend = (*DockerExecutionBackend)(nil)
+var _ IExecutionProcessBackend = (*DockerExecutionBackend)(nil)
+
+type DockerExecutionBackend struct {
+	ProcessExecutionBackendBase
+	name    string
+	profile core.ExecutionBackendProfileConfig
+}
+
+func NewDockerExecutionBackend(name string, profile core.ExecutionBackendProfileConfig) *DockerExecutionBackend {
+	backend := &DockerExecutionBackend{
+		name:    name,
+		profile: profile,
+	}
+	backend.ProcessExecutionBackendBase = NewProcessExecutionBackendBase(backend)
+	return backend
+}
+
+// GetName implements [IExecutionProcessBackend].
+func (d *DockerExecutionBackend) Name() string {
+	return d.name
+}
+
+func (d *DockerExecutionBackend) CreateProcessStartInfo(ctx context.Context, request *core.ExecutionRequest) (*exec.Cmd, error) {
+	image := request.Template
+	if strings.TrimSpace(image) == "" {
+		image = d.profile.Image
+	}
+	if strings.TrimSpace(image) == "" {
+		return nil, fmt.Errorf("execution backend '%s' requires an image", d.Name())
+	}
+
+	var args []string
+	args = append(args, "run", "--rm")
+
+	workingDir := request.WorkingDirectory
+	if strings.TrimSpace(workingDir) == "" {
+		workingDir = d.profile.WorkingDirectory
+	}
+	if strings.TrimSpace(workingDir) != "" {
+		args = append(args, "-w", workingDir)
+	}
+
+	for k, v := range d.profile.Environment {
+		args = append(args, "-e", fmt.Sprintf("%s=%s", k, v))
+	}
+
+	for k, v := range request.Environment {
+		args = append(args, "-e", fmt.Sprintf("%s=%s", k, v))
+	}
+
+	args = append(args, image, request.Command)
+	args = append(args, request.Arguments...)
+
+	cmd := exec.CommandContext(ctx, "docker", args...)
+	return cmd, nil
+}
+
+func (d *DockerExecutionBackend) Execute(ctx context.Context, request *core.ExecutionRequest) (*core.ExecutionResult, error) {
+	cmd, err := d.CreateProcessStartInfo(ctx, request)
+	if err != nil {
+		return nil, err
+	}
+
+	return ExecuteProcess(
+		ctx,
+		d.Name(),
+		cmd,
+		request.StandardInput,
+		d.profile.TimeoutSeconds,
+	)
 }
