@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"os"
 	"os/exec"
 	"os/user"
@@ -678,12 +679,8 @@ func (l *LocalExecutionBackend) CreateProcessStartInfo(ctx context.Context, req 
 	cmd.Dir = workingDir
 
 	envMap := make(map[string]string)
-	for k, v := range l.profile.Environment {
-		envMap[k] = v
-	}
-	for k, v := range req.Environment {
-		envMap[k] = v
-	}
+	maps.Copy(envMap, l.profile.Environment)
+	maps.Copy(envMap, req.Environment)
 
 	env := os.Environ()
 	for k, v := range envMap {
@@ -785,4 +782,81 @@ func (l *LocalExecutionBackend) resolveFullPath(val string) (string, error) {
 	}
 
 	return filepath.Abs(val)
+}
+
+var _ core.IExecutionBackend = (*OpenSandboxExecutionBackend)(nil)
+
+type OpenSandboxExecutionBackend struct {
+	name           string
+	toolSandbox    core.IToolSandbox
+	timeoutSeconds int
+}
+
+func NewOpenSandboxExecutionBackend(name string, toolSandbox core.IToolSandbox, timeoutSeconds int) *OpenSandboxExecutionBackend {
+	if timeoutSeconds <= 0 {
+		timeoutSeconds = 30
+	}
+	backend := &OpenSandboxExecutionBackend{
+		name:           name,
+		toolSandbox:    toolSandbox,
+		timeoutSeconds: timeoutSeconds,
+	}
+	return backend
+}
+
+func (o *OpenSandboxExecutionBackend) Name() string {
+	return o.name
+}
+
+func (o *OpenSandboxExecutionBackend) Execute(ctx context.Context, request *core.ExecutionRequest) (*core.ExecutionResult, error) {
+	start := time.Now()
+	execCtx := ctx
+	if o.timeoutSeconds > 0 {
+		var cancel context.CancelFunc
+		execCtx, cancel = context.WithTimeout(ctx, time.Duration(o.timeoutSeconds)*time.Second)
+		defer cancel()
+	}
+
+	var ttlSeconds int
+	if request.TimeToLiveSeconds != nil {
+		ttlSeconds = *request.TimeToLiveSeconds
+	}
+
+	result, err := o.toolSandbox.Execute(execCtx, core.SandboxExecutionRequest{
+		Command:           request.Command,
+		Arguments:         request.Arguments,
+		LeaseKey:          request.LeaseKey,
+		Environment:       request.Environment,
+		WorkingDirectory:  request.WorkingDirectory,
+		Template:          request.Template,
+		TimeToLiveSeconds: ttlSeconds,
+	})
+
+	if err != nil {
+		if ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
+
+		if errors.Is(execCtx.Err(), context.DeadlineExceeded) {
+			return &core.ExecutionResult{
+				BackendName:  o.name,
+				ExitCode:     -1,
+				TimedOut:     true,
+				FallbackUsed: false,
+				DurationMs:   float64(time.Since(start).Milliseconds()),
+			}, nil
+		}
+
+		return nil, err
+	}
+
+	return &core.ExecutionResult{
+		BackendName:  o.name,
+		ExitCode:     result.ExitCode,
+		Stdout:       result.Stdout,
+		Stderr:       result.Stderr,
+		TimedOut:     false,
+		FallbackUsed: false,
+		DurationMs:   float64(time.Since(start).Milliseconds()),
+	}, nil
 }
