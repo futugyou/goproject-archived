@@ -6,7 +6,11 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os"
 	"os/exec"
+	"os/user"
+	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -616,4 +620,169 @@ func (d *DockerExecutionBackend) Execute(ctx context.Context, request *core.Exec
 		request.StandardInput,
 		d.profile.TimeoutSeconds,
 	)
+}
+
+var _ core.IExecutionBackend = (*LocalExecutionBackend)(nil)
+var _ IExecutionProcessBackend = (*LocalExecutionBackend)(nil)
+
+type LocalExecutionBackend struct {
+	ProcessExecutionBackendBase
+	workspaceRoot string
+	profile       core.ExecutionBackendProfileConfig
+}
+
+func NewLocalExecutionBackend(workspaceRoot string, profile core.ExecutionBackendProfileConfig) *LocalExecutionBackend {
+	backend := &LocalExecutionBackend{
+		workspaceRoot: workspaceRoot,
+		profile:       profile,
+	}
+	backend.ProcessExecutionBackendBase = NewProcessExecutionBackendBase(backend)
+	return backend
+}
+
+func (l *LocalExecutionBackend) Name() string {
+	return "local"
+}
+
+func (b *LocalExecutionBackend) Capabilities() *core.ExecutionBackendCapabilities {
+	return &core.ExecutionBackendCapabilities{
+		SupportsOneShotCommands:  true,
+		SupportsProcesses:        true,
+		SupportsPty:              runtime.GOOS != "windows",
+		SupportsInteractiveInput: true,
+	}
+}
+
+func (l *LocalExecutionBackend) Execute(ctx context.Context, request *core.ExecutionRequest) (*core.ExecutionResult, error) {
+	cmd, err := l.CreateProcessStartInfo(ctx, request)
+	if err != nil {
+		return nil, err
+	}
+
+	return ExecuteProcess(
+		ctx,
+		l.Name(),
+		cmd,
+		request.StandardInput,
+		l.profile.TimeoutSeconds,
+	)
+}
+
+func (l *LocalExecutionBackend) CreateProcessStartInfo(ctx context.Context, req *core.ExecutionRequest) (*exec.Cmd, error) {
+	workingDir, err := l.resolveWorkingDirectory(req)
+	if err != nil {
+		return nil, err
+	}
+
+	cmd := exec.Command(req.Command, req.Arguments...)
+	cmd.Dir = workingDir
+
+	envMap := make(map[string]string)
+	for k, v := range l.profile.Environment {
+		envMap[k] = v
+	}
+	for k, v := range req.Environment {
+		envMap[k] = v
+	}
+
+	env := os.Environ()
+	for k, v := range envMap {
+		env = append(env, fmt.Sprintf("%s=%s", k, v))
+	}
+	cmd.Env = env
+
+	return cmd, nil
+}
+
+func (l *LocalExecutionBackend) resolveWorkingDirectory(req *core.ExecutionRequest) (string, error) {
+	effective := req.WorkingDirectory
+	if effective == "" {
+		effective = l.profile.WorkingDirectory
+	}
+	if effective == "" {
+		effective = l.workspaceRoot
+	}
+	if effective == "" {
+		var err error
+		effective, err = os.Getwd()
+		if err != nil {
+			return "", err
+		}
+	}
+
+	if !req.RequireWorkspace {
+		return effective, nil
+	}
+
+	workspaceRoot := l.workspaceRoot
+	if workspaceRoot == "" {
+		workspaceRoot = l.profile.WorkingDirectory
+	}
+	if workspaceRoot == "" {
+		workspaceRoot = l.profile.WorkspaceRoot
+	}
+
+	if strings.TrimSpace(workspaceRoot) == "" {
+		return "", fmt.Errorf("execution backend 'local' requires a configured workspace root for this request")
+	}
+
+	resolvedWorkspaceRoot, err := l.resolveFullPath(workspaceRoot)
+	if err != nil {
+		return "", err
+	}
+
+	resolvedWorkingDirectory, err := l.resolveFullPath(effective)
+	if err != nil {
+		return "", err
+	}
+
+	isWindows := runtime.GOOS == "windows"
+	cmp := func(a, b string) bool {
+		if isWindows {
+			return strings.EqualFold(a, b)
+		}
+		return a == b
+	}
+
+	if !cmp(resolvedWorkingDirectory, resolvedWorkspaceRoot) {
+		workspacePrefix := resolvedWorkspaceRoot
+		if !strings.HasSuffix(workspacePrefix, string(filepath.Separator)) {
+			workspacePrefix += string(filepath.Separator)
+		}
+
+		hasPrefix := false
+		if isWindows {
+			hasPrefix = strings.HasPrefix(strings.ToLower(resolvedWorkingDirectory), strings.ToLower(workspacePrefix))
+		} else {
+			hasPrefix = strings.HasPrefix(resolvedWorkingDirectory, workspacePrefix)
+		}
+
+		if !hasPrefix {
+			return "", fmt.Errorf("execution backend '%s' denied working directory '%s' because it is outside the configured workspace root", l.Name(), effective)
+		}
+	}
+
+	return resolvedWorkingDirectory, nil
+}
+
+func (l *LocalExecutionBackend) resolveFullPath(val string) (string, error) {
+	if strings.TrimSpace(val) == "" {
+		return os.Getwd()
+	}
+
+	if strings.HasPrefix(val, "~/") || val == "~" {
+		usr, err := user.Current()
+		if err != nil {
+			return "", err
+		}
+		home := usr.HomeDir
+
+		if val == "~" {
+			val = home
+		} else {
+			val = filepath.Join(home, val[2:])
+		}
+	}
+
+	return filepath.Abs(val)
 }
