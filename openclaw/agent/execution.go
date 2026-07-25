@@ -13,6 +13,7 @@ import (
 	"os/user"
 	"path/filepath"
 	"runtime"
+	"sort"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -252,11 +253,14 @@ func (p *ManagedExecutionProcess) GetStatus() core.ExecutionProcessStatus {
 	}
 }
 
-func (p *ManagedExecutionProcess) ReadLog(req core.ExecutionProcessLogRequest) core.ExecutionProcessLogResult {
+func (p *ManagedExecutionProcess) ReadLog(req *core.ExecutionProcessLogRequest) *core.ExecutionProcessLogResult {
+	if req == nil {
+		return nil
+	}
 	stdoutStr, nextStdout := readSlice(&p.stdout, &p.stdoutGate, req.StdoutOffset, req.MaxChars)
 	stderrStr, nextStderr := readSlice(&p.stderr, &p.stderrGate, req.StderrOffset, req.MaxChars)
 
-	return core.ExecutionProcessLogResult{
+	return &core.ExecutionProcessLogResult{
 		ProcessId:        p.ProcessId,
 		Stdout:           stdoutStr,
 		Stderr:           stderrStr,
@@ -1201,4 +1205,358 @@ func (r *ToolExecutionRouter) tryResolveConfiguredRoute(toolName string) (*core.
 		}
 	}
 	return nil, nil, false
+}
+
+type RuntimeEventCallback func(component, action, summary string)
+
+type ExecutionProcessService struct {
+	mu             sync.RWMutex
+	router         *ToolExecutionRouter
+	metrics        *core.RuntimeMetrics
+	processes      map[string]*ManagedExecutionProcess
+	OnRuntimeEvent RuntimeEventCallback
+}
+
+func NewExecutionProcessService(router *ToolExecutionRouter, metrics *core.RuntimeMetrics) *ExecutionProcessService {
+	return &ExecutionProcessService{
+		router:    router,
+		metrics:   metrics,
+		processes: make(map[string]*ManagedExecutionProcess),
+	}
+}
+
+func (s *ExecutionProcessService) Start(ctx context.Context, req *core.ExecutionProcessStartRequest) (*core.ExecutionProcessHandle, error) {
+	if req == nil {
+		return nil, errors.New("ExecutionProcessStartRequest can not be nil")
+	}
+
+	s.pruneCompletedProcesses()
+
+	route := s.router.ResolveBackendForProcess()
+	backendName := req.BackendName
+	if strings.TrimSpace(backendName) == "" {
+		backendName = route.BackendName
+	}
+
+	if route.SandboxMode == core.ToolSandboxMode_Require {
+		if strings.EqualFold(backendName, "opensandbox") {
+			return nil, fmt.Errorf("process tool requires sandboxing, but the configured sandbox provider does not support long-running background processes")
+		}
+		if !s.router.IsIsolatedProcessBackend(backendName) {
+			return nil, fmt.Errorf("process tool requires sandboxing, but no sandbox-capable background execution backend is configured")
+		}
+	}
+
+	backend, ok := s.router.TryGetProcessBackend(backendName)
+	if !ok {
+		if strings.EqualFold(backendName, "opensandbox") {
+			return nil, fmt.Errorf("execution backend 'opensandbox' does not support long-running background processes")
+		}
+		return nil, fmt.Errorf("execution backend '%s' does not support background processes", backendName)
+	}
+
+	if req.Pty && !backend.Capabilities().SupportsPty {
+		return nil, fmt.Errorf("execution backend '%s' does not support PTY mode", backendName)
+	}
+
+	envCopy := make(map[string]string, len(req.Environment))
+	for k, v := range req.Environment {
+		envCopy[k] = v
+	}
+
+	template := req.Template
+	if template == "" && route.Template != nil {
+		template = *route.Template
+	}
+
+	normalized := core.ExecutionProcessStartRequest{
+		ToolName:         req.ToolName,
+		BackendName:      backendName,
+		OwnerSessionId:   req.OwnerSessionId,
+		OwnerChannelId:   req.OwnerChannelId,
+		OwnerSenderId:    req.OwnerSenderId,
+		Command:          req.Command,
+		Arguments:        req.Arguments,
+		WorkingDirectory: req.WorkingDirectory,
+		Environment:      envCopy,
+		TimeoutSeconds:   req.TimeoutSeconds,
+		Pty:              req.Pty,
+		Template:         template,
+		RequireWorkspace: req.RequireWorkspace,
+	}
+
+	process, err := backend.StartProcess(ctx, &normalized)
+	if err != nil {
+		return nil, err
+	}
+
+	s.mu.Lock()
+	s.processes[strings.ToLower(process.ProcessId)] = process
+	processCount := len(s.processes)
+	s.mu.Unlock()
+
+	process.OnExited = func(_, outcome string) {
+		s.handleProcessExit(process, outcome)
+	}
+	process.StartTimeoutMonitor()
+
+	if s.OnRuntimeEvent != nil {
+		s.OnRuntimeEvent("process", "started", fmt.Sprintf("Process %s started on '%s': %s", process.ProcessId, backendName, process.CommandPreview))
+	}
+
+	if s.metrics != nil {
+		s.metrics.IncrementProcessStarts()
+		s.metrics.SetRetainedProcesses(int32(processCount))
+	}
+
+	createdAt := process.CreatedAtUtc
+	return &core.ExecutionProcessHandle{
+		ProcessId:      process.ProcessId,
+		BackendName:    process.BackendName,
+		OwnerSessionId: process.OwnerSessionId,
+		OwnerChannelId: process.OwnerChannelId,
+		OwnerSenderId:  process.OwnerSenderId,
+		CommandPreview: process.CommandPreview,
+		CreatedAtUtc:   createdAt,
+		ExpiresAtUtc:   createdAt.Add(6 * time.Hour),
+		Pty:            process.Pty,
+	}, nil
+}
+
+func (s *ExecutionProcessService) List(ownerSessionId string) []core.ExecutionProcessStatus {
+	s.pruneCompletedProcesses()
+
+	s.mu.RLock()
+	var list []*ManagedExecutionProcess
+	for _, p := range s.processes {
+		if strings.TrimSpace(ownerSessionId) == "" || p.OwnerSessionId == ownerSessionId {
+			list = append(list, p)
+		}
+	}
+	s.mu.RUnlock()
+
+	// 按创建时间倒序排列
+	sort.Slice(list, func(i, j int) bool {
+		return list[i].CreatedAtUtc.After(list[j].CreatedAtUtc)
+	})
+
+	result := make([]core.ExecutionProcessStatus, len(list))
+	for i, p := range list {
+		result[i] = p.GetStatus()
+	}
+	return result
+}
+
+func (s *ExecutionProcessService) GetStatus(processId, ownerSessionId string) *core.ExecutionProcessStatus {
+	s.pruneCompletedProcesses()
+	if proc, ok := s.tryGetOwnedProcess(processId, ownerSessionId); ok {
+		status := proc.GetStatus()
+		return &status
+	}
+	return nil
+}
+
+func (s *ExecutionProcessService) ReadLog(req *core.ExecutionProcessLogRequest) interface{} {
+	s.pruneCompletedProcesses()
+	if proc, ok := s.tryGetOwnedProcess(req.ProcessId, req.OwnerSessionId); ok {
+		return proc.ReadLog(req)
+	}
+	return nil
+}
+
+func (s *ExecutionProcessService) Wait(ctx context.Context, processId, ownerSessionId string) (*core.ExecutionProcessStatus, error) {
+	s.pruneCompletedProcesses()
+	proc, ok := s.tryGetOwnedProcess(processId, ownerSessionId)
+	if !ok {
+		return nil, nil
+	}
+
+	if err := proc.Wait(ctx); err != nil {
+		return nil, err
+	}
+	status := proc.GetStatus()
+	return &status, nil
+}
+
+func (s *ExecutionProcessService) Write(ctx context.Context, processId, ownerSessionId string, data []byte) (bool, error) {
+	s.pruneCompletedProcesses()
+	proc, ok := s.tryGetOwnedProcess(processId, ownerSessionId)
+	if !ok {
+		return false, nil
+	}
+
+	if err := proc.Write(ctx, string(data)); err != nil {
+		return false, err
+	}
+
+	if s.OnRuntimeEvent != nil {
+		s.OnRuntimeEvent("process", "input", fmt.Sprintf("Input written to process %s (%d chars).", processId, len(data)))
+	}
+	return true, nil
+}
+
+func (s *ExecutionProcessService) Kill(ctx context.Context, processId, ownerSessionId string) (bool, error) {
+	s.pruneCompletedProcesses()
+	proc, ok := s.tryGetOwnedProcess(processId, ownerSessionId)
+	if !ok {
+		return false, nil
+	}
+
+	if err := proc.Kill(ctx); err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
+func (s *ExecutionProcessService) Close() error {
+	s.mu.Lock()
+	if len(s.processes) == 0 {
+		s.mu.Unlock()
+		return nil
+	}
+
+	procsToClose := make([]*ManagedExecutionProcess, 0, len(s.processes))
+	for _, p := range s.processes {
+		procsToClose = append(procsToClose, p)
+	}
+	s.processes = make(map[string]*ManagedExecutionProcess)
+	s.mu.Unlock()
+
+	now := time.Now().UTC()
+	for _, proc := range procsToClose {
+		duration := now.Sub(proc.CreatedAtUtc).Seconds()
+
+		if s.OnRuntimeEvent != nil {
+			s.OnRuntimeEvent("process", "orphaned", fmt.Sprintf("Process %s orphaned on shutdown (owner=%s, uptime=%.0fs).", proc.ProcessId, proc.OwnerSessionId, duration))
+		}
+		_ = proc.Close()
+	}
+
+	if s.metrics != nil {
+		s.metrics.SetRetainedProcesses(0)
+	}
+	return nil
+}
+
+func (s *ExecutionProcessService) tryGetOwnedProcess(processId, ownerSessionId string) (*ManagedExecutionProcess, bool) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	proc, ok := s.processes[strings.ToLower(processId)]
+	if !ok {
+		return nil, false
+	}
+
+	if strings.TrimSpace(ownerSessionId) == "" || proc.OwnerSessionId == ownerSessionId {
+		return proc, true
+	}
+
+	return nil, false
+}
+
+func (s *ExecutionProcessService) handleProcessExit(proc *ManagedExecutionProcess, outcome string) {
+	status := proc.GetStatus()
+	exitCodeStr := "nil"
+	if status.ExitCode != nil {
+		exitCodeStr = fmt.Sprintf("%d", *status.ExitCode)
+	}
+
+	if s.OnRuntimeEvent != nil {
+		s.OnRuntimeEvent("process", outcome, fmt.Sprintf("Process %s %s (exit code: %s).", proc.ProcessId, outcome, exitCodeStr))
+	}
+
+	if s.metrics != nil {
+		switch outcome {
+		case "completed":
+			s.metrics.IncrementProcessCompletions()
+		case "failed":
+			s.metrics.IncrementProcessFailures()
+		case "killed":
+			s.metrics.IncrementProcessKills()
+		case "timed_out":
+			s.metrics.IncrementProcessTimeouts()
+		}
+	}
+
+	s.pruneCompletedProcesses()
+}
+
+type processWithStatus struct {
+	proc   *ManagedExecutionProcess
+	status *core.ExecutionProcessStatus
+}
+
+func (s *ExecutionProcessService) pruneCompletedProcesses() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	now := time.Now().UTC()
+	var completed []processWithStatus
+
+	for _, proc := range s.processes {
+		status := proc.GetStatus()
+		if status.State != core.ProcessStateRunning {
+			completed = append(completed, processWithStatus{
+				proc:   proc,
+				status: &status,
+			})
+		}
+	}
+
+	// 按照完成时间或创建时间倒序排列
+	sort.Slice(completed, func(i, j int) bool {
+		t1 := completed[i].proc.CreatedAtUtc
+		if completed[i].status.CompletedAtUtc != nil {
+			t1 = *completed[i].status.CompletedAtUtc
+		}
+		t2 := completed[j].proc.CreatedAtUtc
+		if completed[j].status.CompletedAtUtc != nil {
+			t2 = *completed[j].status.CompletedAtUtc
+		}
+		return t1.After(t2)
+	})
+
+	retainedIds := make(map[string]bool)
+	count := 0
+	for _, item := range completed {
+		t := item.proc.CreatedAtUtc
+		if item.status.CompletedAtUtc != nil {
+			t = *item.status.CompletedAtUtc
+		}
+
+		if now.Sub(t) <= 30*time.Minute {
+			retainedIds[strings.ToLower(item.proc.ProcessId)] = true
+			count++
+			if count >= 64 {
+				break
+			}
+		}
+	}
+
+	for _, item := range completed {
+		pID := strings.ToLower(item.proc.ProcessId)
+		if retainedIds[pID] {
+			continue
+		}
+
+		if removed, ok := s.processes[pID]; ok {
+			delete(s.processes, pID)
+
+			if s.metrics != nil {
+				s.metrics.IncrementProcessHistoryEvictions()
+			}
+			if s.OnRuntimeEvent != nil {
+				s.OnRuntimeEvent("process", "evicted_from_history", fmt.Sprintf("Process %s evicted from retained history.", removed.ProcessId))
+			}
+
+			// 异步关闭释放资源
+			go func(p *ManagedExecutionProcess) {
+				_ = p.Close()
+			}(removed)
+		}
+	}
+
+	if s.metrics != nil {
+		s.metrics.SetRetainedProcesses(int32(len(s.processes)))
+	}
 }
