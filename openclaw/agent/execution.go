@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"maps"
 	"os"
 	"os/exec"
@@ -959,4 +960,245 @@ func quoteIfNeeded(value string) string {
 		return fmt.Sprintf(`"%s"`, escaped)
 	}
 	return value
+}
+
+type ToolExecutionRouter struct {
+	config   *core.GatewayConfig
+	backends map[string]core.IExecutionBackend
+	logger   *log.Logger
+}
+
+func NewToolExecutionRouter(
+	config *core.GatewayConfig,
+	toolSandbox core.IToolSandbox,
+	logger *log.Logger,
+) *ToolExecutionRouter {
+	backends := make(map[string]core.IExecutionBackend)
+
+	localProfile, exists := config.Execution.Profiles["local"]
+	if !exists {
+		localProfile = core.ExecutionBackendProfileConfig{Type: "local"}
+	}
+	backends["local"] = &LocalExecutionBackend{
+		profile:       localProfile,
+		workspaceRoot: config.Tooling.WorkspaceRoot,
+	}
+	for name, profile := range config.Execution.Profiles {
+		if !profile.Enabled {
+			continue
+		}
+
+		key := strings.ToLower(name)
+		switch {
+		case strings.EqualFold(string(profile.Type), string("local")):
+			backends[key] = NewLocalExecutionBackend(config.Tooling.WorkspaceRoot, profile)
+		case strings.EqualFold(string(profile.Type), string("docker")):
+			backends[key] = NewDockerExecutionBackend(name, profile)
+		case strings.EqualFold(string(profile.Type), string("ssh")):
+			backends[key] = NewSshExecutionBackend(name, profile)
+		case strings.EqualFold(string(profile.Type), string("opensandbox")) && toolSandbox != nil:
+			backends[key] = NewOpenSandboxExecutionBackend(name, toolSandbox, profile.TimeoutSeconds)
+		}
+	}
+
+	if toolSandbox != nil {
+		backends["opensandbox"] = NewOpenSandboxExecutionBackend("opensandbox", toolSandbox, 30)
+	}
+
+	return &ToolExecutionRouter{
+		config:   config,
+		backends: backends,
+		logger:   logger,
+	}
+}
+
+func (r *ToolExecutionRouter) TryResolveRoute(tool core.ITool) (route *core.ExecutionToolRouteConfig, template *string, legacySandboxRoute bool, sandboxMode core.ToolSandboxMode, ok bool) {
+	sandboxMode = core.ToolSandboxMode_None
+
+	if cfgRoute, tmpl, found := r.tryResolveConfiguredRoute(tool.Name()); found {
+		return cfgRoute, tmpl, false, sandboxMode, true
+	}
+
+	sandboxCapable, isCapable := tool.(core.ISandboxCapableTool)
+	if !isCapable {
+		return nil, nil, false, sandboxMode, false
+	}
+
+	sandboxResolution := core.ResolveModeDetailed(r.config, tool.Name(), sandboxCapable.DefaultSandboxMode())
+	sandboxMode = sandboxResolution.EffectiveMode
+
+	if r.logger != nil {
+		r.logger.Printf(
+			"Sandbox mode resolved for tool %s: provider=%s source=%s default=%s configured=%v effective=%s reason=%s",
+			tool.Name(),
+			sandboxResolution.Provider,
+			sandboxResolution.ModeSource,
+			sandboxResolution.DefaultMode,
+			sandboxResolution.ConfiguredMode,
+			sandboxResolution.EffectiveMode,
+			sandboxResolution.Reason,
+		)
+	}
+
+	if sandboxMode == core.ToolSandboxMode_None {
+		return nil, nil, false, sandboxMode, false
+	}
+
+	if !core.IsOpenSandboxProviderConfigured(r.config) {
+		return nil, nil, false, sandboxMode, true
+	}
+
+	tmpl := core.ResolveTemplate(r.config, tool.Name())
+	route = &core.ExecutionToolRouteConfig{
+		Backend:          "opensandbox",
+		RequireWorkspace: false,
+	}
+	return route, &tmpl, true, sandboxMode, true
+}
+
+func (r *ToolExecutionRouter) Execute(ctx context.Context, request *core.ExecutionRequest, fallbackBackend string) (*core.ExecutionResult, error) {
+	backendKey := strings.ToLower(request.BackendName)
+	backend, exists := r.backends[backendKey]
+
+	if exists {
+		res, err := backend.Execute(ctx, request)
+		if err == nil {
+			return res, nil
+		}
+
+		if strings.TrimSpace(fallbackBackend) != "" {
+			fallbackKey := strings.ToLower(fallbackBackend)
+			fallback, fallbackExists := r.backends[fallbackKey]
+
+			canFallbackToLocal := request.AllowLocalFallback || !strings.EqualFold(fallbackBackend, "local")
+
+			if fallbackExists && canFallbackToLocal {
+				fallbackReq := request
+				fallbackReq.BackendName = fallbackBackend
+				envCopy := make(map[string]string)
+				for k, v := range request.Environment {
+					envCopy[k] = v
+				}
+				fallbackReq.Environment = envCopy
+
+				fallbackResult, fbErr := fallback.Execute(ctx, fallbackReq)
+				if fbErr == nil {
+					fallbackResult.FallbackUsed = true
+					return fallbackResult, nil
+				}
+			}
+		}
+		return nil, err
+	}
+
+	return nil, fmt.Errorf("execution backend '%s' is not configured", request.BackendName)
+}
+
+func (r *ToolExecutionRouter) RequiresWorkspace(backendName string) bool {
+	profile, exists := r.config.Execution.Profiles[backendName]
+	if !exists {
+		return false
+	}
+	return strings.EqualFold(string(profile.Type), string("docker")) ||
+		strings.EqualFold(string(profile.Type), string("ssh"))
+}
+
+func (r *ToolExecutionRouter) ResolveBackendForProcess() *ExecutionRouteResolution {
+	if route, tmpl, ok := r.tryResolveConfiguredRoute("process"); ok {
+		return &ExecutionRouteResolution{
+			BackendName:      route.Backend,
+			FallbackBackend:  &route.FallbackBackend,
+			Template:         tmpl,
+			RequireWorkspace: route.RequireWorkspace,
+			SandboxMode:      core.ToolSandboxMode_None,
+		}
+	}
+
+	if route, tmpl, ok := r.tryResolveConfiguredRoute("shell"); ok {
+		return &ExecutionRouteResolution{
+			BackendName:      route.Backend,
+			FallbackBackend:  &route.FallbackBackend,
+			Template:         tmpl,
+			RequireWorkspace: route.RequireWorkspace,
+			SandboxMode:      core.ToolSandboxMode_None,
+		}
+	}
+
+	sandboxMode := core.ResolveMode(r.config, "process", core.ToolSandboxMode_Prefer)
+	if sandboxMode != core.ToolSandboxMode_None && core.IsOpenSandboxProviderConfigured(r.config) {
+		tm := core.ResolveTemplate(r.config, "process")
+		return &ExecutionRouteResolution{
+			BackendName:      "opensandbox",
+			FallbackBackend:  nil,
+			Template:         &tm,
+			RequireWorkspace: false,
+			SandboxMode:      sandboxMode,
+		}
+	}
+
+	defaultBackend := r.config.Execution.DefaultBackend
+	return &ExecutionRouteResolution{
+		BackendName:      defaultBackend,
+		FallbackBackend:  nil,
+		Template:         r.resolveTemplate(defaultBackend),
+		RequireWorkspace: r.RequiresWorkspace(defaultBackend),
+		SandboxMode:      sandboxMode,
+	}
+}
+
+func (r *ToolExecutionRouter) TryGetProcessBackend(backendName string) (IExecutionProcessBackend, bool) {
+	backend, exists := r.backends[strings.ToLower(backendName)]
+	if !exists {
+		return nil, false
+	}
+
+	processBackend, ok := backend.(IExecutionProcessBackend)
+	return processBackend, ok
+}
+
+func (r *ToolExecutionRouter) IsIsolatedProcessBackend(backendName string) bool {
+	if strings.TrimSpace(backendName) == "" || strings.EqualFold(backendName, "opensandbox") {
+		return false
+	}
+
+	profile, exists := r.config.Execution.Profiles[backendName]
+	if !exists || !profile.Enabled {
+		return false
+	}
+
+	if strings.EqualFold(string(profile.Type), string("local")) {
+		return false
+	}
+
+	backend, exists := r.backends[strings.ToLower(backendName)]
+	if !exists {
+		return false
+	}
+
+	_, ok := backend.(IExecutionProcessBackend)
+	return ok
+}
+
+func (r *ToolExecutionRouter) resolveTemplate(backendName string) *string {
+	if profile, exists := r.config.Execution.Profiles[backendName]; exists {
+		if profile.Image != "" {
+			return &profile.Image
+		}
+	}
+	return nil
+}
+
+func (r *ToolExecutionRouter) tryResolveConfiguredRoute(toolName string) (*core.ExecutionToolRouteConfig, *string, bool) {
+	if r.config.Execution.Enabled {
+		if configuredRoute, exists := r.config.Execution.Tools[toolName]; exists && strings.TrimSpace(configuredRoute.Backend) != "" {
+			var template *string
+			if profile, profileExists := r.config.Execution.Profiles[configuredRoute.Backend]; profileExists {
+				if profile.Image != "" {
+					template = &profile.Image
+				}
+			}
+			return &configuredRoute, template, true
+		}
+	}
+	return nil, nil, false
 }

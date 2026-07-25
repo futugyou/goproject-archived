@@ -10,20 +10,20 @@ const (
 )
 
 type ExecutionConfig struct {
-	Enabled        bool                                      `json:"enabled"`
-	DefaultBackend string                                    `json:"default_backend"`
-	Profiles       map[string]*ExecutionBackendProfileConfig `json:"profiles"`
-	Tools          map[string]*ExecutionToolRouteConfig      `json:"tools"`
+	Enabled        bool                                     `json:"enabled"`
+	DefaultBackend string                                   `json:"default_backend"`
+	Profiles       map[string]ExecutionBackendProfileConfig `json:"profiles"`
+	Tools          map[string]ExecutionToolRouteConfig      `json:"tools"`
 }
 
 func DefaultExecutionConfig() *ExecutionConfig {
 	return &ExecutionConfig{
 		Enabled:        true,
 		DefaultBackend: BackendLocal,
-		Profiles: map[string]*ExecutionBackendProfileConfig{
-			BackendLocal: DefaultExecutionBackendProfileConfig(),
+		Profiles: map[string]ExecutionBackendProfileConfig{
+			BackendLocal: *DefaultExecutionBackendProfileConfig(),
 		},
-		Tools: make(map[string]*ExecutionToolRouteConfig),
+		Tools: make(map[string]ExecutionToolRouteConfig),
 	}
 }
 
