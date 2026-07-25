@@ -3,7 +3,7 @@ package core
 import (
 	"encoding/json"
 	"fmt"
-	"log"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"sync"
@@ -44,6 +44,7 @@ type TurnTokenUsageAuditLog struct {
 	lineQueue                 chan string
 	wg                        sync.WaitGroup
 	disposed                  atomic.Int32
+	logger                    *slog.Logger
 }
 
 func NewTurnTokenUsageAuditLog(filePath string, auditQueueCapacity int) *TurnTokenUsageAuditLog {
@@ -55,22 +56,31 @@ func NewTurnTokenUsageAuditLog(filePath string, auditQueueCapacity int) *TurnTok
 		auditQueueCapacity = 4096
 	}
 
-	// 1. 解析并创建文件夹路径
+	log := slog.Default()
 	fullPath, err := filepath.Abs(filePath)
 	if err != nil {
-		log.Printf("Failed to get absolute path for %s: %v; file logging will be disabled\n", filePath, err)
+		log.Error(
+			"Failed to get absolute path, file logging disabled",
+			"path", filePath,
+			"error", err,
+		)
 		return &TurnTokenUsageAuditLog{}
 	}
 
 	dir := filepath.Dir(fullPath)
 	if err := os.MkdirAll(dir, 0755); err != nil {
-		log.Printf("Failed to create directory %s: %v; file logging will be disabled\n", dir, err)
+		log.Error(
+			"Failed to create directory, file logging disabled",
+			"dir", dir,
+			"error", err,
+		)
 		return &TurnTokenUsageAuditLog{}
 	}
 
 	logger := &TurnTokenUsageAuditLog{
 		filePath:  fullPath,
 		lineQueue: make(chan string, auditQueueCapacity),
+		logger:    log,
 	}
 
 	logger.wg.Add(1)
@@ -94,7 +104,10 @@ func (l *TurnTokenUsageAuditLog) RecordTurn(record TurnTokenUsageRecord) {
 	// 序列化
 	jsonData, err := json.Marshal(record)
 	if err != nil {
-		log.Printf("Failed to serialize turn token usage record: %v\n", err)
+		l.logger.Error(
+			"Failed to serialize turn token usage record",
+			"error", err,
+		)
 		return
 	}
 
@@ -133,7 +146,11 @@ func (l *TurnTokenUsageAuditLog) writeLoop() {
 	// 以 Append 模式打开文件
 	file, err := os.OpenFile(l.filePath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
 	if err != nil {
-		log.Printf("Failed to open turn token usage audit file %s: %v\n", l.filePath, err)
+		l.logger.Error(
+			"Failed to open turn token usage audit file",
+			"path", l.filePath,
+			"error", err,
+		)
 		// 即使文件打开失败，也要排空 channel，防止 RecordTurn 端阻塞
 		for range l.lineQueue {
 		}
@@ -145,7 +162,11 @@ func (l *TurnTokenUsageAuditLog) writeLoop() {
 	for line := range l.lineQueue {
 		_, err := fmt.Fprintln(file, line)
 		if err != nil {
-			log.Printf("Failed to append turn token usage entry to %s: %v\n", l.filePath, err)
+			l.logger.Error(
+				"Failed to append turn token usage entry",
+				"path", l.filePath,
+				"error", err,
+			)
 		}
 	}
 }

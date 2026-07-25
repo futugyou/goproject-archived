@@ -8,7 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"sort"
@@ -24,6 +24,7 @@ var _ IEvidenceBundleStore = (*FileEvidenceBundleStore)(nil)
 type FileEvidenceBundleStore struct {
 	evidencePath       string
 	evidencePathPrefix string
+	logger             *slog.Logger
 }
 
 func NewFileEvidenceBundleStore(storagePath string) (*FileEvidenceBundleStore, error) {
@@ -45,6 +46,7 @@ func NewFileEvidenceBundleStore(storagePath string) (*FileEvidenceBundleStore, e
 	return &FileEvidenceBundleStore{
 		evidencePath:       evidencePath,
 		evidencePathPrefix: evidencePathPrefix,
+		logger:             slog.Default(),
 	}, nil
 }
 
@@ -97,7 +99,11 @@ func (s *FileEvidenceBundleStore) List(ctx context.Context, query EvidenceBundle
 		filePath := filepath.Join(s.evidencePath, file.Name())
 		bundle, err := s.loadOne(ctx, filePath)
 		if err != nil {
-			log.Printf("Skipping invalid evidence bundle file '%s': %v", filePath, err)
+			s.logger.Warn(
+				"Skipping invalid evidence bundle file",
+				"file_path", filePath,
+				"error", err,
+			)
 			continue
 		}
 

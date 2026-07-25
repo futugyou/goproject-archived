@@ -6,7 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log"
+	"log/slog"
 	"maps"
 	"os"
 	"os/exec"
@@ -969,13 +969,13 @@ func quoteIfNeeded(value string) string {
 type ToolExecutionRouter struct {
 	config   *core.GatewayConfig
 	backends map[string]core.IExecutionBackend
-	logger   *log.Logger
+	logger   *slog.Logger
 }
 
 func NewToolExecutionRouter(
 	config *core.GatewayConfig,
 	toolSandbox core.IToolSandbox,
-	logger *log.Logger,
+	logger *slog.Logger,
 ) *ToolExecutionRouter {
 	backends := make(map[string]core.IExecutionBackend)
 
@@ -1032,15 +1032,15 @@ func (r *ToolExecutionRouter) TryResolveRoute(tool core.ITool) (route *core.Exec
 	sandboxMode = sandboxResolution.EffectiveMode
 
 	if r.logger != nil {
-		r.logger.Printf(
-			"Sandbox mode resolved for tool %s: provider=%s source=%s default=%s configured=%v effective=%s reason=%s",
-			tool.Name(),
-			sandboxResolution.Provider,
-			sandboxResolution.ModeSource,
-			sandboxResolution.DefaultMode,
-			sandboxResolution.ConfiguredMode,
-			sandboxResolution.EffectiveMode,
-			sandboxResolution.Reason,
+		r.logger.Info(
+			"Sandbox mode resolved for tool",
+			"tool", tool.Name(),
+			"provider", sandboxResolution.Provider,
+			"source", sandboxResolution.ModeSource,
+			"default", sandboxResolution.DefaultMode,
+			"configured", sandboxResolution.ConfiguredMode,
+			"effective", sandboxResolution.EffectiveMode,
+			"reason", sandboxResolution.Reason,
 		)
 	}
 
