@@ -3,6 +3,7 @@ package agent
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/url"
@@ -374,4 +375,58 @@ func (b *HomeAssistantEventBridge) handleEvent(ctx context.Context, ev *HAEventE
 	case <-ctx.Done():
 		b.logger.Warn("[HomeAssistantEventBridge] failed to send event", "error", ctx.Err())
 	}
+}
+
+var _ util.IBackgroundService = (*HomeAssistantEventBridge)(nil)
+
+func (b *HomeAssistantEventBridge) Execute(ctx context.Context) error {
+	if !b.config.Enabled || !b.config.Events.Enabled {
+		b.logger.Info("home assistant event bridge disabled")
+		return nil
+	}
+
+	backoff := 1 * time.Second
+	maxBackoff := 30 * time.Second
+
+	for {
+		select {
+		case <-ctx.Done():
+			b.logger.Info("[HomeAssistantEventBridge] closing...")
+			return nil
+		default:
+		}
+
+		err := b.RunOnce(ctx)
+		if err == nil {
+			backoff = 1 * time.Second
+			continue
+		}
+
+		if errors.Is(err, context.Canceled) || ctx.Err() != nil {
+			b.logger.Info("[HomeAssistantEventBridge] closing...")
+			return nil
+		}
+
+		b.logger.Warn("home assistant event bridge error; reconnecting",
+			"delay_seconds", backoff.Seconds(),
+			"error", err,
+		)
+
+		timer := time.NewTimer(backoff)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			b.logger.Info("[HomeAssistantEventBridge] closing...")
+			return nil
+		case <-timer.C:
+			backoff *= 2
+			if backoff > maxBackoff {
+				backoff = maxBackoff
+			}
+		}
+	}
+}
+
+func (b *HomeAssistantEventBridge) Name() string {
+	return "HomeAssistantEventBridge"
 }
