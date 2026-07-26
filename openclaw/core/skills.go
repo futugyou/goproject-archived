@@ -13,6 +13,8 @@ import (
 	"runtime"
 	"sort"
 	"strings"
+
+	"github.com/futugyou/openclaw/util"
 )
 
 var _ ITool = (*LoadSkillTool)(nil)
@@ -228,7 +230,7 @@ func (l *ListToolsTool) Execute(ctx context.Context, argumentsJson string) (stri
 
 	var filter = l.tryGetFilter(argumentsJson)
 	var descriptors = l.provider()
-	if !IsBlank(filter) {
+	if !util.IsBlank(filter) {
 		n := []ToolDescriptor{}
 		for _, v := range descriptors {
 			if strings.Contains(v.Name, filter) {
@@ -248,7 +250,7 @@ func (l *ListToolsTool) Execute(ctx context.Context, argumentsJson string) (stri
 }
 
 func (l *ListToolsTool) tryGetFilter(argumentsJson string) string {
-	if IsBlank(argumentsJson) {
+	if util.IsBlank(argumentsJson) {
 		return ""
 	}
 
@@ -441,7 +443,7 @@ func (r *ReadSkillResourceTool) ParameterSchema() string {
 }
 
 func (r *ReadSkillResourceTool) tryParseArguments(argumentsJson string) (result bool, skillName string, resourceName string, errorstr string) {
-	if IsBlank(argumentsJson) {
+	if util.IsBlank(argumentsJson) {
 		errorstr = "Error: missing required arguments 'skill' and 'resource'."
 		return
 	}
@@ -466,12 +468,12 @@ func (r *ReadSkillResourceTool) tryParseArguments(argumentsJson string) (result 
 		}
 	}
 
-	if IsBlank(skillName) {
+	if util.IsBlank(skillName) {
 		errorstr = "Error: missing required argument 'skill'."
 		return
 	}
 
-	if IsBlank(resourceName) {
+	if util.IsBlank(resourceName) {
 		errorstr = "Error: missing required argument 'resource'."
 		return
 	}
@@ -534,7 +536,7 @@ func (r *ReadSkillResourceTool) findResource(skill *SkillDefinition, requested s
 
 func (r *ReadSkillResourceTool) looksLikeSkillBody(requested string) bool {
 	var normalized = strings.TrimSpace(strings.ReplaceAll(requested, "\\", "/"))
-	if IsBlank(normalized) {
+	if util.IsBlank(normalized) {
 		return false
 	}
 	var lastSlash = strings.LastIndex(normalized, "/")
@@ -558,7 +560,7 @@ func (r *ReadSkillResourceTool) tryExtractCrossSkillName(requested string, skill
 	if prevSlash >= 0 {
 		lastSeg = parent[(prevSlash + 1):]
 	}
-	if IsBlank(lastSeg) || lastSeg == ".." {
+	if util.IsBlank(lastSeg) || lastSeg == ".." {
 		return ""
 	}
 
@@ -578,7 +580,7 @@ func (r *ReadSkillResourceTool) tryExtractCrossSkillName(requested string, skill
 }
 
 func (r *ReadSkillResourceTool) isPathWithinSkillRoot(resourceAbsolutePath string, skill *SkillDefinition) bool {
-	if skill == nil || IsBlank(skill.Location) {
+	if skill == nil || util.IsBlank(skill.Location) {
 		return true
 	}
 
@@ -600,7 +602,7 @@ func (r *ReadSkillResourceTool) isPathWithinSkillRoot(resourceAbsolutePath strin
 }
 
 func (r *ReadSkillResourceTool) resourcePathContainsReparsePoint(skillLocation, resourceAbsolutePath string) bool {
-	if IsBlank(skillLocation) {
+	if util.IsBlank(skillLocation) {
 		return false
 	}
 	skillRoot, err := filepath.Abs(skillLocation)
@@ -676,7 +678,7 @@ func (r *ReadSkillResourceTool) Execute(ctx context.Context, argumentsJson strin
 	if resource == nil {
 		if r.looksLikeSkillBody(resourceName) {
 			crossSkill := r.tryExtractCrossSkillName(resourceName, skills)
-			if !IsBlank(crossSkill) && crossSkill != skill.Name {
+			if !util.IsBlank(crossSkill) && crossSkill != skill.Name {
 				errorstr = fmt.Sprintf("Error: 'SKILL.md' is the body of skill '%s', not an L3 resource of '%s'. Use `load_skill` with skill='%s' to fetch it, not `read_skill_resource`.)", crossSkill, skill.Name, crossSkill)
 				return "", errors.New(errorstr)
 			}
@@ -1134,15 +1136,15 @@ func (m *MetaSkillResolver) TryResolve(skills []SkillDefinition, userMessage str
 type SkillInspector struct{}
 
 func (s *SkillInspector) TryLocateSkillRoot(candidatePath string) (string, error) {
-	if !DirectoryExists(candidatePath) {
+	if !util.DirectoryExists(candidatePath) {
 		return "", fmt.Errorf("Skill path not found: %s", candidatePath)
 	}
 
-	if FileExists(filepath.Join(candidatePath, "SKILL.md")) {
+	if util.FileExists(filepath.Join(candidatePath, "SKILL.md")) {
 		return filepath.Abs(candidatePath)
 	}
 
-	matches, err := FindDirectoriesCantainsFileName(candidatePath, "SKILL.md")
+	matches, err := util.FindDirectoriesCantainsFileName(candidatePath, "SKILL.md")
 	if err != nil {
 		return "", err
 	}

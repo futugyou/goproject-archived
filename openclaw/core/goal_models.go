@@ -6,6 +6,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/futugyou/openclaw/util"
 )
 
 type GoalHistoryRecord struct {
@@ -94,7 +96,7 @@ func (s *SessionGoal) FormatGoalFooterLine() string {
 		if s.TokenBudget > 0 {
 			return fmt.Sprintf("Pursuing goal (%d/%d)", s.TokensUsed, s.TokenBudget)
 		}
-		return fmt.Sprintf("Pursuing goal: %s", Truncate(s.Objective, 40))
+		return fmt.Sprintf("Pursuing goal: %s", util.Truncate(s.Objective, 40))
 	case GoalStatus_Paused:
 		return "Goal paused (/goal resume)"
 	case GoalStatus_Blocked:

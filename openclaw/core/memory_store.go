@@ -20,6 +20,7 @@ import (
 	"time"
 
 	"github.com/futugyou/extensions_ai/abstractions/embeddings"
+	"github.com/futugyou/openclaw/util"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
@@ -82,7 +83,7 @@ func (s *PostgresMemoryStore) ListBackgroundRunnableSessions(ctx context.Context
 
 // SearchSessions implements [ISessionSearchStore].
 func (s *PostgresMemoryStore) SearchSessions(ctx context.Context, query *SessionSearchQuery) (*SessionSearchResult, error) {
-	if query == nil || IsBlank(query.Text) {
+	if query == nil || util.IsBlank(query.Text) {
 		return &SessionSearchResult{Query: query, Items: []SessionSearchHit{}}, nil
 	}
 
@@ -163,7 +164,7 @@ func (s *PostgresMemoryStore) SearchSessions(ctx context.Context, query *Session
 		}
 
 		for _, turn := range session.History {
-			if IsBlank(turn.Content) {
+			if util.IsBlank(turn.Content) {
 				continue
 			}
 
@@ -1009,10 +1010,10 @@ func (s *SqliteMemoryStore) _syncSessionSearchIndex(ctx context.Context, session
 
 		for _, toolCall := range turn.ToolCalls {
 			toolText := toolCall.Result
-			if IsBlank(toolText) {
+			if util.IsBlank(toolText) {
 				toolText = toolCall.Arguments
 			}
-			if !IsBlank(toolText) {
+			if !util.IsBlank(toolText) {
 				err = s.insertSessionTurn(ctx, tx, session, "tool", toolText, turn.Timestamp)
 				if err != nil {
 					return err
@@ -1088,7 +1089,7 @@ func (s *SqliteMemoryStore) SaveNote(ctx context.Context, key, content string) e
 		}
 
 		if len(queryEmbedding) > 0 {
-			blob := SerializeEmbedding(queryEmbedding, false)
+			blob := util.SerializeEmbedding(queryEmbedding, false)
 			_, _ = s.db.ExecContext(ctx, "UPDATE notes SET embedding = ? WHERE key = ?;", blob, key)
 		}
 	}

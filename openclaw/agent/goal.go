@@ -6,6 +6,7 @@ import (
 	"log/slog"
 
 	"github.com/futugyou/openclaw/core"
+	"github.com/futugyou/openclaw/util"
 )
 
 var GoalPromptTemplatesInstance = &GoalPromptTemplates{}
@@ -159,7 +160,7 @@ func (a *AgentRuntimeGoalIntegration) EvaluateGoalContinuation(session *core.Ses
 	}
 
 	// Record turn hash for blocker detection
-	var normalized = core.NormalizeForComparison(modelResponseText)
+	var normalized = util.NormalizeForComparison(modelResponseText)
 	var isBlocked = a.goalService.RecordTurnHash(context.Background(), session.Id, normalized)
 	if isBlocked {
 		if err := a.goalService.UpdateStatus(context.Background(), session.Id, core.GoalStatus_Blocked, "Same blocker repeated 3+ consecutive turns"); err != nil {

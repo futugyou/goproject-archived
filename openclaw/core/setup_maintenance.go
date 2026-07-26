@@ -17,6 +17,7 @@ import (
 	"time"
 	"unicode"
 
+	"github.com/futugyou/openclaw/util"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 )
@@ -42,8 +43,8 @@ type UpgradeRollbackSnapshotStore struct {
 }
 
 func buildSnapshotKey(configPath string) string {
-	var stem = GetFileNameWithoutExtension(configPath)
-	if IsBlank(stem) {
+	var stem = util.GetFileNameWithoutExtension(configPath)
+	if util.IsBlank(stem) {
 		stem = "config"
 	}
 
@@ -57,7 +58,7 @@ func buildSnapshotKey(configPath string) string {
 	}
 
 	safeStem := strings.Trim(sb.String(), "-")
-	if IsBlank(safeStem) {
+	if util.IsBlank(safeStem) {
 		safeStem = "config"
 	}
 
@@ -371,7 +372,7 @@ func (s *ReliabilityScorer) buildReadinessFactor(config *GatewayConfig, setupSta
 	if setupStatus != nil {
 		workspaceExists = setupStatus.WorkspaceExists
 	} else {
-		workspaceExists = !IsBlank(workspacePath) && DirectoryExists(workspacePath)
+		workspaceExists = !util.IsBlank(workspacePath) && util.DirectoryExists(workspacePath)
 	}
 
 	providerConfigured := false
@@ -719,7 +720,7 @@ func (m *MaintenanceCoordinator) createMemoryStore(config *GatewayConfig) (IMemo
 func (m *MaintenanceCoordinator) resolveWorkspacePromptPath(workspaceRoot, fileName string) string {
 	var dir string
 	var err error
-	if IsBlank(workspaceRoot) {
+	if util.IsBlank(workspaceRoot) {
 		dir, err = os.Getwd()
 	} else {
 		dir, err = filepath.Abs(workspaceRoot)
@@ -733,10 +734,10 @@ func (m *MaintenanceCoordinator) resolveWorkspacePromptPath(workspaceRoot, fileN
 
 func (m *MaintenanceCoordinator) resolvePromptCacheTracePath(config *GatewayConfig, memoryRoot string) string {
 	var raw = config.Llm.PromptCaching.TraceFilePath
-	if IsBlank(raw) {
+	if util.IsBlank(raw) {
 		raw = config.Diagnostics.CacheTrace.FilePath
 	}
-	if IsBlank(raw) {
+	if util.IsBlank(raw) {
 		raw = filepath.Join(memoryRoot, "logs", "cache-trace.jsonl")
 	}
 
@@ -745,7 +746,7 @@ func (m *MaintenanceCoordinator) resolvePromptCacheTracePath(config *GatewayConf
 
 func (m *MaintenanceCoordinator) pathFor(configuredPath, basePath string) string {
 	path := ""
-	if IsBlank(configuredPath) {
+	if util.IsBlank(configuredPath) {
 		path, _ = filepath.Abs(basePath)
 		return path
 	}
@@ -790,10 +791,10 @@ func (m *MaintenanceCoordinator) prunePromptCacheTraceArtifacts(config *GatewayC
 	}
 
 	removable := []string{}
-	if FileExists(path) {
+	if util.FileExists(path) {
 		removable = []string{path}
-	} else if DirectoryExists(path) {
-		removable = EnumerateAllFiles(path)
+	} else if util.DirectoryExists(path) {
+		removable = util.EnumerateAllFiles(path)
 	}
 
 	if !dryRun {
@@ -825,14 +826,14 @@ func (m *MaintenanceCoordinator) pruneModelEvaluationArtifacts(config *GatewayCo
 		return nil
 	}
 	path = filepath.Join(path, "admin", "model-evaluations")
-	if !DirectoryExists(path) {
+	if !util.DirectoryExists(path) {
 		return &MaintenanceFixAction{
 			Id:      "model-evaluations",
 			Summary: "No model evaluation artifacts were found.",
 		}
 	}
 
-	groups, err := GetGroupByFilename(path)
+	groups, err := util.GetGroupByFilename(path)
 	if err != nil {
 		return nil
 	}
@@ -1042,12 +1043,12 @@ func (m *MaintenanceCoordinator) countPromptCacheTraceArtifacts(config *GatewayC
 		return 0
 	}
 
-	if FileExists(path) {
+	if util.FileExists(path) {
 		return 1
 	}
 
-	if DirectoryExists(path) {
-		return len(EnumerateAllFiles(path))
+	if util.DirectoryExists(path) {
+		return len(util.EnumerateAllFiles(path))
 	}
 
 	return 0
@@ -1055,8 +1056,8 @@ func (m *MaintenanceCoordinator) countPromptCacheTraceArtifacts(config *GatewayC
 
 func (m *MaintenanceCoordinator) countModelEvaluationArtifacts(adminRoot string) int {
 	var path = filepath.Join(adminRoot, "model-evaluations")
-	if DirectoryExists(path) {
-		return len(EnumerateTopFiles(path))
+	if util.DirectoryExists(path) {
+		return len(util.EnumerateTopFiles(path))
 	}
 
 	return 0
@@ -1065,7 +1066,7 @@ func (m *MaintenanceCoordinator) countModelEvaluationArtifacts(adminRoot string)
 func (m *MaintenanceCoordinator) saveSnapshot(memoryRoot string, report *MaintenanceReportResponse) error {
 	var path = filepath.Join(memoryRoot, "admin", "maintenance-history.json")
 	items := []MaintenanceHistorySnapshot{}
-	if FileExists(path) {
+	if util.FileExists(path) {
 		data, err := os.ReadFile(path)
 		if err == nil {
 			var existing []MaintenanceHistorySnapshot
@@ -1092,16 +1093,16 @@ func (m *MaintenanceCoordinator) saveSnapshot(memoryRoot string, report *Mainten
 		return err
 	}
 
-	return SaveOneFile(context.Background(), path, result)
+	return util.SaveOneFile(context.Background(), path, result)
 }
 
 func (m *MaintenanceCoordinator) loadPreviousSnapshot(memoryRoot string) *MaintenanceHistorySnapshot {
 	var path = filepath.Join(memoryRoot, "admin", "maintenance-history.json")
-	if !FileExists(path) {
+	if !util.FileExists(path) {
 		return nil
 	}
 
-	items, err := LoadOneFile[[]MaintenanceHistorySnapshot](context.Background(), path)
+	items, err := util.LoadOneFile[[]MaintenanceHistorySnapshot](context.Background(), path)
 	if err != nil {
 		return nil
 	}
@@ -1398,8 +1399,8 @@ func (m *MaintenanceCoordinator) buildPromptBudgetSnapshot(recentTurns []TurnTok
 
 	slices.Sort(sortedInputs)
 
-	var median = Percentile(sortedInputs, 0.50)
-	var p95 = Percentile(sortedInputs, 0.95)
+	var median = util.Percentile(sortedInputs, 0.50)
+	var p95 = util.Percentile(sortedInputs, 0.95)
 
 	result := &MaintenancePromptBudgetSnapshot{
 		RecentTurnsAnalyzed: int64(len(recentTurns)),
@@ -1414,8 +1415,8 @@ func (m *MaintenanceCoordinator) buildPromptBudgetSnapshot(recentTurns []TurnTok
 		LoadedSkillCount: len(loadedSkills),
 	}
 
-	result.AgentsFileBytes = GetDirectorySize(agentsPath)
-	result.SoulFileBytes = GetDirectorySize(soulPath)
+	result.AgentsFileBytes = util.GetDirectorySize(agentsPath)
+	result.SoulFileBytes = util.GetDirectorySize(soulPath)
 	return result
 }
 
@@ -1478,8 +1479,8 @@ func (m *MaintenanceCoordinator) Scan(ctx context.Context, config *GatewayConfig
 	}
 
 	var storage = &MaintenanceStorageSnapshot{
-		MemoryBytes:                    GetDirectorySize(memoryRoot),
-		ArchiveBytes:                   GetDirectorySize(m.pathFor(config.Memory.Retention.ArchivePath, memoryRoot)),
+		MemoryBytes:                    util.GetDirectorySize(memoryRoot),
+		ArchiveBytes:                   util.GetDirectorySize(m.pathFor(config.Memory.Retention.ArchivePath, memoryRoot)),
 		OrphanedSessionMetadataEntries: orphanedMetadata,
 		ModelEvaluationArtifacts:       m.countModelEvaluationArtifacts(adminRoot),
 		PromptCacheTraceArtifacts:      m.countPromptCacheTraceArtifacts(config, memoryRoot),

@@ -11,6 +11,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/futugyou/openclaw/util"
 	"github.com/hibiken/asynq"
 	"github.com/robfig/cron/v3"
 )
@@ -66,7 +67,7 @@ var (
 )
 
 func (l *LoopCommandParser) TryParse(text string) *LoopCommand {
-	if IsBlank(text) || !strings.HasPrefix(text, "/loop") {
+	if util.IsBlank(text) || !strings.HasPrefix(text, "/loop") {
 		return nil
 	}
 
@@ -118,8 +119,8 @@ func NewLoopTerminationDetector(loopControl ILoopControlService) *LoopTerminatio
 	}
 }
 
-func (l *LoopTerminationDetector) isKeywordCharacter(b byte) bool {
-	return IsLetterOrDigit(b) || b == '_'
+func (l *LoopTerminationDetector) IsKeywordCharacter(b byte) bool {
+	return util.IsLetterOrDigit(b) || b == '_'
 }
 
 func (l *LoopTerminationDetector) cntainsWholeKeyword(text, keyword string) bool {
@@ -144,11 +145,11 @@ func (l *LoopTerminationDetector) cntainsWholeKeyword(text, keyword string) bool
 		index := startIndex + relIndex
 
 		// 2. 检查前边界
-		before := index == 0 || !l.isKeywordCharacter(lowerText[index-1])
+		before := index == 0 || !l.IsKeywordCharacter(lowerText[index-1])
 
 		// 3. 检查后边界
 		afterIndex := index + keywordLen
-		after := afterIndex == textLen || !l.isKeywordCharacter(lowerText[afterIndex])
+		after := afterIndex == textLen || !l.IsKeywordCharacter(lowerText[afterIndex])
 
 		// 4. 两者都符合，说明是独立单词
 		if before && after {
@@ -166,7 +167,7 @@ func (l *LoopTerminationDetector) OnToolComplete(ctx context.Context, sessionId 
 }
 
 func (l *LoopTerminationDetector) ScanText(ctx context.Context, sessionId, text string) bool {
-	if IsBlank(text) {
+	if util.IsBlank(text) {
 		return false
 	}
 
@@ -235,7 +236,7 @@ func NewClawLoopScheduler(logger *slog.Logger) *ClawLoopScheduler {
 }
 
 func (s *ClawLoopScheduler) ScheduleLoop(ctx context.Context, sessionId, cronExpression, prompt string) error {
-	schedule, ok := ParseCronExpression(cronExpression)
+	schedule, ok := util.ParseCronExpression(cronExpression)
 	if !ok {
 		return fmt.Errorf("invalid cron expression %s", cronExpression)
 	}

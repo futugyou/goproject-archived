@@ -14,6 +14,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/futugyou/openclaw/util"
 	"github.com/google/uuid"
 )
 
@@ -183,14 +184,14 @@ func (s *SetupVerificationSnapshotStore) Load() *SetupVerificationSnapshot {
 
 func (s *SetupVerificationSnapshotStore) Save(snapshot *SetupVerificationSnapshot) bool {
 	directory := filepath.Dir(s.path)
-	if !IsBlank(directory) {
+	if !util.IsBlank(directory) {
 		if err := os.MkdirAll(directory, 0755); err != nil {
 			return false
 		}
 	}
 	id := uuid.New()
 	tempPath := s.path + "." + strings.ReplaceAll(id.String(), "-", "") + ".tmp"
-	if err := SaveOneFile(context.Background(), tempPath, snapshot); err != nil {
+	if err := util.SaveOneFile(context.Background(), tempPath, snapshot); err != nil {
 		return false
 	}
 
@@ -291,7 +292,7 @@ func (t *TailscaleServeAdvisor) BuildLocalGatewayUrl(config *GatewayConfig) stri
 		}
 	}
 
-	if IsLoopbackBind(config.BindAddress) {
+	if util.IsLoopbackBind(config.BindAddress) {
 		return GatewaySetupArtifactsInstance.BuildReachableBaseUrl(config.BindAddress, config.Port)
 	}
 
@@ -312,7 +313,7 @@ func (t *TailscaleServeAdvisor) BuildStatus(ctx context.Context, config *Gateway
 	}
 
 	localGatewayUrl := t.BuildLocalGatewayUrl(config)
-	publicBind := !IsLoopbackBind(config.BindAddress)
+	publicBind := !util.IsLoopbackBind(config.BindAddress)
 	var warnings []string
 	cliDetected := false
 	tailnetReachability := "unknown"

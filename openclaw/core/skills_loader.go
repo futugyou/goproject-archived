@@ -14,6 +14,8 @@ import (
 	"strings"
 	"sync"
 	"unicode"
+
+	"github.com/futugyou/openclaw/util"
 )
 
 type SkillLoader struct{}
@@ -422,7 +424,7 @@ func (s *SkillLoader) ParseYamlLiteralBlock(lines []string, index, parentIndent 
 			break
 		}
 		var line = lines[index]
-		if IsBlank(line) {
+		if util.IsBlank(line) {
 			literalLines = append(literalLines, "")
 			index++
 			continue
@@ -721,7 +723,7 @@ func (s *SkillLoader) TryParseYamlArray(lines []string, linesIndex int, indent i
 }
 
 func (s *SkillLoader) TryParseStringList(rawValue string) ([]string, bool) {
-	if IsBlank(rawValue) {
+	if util.IsBlank(rawValue) {
 		return nil, false
 	}
 
@@ -733,7 +735,7 @@ func (s *SkillLoader) TryParseStringList(rawValue string) ([]string, bool) {
 	var values []string
 	for _, item := range rawArray {
 		strItem, ok := item.(string)
-		if !ok || IsBlank(strItem) {
+		if !ok || util.IsBlank(strItem) {
 			return nil, false
 		}
 		values = append(values, strItem)
@@ -743,7 +745,7 @@ func (s *SkillLoader) TryParseStringList(rawValue string) ([]string, bool) {
 }
 
 func (s *SkillLoader) ParseMetadata(jsonStr string) SkillMetadata {
-	if IsBlank(jsonStr) {
+	if util.IsBlank(jsonStr) {
 		return SkillMetadata{}
 	}
 
@@ -790,26 +792,26 @@ func (s *SkillLoader) ParseMetadata(jsonStr string) SkillMetadata {
 		}
 	}
 	if val, ok := ocMap["capabilities"]; ok {
-		meta.Capabilities = ReadStringArray(val)
+		meta.Capabilities = util.ReadStringArray(val)
 	}
 	if val, ok := ocMap["os"]; ok {
-		meta.Os = ReadStringArray(val)
+		meta.Os = util.ReadStringArray(val)
 	}
 
 	if val, ok := ocMap["requires"]; ok {
 		var reqMap map[string]json.RawMessage
 		if err := json.Unmarshal(val, &reqMap); err == nil {
 			if bins, ok := reqMap["bins"]; ok {
-				meta.RequireBins = ReadStringArray(bins)
+				meta.RequireBins = util.ReadStringArray(bins)
 			}
 			if anyBins, ok := reqMap["anyBins"]; ok {
-				meta.RequireAnyBins = ReadStringArray(anyBins)
+				meta.RequireAnyBins = util.ReadStringArray(anyBins)
 			}
 			if env, ok := reqMap["env"]; ok {
-				meta.RequireEnv = ReadStringArray(env)
+				meta.RequireEnv = util.ReadStringArray(env)
 			}
 			if cfg, ok := reqMap["config"]; ok {
-				meta.RequireConfig = ReadStringArray(cfg)
+				meta.RequireConfig = util.ReadStringArray(cfg)
 			}
 		}
 	}
@@ -818,7 +820,7 @@ func (s *SkillLoader) ParseMetadata(jsonStr string) SkillMetadata {
 }
 
 func (s *SkillLoader) ParseComposition(jsonStr string) (*MetaSkillComposition, string) {
-	if IsBlank(jsonStr) {
+	if util.IsBlank(jsonStr) {
 		return nil, "invalid_meta_composition"
 	}
 
@@ -851,7 +853,7 @@ func (s *SkillLoader) ParseComposition(jsonStr string) (*MetaSkillComposition, s
 	for _, stepElement := range stepsArray {
 		idRaw, hasId := stepElement["id"]
 		var id string
-		if !hasId || json.Unmarshal(idRaw, &id) != nil || IsBlank(id) {
+		if !hasId || json.Unmarshal(idRaw, &id) != nil || util.IsBlank(id) {
 			return nil, "invalid_meta_composition"
 		}
 
@@ -862,7 +864,7 @@ func (s *SkillLoader) ParseComposition(jsonStr string) (*MetaSkillComposition, s
 			_ = json.Unmarshal(typeRaw, &kind)
 		}
 
-		if IsBlank(kind) {
+		if util.IsBlank(kind) {
 			return nil, "invalid_meta_composition"
 		}
 
@@ -874,7 +876,7 @@ func (s *SkillLoader) ParseComposition(jsonStr string) (*MetaSkillComposition, s
 				return nil, "invalid_meta_composition"
 			}
 			for _, dep := range depArray {
-				if IsBlank(dep) {
+				if util.IsBlank(dep) {
 					return nil, "invalid_meta_composition"
 				}
 				dependsOn = append(dependsOn, dep)
@@ -909,7 +911,7 @@ func (s *SkillLoader) ParseComposition(jsonStr string) (*MetaSkillComposition, s
 		var when string
 		if whenElement, ok := stepElement["when"]; ok {
 			var w string
-			if err := json.Unmarshal(whenElement, &w); err != nil || IsBlank(w) {
+			if err := json.Unmarshal(whenElement, &w); err != nil || util.IsBlank(w) {
 				return nil, "invalid_when_expression"
 			}
 			when = w
@@ -1366,25 +1368,25 @@ func (s *SkillLoader) ValidateComposition(steps []MetaSkillStepDefinition) (bool
 		}
 
 		if strings.EqualFold(step.Kind, "tool_call") {
-			if IsBlank(step.Tool) || !IsBlank(step.Skill) {
+			if util.IsBlank(step.Tool) || !util.IsBlank(step.Skill) {
 				return false, "invalid_step_kind_fields"
 			}
 		}
 
 		if strings.EqualFold(step.Kind, "skill_exec") {
-			if IsBlank(step.Skill) || IsBlank(step.SkillExecEntrypoint) || !IsBlank(step.Tool) {
+			if util.IsBlank(step.Skill) || util.IsBlank(step.SkillExecEntrypoint) || !util.IsBlank(step.Tool) {
 				return false, "invalid_step_kind_fields"
 			}
 		}
 
 		if strings.EqualFold(step.Kind, "agent") {
-			if !IsBlank(step.Tool) {
+			if !util.IsBlank(step.Tool) {
 				return false, "invalid_step_kind_fields"
 			}
 		}
 
 		if strings.EqualFold(step.Kind, "llm_chat") || strings.EqualFold(step.Kind, "llm_classify") || strings.EqualFold(step.Kind, "user_input") {
-			if !IsBlank(step.Skill) || !IsBlank(step.Tool) {
+			if !util.IsBlank(step.Skill) || !util.IsBlank(step.Tool) {
 				return false, "invalid_step_kind_fields"
 			}
 		}
@@ -1494,7 +1496,7 @@ func (s *SkillLoader) ValidateFailureBranches(steps []MetaSkillStepDefinition, i
 }
 
 func (s *SkillLoader) containsFallbackTargetInLegacyClassifyRoutes(withJson string, fallbackTargets map[string]bool) bool {
-	if IsBlank(withJson) {
+	if util.IsBlank(withJson) {
 		return false
 	}
 	var doc map[string]any
@@ -1559,7 +1561,7 @@ func (s *SkillLoader) ValidateRouteArrays(steps []MetaSkillStepDefinition) (bool
 				return false, "invalid_route_scope"
 			}
 
-			if IsBlank(route.When) {
+			if util.IsBlank(route.When) {
 				fallbackCount++
 				if fallbackCount > 1 {
 					return false, "invalid_route_fallback"
@@ -1784,7 +1786,7 @@ func (s *SkillLoader) TryParseStringArrayProperty(stepElement map[string]json.Ra
 }
 
 func (s *SkillLoader) ValidateFinalTextMode(finalTextMode string, steps []MetaSkillStepDefinition) bool {
-	if IsBlank(finalTextMode) {
+	if util.IsBlank(finalTextMode) {
 		return true
 	}
 
@@ -1797,7 +1799,7 @@ func (s *SkillLoader) ValidateFinalTextMode(finalTextMode string, steps []MetaSk
 		return false
 	}
 	var stepId = strings.TrimSpace(mode[5:])
-	if IsBlank(stepId) {
+	if util.IsBlank(stepId) {
 		return false
 	}
 	for _, step := range steps {
@@ -1811,7 +1813,7 @@ func (s *SkillLoader) ValidateFinalTextMode(finalTextMode string, steps []MetaSk
 
 func (s *SkillLoader) ScanSkillResources(skillDir string) []SkillResource {
 	list := []SkillResource{}
-	if IsBlank(skillDir) || !DirectoryExists(skillDir) {
+	if util.IsBlank(skillDir) || !util.DirectoryExists(skillDir) {
 		return list
 	}
 
@@ -1822,7 +1824,7 @@ func (s *SkillLoader) ScanSkillResources(skillDir string) []SkillResource {
 
 func (s *SkillLoader) AppendResourcesFromSubdir(skillDir, subDir string, kind SkillResourceKind) []SkillResource {
 	dir := filepath.Join(skillDir, subDir)
-	if !DirectoryExists(dir) {
+	if !util.DirectoryExists(dir) {
 		return []SkillResource{}
 	}
 
@@ -2282,7 +2284,7 @@ func (s *SkillLoader) IsSupportedRouteProperty(name string) bool {
 }
 
 func (s *SkillLoader) HasLegacyRouteObject(withJson string) bool {
-	if IsBlank(withJson) {
+	if util.IsBlank(withJson) {
 		return false
 	}
 
@@ -2305,7 +2307,7 @@ func (s *SkillLoader) HasLegacyRouteObject(withJson string) bool {
 
 func (s *SkillLoader) ScanDirectory(rootDir string, source SkillSource, results map[string]*SkillDefinition, scanSubdirectories bool) error {
 	rootSkillFile := filepath.Join(rootDir, "SKILL.md")
-	if FileExists(rootSkillFile) {
+	if util.FileExists(rootSkillFile) {
 		func() {
 			skill, errorCode, err := s.TryParseSkillFile(rootSkillFile, rootDir, source)
 			if err == nil && skill != nil {
@@ -2337,7 +2339,7 @@ func (s *SkillLoader) ScanDirectory(rootDir string, source SkillSource, results 
 		}
 
 		skillFile := filepath.Join(path, "SKILL.md")
-		if !FileExists(skillFile) {
+		if !util.FileExists(skillFile) {
 			return nil
 		}
 
@@ -2490,7 +2492,7 @@ func (s *SkillLoader) LoadAll(config *SkillsConfig, workspacePath string, plugin
 
 	// 1. Extra dirs (最低优先级)
 	for _, dir := range config.Load.ExtraDirs {
-		if DirectoryExists(dir) {
+		if util.DirectoryExists(dir) {
 			s.ScanDirectory(dir, SkillSource_Extra, allSkills, scanSubdirectories)
 		}
 	}
@@ -2500,7 +2502,7 @@ func (s *SkillLoader) LoadAll(config *SkillsConfig, workspacePath string, plugin
 		if exePath, err := os.Executable(); err == nil {
 			baseDir := filepath.Dir(exePath)
 			bundledDir := filepath.Join(baseDir, "skills")
-			if DirectoryExists(bundledDir) {
+			if util.DirectoryExists(bundledDir) {
 				s.ScanDirectory(bundledDir, SkillSource_Bundled, allSkills, scanSubdirectories)
 			}
 		}
@@ -2518,14 +2520,14 @@ func (s *SkillLoader) LoadAll(config *SkillsConfig, workspacePath string, plugin
 			managedDir = s.NormalizeManagedRootPath(config.Load.ManagedRoot)
 		}
 
-		if managedDir != "" && DirectoryExists(managedDir) {
+		if managedDir != "" && util.DirectoryExists(managedDir) {
 			s.ScanDirectory(managedDir, SkillSource_Managed, allSkills, scanSubdirectories)
 		}
 	}
 
 	// 4. Plugin-packaged skills
 	for _, pluginDir := range pluginSkillDirs {
-		if DirectoryExists(pluginDir) {
+		if util.DirectoryExists(pluginDir) {
 			s.ScanDirectory(pluginDir, SkillSource_Plugin, allSkills, scanSubdirectories)
 		}
 	}
@@ -2533,7 +2535,7 @@ func (s *SkillLoader) LoadAll(config *SkillsConfig, workspacePath string, plugin
 	// 5. Workspace skills (最高优先级)
 	if config.Load.IncludeWorkspace && strings.TrimSpace(workspacePath) != "" {
 		wsSkillsDir := filepath.Join(workspacePath, "skills")
-		if DirectoryExists(wsSkillsDir) {
+		if util.DirectoryExists(wsSkillsDir) {
 			s.ScanDirectory(wsSkillsDir, SkillSource_Workspace, allSkills, scanSubdirectories)
 		}
 	}
@@ -2547,7 +2549,7 @@ func (s *SkillLoader) LoadAll(config *SkillsConfig, workspacePath string, plugin
 
 		// AllowBundled 过滤器
 		if skill.Source == SkillSource_Bundled && len(config.AllowBundled) > 0 {
-			if !ContainsIgnoreCase(config.AllowBundled, name) {
+			if !util.ContainsIgnoreCase(config.AllowBundled, name) {
 				continue
 			}
 		}
@@ -2592,7 +2594,7 @@ func CheckRequirements(skill *SkillDefinition, config *SkillsConfig) bool {
 	// 1. 操作系统网关 (OS Gate)
 	if len(meta.Os) > 0 {
 		currentOs := runtime.GOOS
-		if !ContainsIgnoreCase(meta.Os, currentOs) {
+		if !util.ContainsIgnoreCase(meta.Os, currentOs) {
 			return false
 		}
 	}
@@ -2652,7 +2654,7 @@ func CheckRequirements(skill *SkillDefinition, config *SkillsConfig) bool {
 			if meta.Risk != "" {
 				risk = meta.Risk
 			}
-			if !ContainsIgnoreCase(config.MetaSkill.AllowedRiskLevels, risk) {
+			if !util.ContainsIgnoreCase(config.MetaSkill.AllowedRiskLevels, risk) {
 				displayRisk := risk
 				if displayRisk == "" {
 					displayRisk = "(unset)"

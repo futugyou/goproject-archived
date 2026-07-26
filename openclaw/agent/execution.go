@@ -20,6 +20,7 @@ import (
 	"time"
 
 	"github.com/futugyou/openclaw/core"
+	"github.com/futugyou/openclaw/util"
 	"github.com/google/uuid"
 )
 
@@ -385,7 +386,7 @@ func readSlice(buf *bytes.Buffer, gate *sync.Mutex, offset int, maxChars int) (s
 	data := buf.Bytes()
 	totalLen := len(data)
 
-	safeOffset := clamp(offset, 0, totalLen)
+	safeOffset := util.Clamp(offset, 0, totalLen)
 	length := min(max(0, maxChars), totalLen-safeOffset)
 	nextOffset := safeOffset + length
 
@@ -394,16 +395,6 @@ func readSlice(buf *bytes.Buffer, gate *sync.Mutex, offset int, maxChars int) (s
 	}
 
 	return string(data[safeOffset : safeOffset+length]), nextOffset
-}
-
-func clamp(val, low, high int) int {
-	if val < low {
-		return low
-	}
-	if val > high {
-		return high
-	}
-	return val
 }
 
 type ExecutionRouteResolution struct {

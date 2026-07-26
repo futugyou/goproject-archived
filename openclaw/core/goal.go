@@ -11,6 +11,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/futugyou/openclaw/util"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
@@ -52,7 +53,7 @@ func (i *InMemoryGoalService) ClearGoal(ctx context.Context, sessionId string) e
 
 // CreateGoal implements [IGoalService].
 func (i *InMemoryGoalService) CreateGoal(ctx context.Context, sessionId string, objective string, tokenBudget int64, tokensAtStart int64) (*SessionGoal, error) {
-	if IsBlank(sessionId) || IsBlank(objective) {
+	if util.IsBlank(sessionId) || util.IsBlank(objective) {
 		return nil, errors.New("invalid parameter")
 	}
 
@@ -130,12 +131,12 @@ func (i *InMemoryGoalService) IncrementContinuationCount(ctx context.Context, se
 
 // RecordGoalHistory implements [IGoalService].
 func (i *InMemoryGoalService) RecordGoalHistory(ctx context.Context, goal *SessionGoal) error {
-	if IsBlank(i.historyFilePath) {
+	if util.IsBlank(i.historyFilePath) {
 		return nil
 	}
 
 	dir := filepath.Dir(i.historyFilePath)
-	if !IsBlank(dir) {
+	if !util.IsBlank(dir) {
 		os.MkdirAll(dir, 0755)
 	}
 
@@ -158,7 +159,7 @@ func (i *InMemoryGoalService) RecordGoalHistory(ctx context.Context, goal *Sessi
 		return err
 	}
 
-	return AppendAllText(i.historyFilePath, string(data))
+	return util.AppendAllText(i.historyFilePath, string(data))
 }
 
 // RecordTurnHash implements [IGoalService].
@@ -173,9 +174,9 @@ func (i *InMemoryGoalService) RecordTurnHash(ctx context.Context, sessionId stri
 	goal.mu.Lock()
 	defer goal.mu.Unlock()
 
-	hash := ComputeTurnHash(normalizedText)
+	hash := util.ComputeTurnHash(normalizedText)
 
-	if IsBlank(hash) {
+	if util.IsBlank(hash) {
 		goal.LastBlockerHash = ""
 		goal.ConsecutiveBlockerCount = 0
 		return false
@@ -291,7 +292,7 @@ func (p *PostgresGoalService) ClearGoal(ctx context.Context, sessionId string) e
 
 // CreateGoal implements [IGoalService].
 func (p *PostgresGoalService) CreateGoal(ctx context.Context, sessionId string, objective string, tokenBudget int64, tokensAtStart int64) (*SessionGoal, error) {
-	if IsBlank(sessionId) || IsBlank(objective) {
+	if util.IsBlank(sessionId) || util.IsBlank(objective) {
 		return nil, errors.New("invalid parameter")
 	}
 
@@ -339,7 +340,7 @@ func (p *PostgresGoalService) GetGoal(ctx context.Context, sessionId string) (*S
 // HasActiveGoal implements [IGoalService].
 func (p *PostgresGoalService) HasActiveGoal(ctx context.Context, sessionId string) bool {
 	ad, _ := gorm.G[SessionGoal](p.db).Where("session_id = ?", sessionId).First(ctx)
-	if IsBlank(ad.SessionId) {
+	if util.IsBlank(ad.SessionId) {
 		return false
 	}
 
@@ -399,11 +400,11 @@ func (p *PostgresGoalService) RecordTurnHash(ctx context.Context, sessionId stri
 			return err
 		}
 
-		hash := ComputeTurnHash(normalizedText)
+		hash := util.ComputeTurnHash(normalizedText)
 
 		updatedFields := make(map[string]any)
 
-		if IsBlank(hash) {
+		if util.IsBlank(hash) {
 			updatedFields["last_blocker_hash"] = ""
 			updatedFields["consecutive_blocker_count"] = 0
 		} else if hash == goal.LastBlockerHash {

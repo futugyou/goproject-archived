@@ -12,6 +12,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/futugyou/openclaw/util"
 )
 
 type SetupVerificationRequest struct {
@@ -61,12 +63,12 @@ var SetupVerificationServiceInstance = &SetupVerificationService{}
 type SetupVerificationService struct{}
 
 func (s *SetupVerificationService) resolveConfiguredPath(value string) string {
-	if IsBlank(value) {
+	if util.IsBlank(value) {
 		return ""
 	}
 
 	var resolved = SecretResolverInstance.Resolve(value)
-	if IsBlank(resolved) {
+	if util.IsBlank(resolved) {
 		resolved = value
 	}
 
@@ -83,7 +85,7 @@ func (s *SetupVerificationService) resolveConfiguredPath(value string) string {
 
 func (s *SetupVerificationService) isNodeAvailable() bool {
 	var path = os.Getenv("PATH")
-	if IsBlank(path) {
+	if util.IsBlank(path) {
 		return false
 	}
 
@@ -95,7 +97,7 @@ func (s *SetupVerificationService) isNodeAvailable() bool {
 	for dir := range strings.SplitSeq(filepath.Clean(path), string(filepath.Separator)) {
 		for _, candidate := range candidates {
 
-			if FileExists(filepath.Join(dir, candidate)) {
+			if util.FileExists(filepath.Join(dir, candidate)) {
 				return true
 			}
 		}
@@ -104,7 +106,7 @@ func (s *SetupVerificationService) isNodeAvailable() bool {
 }
 
 func (s *SetupVerificationService) pingOpenSandbox(ctx context.Context, httpCLient *http.Client, config *GatewayConfig) bool {
-	if config == nil || IsBlank(config.Sandbox.Endpoint) {
+	if config == nil || util.IsBlank(config.Sandbox.Endpoint) {
 		return false
 	}
 	endpoint, err := url.Parse(config.Sandbox.Endpoint)
@@ -220,7 +222,7 @@ func (s *SetupVerificationService) hasValidRootSet(roots []string) bool {
 		}
 
 		var resolved = s.resolveConfiguredPath(root)
-		if IsBlank(resolved) || !filepath.IsAbs(resolved) {
+		if util.IsBlank(resolved) || !filepath.IsAbs(resolved) {
 			return false
 		}
 	}
@@ -256,7 +258,7 @@ func (s *SetupVerificationService) hasValidPromptCacheConfiguration(config *Gate
 		}
 
 		dialect := "auto"
-		if !IsBlank(caching.Dialect) {
+		if !util.IsBlank(caching.Dialect) {
 			dialect = strings.TrimSpace(caching.Dialect)
 		}
 
@@ -282,7 +284,7 @@ func (s *SetupVerificationService) hasValidPromptCacheConfiguration(config *Gate
 }
 
 func (s *SetupVerificationService) normalizePortProbeHost(bindAddress string) string {
-	if IsBlank(bindAddress) {
+	if util.IsBlank(bindAddress) {
 		return "127.0.0.1"
 	}
 
@@ -899,7 +901,7 @@ func (s *SetupVerificationService) buildWorkspaceCheck(config *GatewayConfig, wo
 
 	if strings.TrimSpace(workspacePath) != "" {
 		path := workspacePath
-		if filepath.IsAbs(path) && DirectoryExists(path) {
+		if filepath.IsAbs(path) && util.DirectoryExists(path) {
 			return &DoctorCheckItem{
 				Id:       "workspace",
 				Label:    "Workspace readiness",
@@ -1134,7 +1136,7 @@ func (s *SetupVerificationService) BuildRecommendedNextActions(
 		actions = append(actions, "Put the gateway behind TLS termination and a reverse proxy before Internet exposure.")
 	}
 
-	return DistinctStrings(actions)
+	return util.DistinctStrings(actions)
 }
 
 func (s *SetupVerificationService) GetCheckStatus(snapshot *SetupVerificationSnapshot, checkID string) string {
@@ -1310,7 +1312,7 @@ func (s *SetupVerificationService) Verify(ctx context.Context, request *SetupVer
 
 func (s *SetupVerificationService) BuildDoctorReport(ctx context.Context, request *DoctorReportRequest, client *http.Client) (*DoctorReportResponse, error) {
 	config := request.Config
-	publicBind := !IsLoopbackBind(config.BindAddress)
+	publicBind := !util.IsLoopbackBind(config.BindAddress)
 
 	policy := request.Policy
 	if policy == nil {

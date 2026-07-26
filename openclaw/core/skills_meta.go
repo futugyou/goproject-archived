@@ -17,6 +17,7 @@ import (
 	"unicode"
 
 	"github.com/flosch/pongo2/v7"
+	"github.com/futugyou/openclaw/util"
 )
 
 type MetaExecutionContext struct {
@@ -1134,7 +1135,7 @@ func (m *MetaFanOutExecutor) TryExecuteFanOutStep(
 					return
 				}
 
-				if !IsBlank(failureCode) {
+				if !util.IsBlank(failureCode) {
 					if logger != nil {
 						logger(fmt.Sprintf("Fan-out child step '%s' failed: %s", childId, failureCode), nil)
 					}

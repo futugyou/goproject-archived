@@ -16,6 +16,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/futugyou/openclaw/util"
 )
 
 type DynamicCommandRegistrationResult uint8
@@ -276,7 +278,7 @@ func (c *ChatCommandProcessor) TryProcessCommand(ctx context.Context, session *S
 	switch command {
 	case "/status":
 		activeModel := session.ModelOverride
-		if IsBlank(activeModel) {
+		if util.IsBlank(activeModel) {
 			activeModel = "default"
 		}
 		statusCacheRead, statusCacheWrite := c.getCacheTotals(session)
@@ -299,7 +301,7 @@ func (c *ChatCommandProcessor) TryProcessCommand(ctx context.Context, session *S
 	case "/model":
 		if args == "" {
 			current := session.ModelOverride
-			if IsBlank(current) {
+			if util.IsBlank(current) {
 				current = "none (using default)"
 			}
 			return true, fmt.Sprintf("Current model override: %s\nUsage: /model <model-name> or /model reset", current), nil
@@ -328,7 +330,7 @@ func (c *ChatCommandProcessor) TryProcessCommand(ctx context.Context, session *S
 	case "/think":
 		if args == "" {
 			current := session.ReasoningEffort
-			if IsBlank(current) {
+			if util.IsBlank(current) {
 				current = "default"
 			}
 			return true, fmt.Sprintf("Current reasoning effort: %s\nUsage: /think off|low|medium|high", current), nil
@@ -593,7 +595,7 @@ type ToolApprovalRequest struct {
 type RecentSendersStore struct {
 	rootDir     string
 	logger      *slog.Logger
-	lockManager *NamedLockManager
+	lockManager *util.NamedLockManager
 	maxEntries  int
 }
 
@@ -609,7 +611,7 @@ func NewRecentSendersStore(baseStoragePath string, logger *slog.Logger, maxEntri
 		rootDir:     path,
 		maxEntries:  maxEntries,
 		logger:      logger,
-		lockManager: NewNamedLockManager(),
+		lockManager: util.NewNamedLockManager(),
 	}
 }
 
@@ -617,7 +619,7 @@ func (r *RecentSendersStore) getPath(channelId string) string {
 	safe := []byte{}
 	for i := 0; i < len(channelId); i++ {
 		c := channelId[i]
-		if IsLetterOrDigit(c) || c == '_' || c == '-' || c == '.' {
+		if util.IsLetterOrDigit(c) || c == '_' || c == '-' || c == '.' {
 			safe = append(safe, c)
 		}
 	}
@@ -642,7 +644,7 @@ func (r *RecentSendersStore) GetSnapshot(channelId string) (*RecentSendersFile, 
 }
 
 func (r *RecentSendersStore) TryGetLatest(channelId string) (*RecentSenderEntry, error) {
-	if IsBlank(channelId) {
+	if util.IsBlank(channelId) {
 		return &RecentSenderEntry{}, nil
 	}
 
@@ -711,7 +713,7 @@ func (r *RecentSendersStore) loadUnlocked(_ context.Context, path string) (*Rece
 }
 
 func (r *RecentSendersStore) Record(ctx context.Context, channelId, senderId, senderName string) error {
-	if IsBlank(channelId) || IsBlank(senderId) {
+	if util.IsBlank(channelId) || util.IsBlank(senderId) {
 		return nil
 	}
 
@@ -998,7 +1000,7 @@ func (t *ToolActionPolicyResolver) SupportsActionAwareApproval(toolName string) 
 }
 
 func (t *ToolActionPolicyResolver) IsMutationCapable(toolName, argumentsJson string) bool {
-	if IsBlank(toolName) {
+	if util.IsBlank(toolName) {
 		return false
 	}
 
@@ -1256,8 +1258,8 @@ func (c *CronScheduler) cleanupStaleRunningJobs(nowUtc time.Time) {
 
 func (c *CronScheduler) enqueueJob(ctx context.Context, job *CronJobConfig) error {
 	sessionId := job.SessionId
-	if IsBlank(sessionId) {
-		if IsBlank(job.Name) {
+	if util.IsBlank(sessionId) {
+		if util.IsBlank(job.Name) {
 			sessionId = "cron:system"
 		} else {
 			sessionId = fmt.Sprintf("cron:%s", job.Name)
@@ -1266,7 +1268,7 @@ func (c *CronScheduler) enqueueJob(ctx context.Context, job *CronJobConfig) erro
 	}
 
 	var channelId = job.ChannelId
-	if IsBlank(channelId) {
+	if util.IsBlank(channelId) {
 		channelId = "cron"
 	}
 
@@ -1284,13 +1286,13 @@ func (c *CronScheduler) enqueueJob(ctx context.Context, job *CronJobConfig) erro
 	var msg *InboundMessage
 	var err error
 	subject := job.Subject
-	if IsBlank(subject) {
-		if !IsBlank(job.Name) {
+	if util.IsBlank(subject) {
+		if !util.IsBlank(job.Name) {
 			subject = fmt.Sprintf("OpenClaw Cron: %s", job.Name)
 		}
 
 	}
-	if c.runDispatcher != nil && !IsBlank(job.AutomationId) {
+	if c.runDispatcher != nil && !util.IsBlank(job.AutomationId) {
 		request := &AutomationDispatchRequest{
 			AutomationId:  job.AutomationId,
 			SessionId:     sessionId,
@@ -1301,7 +1303,7 @@ func (c *CronScheduler) enqueueJob(ctx context.Context, job *CronJobConfig) erro
 			Subject:       subject,
 		}
 
-		if IsBlank(request.TriggerSource) {
+		if util.IsBlank(request.TriggerSource) {
 			request.TriggerSource = "schedule"
 		}
 		msg, err = c.runDispatcher.PrepareDispatch(ctx, request)
@@ -1332,7 +1334,7 @@ func (c *CronScheduler) enqueueJob(ctx context.Context, job *CronJobConfig) erro
 
 func (c *CronScheduler) enqueueJobIfNotRunning(ctx context.Context, job *CronJobConfig) error {
 	var jobName = "unnamed"
-	if !IsBlank(job.Name) {
+	if !util.IsBlank(job.Name) {
 		jobName = job.Name
 	}
 	var now = time.Now().UTC()
@@ -1364,7 +1366,7 @@ func (c *CronScheduler) enqueueJobIfNotRunning(ctx context.Context, job *CronJob
 }
 
 func (c *CronScheduler) MarkJobCompleted(jobName string) {
-	if IsBlank(jobName) {
+	if util.IsBlank(jobName) {
 		return
 	}
 
@@ -1380,14 +1382,14 @@ func (c *CronScheduler) RunTick(ctx context.Context) error {
 	}
 	for _, job := range jobs {
 		var now = utcNow
-		if !IsBlank(job.Timezone) {
+		if !util.IsBlank(job.Timezone) {
 			tz, err := time.LoadLocation(job.Timezone)
 			if err == nil {
 				now = utcNow.In(tz)
 			}
 		}
 
-		if !IsTime(job.CronExpression, now) {
+		if !util.IsTime(job.CronExpression, now) {
 			continue
 		}
 

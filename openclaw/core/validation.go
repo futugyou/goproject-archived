@@ -14,6 +14,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/futugyou/openclaw/util"
 )
 
 var ConfigPathResolverInstance = &ConfigPathResolver{}
@@ -21,12 +23,12 @@ var ConfigPathResolverInstance = &ConfigPathResolver{}
 type ConfigPathResolver struct{}
 
 func (c *ConfigPathResolver) Resolve(path string) string {
-	if IsBlank(path) {
+	if util.IsBlank(path) {
 		return ""
 	}
 
 	var resolved = SecretResolverInstance.Resolve(path)
-	if IsBlank(resolved) {
+	if util.IsBlank(resolved) {
 		return ""
 	}
 
