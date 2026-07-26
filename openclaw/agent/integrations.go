@@ -106,3 +106,26 @@ func (h *HomeAssistantRuleEngine) Render(cfg *core.HomeAssistantEventsConfig, ru
 
 	return replacer.Replace(template)
 }
+
+func (h *HomeAssistantRuleEngine) SelectRule(cfg *core.HomeAssistantEventsConfig, info *EventInfo, localNow time.Time) *core.HomeAssistantEventRule {
+	if cfg == nil {
+		return nil
+	}
+
+	for _, rule := range cfg.Rules {
+		if !h.isRuleMatch(&rule, info) {
+			continue
+		}
+
+		if !h.isRuleInLocalWindow(&rule, localNow) {
+			continue
+		}
+
+		if !h.isRuleAllowedDay(&rule, localNow) {
+			continue
+		}
+
+		return &rule
+	}
+	return nil
+}
