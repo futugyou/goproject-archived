@@ -81,7 +81,7 @@ func (h *HostManager) runWebServer(ctx context.Context) error {
 	select {
 	case err := <-serverErr:
 		h.logger.Error("web server error", "error", err.Error())
-		return fmt.Errorf("Web API 异常崩溃: %w", err)
+		return fmt.Errorf("web api error: %w", err)
 	case <-ctx.Done():
 		fmt.Println("--> [Host] closing web server...")
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)

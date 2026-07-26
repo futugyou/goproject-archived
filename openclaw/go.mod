@@ -7,6 +7,7 @@ require github.com/google/uuid v1.6.0
 require (
 	github.com/flosch/pongo2/v7 v7.0.0-alpha.1
 	github.com/futugyou/extensions_ai v0.0.1
+	github.com/gorilla/websocket v1.5.3
 	github.com/hibiken/asynq v0.26.0
 	github.com/jinzhu/copier v0.4.0
 	github.com/mattn/go-sqlite3 v1.14.48
