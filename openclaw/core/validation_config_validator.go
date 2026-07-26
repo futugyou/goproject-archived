@@ -8,6 +8,8 @@ import (
 	"regexp"
 	"slices"
 	"strings"
+
+	"github.com/futugyou/openclaw/util"
 )
 
 var BuiltInLlmProviders = map[string]struct{}{
@@ -120,7 +122,7 @@ func (c *ConfigValidator) validateRegexPattern(path, pattern string, errorMsg *[
 
 func (c *ConfigValidator) validateRegexList(path string, patterns []string, errorMsg *[]string) {
 	for i := range patterns {
-		if !IsBlank(patterns[i]) {
+		if !util.IsBlank(patterns[i]) {
 			c.validateRegexPattern(fmt.Sprintf("%s[%d]", path, i), patterns[i], errorMsg)
 		}
 	}
@@ -145,7 +147,7 @@ func (c *ConfigValidator) validateExternalCli(config *ExternalCliOptions, errorM
 
 	var presetIds = config.Presets
 	for i := 0; i < len(presetIds); i++ {
-		if IsBlank(presetIds[i]) {
+		if util.IsBlank(presetIds[i]) {
 			*errorMsg = append(*errorMsg, fmt.Sprintf("ExternalCli.Presets[%d] must not be empty.", i))
 		}
 	}
@@ -156,10 +158,10 @@ func (c *ConfigValidator) validateExternalCli(config *ExternalCliOptions, errorM
 
 	var effectiveConfig = ExternalCliPresetCatalogInstance.Apply(*config)
 	for connectorName, connector := range effectiveConfig.Connectors {
-		if IsBlank(connectorName) {
+		if util.IsBlank(connectorName) {
 			*errorMsg = append(*errorMsg, "ExternalCli.Connectors contains an empty connector name.")
 		}
-		if connector.Enabled && IsBlank(connector.Executable) {
+		if connector.Enabled && util.IsBlank(connector.Executable) {
 			*errorMsg = append(*errorMsg, fmt.Sprintf("ExternalCli.Connectors.%s.Executable must be set when connector is enabled.", connectorName))
 		}
 
@@ -171,7 +173,7 @@ func (c *ConfigValidator) validateExternalCli(config *ExternalCliOptions, errorM
 		c.validateRegexList(fmt.Sprintf("ExternalCli.Connectors.%s.RedactionRules", connectorName), connector.RedactionRules, errorMsg)
 
 		for commandName, command := range connector.Commands {
-			if IsBlank(commandName) {
+			if util.IsBlank(commandName) {
 				*errorMsg = append(*errorMsg, fmt.Sprintf("ExternalCli.Connectors.%s.Commands contains an empty command name.", connectorName))
 			}
 			if len(command.ArgsTemplate) == 0 {
@@ -189,7 +191,7 @@ func (c *ConfigValidator) validateExternalCli(config *ExternalCliOptions, errorM
 				*errorMsg = append(*errorMsg, fmt.Sprintf("ExternalCli.Connectors.%s.Commands.%s.RiskLevel must be low, medium, or high.", connectorName, commandName))
 			}
 
-			if !IsBlank(command.StructuredOutput) {
+			if !util.IsBlank(command.StructuredOutput) {
 				var format = NormalizeOutputFormat(command.StructuredOutput)
 				if format != command.StructuredOutput {
 					*errorMsg = append(*errorMsg, fmt.Sprintf("ExternalCli.Connectors.%s.Commands.%s.StructuredOutput must be one of: json, ndjson, csv, text, table.", connectorName, commandName))
@@ -198,7 +200,7 @@ func (c *ConfigValidator) validateExternalCli(config *ExternalCliOptions, errorM
 
 			c.validateRegexList(fmt.Sprintf("ExternalCli.Connectors.%s.Commands.%s.RedactionRules", connectorName, commandName), command.RedactionRules, errorMsg)
 			for parameterName, parameter := range command.Parameters {
-				if !IsBlank(parameter.Pattern) {
+				if !util.IsBlank(parameter.Pattern) {
 					c.validateRegexPattern(fmt.Sprintf("ExternalCli.Connectors.%s.Commands.%s.Parameters.%s.Pattern", connectorName, commandName, parameterName), parameter.Pattern, errorMsg)
 				}
 			}
@@ -218,7 +220,7 @@ func (c *ConfigValidator) validateWorkflows(config *WorkflowsConfig, errorMsg *[
 
 	for backendId, backend := range config.Backends {
 		var path = fmt.Sprintf("Workflows.Backends.%s", backendId)
-		if IsBlank(backendId) {
+		if util.IsBlank(backendId) {
 			*errorMsg = append(*errorMsg, "Workflows.Backends contains an empty backend id.")
 			path = "Workflows.Backends.<empty>"
 		}
@@ -255,7 +257,7 @@ func (c *ConfigValidator) validateApertureProviderConfig(path, endpointPropertyN
 		return
 	}
 
-	if IsBlank(endpoint) {
+	if util.IsBlank(endpoint) {
 		*errorMsg = append(*errorMsg, fmt.Sprintf("%s.%s must be set when Provider='aperture'.", path, endpointPropertyName))
 	} else {
 		baseURL, err := url.Parse(endpoint)
@@ -264,7 +266,7 @@ func (c *ConfigValidator) validateApertureProviderConfig(path, endpointPropertyN
 		}
 	}
 
-	if !c.isTailnetIdentityAuth(authMode) && IsBlank(apiKey) {
+	if !c.isTailnetIdentityAuth(authMode) && util.IsBlank(apiKey) {
 		*errorMsg = append(*errorMsg, fmt.Sprintf("%s.ApiKey must be set when Provider='aperture' and AuthMode is not 'tailnet-identity'.", path))
 	}
 }
@@ -274,7 +276,7 @@ func (c *ConfigValidator) resolveConfiguredPath(path string) string {
 }
 
 func (c *ConfigValidator) validateDynamicTurnRoutingTier(tierName string, target *DynamicTurnRoutingTierTarget, profileIds map[string]struct{}, errorMsg *[]string) {
-	if target == nil || IsBlank(target.ModelProfileId) || profileIds == nil {
+	if target == nil || util.IsBlank(target.ModelProfileId) || profileIds == nil {
 		return
 	}
 
@@ -463,7 +465,7 @@ func (c *ConfigValidator) validateRootSet(field string, roots []string, errorMsg
 		}
 
 		var resolved = c.resolveConfiguredPath(root)
-		if IsBlank(resolved) {
+		if util.IsBlank(resolved) {
 			*errorMsg = append(*errorMsg, fmt.Sprintf("%s entries must resolve to non-empty absolute paths.", field))
 			continue
 		}
@@ -475,7 +477,7 @@ func (c *ConfigValidator) validateRootSet(field string, roots []string, errorMsg
 }
 
 func (c *ConfigValidator) validateDmPolicy(field, value string, errorMsg *[]string) {
-	if IsBlank(value) {
+	if util.IsBlank(value) {
 		*errorMsg = append(*errorMsg, fmt.Sprintf("%s must be 'open', 'pairing', or 'closed'.", field))
 		return
 	}
@@ -490,7 +492,7 @@ func (c *ConfigValidator) validateNotionConfig(config *NotionConfig, errorMsg *[
 		return
 	}
 
-	if IsBlank(SecretResolverInstance.Resolve(config.ApiKeyRef)) {
+	if util.IsBlank(SecretResolverInstance.Resolve(config.ApiKeyRef)) {
 		*errorMsg = append(*errorMsg, "Plugins.Native.Notion.ApiKeyRef must resolve to a token when Notion is enabled.")
 	}
 
@@ -499,7 +501,7 @@ func (c *ConfigValidator) validateNotionConfig(config *NotionConfig, errorMsg *[
 		*errorMsg = append(*errorMsg, "Plugins.Native.Notion.BaseUrl must be a valid absolute URL when Notion is enabled.")
 	}
 
-	if IsBlank(config.ApiVersion) {
+	if util.IsBlank(config.ApiVersion) {
 		*errorMsg = append(*errorMsg, "Plugins.Native.Notion.ApiVersion must be set when Notion is enabled.")
 	}
 
@@ -507,10 +509,10 @@ func (c *ConfigValidator) validateNotionConfig(config *NotionConfig, errorMsg *[
 		*errorMsg = append(*errorMsg, fmt.Sprintf("Plugins.Native.Notion.MaxSearchResults must be >= 1 (got %d).", config.MaxSearchResults))
 	}
 
-	hasAnyTarget := !IsBlank(config.DefaultPageId) ||
-		!IsBlank(config.DefaultDatabaseId) ||
-		slices.IndexFunc(config.AllowedPageIds, func(s string) bool { return !IsBlank(s) }) != -1 ||
-		slices.IndexFunc(config.AllowedDatabaseIds, func(s string) bool { return !IsBlank(s) }) != -1
+	hasAnyTarget := !util.IsBlank(config.DefaultPageId) ||
+		!util.IsBlank(config.DefaultDatabaseId) ||
+		slices.IndexFunc(config.AllowedPageIds, func(s string) bool { return !util.IsBlank(s) }) != -1 ||
+		slices.IndexFunc(config.AllowedDatabaseIds, func(s string) bool { return !util.IsBlank(s) }) != -1
 
 	if !hasAnyTarget {
 		*errorMsg = append(*errorMsg, "Plugins.Native.Notion requires at least one allowed/default page or database id when enabled.")
@@ -523,7 +525,7 @@ func (c *ConfigValidator) validateUrlSafety(path string, config *UrlSafetyConfig
 	}
 
 	for _, cidr := range config.BlockedCidrs {
-		if IsBlank(cidr) {
+		if util.IsBlank(cidr) {
 			continue
 		}
 
@@ -554,7 +556,7 @@ func (c *ConfigValidator) validateCodingBackends(config *CodingBackendsConfig, e
 	backendIds := map[string]struct{}{}
 
 	for _, backend := range config.EnumerateConfiguredBackends {
-		if IsBlank(backend.BackendId) {
+		if util.IsBlank(backend.BackendId) {
 			*errorMsg = append(*errorMsg, "CodingBackends entries must set BackendId.")
 			continue
 		}
@@ -568,7 +570,7 @@ func (c *ConfigValidator) validateCodingBackends(config *CodingBackendsConfig, e
 			*errorMsg = append(*errorMsg, fmt.Sprintf("CodingBackends.%s.TimeoutSeconds must be >= 1 (got {backend.TimeoutSeconds}).", backend.BackendId))
 		}
 
-		if IsBlank(backend.Provider) {
+		if util.IsBlank(backend.Provider) {
 			*errorMsg = append(*errorMsg, fmt.Sprintf("CodingBackends.%s.Provider must be set.", backend.BackendId))
 		}
 
@@ -576,18 +578,18 @@ func (c *ConfigValidator) validateCodingBackends(config *CodingBackendsConfig, e
 			*errorMsg = append(*errorMsg, fmt.Sprintf("CodingBackends.%s must set ReadOnlyByDefault=true when WriteEnabled=false.", backend.BackendId))
 		}
 
-		if backend.RequireWorkspace && !IsBlank(backend.DefaultWorkspacePath) && !filepath.IsAbs(backend.DefaultWorkspacePath) {
+		if backend.RequireWorkspace && !util.IsBlank(backend.DefaultWorkspacePath) && !filepath.IsAbs(backend.DefaultWorkspacePath) {
 			*errorMsg = append(*errorMsg, fmt.Sprintf("CodingBackends.%s.DefaultWorkspacePath must be absolute when set.", backend.BackendId))
 		}
 
 		var credentialSourceCount = 0
-		if !IsBlank(backend.Credentials.SecretRef) {
+		if !util.IsBlank(backend.Credentials.SecretRef) {
 			credentialSourceCount++
 		}
-		if !IsBlank(backend.Credentials.TokenFilePath) {
+		if !util.IsBlank(backend.Credentials.TokenFilePath) {
 			credentialSourceCount++
 		}
-		if !IsBlank(backend.Credentials.ConnectedAccountId) {
+		if !util.IsBlank(backend.Credentials.ConnectedAccountId) {
 			credentialSourceCount++
 		}
 
@@ -605,7 +607,7 @@ func (c *ConfigValidator) validateFractalMemory(config *FractalMemoryConfig, err
 		*errorMsg = append(*errorMsg, "Memory.Fractal.Mode must be 'mcp'.")
 	}
 
-	if config.Enabled && IsBlank(config.McpCommand) {
+	if config.Enabled && util.IsBlank(config.McpCommand) {
 		*errorMsg = append(*errorMsg, "Memory.Fractal.McpCommand must be set when Fractal Memory is enabled.")
 	}
 
@@ -647,7 +649,7 @@ func (c *ConfigValidator) Validate(config *GatewayConfig) []string {
 	}
 
 	// LLM
-	if IsBlank(config.Llm.Model) {
+	if util.IsBlank(config.Llm.Model) {
 		errorMsg = append(errorMsg, "Llm.Model must be set.")
 	}
 
@@ -713,7 +715,7 @@ func (c *ConfigValidator) Validate(config *GatewayConfig) []string {
 		errorMsg = append(errorMsg, fmt.Sprintf("Memory.Provider '%s' must be 'file', 'sqlite', or 'mempalace'.", config.Memory.Provider))
 	}
 
-	if IsBlank(config.Memory.StoragePath) {
+	if util.IsBlank(config.Memory.StoragePath) {
 		errorMsg = append(errorMsg, "Memory.StoragePath must be set.")
 	}
 	if config.Memory.MaxHistoryTurns < 1 {
@@ -786,7 +788,7 @@ func (c *ConfigValidator) Validate(config *GatewayConfig) []string {
 
 	if config.Tooling.WorkspaceOnly {
 		var resolvedWorkspaceRoot = c.resolveConfiguredPath(config.Tooling.WorkspaceRoot)
-		if IsBlank(resolvedWorkspaceRoot) {
+		if util.IsBlank(resolvedWorkspaceRoot) {
 			errorMsg = append(errorMsg, "Tooling.WorkspaceRoot must resolve to a non-empty absolute path when WorkspaceOnly=true.")
 		} else if !filepath.IsAbs(resolvedWorkspaceRoot) {
 			errorMsg = append(errorMsg, "Tooling.WorkspaceRoot must resolve to an absolute path when WorkspaceOnly=true.")
@@ -806,12 +808,12 @@ func (c *ConfigValidator) Validate(config *GatewayConfig) []string {
 		errorMsg = append(errorMsg, fmt.Sprintf("Sandbox.DefaultTTL must be >= 1 (got %d).", config.Sandbox.DefaultTTL))
 	}
 
-	if sandboxProvider == SandboxProviderNames_OpenSandbox && IsBlank(config.Sandbox.Endpoint) {
+	if sandboxProvider == SandboxProviderNames_OpenSandbox && util.IsBlank(config.Sandbox.Endpoint) {
 		errorMsg = append(errorMsg, "Sandbox.Endpoint must be set when Sandbox.Provider='OpenSandbox'.")
 	}
 
 	for toolName, toolConfig := range config.Sandbox.Tools {
-		if !IsBlank(toolConfig.Mode) {
+		if !util.IsBlank(toolConfig.Mode) {
 			if _, ok := TryParseMode(toolConfig.Mode); !ok {
 				errorMsg = append(errorMsg, fmt.Sprintf("Sandbox.Tools.%s.Mode must be 'None', 'Prefer', or 'Require'.", toolName))
 			}
@@ -821,7 +823,7 @@ func (c *ConfigValidator) Validate(config *GatewayConfig) []string {
 			errorMsg = append(errorMsg, fmt.Sprintf("Sandbox.Tools.%s.TTL must be >= 1 when set (got %d).", toolName, *toolConfig.TTL))
 		}
 
-		if sandboxProvider == SandboxProviderNames_OpenSandbox && ResolveMode(config, toolName, SandboxProviderNames_None) != SandboxProviderNames_None && IsBlank(toolConfig.Template) {
+		if sandboxProvider == SandboxProviderNames_OpenSandbox && ResolveMode(config, toolName, SandboxProviderNames_None) != SandboxProviderNames_None && util.IsBlank(toolConfig.Template) {
 			errorMsg = append(errorMsg, fmt.Sprintf("Sandbox.Tools.%s.Template must be set when sandboxing is enabled for that tool.", toolName))
 		}
 	}
@@ -829,7 +831,7 @@ func (c *ConfigValidator) Validate(config *GatewayConfig) []string {
 	if sandboxProvider == SandboxProviderNames_OpenSandbox {
 
 		for _, candidate := range EnumerateBuiltInCandidates(config) {
-			if ResolveMode(config, candidate.ToolName, candidate.DefaultMode) != SandboxProviderNames_None && IsBlank(ResolveTemplate(config, candidate.ToolName)) {
+			if ResolveMode(config, candidate.ToolName, candidate.DefaultMode) != SandboxProviderNames_None && util.IsBlank(ResolveTemplate(config, candidate.ToolName)) {
 				errorMsg = append(errorMsg, fmt.Sprintf("Sandbox.Tools.%s.Template must be set because %s defaults to sandbox mode '%s'.", candidate.ToolName, candidate.ToolName, ResolveMode(config, candidate.ToolName, candidate.DefaultMode)))
 			}
 		}
@@ -846,7 +848,7 @@ func (c *ConfigValidator) Validate(config *GatewayConfig) []string {
 			errorMsg = append(errorMsg, "Delegation is enabled but no profiles are configured.")
 		}
 		for name, profile := range config.Delegation.Profiles {
-			if IsBlank(profile.Name) {
+			if util.IsBlank(profile.Name) {
 				errorMsg = append(errorMsg, fmt.Sprintf("Delegation profile '%s' has no Name.", name))
 			}
 			if profile.MaxIterations < 1 {
@@ -867,7 +869,7 @@ func (c *ConfigValidator) Validate(config *GatewayConfig) []string {
 
 	// Plugin bridge transport
 	var transportMode = config.Plugins.Transport.Mode
-	if IsBlank(transportMode) {
+	if util.IsBlank(transportMode) {
 		transportMode = "stdio"
 	}
 	if transportMode != "stdio" && transportMode != "socket" && transportMode != "hybrid" {
@@ -903,7 +905,7 @@ func (c *ConfigValidator) Validate(config *GatewayConfig) []string {
 				}
 
 				if transport == "stdio" {
-					if IsBlank(server.Command) {
+					if util.IsBlank(server.Command) {
 						errorMsg = append(errorMsg, fmt.Sprintf("Plugins.Mcp.Servers.%s.Command must be set when Transport='stdio'.", serverId))
 					}
 				} else {
@@ -948,11 +950,11 @@ func (c *ConfigValidator) Validate(config *GatewayConfig) []string {
 
 	if config.Channels.WhatsApp.ValidateSignature {
 		var appSecret = SecretResolverInstance.Resolve(config.Channels.WhatsApp.WebhookAppSecretRef)
-		if IsBlank(appSecret) {
+		if util.IsBlank(appSecret) {
 			appSecret = config.Channels.WhatsApp.WebhookAppSecret
 		}
 
-		if IsBlank(appSecret) {
+		if util.IsBlank(appSecret) {
 			errorMsg = append(errorMsg, "Channels.WhatsApp.ValidateSignature is true but WebhookAppSecret/WebhookAppSecretRef is not configured.")
 		}
 	}
@@ -967,16 +969,16 @@ func (c *ConfigValidator) Validate(config *GatewayConfig) []string {
 		}
 
 		for _, account := range worker.Accounts {
-			if IsBlank(account.AccountId) {
+			if util.IsBlank(account.AccountId) {
 				errorMsg = append(errorMsg, "Channels.WhatsApp.FirstPartyWorker.Accounts[].AccountId must be set.")
 			}
-			if IsBlank(account.SessionPath) {
+			if util.IsBlank(account.SessionPath) {
 				errorMsg = append(errorMsg, fmt.Sprintf("Channels.WhatsApp.FirstPartyWorker account '%s' must set SessionPath.", account.AccountId))
 			}
 			if account.PairingMode != "qr" && account.PairingMode != "pairing_code" {
 				errorMsg = append(errorMsg, fmt.Sprintf("Channels.WhatsApp.FirstPartyWorker account '%s' PairingMode must be 'qr' or 'pairing_code'.", account.AccountId))
 			}
-			if account.PairingMode == "pairing_code" && IsBlank(account.PhoneNumber) {
+			if account.PairingMode == "pairing_code" && util.IsBlank(account.PhoneNumber) {
 				errorMsg = append(errorMsg, fmt.Sprintf("Channels.WhatsApp.FirstPartyWorker account '%s' requires PhoneNumber for pairing_code mode.", account.AccountId))
 			}
 		}
@@ -1001,24 +1003,24 @@ func (c *ConfigValidator) Validate(config *GatewayConfig) []string {
 	}
 	if config.Channels.Teams.Enabled {
 		var teamsAppId = SecretResolverInstance.Resolve(config.Channels.Teams.AppIdRef)
-		if IsBlank(teamsAppId) {
+		if util.IsBlank(teamsAppId) {
 			teamsAppId = config.Channels.Teams.AppId
 		}
 		var teamsAppPassword = SecretResolverInstance.Resolve(config.Channels.Teams.AppPasswordRef)
-		if IsBlank(teamsAppPassword) {
+		if util.IsBlank(teamsAppPassword) {
 			teamsAppPassword = config.Channels.Teams.AppPassword
 		}
 		var teamsTenantId = SecretResolverInstance.Resolve(config.Channels.Teams.TenantIdRef)
-		if IsBlank(teamsTenantId) {
+		if util.IsBlank(teamsTenantId) {
 			teamsTenantId = config.Channels.Teams.TenantId
 		}
-		if IsBlank(teamsAppId) {
+		if util.IsBlank(teamsAppId) {
 			errorMsg = append(errorMsg, "Channels.Teams.AppId/AppIdRef must be configured when Teams is enabled.")
 		}
-		if IsBlank(teamsAppPassword) {
+		if util.IsBlank(teamsAppPassword) {
 			errorMsg = append(errorMsg, "Channels.Teams.AppPassword/AppPasswordRef must be configured when Teams is enabled.")
 		}
-		if IsBlank(teamsTenantId) {
+		if util.IsBlank(teamsTenantId) {
 			errorMsg = append(errorMsg, "Channels.Teams.TenantId/TenantIdRef must be configured when Teams is enabled.")
 		}
 	}
@@ -1037,13 +1039,13 @@ func (c *ConfigValidator) Validate(config *GatewayConfig) []string {
 	// Cron
 	if config.Cron.Enabled {
 		for _, job := range config.Cron.Jobs {
-			if IsBlank(job.Name) {
+			if util.IsBlank(job.Name) {
 				errorMsg = append(errorMsg, "Cron job name must be set.")
 			}
-			if IsBlank(job.Prompt) {
+			if util.IsBlank(job.Prompt) {
 				errorMsg = append(errorMsg, fmt.Sprintf("Cron job '%s' prompt must be set.", job.Name))
 			}
-			if !IsValidCronExpression(job.CronExpression) {
+			if !util.IsValidCronExpression(job.CronExpression) {
 				errorMsg = append(errorMsg, fmt.Sprintf("Cron job '%s' has invalid CronExpression '%s'.", job.Name, job.CronExpression))
 			}
 		}
@@ -1060,7 +1062,7 @@ func (c *ConfigValidator) Validate(config *GatewayConfig) []string {
 			}
 			if endpoint.ValidateHmac {
 				var secret = SecretResolverInstance.Resolve(endpoint.Secret)
-				if IsBlank(secret) {
+				if util.IsBlank(secret) {
 					errorMsg = append(errorMsg, fmt.Sprintf("Webhook endpoint '%s' has ValidateHmac=true but no Secret is configured.  Set OpenClaw:Webhooks:Endpoints:<name>:Secret.", name))
 				}
 			}

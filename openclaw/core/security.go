@@ -18,6 +18,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/futugyou/openclaw/util"
 	"github.com/jinzhu/copier"
 )
 
@@ -235,7 +236,7 @@ func (a *AllowlistPolicy) IsAllowed(allowlist []string, value string, semantics 
 	}
 
 	for _, entry := range allowlist {
-		if IsBlank(entry) {
+		if util.IsBlank(entry) {
 			continue
 		}
 
@@ -313,7 +314,7 @@ func (g *GlobMatcher) IsMatch(pattern string, value string) bool {
 
 func (g *GlobMatcher) IsAllowed(allowGlobs, denyGlobs []string, value string) bool {
 	for _, deny := range denyGlobs {
-		if !IsBlank(deny) && g.IsMatch(strings.TrimSpace(deny), value) {
+		if !util.IsBlank(deny) && g.IsMatch(strings.TrimSpace(deny), value) {
 			return false
 		}
 	}
@@ -323,7 +324,7 @@ func (g *GlobMatcher) IsAllowed(allowGlobs, denyGlobs []string, value string) bo
 	}
 
 	for _, allow := range allowGlobs {
-		if !IsBlank(allow) && g.IsMatch(strings.TrimSpace(allow), value) {
+		if !util.IsBlank(allow) && g.IsMatch(strings.TrimSpace(allow), value) {
 			return true
 		}
 	}
@@ -336,7 +337,7 @@ var BrowserToolCapabilityEvaluatorInstance = &BrowserToolCapabilityEvaluator{}
 type BrowserToolCapabilityEvaluator struct{}
 
 func (b *BrowserToolCapabilityEvaluator) isNonLocalBackendAvailable(config *GatewayConfig, backendName string) bool {
-	if IsBlank(backendName) || backendName == "local" {
+	if util.IsBlank(backendName) || backendName == "local" {
 		return false
 	}
 
@@ -400,7 +401,7 @@ type SecretResolver struct{}
 var SecretResolverInstance = &SecretResolver{}
 
 func (s *SecretResolver) IsRawRef(secretRef string) bool {
-	return !IsBlank(secretRef) && strings.HasPrefix(secretRef, "raw:")
+	return !util.IsBlank(secretRef) && strings.HasPrefix(secretRef, "raw:")
 }
 
 func (s *SecretResolver) LooksLikeEnvVarName(value string) bool {
@@ -417,7 +418,7 @@ func (s *SecretResolver) LooksLikeEnvVarName(value string) bool {
 }
 
 func (s *SecretResolver) Resolve(secretRef string) string {
-	if IsBlank(secretRef) {
+	if util.IsBlank(secretRef) {
 		return ""
 	}
 
@@ -430,7 +431,7 @@ func (s *SecretResolver) Resolve(secretRef string) string {
 	}
 
 	var envValue = os.Getenv(secretRef)
-	if !IsBlank(envValue) {
+	if !util.IsBlank(envValue) {
 		return envValue
 	}
 
@@ -521,7 +522,7 @@ func NewPairingManager(baseStoragePath string) *PairingManager {
 }
 
 func (p *PairingManager) loadApprovedSenders() {
-	if !FileExists(p.approvedListPath) {
+	if !util.FileExists(p.approvedListPath) {
 		return
 	}
 
@@ -556,7 +557,7 @@ func (p *PairingManager) persistApprovedSenders() {
 
 	defer func() {
 		if recover() != nil {
-			if FileExists(tmp) {
+			if util.FileExists(tmp) {
 				os.Remove(tmp)
 			}
 		}
@@ -587,7 +588,7 @@ func (p *PairingManager) cleanupExpiredPendingCodes(now time.Time) {
 }
 
 func fixedTimeCodeEquals(expected, provided string) bool {
-	if IsBlank(provided) {
+	if util.IsBlank(provided) {
 		return false
 	}
 
@@ -668,7 +669,7 @@ func (p *PairingManager) GeneratePairingCode(channelId, senderId string) string 
 		}
 	}
 
-	code := GenerateCode(int64(100000), int64(1000000))
+	code := util.GenerateCode(int64(100000), int64(1000000))
 	p.pendingCodes.Store(key, &PendingPairing{
 		Code:           code,
 		ExpiresAt:      now.Add(p.codeTtl),
@@ -698,7 +699,7 @@ func NewRedactionPipeline(redactors []ISensitiveDataRedactor) *RedactionPipeline
 
 // Redact implements [IRedactionPipeline].
 func (r *RedactionPipeline) Redact(value string) string {
-	if IsBlank(value) {
+	if util.IsBlank(value) {
 		return ""
 	}
 
@@ -815,7 +816,7 @@ func (b *BaselineSecretRedactor) GetName() string {
 
 // Redact implements [ISensitiveDataRedactor].
 func (b *BaselineSecretRedactor) Redact(value string) string {
-	if IsBlank(value) {
+	if util.IsBlank(value) {
 		return ""
 	}
 	result := BearerAuthorizationRegex.ReplaceAllString(value, "${1}[REDACTED:authorization]")
@@ -915,7 +916,7 @@ func (u *UrlSafetyValidator) validateAddresses(addresses []netip.Addr, policy *U
 		}
 
 		for _, cidr := range policy.BlockedCidrs {
-			if IsBlank(cidr) {
+			if util.IsBlank(cidr) {
 				continue
 			}
 
@@ -992,7 +993,7 @@ func (u *UrlSafetyValidator) ValidateHttpUrlLocal(uri url.URL, policy *UrlSafety
 	}
 
 	host := u.normalizeHost(uri)
-	if IsBlank(host) {
+	if util.IsBlank(host) {
 		return DenyUrlSafetyValidationResult("URL host is empty.")
 	}
 

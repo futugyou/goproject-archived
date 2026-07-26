@@ -6,6 +6,8 @@ import (
 	"math"
 	"strings"
 	"time"
+
+	"github.com/futugyou/openclaw/util"
 )
 
 const TokenCharEstimate = 4
@@ -234,6 +236,7 @@ func (cb *ContextBudgetPlanner) resolveMaxChars(request *StructuredMemoryContext
 	}
 
 	// Clamp 到 [1, math.MaxInt32]
+	min = util.Clamp(min, 1, math.MaxInt32)
 	if min < 1 {
 		min = 1
 	} else if min > math.MaxInt32 {

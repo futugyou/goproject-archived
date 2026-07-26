@@ -24,6 +24,8 @@ import (
 	"syscall"
 	"time"
 	"unicode"
+
+	"github.com/futugyou/openclaw/util"
 )
 
 const (
@@ -625,7 +627,7 @@ func (e *ExternalCliPresetCatalog) maxRisk(left, right string) string {
 }
 
 func (e *ExternalCliPresetCatalog) prefer(configured, preset string) string {
-	if IsBlank(configured) {
+	if util.IsBlank(configured) {
 		return preset
 	}
 	return configured
@@ -636,7 +638,7 @@ func (e *ExternalCliPresetCatalog) mergeStringSet(preset, configured []string) [
 	result := []string{}
 	tmp := map[string]struct{}{}
 	for _, v := range preset {
-		if IsBlank(v) {
+		if util.IsBlank(v) {
 			continue
 		}
 
@@ -1286,7 +1288,7 @@ func (e *ExternalCliConnectorRegistry) GetCommandSchema(connectorName string, co
 		}
 	}
 
-	var required = DistinctStrings(append(e.findPlaceholders(command.ArgsTemplate), parameterKeys...))
+	var required = util.DistinctStrings(append(e.findPlaceholders(command.ArgsTemplate), parameterKeys...))
 	slices.SortFunc(required, func(a, b string) int {
 		return strings.Compare(a, b)
 	})
@@ -1349,7 +1351,7 @@ func (e *ExternalCliConnectorRegistry) ListConnectors() ([]ExternalCliConnectorS
 			Executable:   v.Executable,
 			CommandCount: len(v.Commands),
 		}
-		if IsBlank(summary.DisplayName) {
+		if util.IsBlank(summary.DisplayName) {
 			summary.DisplayName = key
 		}
 
@@ -1363,7 +1365,7 @@ func (e *ExternalCliConnectorRegistry) ListConnectors() ([]ExternalCliConnectorS
 }
 
 func (e *ExternalCliConnectorRegistry) getConnector(connectorName string) (name string, connector *ExternalCliConnectorOptions, err error) {
-	if IsBlank(connectorName) {
+	if util.IsBlank(connectorName) {
 		err = errors.New("External CLI connector is required")
 		return
 	}
@@ -1383,7 +1385,7 @@ func (e *ExternalCliConnectorRegistry) requiresApproval(connector *ExternalCliCo
 }
 
 func (e *ExternalCliConnectorRegistry) resolveOutputFormat(connector *ExternalCliConnectorOptions, command *ExternalCliCommandOptions) string {
-	if IsBlank(command.StructuredOutput) {
+	if util.IsBlank(command.StructuredOutput) {
 		return NormalizeOutputFormat(connector.DefaultOutputFormat)
 	}
 
@@ -1391,7 +1393,7 @@ func (e *ExternalCliConnectorRegistry) resolveOutputFormat(connector *ExternalCl
 }
 
 func (e *ExternalCliConnectorRegistry) getCommand(connector *ExternalCliConnectorOptions, commandName string) (name string, command *ExternalCliCommandOptions, err error) {
-	if IsBlank(commandName) {
+	if util.IsBlank(commandName) {
 		err = errors.New("External CLI command is required")
 		return
 	}
@@ -1447,7 +1449,7 @@ func (e *ExternalCliConnectorRegistry) resolveExecutable(executable string, envi
 	}
 
 	if filepath.IsAbs(executable) {
-		if FileExists(executable) {
+		if util.FileExists(executable) {
 			return executable
 		}
 		return ""
@@ -1512,7 +1514,7 @@ func (e *ExternalCliConnectorRegistry) resolveExecutable(executable string, envi
 
 		for _, candidate := range candidates {
 			fullPath := filepath.Join(dir, candidate)
-			if FileExists(fullPath) {
+			if util.FileExists(fullPath) {
 				return fullPath
 			}
 		}
@@ -1530,7 +1532,7 @@ func (e *ExternalCliConnectorRegistry) GetStatus(ctx context.Context, connectorN
 
 	warnings := []string{}
 	var resolvedExecutable = e.resolveExecutable(connector.Executable, connector.Environment)
-	if IsBlank(resolvedExecutable) {
+	if util.IsBlank(resolvedExecutable) {
 		warnings = append(warnings, fmt.Sprintf("Executable '%s' was not found on PATH", connector.Executable))
 	}
 
@@ -1571,7 +1573,7 @@ func (e *ExternalCliConnectorRegistry) GetStatus(ctx context.Context, connectorN
 	}
 
 	displayName := connector.DisplayName
-	if IsBlank(displayName) {
+	if util.IsBlank(displayName) {
 		displayName = name
 	}
 	return &ExternalCliConnectorStatus{
@@ -1778,7 +1780,7 @@ func (e *ExternalCliConnectorRegistry) BuildPreview(request *ExternalCliPreviewR
 	if command.TimeoutSeconds != nil {
 		timeoutSeconds = *command.TimeoutSeconds
 	}
-	timeout := ClampInt(timeoutSeconds, 1, 3600)
+	timeout := util.Clamp(timeoutSeconds, 1, 3600)
 
 	outputFormat := e.resolveOutputFormat(connector, command)
 
@@ -1842,8 +1844,8 @@ func (e *ExternalCliConnectorRegistry) BuildPreview(request *ExternalCliPreviewR
 		WorkingDirectory:  workingDirectory,
 		Environment:       environment,
 		Preview:           &preview,
-		MaxStdoutBytes:    ClampInt(e.options.MaxStdoutBytes, 1, 16*1024*1024),
-		MaxStderrBytes:    ClampInt(e.options.MaxStderrBytes, 1, 4*1024*1024),
+		MaxStdoutBytes:    util.Clamp(e.options.MaxStdoutBytes, 1, 16*1024*1024),
+		MaxStderrBytes:    util.Clamp(e.options.MaxStderrBytes, 1, 4*1024*1024),
 		RedactionRules:    redactionRules,
 	}, nil
 }

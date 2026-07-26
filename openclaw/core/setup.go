@@ -14,6 +14,8 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+
+	"github.com/futugyou/openclaw/util"
 )
 
 type GatewayConfigFile struct{}
@@ -1170,7 +1172,7 @@ func (l *LocalModelCache) Install(ctx context.Context, packageDef *LocalModelPac
 func (l *LocalModelCache) Remove(packageDef *LocalModelPackageDefinition, modelsRoot string) bool {
 	directory := l.GetPackageDirectory(packageDef, modelsRoot)
 
-	if !DirectoryExists(directory) {
+	if !util.DirectoryExists(directory) {
 		return false
 	}
 
@@ -1185,7 +1187,7 @@ func (l *LocalModelCache) Verify(ctx context.Context, packageDef *LocalModelPack
 	for _, file := range packageFiles {
 		if file.Required {
 			path := l.GetPackageFilePath(packageDef, &file, modelsRoot)
-			if !FileExists(path) {
+			if !util.FileExists(path) {
 				return l.GetStatus(packageDef, modelsRoot), nil
 			}
 		}
@@ -1210,7 +1212,7 @@ func (l *LocalModelCache) Verify(ctx context.Context, packageDef *LocalModelPack
 	// 3. 遍历所有实际存在的文件，计算 SHA256 哈希
 	for _, file := range packageFiles {
 		path := l.GetPackageFilePath(packageDef, &file, modelsRoot)
-		if FileExists(path) {
+		if util.FileExists(path) {
 			sha256, err := l.ComputeSha256(ctx, path)
 			if err != nil {
 				return nil, err
