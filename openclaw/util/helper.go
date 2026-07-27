@@ -6,7 +6,6 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
-	"encoding/json"
 	"fmt"
 	"math"
 	"math/big"
@@ -34,14 +33,6 @@ func IsBlankP(s *string) bool {
 		return true
 	}
 	return strings.TrimSpace(*s) == ""
-}
-
-func ReadStringArray(raw json.RawMessage) []string {
-	var arr []string
-	if err := json.Unmarshal(raw, &arr); err == nil {
-		return arr
-	}
-	return nil
 }
 
 func ContainsIgnoreCase(slice []string, val string) bool {
@@ -94,14 +85,6 @@ func IndexOf(s string, substr string, startIndex int) int {
 	}
 
 	return -1
-}
-
-func Truncate(value string, maxLength int) string {
-	if len(value) <= maxLength {
-		return value
-	}
-
-	return value[:maxLength] + "..."
 }
 
 func ComputeTurnHash(normalizedText string) string {
@@ -286,4 +269,22 @@ func Clamp[T cmp.Ordered](val, min, max T) T {
 		return max
 	}
 	return val
+}
+
+func Truncate(text string, max int) string {
+	runes := []rune(text)
+
+	if len(runes) <= max {
+		return text
+	}
+
+	return string(runes[:max]) + "..."
+}
+
+func ToPascal(value string) string {
+	if len(value) == 0 {
+		return value
+	}
+	runes := []rune(value)
+	return string(unicode.ToUpper(runes[0])) + strings.ToLower(string(runes[1:]))
 }
