@@ -53,7 +53,7 @@ func (m *AIFunctionMcpServerTool) Invoke(ctx context.Context, request RequestCon
 	}
 
 	arguments := functions.AIFunctionArguments{
-		Context: map[interface{}]interface{}{reflect.TypeOf(request): request},
+		Context: map[any]any{reflect.TypeOf(request): request},
 	}
 
 	if request.Params.Arguments != nil {
@@ -76,20 +76,26 @@ func (m *AIFunctionMcpServerTool) Invoke(ctx context.Context, request RequestCon
 		rr.IsError = isError
 		return rr, nil
 	case *string:
-		result := protocol.NewCallToolResult()
-		result.Content = append(result.Content, protocol.Content{Type: "text", Text: r})
+		result := &protocol.CallToolResult{}
+		result.Content = append(result.Content, protocol.ContentBlock{
+			IContentBlock: &protocol.TextContentBlock{
+				Text: *r,
+			}})
 		return result, nil
-	case *protocol.Content:
+	case *protocol.ContentBlock:
 		return protocol.NewCallToolResultWithContent(*r), nil
 	case []string:
-		result := protocol.NewCallToolResult()
+		result := &protocol.CallToolResult{}
 		for _, v := range r {
-			result.Content = append(result.Content, protocol.Content{Type: "text", Text: &v})
+			result.Content = append(result.Content, protocol.ContentBlock{
+				IContentBlock: &protocol.TextContentBlock{
+					Text: v,
+				}})
 		}
 		return result, nil
 	case []contents.IAIContent:
 		return onvertAIContentEnumerableToCallToolResponse(r), nil
-	case []protocol.Content:
+	case []protocol.ContentBlock:
 		return protocol.NewCallToolResultWithContents(r), nil
 	case *protocol.CallToolResult:
 		return r, nil
@@ -100,14 +106,17 @@ func (m *AIFunctionMcpServerTool) Invoke(ctx context.Context, request RequestCon
 			return nil, err
 		}
 		text := string(data)
-		result := protocol.NewCallToolResult()
-		result.Content = append(result.Content, protocol.Content{Type: "text", Text: &text})
+		result := &protocol.CallToolResult{}
+		result.Content = append(result.Content, protocol.ContentBlock{
+			IContentBlock: &protocol.TextContentBlock{
+				Text: text,
+			}})
 		return result, nil
 	}
 }
 
 func onvertAIContentEnumerableToCallToolResponse(contentItems []contents.IAIContent) *protocol.CallToolResult {
-	contentList := []protocol.Content{}
+	contentList := []protocol.ContentBlock{}
 	allErrorContent := true
 	hasAny := false
 

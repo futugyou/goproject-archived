@@ -144,10 +144,10 @@ func (m *AIFunctionMcpServerPrompt) Get(ctx context.Context, request RequestCont
 		return &protocol.GetPromptResult{
 			Description: m.ProtocolPrompt.Description,
 			Messages: []protocol.PromptMessage{{
-				Content: protocol.Content{
-					Type: "text",
-					Text: r,
-				},
+				Content: protocol.ContentBlock{
+					IContentBlock: &protocol.TextContentBlock{
+						Text: *r,
+					}},
 				Role: protocol.RoleUser,
 			}},
 		}, nil

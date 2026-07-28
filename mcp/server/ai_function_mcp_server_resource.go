@@ -85,82 +85,93 @@ func (m *AIFunctionMcpServerResource) Read(ctx context.Context, request RequestC
 	case *protocol.ReadResourceResult:
 		return r, nil
 
-	case protocol.IResourceContents:
+	case *protocol.ResourceContents:
 		return &protocol.ReadResourceResult{
-			Contents: []protocol.IResourceContents{r},
+			Contents: []protocol.ResourceContents{*r},
 		}, nil
-	case []protocol.IResourceContents:
+	case []protocol.ResourceContents:
 		return &protocol.ReadResourceResult{
 			Contents: r,
 		}, nil
 
 	case *contents.TextContent:
+		textRes := &protocol.TextResourceContents{
+			BaseResourceContents: protocol.BaseResourceContents{
+				Uri:      request.Params.Uri,
+				MimeType: m.ResourceTemplate.MimeType,
+			},
+			Text: r.Text,
+		}
+
 		return &protocol.ReadResourceResult{
-			Contents: []protocol.IResourceContents{
-				&protocol.TextResourceContents{
-					BaseResourceContents: protocol.BaseResourceContents{
-						Uri:      request.Params.Uri,
-						MimeType: m.ResourceTemplate.MimeType,
-					},
-					Text: r.Text,
+			Contents: []protocol.ResourceContents{
+				{
+					IResourceContents: textRes,
 				},
 			},
 		}, nil
 
 	case *contents.DataContent:
 		return &protocol.ReadResourceResult{
-			Contents: []protocol.IResourceContents{
-				&protocol.BlobResourceContents{
-					BaseResourceContents: protocol.BaseResourceContents{Uri: request.Params.Uri, MimeType: &r.MediaType},
-					Blob:                 string(r.GetBase64Data()),
+			Contents: []protocol.ResourceContents{
+				{
+					IResourceContents: &protocol.BlobResourceContents{
+						BaseResourceContents: protocol.BaseResourceContents{Uri: request.Params.Uri, MimeType: &r.MediaType},
+						Blob:                 r.GetBase64Data(),
+					},
 				},
 			},
 		}, nil
 
 	case *string:
 		return &protocol.ReadResourceResult{
-			Contents: []protocol.IResourceContents{
-				&protocol.TextResourceContents{
-					BaseResourceContents: protocol.BaseResourceContents{
-						Uri:      request.Params.Uri,
-						MimeType: m.ResourceTemplate.MimeType,
+			Contents: []protocol.ResourceContents{
+				{
+					IResourceContents: &protocol.TextResourceContents{
+						BaseResourceContents: protocol.BaseResourceContents{
+							Uri:      request.Params.Uri,
+							MimeType: m.ResourceTemplate.MimeType,
+						},
+						Text: *r,
 					},
-					Text: *r,
 				},
 			},
 		}, nil
 	case []string:
-		contents := []protocol.IResourceContents{}
+		contents := []protocol.ResourceContents{}
 		for _, v := range r {
-			contents = append(contents, &protocol.TextResourceContents{
-				BaseResourceContents: protocol.BaseResourceContents{
-					Uri:      request.Params.Uri,
-					MimeType: m.ResourceTemplate.MimeType,
-				},
-				Text: v,
-			})
+			contents = append(contents, protocol.ResourceContents{
+				IResourceContents: &protocol.TextResourceContents{
+					BaseResourceContents: protocol.BaseResourceContents{
+						Uri:      request.Params.Uri,
+						MimeType: m.ResourceTemplate.MimeType,
+					},
+
+					Text: v,
+				}})
 		}
 		return &protocol.ReadResourceResult{
 			Contents: contents,
 		}, nil
 	case []contents.IAIContent:
-		conts := []protocol.IResourceContents{}
+		conts := []protocol.ResourceContents{}
 		for _, v := range r {
 			if a, ok := v.(*contents.TextContent); ok {
-				conts = append(conts, &protocol.TextResourceContents{
-					BaseResourceContents: protocol.BaseResourceContents{
-						Uri:      request.Params.Uri,
-						MimeType: m.ResourceTemplate.MimeType,
-					},
-					Text: a.Text,
-				})
+				conts = append(conts, protocol.ResourceContents{
+					IResourceContents: &protocol.TextResourceContents{
+						BaseResourceContents: protocol.BaseResourceContents{
+							Uri:      request.Params.Uri,
+							MimeType: m.ResourceTemplate.MimeType,
+						},
+						Text: a.Text,
+					}})
 			}
 			if a, ok := v.(*contents.DataContent); ok {
-				conts = append(conts,
-					&protocol.BlobResourceContents{
+				conts = append(conts, protocol.ResourceContents{
+					IResourceContents: &protocol.BlobResourceContents{
 						BaseResourceContents: protocol.BaseResourceContents{Uri: request.Params.Uri, MimeType: &a.MediaType},
-						Blob:                 string(a.GetBase64Data()),
-					})
+						Blob:                 a.GetBase64Data(),
+					}})
 			}
 		}
 		return &protocol.ReadResourceResult{

@@ -2,7 +2,6 @@ package protocol
 
 import (
 	"context"
-	"encoding/json"
 )
 
 type ElicitRequestParams struct {
@@ -28,11 +27,6 @@ type RequestSchema struct {
 	Required   []string                             `json:"required,omitempty"`
 }
 
-type ElicitResult struct {
-	Action  string          `json:"action"`
-	Content json.RawMessage `json:"content"`
-}
-
-type ElicitationCapability struct{
-	ElicitationHandler func(context.Context, *ElicitRequestParams)(*ElicitResult, error)`json:"-"`
+type ElicitationCapability struct {
+	ElicitationHandler func(context.Context, *ElicitRequestParams) (*ElicitResult, error) `json:"-"`
 }

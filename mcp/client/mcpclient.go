@@ -72,8 +72,8 @@ func NewMcpClient(clientTransport IClientTransport, options McpClientOptions) *M
 				protocol.RequestMethods_SamplingCreateMessage,
 				func(ctx context.Context, request *protocol.CreateMessageRequestParams, tran protocol.ITransport) (*protocol.CreateMessageResult, error) {
 					var progres protocol.IProgressReporter = &shared.NullProgress{}
-					if request.Meta != nil && request.Meta.ProgressToken != nil {
-						progres = shared.NewTokenProgress(client, *request.Meta.ProgressToken)
+					if request.Meta != nil && request.ProgressToken() != nil {
+						progres = shared.NewTokenProgress(client, *request.ProgressToken())
 					}
 					return samplingCapability.SamplingHandler(ctx, request, progres)
 				},
@@ -190,7 +190,7 @@ func (m *McpClient) CallTool(ctx context.Context, toolName string, arguments map
 			return nil
 		}
 		m.RegisterNotificationHandler(protocol.NotificationMethods_ProgressNotification, handler)
-		params.Meta = &protocol.RequestParamsMetadata{ProgressToken: &progressToken}
+		// params.Meta = &protocol.RequestParamsMetadata{ProgressToken: &progressToken}
 	}
 
 	jsonRpcRequest := protocol.NewJsonRpcRequest(protocol.RequestMethods_ToolsCall, params, nil)

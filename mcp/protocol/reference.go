@@ -20,17 +20,18 @@ func (r *Reference) ToString() string {
 
 func (r *Reference) Validate() (string, bool) {
 	validationMessage := ""
-	if r.Type == "ref/resource" {
+	switch r.Type {
+	case "ref/resource":
 		if r.Url == nil || len(*r.Url) == 0 {
 			validationMessage = "Uri is required for ref/resource"
 			return validationMessage, false
 		}
-	} else if r.Type == "ref/prompt" {
+	case "ref/prompt":
 		if r.Name != nil || len(*r.Name) == 0 {
 			validationMessage = "Name is required for ref/prompt"
 			return validationMessage, false
 		}
-	} else {
+	default:
 		validationMessage = "Unknown reference type: " + r.Type
 		return validationMessage, false
 	}

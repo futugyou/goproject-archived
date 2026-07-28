@@ -3,6 +3,7 @@ package protocol
 import (
 	"encoding/json"
 	"fmt"
+	"time"
 )
 
 // Optional annotations for the client. The client can use annotations to inform
@@ -20,6 +21,10 @@ type Annotations struct {
 	// effectively required, while 0 means "least important," and indicates that
 	// the data is entirely optional.
 	Priority *float64 `json:"priority,omitempty" yaml:"priority,omitempty" mapstructure:"priority,omitempty"`
+
+	// The corresponding JSON should be an ISO 8601 formatted string (for example, \"2025-01-12T15:00:58Z\").
+	// Examples of when the resource was last modified include last activity in an open file or when the resource was attached.
+	LastModified time.Time `json:"lastModified,omitempty" yaml:"prioritlastModifiedy,omitempty" mapstructure:"lastModified,omitempty"`
 }
 
 // UnmarshalJSON implements json.Unmarshaler.

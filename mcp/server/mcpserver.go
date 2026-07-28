@@ -2,7 +2,6 @@ package server
 
 import (
 	"context"
-	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"strings"
@@ -479,10 +478,10 @@ func (e *McpServer) SampleWithChatMessage(ctx context.Context, messages []chatco
 				switch con := content.(type) {
 				case *contents.TextContent:
 					samplingMessages = append(samplingMessages, protocol.SamplingMessage{
-						Content: protocol.Content{
-							Type: "text",
-							Text: &con.Text,
-						},
+						Content: protocol.ContentBlock{
+							IContentBlock: &protocol.TextContentBlock{
+								Text: con.Text,
+							}},
 						Role: role,
 					})
 				case *contents.DataContent:
@@ -491,15 +490,27 @@ func (e *McpServer) SampleWithChatMessage(ctx context.Context, messages []chatco
 						if con.MediaTypeStartsWith("audio") {
 							t = "audio"
 						}
-						decoded := base64.URLEncoding.EncodeToString(con.Data)
-						samplingMessages = append(samplingMessages, protocol.SamplingMessage{
-							Content: protocol.Content{
-								Type:     t,
-								MimeType: &con.MediaType,
-								Data:     &decoded,
-							},
-							Role: role,
-						})
+						// decoded := base64.URLEncoding.EncodeToString(con.Data)
+
+						if t == "image" {
+							samplingMessages = append(samplingMessages, protocol.SamplingMessage{
+								Content: protocol.ContentBlock{
+									IContentBlock: &protocol.ImageContentBlock{
+										Data:     con.Data,
+										MimeType: con.MediaType,
+									}},
+								Role: role,
+							})
+						} else {
+							samplingMessages = append(samplingMessages, protocol.SamplingMessage{
+								Content: protocol.ContentBlock{
+									IContentBlock: &protocol.AudioContentBlock{
+										Data:     con.Data,
+										MimeType: con.MediaType,
+									}},
+								Role: role,
+							})
+						}
 					}
 				}
 			}

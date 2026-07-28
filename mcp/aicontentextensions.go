@@ -1,7 +1,6 @@
 package mcp
 
 import (
-	"encoding/base64"
 	"encoding/json"
 
 	"github.com/futugyou/extensions_ai/abstractions/chatcompletion"
@@ -9,21 +8,18 @@ import (
 	"github.com/futugyou/mcp/protocol"
 )
 
-func ResourceContentsToAIContent(content protocol.IResourceContents) contents.IAIContent {
+func ResourceContentsToAIContent(content protocol.ResourceContents) contents.IAIContent {
 	var c contents.IAIContent
-	switch content := content.(type) {
+	switch content := content.IResourceContents.(type) {
 	case *protocol.BlobResourceContents:
-		decoded, err := base64.URLEncoding.DecodeString(content.Blob)
-		if err != nil {
-			mimeType := "application/octet-stream"
-			if content.MimeType != nil && len(*content.MimeType) > 0 {
-				mimeType = *content.MimeType
-			}
-			d := contents.NewDataContent(string(decoded), mimeType)
-			d.AddAdditionalProperty("uri", content.Uri)
-			c = d
+		decoded := content.Blob
+		mimeType := "application/octet-stream"
+		if content.MimeType != nil && len(*content.MimeType) > 0 {
+			mimeType = *content.MimeType
 		}
-
+		d := contents.NewDataContent(string(decoded), mimeType)
+		d.AddAdditionalProperty("uri", content.Uri)
+		c = d
 	case *protocol.TextResourceContents:
 		d := contents.NewTextContent(content.Text)
 		d.AddAdditionalProperty("uri", content.Uri)
@@ -32,20 +28,26 @@ func ResourceContentsToAIContent(content protocol.IResourceContents) contents.IA
 	return c
 }
 
-func ContentToAIContent(content protocol.Content) contents.IAIContent {
+func ContentToAIContent(content protocol.ContentBlock) contents.IAIContent {
 	var c contents.IAIContent
 
-	if (content.Type == "image" || content.Type == "audio") && content.MimeType != nil && content.Data != nil {
-		decoded, err := base64.URLEncoding.DecodeString(*content.Data)
-		if err != nil {
-			d := contents.NewDataContent(string(decoded), *content.MimeType)
+	switch block := content.IContentBlock.(type) {
+	case *protocol.ImageContentBlock:
+		if len(block.GetMeta()) > 0 && len(block.Data) > 0 {
+			d := contents.NewDataContent(string(block.Data), block.MimeType)
 			d.RawRepresentation = content
 			c = d
 		}
-	} else if content.Type == "resource" || content.Resource != nil {
-		c = ResourceContentsToAIContent(content.Resource)
-	} else {
-		d := contents.NewTextContent(*content.Text)
+	case *protocol.AudioContentBlock:
+		if len(block.GetMeta()) > 0 && len(block.Data) > 0 {
+			d := contents.NewDataContent(string(block.Data), block.MimeType)
+			d.RawRepresentation = content
+			c = d
+		}
+	case *protocol.EmbeddedResourceBlock:
+		c = ResourceContentsToAIContent(block.Resource)
+	case *protocol.TextContentBlock:
+		d := contents.NewTextContent(block.Text)
 		d.RawRepresentation = content
 		c = d
 	}
@@ -71,24 +73,25 @@ func ChatMessageToPromptMessages(chatMessage chatcompletion.ChatMessage) []proto
 	return messages
 }
 
-func AIContentToContent(content contents.IAIContent) protocol.Content {
+func AIContentToContent(content contents.IAIContent) protocol.ContentBlock {
 	switch content := content.(type) {
 	case *contents.TextContent:
-		return protocol.Content{
-			Type: "text",
-			Text: &content.Text,
-		}
+		return protocol.ContentBlock{
+			IContentBlock: &protocol.TextContentBlock{
+				Text: content.Text,
+			}}
 	case *contents.DataContent:
-		c := protocol.Content{
-			Type:     "resource",
-			MimeType: &content.MediaType,
-		}
-		decoded := base64.URLEncoding.EncodeToString(content.Data)
-		c.Data = &decoded
+		c := protocol.ContentBlock{}
 		if content.MediaTypeStartsWith("image") {
-			c.Type = "image"
+			c.IContentBlock = &protocol.ImageContentBlock{
+				MimeType: content.MediaType,
+				Data:     content.Data,
+			}
 		} else if content.MediaTypeStartsWith("audio") {
-			c.Type = "audio"
+			c.IContentBlock = &protocol.AudioContentBlock{
+				MimeType: content.MediaType,
+				Data:     content.Data,
+			}
 		}
 		return c
 	default:
@@ -96,15 +99,16 @@ func AIContentToContent(content contents.IAIContent) protocol.Content {
 		if err != nil {
 			data = []byte{}
 		}
-		d := string(data)
-		return protocol.Content{
-			Type: "text",
-			Text: &d,
+
+		return protocol.ContentBlock{
+			IContentBlock: &protocol.TextContentBlock{
+				Text: string(data),
+			},
 		}
 	}
 }
 
-func ResourceContentsListToAIContents(cont []protocol.IResourceContents) []contents.IAIContent {
+func ResourceContentsListToAIContents(cont []protocol.ResourceContents) []contents.IAIContent {
 	list := []contents.IAIContent{}
 	for _, content := range cont {
 		list = append(list, ResourceContentsToAIContent(content))
@@ -112,7 +116,7 @@ func ResourceContentsListToAIContents(cont []protocol.IResourceContents) []conte
 	return list
 }
 
-func ListContentToAIContents(cont []protocol.Content) []contents.IAIContent {
+func ListContentToAIContents(cont []protocol.ContentBlock) []contents.IAIContent {
 	list := []contents.IAIContent{}
 	for _, content := range cont {
 		list = append(list, ContentToAIContent(content))

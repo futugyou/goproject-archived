@@ -10,7 +10,7 @@ type CreateMessageResult struct {
 	Meta map[string]interface{} `json:"_meta,omitempty" yaml:"_meta,omitempty" mapstructure:"_meta,omitempty"`
 
 	// Content corresponds to the JSON schema field "content".
-	Content Content `json:"content" yaml:"content" mapstructure:"content"`
+	Content ContentBlock `json:"content" yaml:"content" mapstructure:"content"`
 
 	// The name of the model that generated the message.
 	Model string `json:"model" yaml:"model" mapstructure:"model"`
