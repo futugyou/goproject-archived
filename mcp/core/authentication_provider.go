@@ -3,8 +3,10 @@ package core
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"net/url"
 	"strings"
@@ -246,4 +248,158 @@ func DiscoverAuthServerMetadata(ctx context.Context, issuerURL string, httpClien
 	}
 
 	return nil, fmt.Errorf("failed to discover authorization server metadata for: %s", issuerURL)
+}
+
+type IdentityAssertionGrantProvider struct {
+	options                  IdentityAssertionGrantProviderOptions
+	httpClient               *http.Client
+	logger                   *slog.Logger
+	cachedTokens             *TokenContainer
+	lockCh                   chan struct{}
+	resolvedIdpTokenEndpoint string
+}
+
+func NewIdentityAssertionGrantProvider(options *IdentityAssertionGrantProviderOptions, httpClient *http.Client, logger *slog.Logger) (*IdentityAssertionGrantProvider, error) {
+	if options == nil || options.ClientId == "" || options.IdpClientId == "" || (options.IdpUrl == "" && options.IdpTokenEndpoint == "") || options.IdTokenCallback == nil {
+		return nil, errors.New("options parameter invalid")
+	}
+	if httpClient == nil {
+		httpClient = http.DefaultClient
+	}
+	if logger == nil {
+		logger = slog.Default()
+	}
+	ch := make(chan struct{}, 1)
+	ch <- struct{}{}
+	return &IdentityAssertionGrantProvider{
+		options:    *options,
+		httpClient: httpClient,
+		logger:     logger,
+		lockCh:     ch,
+	}, nil
+}
+
+func (i *IdentityAssertionGrantProvider) InvalidateCache() {
+	select {
+	case <-i.lockCh:
+		defer func() { i.lockCh <- struct{}{} }()
+		i.cachedTokens = nil
+	case <-time.After(5 * time.Second):
+	}
+}
+
+func (i *IdentityAssertionGrantProvider) resolveIdpTokenEndpoint(ctx context.Context) (string, error) {
+	if i.resolvedIdpTokenEndpoint != "" {
+		return i.resolvedIdpTokenEndpoint, nil
+	}
+
+	if i.options.IdpTokenEndpoint != "" {
+		i.resolvedIdpTokenEndpoint = i.options.IdpTokenEndpoint
+		return i.resolvedIdpTokenEndpoint, nil
+	}
+
+	idpMetadata, err := DiscoverAuthServerMetadata(ctx, i.options.IdpUrl, i.httpClient)
+	if err != nil {
+		return "", err
+	}
+
+	var resolved = idpMetadata.TokenEndpoint
+	if resolved == "" {
+		return "", fmt.Errorf("IdP metadata discovery for %s did not return a token_endpoint", i.options.IdpUrl)
+	}
+
+	i.resolvedIdpTokenEndpoint = resolved
+	return resolved, nil
+}
+
+func (i *IdentityAssertionGrantProvider) acquireAccessToken(ctx context.Context, resourceUrl, authorizationServerUrl string) (*TokenContainer, error) {
+	i.logger.Debug("Starting Cross-Application Access flow for resource", "ResourceUrl", resourceUrl)
+
+	// Step 1: Discover MCP authorization server metadata to find the token endpoint
+	mcpAuthMetadata, err := DiscoverAuthServerMetadata(ctx, authorizationServerUrl, i.httpClient)
+	if err != nil {
+		return nil, err
+	}
+
+	var mcpTokenEndpoint = mcpAuthMetadata.TokenEndpoint
+	if mcpTokenEndpoint == "" {
+		return nil, fmt.Errorf("MCP authorization server metadata at %s missing token_endpoint", authorizationServerUrl)
+	}
+
+	// Step 2: Call the ID token callback to get the caller's OIDC ID token
+	var context = &IdentityAssertionGrantContext{
+		ResourceUrl:            resourceUrl,
+		AuthorizationServerUrl: authorizationServerUrl,
+	}
+
+	i.logger.Debug("Requesting ID token via callback")
+	var idToken = i.options.IdTokenCallback(ctx, *context)
+
+	if idToken == "" {
+		return nil, &IdentityAssertionGrantError{Message: "ID token callback returned a null or empty token"}
+	}
+
+	// Step 3: RFC 8693 token exchange — ID token → JWT Authorization Grant (JAG) at the enterprise IdP
+	i.logger.Debug("Performing RFC 8693 token exchange at IdP")
+	idpTokenEndpoint, err := i.resolveIdpTokenEndpoint(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	jag, err := RequestJWTAuthorizationGrant(ctx, i.httpClient, RequestJWTAuthGrantOptions{
+		TokenEndpoint: idpTokenEndpoint,
+		Audience:      authorizationServerUrl,
+		Resource:      resourceUrl,
+		IdToken:       idToken,
+		ClientId:      i.options.IdpClientId,
+		ClientSecret:  i.options.IdpClientSecret,
+		Scope:         i.options.IdpScope,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	// Step 4: RFC 7523 JWT bearer grant — JAG → access token at the MCP authorization server
+	i.logger.Debug("Exchanging JAG for access token at ", "McpTokenEndpoint", mcpTokenEndpoint)
+	tokens, err := ExchangeJWTBearerGrant(ctx, i.httpClient, ExchangeJwtBearerGrantOptions{
+		TokenEndpoint: mcpTokenEndpoint,
+		Assertion:     jag,
+		ClientId:      i.options.ClientId,
+		ClientSecret:  i.options.ClientSecret,
+		Scope:         i.options.Scope,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	i.cachedTokens = tokens
+	i.logger.Debug("Cross-Application Access flow completed successfully")
+
+	return tokens, nil
+}
+
+func (i *IdentityAssertionGrantProvider) GetAccessToken(ctx context.Context, resourceUrl, authorizationServerUrl string) (*TokenContainer, error) {
+	// Return cached token if still valid. Read the field once into a local so a concurrent
+	// InvalidateCache (which nulls _cachedTokens) cannot turn this lock-free check into a null
+	// dereference or a null return between the null check and the return.
+	var cachedBeforeLock = i.cachedTokens
+	if cachedBeforeLock != nil && !cachedBeforeLock.IsExpired() {
+		return cachedBeforeLock, nil
+	}
+
+	// Serialize the exchange so concurrent callers that all saw the expired/absent token don't
+	// each run the full multi-step flow. Waiters re-check the cache after acquiring the lock and
+	// reuse the token produced by whoever ran the exchange first.
+	select {
+	case <-i.lockCh:
+		defer func() { i.lockCh <- struct{}{} }()
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
+
+	if i.cachedTokens != nil && !i.cachedTokens.IsExpired() {
+		return i.cachedTokens, nil
+	}
+
+	return i.acquireAccessToken(ctx, resourceUrl, authorizationServerUrl)
 }
