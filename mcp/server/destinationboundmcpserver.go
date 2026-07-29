@@ -91,7 +91,7 @@ func (d *DestinationBoundMcpServer) Run(ctx context.Context) error {
 
 // SendMessage implements IMcpServer.
 func (d *DestinationBoundMcpServer) SendMessage(ctx context.Context, msg protocol.IJsonRpcMessage) error {
-	msg.SetRelatedTransport(d.transport)
+	// msg.SetRelatedTransport(d.transport)
 	return d.server.SendMessage(ctx, msg)
 }
 
@@ -102,7 +102,7 @@ func (d *DestinationBoundMcpServer) SendNotification(ctx context.Context, notifi
 
 // SendRequest implements IMcpServer.
 func (d *DestinationBoundMcpServer) SendRequest(ctx context.Context, req *protocol.JsonRpcRequest) (*protocol.JsonRpcResponse, error) {
-	req.SetRelatedTransport(d.transport)
+	// req.SetRelatedTransport(d.transport)
 	return d.server.SendRequest(ctx, req)
 }
 

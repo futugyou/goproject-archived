@@ -2,7 +2,6 @@ package shared
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"sync"
 
@@ -28,13 +27,14 @@ func (e *BaseMcpEndpoint) GetMcpSession() *McpSession {
 
 // NotifyProgress implements IMcpEndpoint.
 func (e *BaseMcpEndpoint) NotifyProgress(ctx context.Context, progressToken protocol.ProgressToken, progress protocol.ProgressNotificationValue) error {
-	p := protocol.ProgressNotification{ProgressToken: &progressToken, Progress: &progress}
-	data, err := json.Marshal(p)
-	if err != nil {
-		return err
-	}
-	notification := protocol.NewJsonRpcNotification(protocol.NotificationMethods_ProgressNotification, data)
-	return e.SendNotification(ctx, *notification)
+	// p := protocol.ProgressNotification{ProgressToken: &progressToken, Progress: &progress}
+	// data, err := json.Marshal(p)
+	// if err != nil {
+	// 	return err
+	// }
+	// notification := protocol.NewJsonRpcNotification(protocol.NotificationMethods_ProgressNotification, data)
+	// return e.SendNotification(ctx, *notification)
+	return nil
 }
 
 // SendNotification implements IMcpEndpoint.
@@ -97,10 +97,11 @@ func (e *BaseMcpEndpoint) SendRequest(ctx context.Context, req *protocol.JsonRpc
 }
 
 func (e *BaseMcpEndpoint) SendMessage(ctx context.Context, msg protocol.IJsonRpcMessage) error {
-	if e == nil || e.session == nil {
-		return errors.New("session not initialized")
-	}
-	return e.session.SendMessage(ctx, msg)
+	// if e == nil || e.session == nil {
+	// 	return errors.New("session not initialized")
+	// }
+	// return e.session.SendMessage(ctx, msg)
+	return nil
 }
 
 // func (e *BaseMcpEndpoint) RegisterNotificationHandler(method string, handler protocol.NotificationHandler) *RegistrationHandle {

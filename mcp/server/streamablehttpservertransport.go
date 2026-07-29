@@ -16,10 +16,15 @@ type StreamableHttpServerTransport struct {
 	sseWriter         *shared.SseWriter
 	Stateless         bool
 	InitializeRequest protocol.InitializeRequestParams
-	incomingChannel   chan protocol.IJsonRpcMessage
+	incomingChannel   chan protocol.JsonRpcMessage
 	ctx               context.Context
 	cancelFunc        context.CancelFunc
 	getRequestStarted int32
+}
+
+// SessionId implements [protocol.ITransport].
+func (s *StreamableHttpServerTransport) SessionId() string {
+	panic("unimplemented")
 }
 
 // GetTransportKind implements ITransport.
@@ -31,7 +36,7 @@ func NewStreamableHttpServerTransport() *StreamableHttpServerTransport {
 	ctx, cancelFunc := context.WithCancel(context.Background())
 	return &StreamableHttpServerTransport{
 		sseWriter:         shared.NewSseWriter(""),
-		incomingChannel:   make(chan protocol.IJsonRpcMessage),
+		incomingChannel:   make(chan protocol.JsonRpcMessage),
 		ctx:               ctx,
 		cancelFunc:        cancelFunc,
 		getRequestStarted: 0,
@@ -48,12 +53,12 @@ func (s *StreamableHttpServerTransport) Close() error {
 }
 
 // MessageReader implements ITransport.
-func (s *StreamableHttpServerTransport) MessageReader() <-chan protocol.IJsonRpcMessage {
+func (s *StreamableHttpServerTransport) MessageReader() <-chan protocol.JsonRpcMessage {
 	return s.incomingChannel
 }
 
 // SendMessage implements ITransport.
-func (s *StreamableHttpServerTransport) SendMessage(ctx context.Context, message protocol.IJsonRpcMessage) error {
+func (s *StreamableHttpServerTransport) SendMessage(ctx context.Context, message protocol.JsonRpcMessage) error {
 	if s.Stateless {
 		return fmt.Errorf("stateless mode is not supported for GET requests")
 	}

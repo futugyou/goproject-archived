@@ -43,7 +43,7 @@ func (t *StreamServerTransport) GetTransportKind() protocol.TransportKind {
 
 // MessageReader implements ITransport.
 // Subtle: this method shadows the method (TransportBase).MessageReader of StreamServerTransport.TransportBase.
-func (t *StreamServerTransport) MessageReader() <-chan protocol.IJsonRpcMessage {
+func (t *StreamServerTransport) MessageReader() <-chan protocol.JsonRpcMessage {
 	panic("unimplemented")
 }
 
@@ -59,7 +59,7 @@ func NewStreamServerTransport(inputStream io.Reader, outputStream io.Writer, ser
 	ctx, cancel := context.WithCancel(context.Background())
 
 	t := &StreamServerTransport{
-		TransportBase:     protocol.ServerTransportBase(),
+		// TransportBase:     protocol.ServerTransportBase(),
 		logger:            logger,
 		inputReader:       bufio.NewReader(inputStream),
 		outputStream:      outputStream,
@@ -81,7 +81,7 @@ func NewStreamServerTransport(inputStream io.Reader, outputStream io.Writer, ser
 }
 
 // SendMessage sends a JSON-RPC message through the
-func (t *StreamServerTransport) SendMessage(ctx context.Context, message protocol.IJsonRpcMessage) error {
+func (t *StreamServerTransport) SendMessage(ctx context.Context, message protocol.JsonRpcMessage) error {
 	if !t.IsConnected() {
 		t.logger.TransportNotConnected(t.endpointName)
 		return fmt.Errorf("transport is not connected")
@@ -91,8 +91,8 @@ func (t *StreamServerTransport) SendMessage(ctx context.Context, message protoco
 	defer t.sendLock.Unlock()
 
 	messageID := "(no id)"
-	if msgWithID, ok := message.(protocol.IJsonRpcMessageWithId); ok {
-		messageWithId := msgWithID.GetId()
+	if msgWithID, ok := message.IJsonRpcMessage.(*protocol.JsonRpcMessageWithId); ok {
+		messageWithId := msgWithID.ID
 		messageID = messageWithId.String()
 	}
 
@@ -148,17 +148,15 @@ func (t *StreamServerTransport) readMessages() {
 
 			t.logger.TransportReceivedMessage(t.endpointName, string(line))
 
-			var message protocol.IJsonRpcMessage
-			if m, err := protocol.UnmarshalJsonRpcMessage(line); err != nil {
+			var message protocol.JsonRpcMessage
+			if err := json.Unmarshal(line, &message); err != nil {
 				t.logger.TransportMessageParseFailed(t.endpointName, string(line), err)
 				continue
-			} else {
-				message = m
 			}
 
 			messageID := "(no id)"
-			if msgWithID, ok := message.(protocol.IJsonRpcMessageWithId); ok {
-				messageWithId := msgWithID.GetId()
+			if msgWithID, ok := message.IJsonRpcMessage.(*protocol.JsonRpcMessageWithId); ok {
+				messageWithId := msgWithID.ID
 				messageID = messageWithId.String()
 			}
 
@@ -209,5 +207,5 @@ func (t *StreamServerTransport) IsConnected() bool {
 func (t *StreamServerTransport) SetConnected(connected bool) {
 	t.connectedMutex.Lock()
 	defer t.connectedMutex.Unlock()
-	t.TransportBase.SetConnected(connected)
+	t.TransportBase.SetConnected()
 }

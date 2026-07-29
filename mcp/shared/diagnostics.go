@@ -19,14 +19,14 @@ var (
 
 var Propagator = otel.GetTextMapPropagator()
 
-func StartSpanWithJsonRpcData(ctx context.Context, name string, message protocol.IJsonRpcMessage) (context.Context, trace.Span) {
+func StartSpanWithJsonRpcData(ctx context.Context, name string, message protocol.JsonRpcMessage) (context.Context, trace.Span) {
 	var carrier propagation.TextMapCarrier = propagation.MapCarrier{}
-	switch re := message.(type) {
-	case *protocol.JsonRpcRequest:
-		carrier = re
-	case *protocol.JsonRpcNotification:
-		carrier = re
-	}
+	// switch re := message.IJsonRpcMessage.(type) {
+	// case *protocol.JsonRpcRequest:
+	// 	carrier = re
+	// case *protocol.JsonRpcNotification:
+	// 	carrier = re
+	// }
 	parentCtx := Propagator.Extract(ctx, carrier)
 	link := trace.Link{SpanContext: trace.SpanContextFromContext(parentCtx)}
 	return Tracer.Start(parentCtx, name,
@@ -35,13 +35,13 @@ func StartSpanWithJsonRpcData(ctx context.Context, name string, message protocol
 	)
 }
 
-func PropagatorInject(ctx context.Context, message protocol.IJsonRpcMessage) {
+func PropagatorInject(ctx context.Context, message protocol.JsonRpcMessage) {
 	var carrier propagation.TextMapCarrier = propagation.MapCarrier{}
-	switch re := message.(type) {
-	case *protocol.JsonRpcRequest:
-		carrier = re
-	case *protocol.JsonRpcNotification:
-		carrier = re
-	}
+	// switch re := message.IJsonRpcMessage.(type) {
+	// case *protocol.JsonRpcRequest:
+	// 	carrier = re
+	// case *protocol.JsonRpcNotification:
+	// 	carrier = re
+	// }
 	Propagator.Inject(ctx, carrier)
 }

@@ -352,7 +352,11 @@ func (e *McpServer) RequestRoots(ctx context.Context, request protocol.ListRoots
 	// if e.GetClientCapabilities() == nil || e.GetClientCapabilities().Roots == nil {
 	// 	return nil, fmt.Errorf("client capabilities roots not set")
 	// }
-	req := protocol.NewJsonRpcRequest(protocol.RequestMethods_RootsList, request, nil)
+	data, err := json.Marshal(request)
+	if err != nil {
+		return nil, err
+	}
+	req := &protocol.JsonRpcRequest{Method: protocol.RequestMethods_RootsList, Params: data}
 	resp, err := e.SendRequest(ctx, req)
 	if err != nil {
 		return nil, err
@@ -398,8 +402,11 @@ func (e *McpServer) Elicit(ctx context.Context, request protocol.ElicitRequestPa
 	if err := throwIfElicitationUnsupported(e); err != nil {
 		return nil, err
 	}
-
-	req := protocol.NewJsonRpcRequest(protocol.RequestMethods_ElicitationCreate, request, nil)
+	data, err := json.Marshal(request)
+	if err != nil {
+		return nil, err
+	}
+	req := &protocol.JsonRpcRequest{Method: protocol.RequestMethods_ElicitationCreate, Params: data}
 	resp, err := e.SendRequest(ctx, req)
 	if err != nil {
 		return nil, err

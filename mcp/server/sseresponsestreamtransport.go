@@ -16,11 +16,16 @@ type SseResponseStreamTransport struct {
 	sseResponseStream io.Writer
 	messageEndpoint   string
 
-	incomingChannel chan protocol.IJsonRpcMessage
+	incomingChannel chan protocol.JsonRpcMessage
 
 	isConnected bool
 	mu          sync.Mutex
 	sseWriter   *shared.SseWriter
+}
+
+// SessionId implements [protocol.ITransport].
+func (t *SseResponseStreamTransport) SessionId() string {
+	panic("unimplemented")
 }
 
 // GetTransportKind implements ITransport.
@@ -36,7 +41,7 @@ func NewSseResponseStreamTransport(sseResponseStream io.Writer, messageEndpoint 
 	return &SseResponseStreamTransport{
 		sseResponseStream: sseResponseStream,
 		messageEndpoint:   messageEndpoint,
-		incomingChannel:   make(chan protocol.IJsonRpcMessage, 1), // Buffered channel
+		incomingChannel:   make(chan protocol.JsonRpcMessage, 1), // Buffered channel
 		sseWriter:         shared.NewSseWriter(messageEndpoint),
 	}
 }
@@ -60,12 +65,12 @@ func (t *SseResponseStreamTransport) Close() error {
 }
 
 // MessageReader implements I
-func (s *SseResponseStreamTransport) MessageReader() <-chan protocol.IJsonRpcMessage {
+func (s *SseResponseStreamTransport) MessageReader() <-chan protocol.JsonRpcMessage {
 	return s.incomingChannel
 }
 
 // SendMessage implements I
-func (t *SseResponseStreamTransport) SendMessage(ctx context.Context, message protocol.IJsonRpcMessage) error {
+func (t *SseResponseStreamTransport) SendMessage(ctx context.Context, message protocol.JsonRpcMessage) error {
 	return t.sseWriter.SendMessage(ctx, message)
 }
 
@@ -87,7 +92,7 @@ func (t *SseResponseStreamTransport) Run(ctx context.Context) error {
 }
 
 // OnMessageReceived handles incoming JSON-RPC messages
-func (t *SseResponseStreamTransport) OnMessageReceived(ctx context.Context, message protocol.IJsonRpcMessage) error {
+func (t *SseResponseStreamTransport) OnMessageReceived(ctx context.Context, message protocol.JsonRpcMessage) error {
 	t.mu.Lock()
 	if !t.isConnected {
 		t.mu.Unlock()

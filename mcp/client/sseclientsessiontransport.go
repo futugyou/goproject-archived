@@ -1,10 +1,8 @@
 package client
 
 import (
-	"bytes"
 	"context"
 	"fmt"
-	"io"
 	"net/http"
 	"net/url"
 	"strings"
@@ -29,7 +27,7 @@ type SseClientSessionTransport struct {
 	receiveTaskCompleted chan struct{}
 }
 
-func NewSseClientSessionTransport(endpointName string, options *SseClientTransportOptions, httpClient *http.Client, messageChannel chan protocol.IJsonRpcMessage) *SseClientSessionTransport {
+func NewSseClientSessionTransport(endpointName string, options *SseClientTransportOptions, httpClient *http.Client, messageChannel chan protocol.JsonRpcMessage) *SseClientSessionTransport {
 	if httpClient == nil {
 		httpClient = &http.Client{}
 	}
@@ -39,7 +37,7 @@ func NewSseClientSessionTransport(endpointName string, options *SseClientTranspo
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	transport := &SseClientSessionTransport{
-		TransportBase:         protocol.NewTransportBase(endpointName, messageChannel),
+		// TransportBase:         protocol.NewTransportBase(endpointName, messageChannel),
 		httpClient:            httpClient,
 		Options:               options,
 		SseEndpoint:           &options.Endpoint,
@@ -96,7 +94,7 @@ func (s *SseClientSessionTransport) HandleEndpointEvent(data string) error {
 	}
 
 	// Set connected state
-	s.SetConnected(true)
+	// s.SetConnected(true)
 	select {
 	case <-s.connectionEstablished:
 	default:
@@ -110,19 +108,19 @@ func (s *SseClientSessionTransport) ProcessSseMessage(ctx context.Context, data 
 		return nil
 	}
 
-	message, err := protocol.UnmarshalJsonRpcMessage([]byte(data))
-	if err != nil {
-		return err
-	}
+	// message, err := protocol.UnmarshalJsonRpcMessage([]byte(data))
+	// if err != nil {
+	// 	return err
+	// }
 
-	s.WriteMessage(ctx, message)
+	// s.WriteMessage(ctx, message)
 	return nil
 }
 
 func (s *SseClientSessionTransport) receiveMessages(ctx context.Context) error {
 	defer close(s.receiveTaskCompleted)
 	defer func() {
-		s.SetConnected(false)
+		// s.SetConnected(false)
 	}()
 	reconnectAttempts := 0
 
@@ -210,59 +208,59 @@ func (t *SseClientSessionTransport) Close() error {
 	case <-time.After(5 * time.Second):
 	}
 
-	t.SetConnected(false)
+	// t.SetConnected(false)
 	return nil
 }
 
-func (t *SseClientSessionTransport) SendMessage(ctx context.Context, message protocol.IJsonRpcMessage) error {
+func (t *SseClientSessionTransport) SendMessage(ctx context.Context, message protocol.JsonRpcMessage) error {
 	if t.messageEndpoint == nil {
 		return fmt.Errorf("transport not connected")
 	}
 
-	data, err := protocol.MarshalJsonRpcMessage(message)
-	if err != nil {
-		return fmt.Errorf("failed to serialize message: %w", err)
-	}
+	// data, err := protocol.MarshalJsonRpcMessage(message)
+	// if err != nil {
+	// 	return fmt.Errorf("failed to serialize message: %w", err)
+	// }
 
-	var messageId = "(no id)"
-	if msgWithId, ok := message.(protocol.IJsonRpcMessageWithId); ok {
-		id := msgWithId.GetId()
-		if id != nil {
-			messageId = id.String()
-		}
-	}
+	// var messageId = "(no id)"
+	// if msgWithId, ok := message.(protocol.JsonRpcMessageWithId); ok {
+	// 	id := msgWithId.GetId()
+	// 	if id != nil {
+	// 		messageId = id.String()
+	// 	}
+	// }
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, t.messageEndpoint.String(), bytes.NewReader(data))
-	if err != nil {
-		return fmt.Errorf("failed to create request: %w", err)
-	}
+	// req, err := http.NewRequestWithContext(ctx, http.MethodPost, t.messageEndpoint.String(), bytes.NewReader(data))
+	// if err != nil {
+	// 	return fmt.Errorf("failed to create request: %w", err)
+	// }
 
-	req.Header.Set("Content-Type", "application/json")
-	CopyAdditionalHeaders(req, t.Options.AdditionalHeaders, "")
+	// req.Header.Set("Content-Type", "application/json")
+	// CopyAdditionalHeaders(req, t.Options.AdditionalHeaders, "")
 
-	resp, err := t.httpClient.Do(req)
-	if err != nil {
-		return fmt.Errorf("failed to send request: %w", err)
-	}
-	defer resp.Body.Close()
+	// resp, err := t.httpClient.Do(req)
+	// if err != nil {
+	// 	return fmt.Errorf("failed to send request: %w", err)
+	// }
+	// defer resp.Body.Close()
 
-	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("unexpected status code: %d", resp.StatusCode)
-	}
+	// if resp.StatusCode != http.StatusOK {
+	// 	return fmt.Errorf("unexpected status code: %d", resp.StatusCode)
+	// }
 
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return fmt.Errorf("failed to read response body: %w", err)
-	}
+	// body, err := io.ReadAll(resp.Body)
+	// if err != nil {
+	// 	return fmt.Errorf("failed to read response body: %w", err)
+	// }
 
-	responseContent := string(body)
+	// responseContent := string(body)
 
-	if strings.EqualFold(responseContent, "accepted") {
-		fmt.Printf("SSE Transport Post Accepted: %s, Message ID: %s\n", t.messageEndpoint.String(), messageId)
-	} else {
-		fmt.Printf("SSE Transport Post Not Accepted: %s, Message ID: %s, Response: %s\n", t.messageEndpoint.String(), messageId, responseContent)
-		return fmt.Errorf("failed to send message")
-	}
+	// if strings.EqualFold(responseContent, "accepted") {
+	// 	fmt.Printf("SSE Transport Post Accepted: %s, Message ID: %s\n", t.messageEndpoint.String(), messageId)
+	// } else {
+	// 	fmt.Printf("SSE Transport Post Not Accepted: %s, Message ID: %s, Response: %s\n", t.messageEndpoint.String(), messageId, responseContent)
+	// 	return fmt.Errorf("failed to send message")
+	// }
 
 	return nil
 }

@@ -3,7 +3,6 @@ package client
 import (
 	"bufio"
 	"context"
-	"encoding/json"
 	"fmt"
 	"io"
 	"sync"
@@ -45,7 +44,7 @@ func NewStreamClientSessionTransport(
 ) *StreamClientSessionTransport {
 	ctx, cancel := context.WithCancel(context.Background())
 	t := &StreamClientSessionTransport{
-		TransportBase:     protocol.ClientTransportBase(),
+		// TransportBase:     protocol.ClientTransportBase(),
 		logger:            logger,
 		serverOutput:      bufio.NewReader(serverOutput),
 		serverInput:       serverInput,
@@ -68,7 +67,7 @@ func (t *StreamClientSessionTransport) IsConnected() bool {
 func (t *StreamClientSessionTransport) SetConnected(connected bool) {
 	t.connectedMu.Lock()
 	defer t.connectedMu.Unlock()
-	t.TransportBase.SetConnected(connected)
+	// t.TransportBase.SetConnected(connected)
 }
 
 // Close closes the transport and releases resources.
@@ -128,30 +127,30 @@ func (t *StreamClientSessionTransport) readMessages() {
 
 			t.logger.TransportReceivedMessage(t.EndpointName, string(line))
 
-			var message protocol.IJsonRpcMessage
-			if m, err := protocol.UnmarshalJsonRpcMessage(line); err != nil {
-				t.logger.TransportMessageParseFailed(t.EndpointName, string(line), err)
-				continue
-			} else {
-				message = m
-			}
+			// var message protocol.JsonRpcMessage
+			// if m, err := protocol.UnmarshalJsonRpcMessage(line); err != nil {
+			// 	t.logger.TransportMessageParseFailed(t.EndpointName, string(line), err)
+			// 	continue
+			// } else {
+			// 	message = m
+			// }
 
-			messageID := "(no id)"
-			if msgWithID, ok := message.(protocol.IJsonRpcMessageWithId); ok {
-				messageWithId := msgWithID.GetId()
-				messageID = messageWithId.String()
-			}
+			// messageID := "(no id)"
+			// if msgWithID, ok := message.(protocol.JsonRpcMessageWithId); ok {
+			// 	messageWithId := msgWithID.GetId()
+			// 	messageID = messageWithId.String()
+			// }
 
-			t.logger.TransportReceivedMessageParsed(t.EndpointName, messageID)
+			// t.logger.TransportReceivedMessageParsed(t.EndpointName, messageID)
 
-			t.WriteMessage(t.shutdownCtx, message)
-			t.logger.TransportMessageWritten(t.EndpointName, messageID)
+			// t.WriteMessage(t.shutdownCtx, message)
+			// t.logger.TransportMessageWritten(t.EndpointName, messageID)
 		}
 	}
 }
 
 // SendMessageAsync implements ITransport.
-func (t *StreamClientSessionTransport) SendMessage(ctx context.Context, message protocol.IJsonRpcMessage) error {
+func (t *StreamClientSessionTransport) SendMessage(ctx context.Context, message protocol.JsonRpcMessage) error {
 	if !t.IsConnected() {
 		t.logger.TransportNotConnected(t.EndpointName)
 		return fmt.Errorf("transport is not connected")
@@ -160,25 +159,25 @@ func (t *StreamClientSessionTransport) SendMessage(ctx context.Context, message 
 	t.sendLock.Lock()
 	defer t.sendLock.Unlock()
 
-	messageID := "(no id)"
-	if msgWithID, ok := message.(protocol.IJsonRpcMessageWithId); ok {
-		messageWithId := msgWithID.GetId()
-		messageID = messageWithId.String()
-	}
+	// messageID := "(no id)"
+	// if msgWithID, ok := message.(protocol.JsonRpcMessageWithId); ok {
+	// 	messageWithId := msgWithID.GetId()
+	// 	messageID = messageWithId.String()
+	// }
 
-	t.logger.TransportSendingMessage(t.EndpointName, messageID)
+	// t.logger.TransportSendingMessage(t.EndpointName, messageID)
 
-	data, err := json.Marshal(message)
-	if err != nil {
-		t.logger.TransportSendFailed(t.EndpointName, messageID, err)
-		return fmt.Errorf("failed to marshal message")
-	}
+	// data, err := json.Marshal(message)
+	// if err != nil {
+	// 	t.logger.TransportSendFailed(t.EndpointName, messageID, err)
+	// 	return fmt.Errorf("failed to marshal message")
+	// }
 
-	if _, err := t.serverInput.Write(data); err != nil {
-		t.logger.TransportSendFailed(t.EndpointName, messageID, err)
-		return fmt.Errorf("failed to write message")
-	}
+	// if _, err := t.serverInput.Write(data); err != nil {
+	// 	t.logger.TransportSendFailed(t.EndpointName, messageID, err)
+	// 	return fmt.Errorf("failed to write message")
+	// }
 
-	t.logger.TransportSentMessage(t.EndpointName, messageID)
+	// t.logger.TransportSentMessage(t.EndpointName, messageID)
 	return nil
 }

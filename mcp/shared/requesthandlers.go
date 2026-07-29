@@ -114,7 +114,7 @@ func GenericRequestHandlerAdd[TRequest any, TResponse any](
 		if err != nil {
 			return nil, err
 		}
-		resp, err := handler(ctx, req, request.RelatedTransport)
+		resp, err := handler(ctx, req, nil)
 		if err != nil {
 			return nil, err
 		}

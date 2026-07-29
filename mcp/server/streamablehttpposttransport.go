@@ -24,6 +24,11 @@ type StreamableHttpPostTransport struct {
 	mu              sync.Mutex
 }
 
+// SessionId implements [protocol.ITransport].
+func (s *StreamableHttpPostTransport) SessionId() string {
+	panic("unimplemented")
+}
+
 // GetTransportKind implements ITransport.
 func (s *StreamableHttpPostTransport) GetTransportKind() protocol.TransportKind {
 	return protocol.TransportKindHttp
@@ -45,13 +50,13 @@ func (s *StreamableHttpPostTransport) Close() error {
 }
 
 // MessageReader implements ITransport.
-func (s *StreamableHttpPostTransport) MessageReader() <-chan protocol.IJsonRpcMessage {
+func (s *StreamableHttpPostTransport) MessageReader() <-chan protocol.JsonRpcMessage {
 	panic("JsonRpcMessage.RelatedTransport should only be used for sending messages")
 }
 
 // SendMessage implements ITransport.
-func (s *StreamableHttpPostTransport) SendMessage(ctx context.Context, message protocol.IJsonRpcMessage) error {
-	if _, ok := message.(*protocol.JsonRpcRequest); ok && s.parentTransport.Stateless {
+func (s *StreamableHttpPostTransport) SendMessage(ctx context.Context, message protocol.JsonRpcMessage) error {
+	if _, ok := message.IJsonRpcMessage.(*protocol.JsonRpcRequest); ok && s.parentTransport.Stateless {
 		return fmt.Errorf("server to client requests are not supported in stateless mode")
 	}
 
@@ -63,8 +68,9 @@ func (s *StreamableHttpPostTransport) Run(ctx context.Context) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	msg, err := protocol.UnmarshalJsonRpcMessage(data)
-	if err != nil {
+
+	var msg protocol.JsonRpcMessage
+	if err := json.Unmarshal(data, &msg); err != nil {
 		return false, err
 	}
 	if err := s.onMessageReceived(ctx, msg); err != nil {
@@ -107,8 +113,8 @@ func (s *StreamableHttpPostTransport) onPostBodyReceived(ctx context.Context) er
 			if err := decoder.Decode(&raw); err != nil {
 				return err
 			}
-			msg, err := protocol.UnmarshalJsonRpcMessage([]byte(raw))
-			if err != nil {
+			var msg protocol.JsonRpcMessage
+			if err := json.Unmarshal(raw, &msg); err != nil {
 				return err
 			}
 			if err := s.onMessageReceived(ctx, msg); err != nil {
@@ -120,8 +126,8 @@ func (s *StreamableHttpPostTransport) onPostBodyReceived(ctx context.Context) er
 		if err != nil {
 			return err
 		}
-		msg, err := protocol.UnmarshalJsonRpcMessage(data)
-		if err != nil {
+		var msg protocol.JsonRpcMessage
+		if err := json.Unmarshal(data, &msg); err != nil {
 			return err
 		}
 		if err := s.onMessageReceived(ctx, msg); err != nil {
@@ -132,20 +138,16 @@ func (s *StreamableHttpPostTransport) onPostBodyReceived(ctx context.Context) er
 	return nil
 }
 
-func (s *StreamableHttpPostTransport) onMessageReceived(ctx context.Context, msg protocol.IJsonRpcMessage) error {
-	if msg == nil {
-		return fmt.Errorf("received invalid null message")
-	}
+func (s *StreamableHttpPostTransport) onMessageReceived(ctx context.Context, msg protocol.JsonRpcMessage) error {
 
-	if request, ok := msg.(*protocol.JsonRpcRequest); ok {
+	if request, ok := msg.IJsonRpcMessage.(*protocol.JsonRpcRequest); ok {
 		s.mu.Lock()
-		s.pendingRequests = request.GetId()
+		s.pendingRequests = request.ID
 		if s.parentTransport != nil && s.parentTransport.Stateless && request.Method == protocol.RequestMethods_Initialize && request.Params != nil {
 			var r protocol.InitializeRequestParams
 			var initialized bool
 
-			if c, ok := request.Params.(*protocol.InitializeRequestParams); ok {
-				r = *c
+			if err := json.Unmarshal(request.Params, &r); err == nil {
 				initialized = true
 			} else {
 				data, err := json.Marshal(request.Params)
@@ -163,7 +165,7 @@ func (s *StreamableHttpPostTransport) onMessageReceived(ctx context.Context, msg
 		s.mu.Unlock()
 	}
 
-	msg.SetRelatedTransport(s)
+	// msg.SetRelatedTransport(s)
 
 	if s.parentTransport == nil || s.parentTransport.incomingChannel == nil {
 		return fmt.Errorf("incoming channel is nil")
@@ -178,8 +180,8 @@ func (s *StreamableHttpPostTransport) onMessageReceived(ctx context.Context, msg
 
 }
 
-func (s *StreamableHttpPostTransport) stopOnFinalResponseFilter(ctx context.Context, mesg chan sse.SseItem[protocol.IJsonRpcMessage]) chan sse.SseItem[protocol.IJsonRpcMessage] {
-	output := make(chan sse.SseItem[protocol.IJsonRpcMessage])
+func (s *StreamableHttpPostTransport) stopOnFinalResponseFilter(ctx context.Context, mesg chan sse.SseItem[protocol.JsonRpcMessage]) chan sse.SseItem[protocol.JsonRpcMessage] {
+	output := make(chan sse.SseItem[protocol.JsonRpcMessage])
 	go func() {
 		defer close(output)
 		for {
@@ -192,7 +194,7 @@ func (s *StreamableHttpPostTransport) stopOnFinalResponseFilter(ctx context.Cont
 				}
 				output <- item
 
-				if res, ok := item.Data.(*protocol.JsonRpcResponse); ok && res.Id == s.pendingRequests {
+				if res, ok := item.Data.IJsonRpcMessage.(*protocol.JsonRpcResponse); ok && res.ID == s.pendingRequests {
 					return
 				}
 			}

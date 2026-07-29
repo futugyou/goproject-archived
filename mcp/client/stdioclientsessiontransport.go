@@ -25,7 +25,7 @@ func NewStdioClientSessionTransport(options *StdioClientTransportOptions, cmd *e
 	}
 }
 
-func (t *StdioClientSessionTransport) SendMessage(ctx context.Context, message protocol.IJsonRpcMessage) error {
+func (t *StdioClientSessionTransport) SendMessage(ctx context.Context, message protocol.JsonRpcMessage) error {
 	if t.cmd.ProcessState != nil && t.cmd.ProcessState.Exited() {
 		t.logger.TransportNotConnected(t.EndpointName)
 		return fmt.Errorf("transport is not connected")

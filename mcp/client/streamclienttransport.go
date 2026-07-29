@@ -42,13 +42,14 @@ func NewStreamClientTransport(serverInput io.Writer, serverOutput io.Reader, log
 
 // Connect creates a new client session transport using the configured streams.
 func (t *StreamClientTransport) Connect(ctx context.Context) (protocol.ITransport, error) {
-	t.mu.Lock()
-	defer t.mu.Unlock()
+	// t.mu.Lock()
+	// defer t.mu.Unlock()
 
-	return NewStreamClientSessionTransport(
-		t.serverInput,
-		t.serverOutput,
-		"Client (stream)",
-		t.logger,
-	), nil
+	// return NewStreamClientSessionTransport(
+	// 	t.serverInput,
+	// 	t.serverOutput,
+	// 	"Client (stream)",
+	// 	t.logger,
+	// ), nil
+	return nil, nil
 }
