@@ -37,7 +37,7 @@ type PromptArgument struct {
 }
 
 type PromptListChangedNotificationParams struct {
-	NotificationParams
+	Meta map[string]any `json:"_meta,omitempty"`
 }
 
 type ListPromptsRequestParams struct {
@@ -49,4 +49,8 @@ type ListPromptsResult struct {
 	Prompts         []Prompt    `json:"prompts"`
 	TimeToLive      time.Time   `json:"ttlMs"`
 	CacheScope      *CacheScope `json:"cacheScope"`
+}
+
+type PromptsCapability struct {
+	ListChanged *bool `json:"listChanged,omitempty"`
 }

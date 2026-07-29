@@ -6,7 +6,6 @@ import (
 
 	"github.com/futugyou/mcp/protocol"
 	"github.com/futugyou/mcp/shared"
-	"github.com/futugyou/yomawari/core/logger"
 )
 
 type IMcpClient interface {
@@ -33,6 +32,6 @@ type IMcpClient interface {
 	SubscribeToResourceWithUri(ctx context.Context, uri url.URL) error
 	UnsubscribeFromResource(ctx context.Context, uri string) error
 	UnsubscribeFromResourceWithUri(ctx context.Context, uri url.URL) error
-	SetLoggingLevel(ctx context.Context, level protocol.LoggingLevel) error
-	SetLoggingLevelWithLogLevel(ctx context.Context, level logger.LogLevel) error
+	// SetLoggingLevel(ctx context.Context, level protocol.LoggingLevel) error
+	// SetLoggingLevelWithLogLevel(ctx context.Context, level logger.LogLevel) error
 }

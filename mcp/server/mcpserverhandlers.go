@@ -18,8 +18,8 @@ type McpServerHandlers struct {
 	SubscribeToResourcesHandler     func(ctx context.Context, req RequestContext[*protocol.SubscribeRequestParams]) (*protocol.EmptyResult, error)                             `json:"-"`
 	UnsubscribeFromResourcesHandler func(ctx context.Context, req RequestContext[*protocol.UnsubscribeRequestParams]) (*protocol.EmptyResult, error)
 
-	CompleteHandler        func(context.Context, RequestContext[*protocol.CompleteRequestParams]) (*protocol.CompleteResult, error)
-	SetLoggingLevelHandler func(context.Context, RequestContext[*protocol.SetLevelRequestParams]) (*protocol.EmptyResult, error)
+	CompleteHandler func(context.Context, RequestContext[*protocol.CompleteRequestParams]) (*protocol.CompleteResult, error)
+	// SetLoggingLevelHandler func(context.Context, RequestContext[*protocol.SetLevelRequestParams]) (*protocol.EmptyResult, error)
 }
 
 func (h *McpServerHandlers) OverwriteWithSetHandlers(option *McpServerOptions) {

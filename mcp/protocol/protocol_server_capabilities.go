@@ -8,7 +8,3 @@ type ServerCapabilities struct {
 	Completions  *CompletionsCapability `json:"completions,omitempty"`
 	Extensions   map[string]any         `json:"extensions,omitempty"`
 }
-
-type PromptsCapability struct {
-	ListChanged *bool `json:"listChanged,omitempty"`
-}

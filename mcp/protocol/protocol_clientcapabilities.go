@@ -10,3 +10,12 @@ type ClientCapabilities struct {
 type MissingRequiredClientCapabilityErrorData struct {
 	RequiredCapabilities ClientCapabilities `json:"requiredCapabilities"`
 }
+
+type UnsupportedProtocolVersionErrorData struct {
+	Supported []string `json:"supported"`
+	Requested string   `json:"requested"`
+}
+
+type UrlElicitationRequiredErrorData struct {
+	Elicitations []ElicitRequestParams `json:"elicitations"`
+}

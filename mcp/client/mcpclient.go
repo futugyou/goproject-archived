@@ -7,7 +7,6 @@ import (
 
 	"github.com/futugyou/mcp/protocol"
 	"github.com/futugyou/mcp/shared"
-	"github.com/futugyou/yomawari/core/logger"
 )
 
 var McpClientDefaultImplementation protocol.Implementation = protocol.Implementation{
@@ -645,21 +644,21 @@ func (m *McpClient) ReadResourceWithUriAndArguments(ctx context.Context, uriTemp
 }
 
 // SetLoggingLevel implements IMcpClient.
-func (m *McpClient) SetLoggingLevel(ctx context.Context, level protocol.LoggingLevel) error {
-	// params := protocol.SetLevelRequestParams{
-	// 	RequestParams: protocol.RequestParams{},
-	// 	Level:         level,
-	// }
-	// jsonRpcRequest := protocol.NewJsonRpcRequest(protocol.RequestMethods_LoggingSetLevel, params, nil)
-	// _, err := m.SendRequest(ctx, jsonRpcRequest)
-	// return err
-	return nil
-}
+// func (m *McpClient) SetLoggingLevel(ctx context.Context, level protocol.LoggingLevel) error {
+// params := protocol.SetLevelRequestParams{
+// 	RequestParams: protocol.RequestParams{},
+// 	Level:         level,
+// }
+// jsonRpcRequest := protocol.NewJsonRpcRequest(protocol.RequestMethods_LoggingSetLevel, params, nil)
+// _, err := m.SendRequest(ctx, jsonRpcRequest)
+// return err
+// 	return nil
+// }
 
 // SetLoggingLevelWithLogLevel implements IMcpClient.
-func (m *McpClient) SetLoggingLevelWithLogLevel(ctx context.Context, level logger.LogLevel) error {
-	return m.SetLoggingLevel(ctx, protocol.LoggingLevel(level))
-}
+// func (m *McpClient) SetLoggingLevelWithLogLevel(ctx context.Context, level logger.LogLevel) error {
+// 	return m.SetLoggingLevel(ctx, protocol.LoggingLevel(level))
+// }
 
 // SubscribeToResource implements IMcpClient.
 func (m *McpClient) SubscribeToResource(ctx context.Context, uri string) error {

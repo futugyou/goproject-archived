@@ -60,12 +60,12 @@ type Resource struct {
 }
 
 type ResourceListChangedNotificationParams struct {
-	NotificationParams
+	Meta map[string]any `json:"_meta,omitempty"`
 }
 
 type ResourceUpdatedNotificationParams struct {
-	NotificationParams
-	Uri string `json:"uri"`
+	Meta map[string]any `json:"_meta,omitempty"`
+	Uri  string         `json:"uri"`
 }
 
 type ResourcesCapability struct {
