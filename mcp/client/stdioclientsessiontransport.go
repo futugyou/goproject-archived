@@ -7,8 +7,8 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/futugyou/mcp/core"
 	"github.com/futugyou/mcp/logging"
-	"github.com/futugyou/mcp/protocol"
 )
 
 type StdioClientSessionTransport struct {
@@ -25,7 +25,7 @@ func NewStdioClientSessionTransport(options *StdioClientTransportOptions, cmd *e
 	}
 }
 
-func (t *StdioClientSessionTransport) SendMessage(ctx context.Context, message protocol.JsonRpcMessage) error {
+func (t *StdioClientSessionTransport) SendMessage(ctx context.Context, message core.JsonRpcMessage) error {
 	if t.cmd.ProcessState != nil && t.cmd.ProcessState.Exited() {
 		t.logger.TransportNotConnected(t.EndpointName)
 		return fmt.Errorf("transport is not connected")
@@ -61,6 +61,6 @@ func (t *StdioClientSessionTransport) Close() error {
 	return t.StreamClientSessionTransport.Close()
 }
 
-func (t *StdioClientSessionTransport) GetTransportKind() protocol.TransportKind {
-	return protocol.TransportKindStdio
+func (t *StdioClientSessionTransport) GetTransportKind() core.TransportKind {
+	return core.TransportKindStdio
 }

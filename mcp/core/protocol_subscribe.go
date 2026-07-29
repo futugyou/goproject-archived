@@ -1,4 +1,4 @@
-package protocol
+package core
 
 type SubscribeRequestParams struct {
 	RequestParams `json:",inline"`

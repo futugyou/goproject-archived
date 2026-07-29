@@ -5,11 +5,11 @@ import (
 	"net/url"
 	"sync"
 
-	"github.com/futugyou/mcp/protocol"
+	"github.com/futugyou/mcp/core"
 	"github.com/futugyou/mcp/shared"
 )
 
-var McpClientDefaultImplementation protocol.Implementation = protocol.Implementation{
+var McpClientDefaultImplementation core.Implementation = core.Implementation{
 	Name:    "McpClient",
 	Version: "1.0.0",
 }
@@ -20,7 +20,7 @@ type McpClient struct {
 	*shared.BaseMcpEndpoint
 	clientTransport  IClientTransport
 	options          McpClientOptions
-	sessionTransport protocol.ITransport
+	sessionTransport core.ITransport
 	reqHandlers      *shared.RequestHandlers
 	notifHandlers    *shared.NotificationHandlers
 
@@ -29,8 +29,8 @@ type McpClient struct {
 	mu         sync.Mutex
 	disposed   bool
 
-	ServerCapabilities protocol.ServerCapabilities
-	ServerInfo         protocol.Implementation
+	ServerCapabilities core.ServerCapabilities
+	ServerInfo         core.Implementation
 	ServerInstructions *string
 	EndpointName       string
 }
@@ -65,9 +65,9 @@ func NewMcpClient(clientTransport IClientTransport, options McpClientOptions) *M
 		// if samplingCapability != nil && samplingCapability.SamplingHandler != nil {
 		// 	shared.GenericRequestHandlerAdd(
 		// 		client.reqHandlers,
-		// 		protocol.RequestMethods_SamplingCreateMessage,
-		// 		func(ctx context.Context, request *protocol.CreateMessageRequestParams, tran protocol.ITransport) (*protocol.CreateMessageResult, error) {
-		// 			var progres protocol.IProgressReporter = &shared.NullProgress{}
+		// 		core.RequestMethods_SamplingCreateMessage,
+		// 		func(ctx context.Context, request *core.CreateMessageRequestParams, tran core.ITransport) (*core.CreateMessageResult, error) {
+		// 			var progres core.IProgressReporter = &shared.NullProgress{}
 		// 			if request.Meta != nil && request.ProgressToken() != nil {
 		// 				progres = shared.NewTokenProgress(client, *request.ProgressToken())
 		// 			}
@@ -81,8 +81,8 @@ func NewMcpClient(clientTransport IClientTransport, options McpClientOptions) *M
 		// if capabilities.Roots != nil && capabilities.Roots.RootsHandler != nil {
 		// 	shared.GenericRequestHandlerAdd(
 		// 		client.reqHandlers,
-		// 		protocol.RequestMethods_RootsList,
-		// 		func(ctx context.Context, request *protocol.ListRootsRequestParams, tran protocol.ITransport) (*protocol.ListRootsResult, error) {
+		// 		core.RequestMethods_RootsList,
+		// 		func(ctx context.Context, request *core.ListRootsRequestParams, tran core.ITransport) (*core.ListRootsResult, error) {
 		// 			return capabilities.Roots.RootsHandler(ctx, request)
 		// 		},
 		// 		nil,
@@ -93,8 +93,8 @@ func NewMcpClient(clientTransport IClientTransport, options McpClientOptions) *M
 		// if capabilities.Elicitation != nil && capabilities.Elicitation.ElicitationHandler != nil {
 		// 	shared.GenericRequestHandlerAdd(
 		// 		client.reqHandlers,
-		// 		protocol.RequestMethods_ElicitationCreate,
-		// 		func(ctx context.Context, request *protocol.ElicitRequestParams, tran protocol.ITransport) (*protocol.ElicitResult, error) {
+		// 		core.RequestMethods_ElicitationCreate,
+		// 		func(ctx context.Context, request *core.ElicitRequestParams, tran core.ITransport) (*core.ElicitResult, error) {
 		// 			return capabilities.Elicitation.ElicitationHandler(ctx, request)
 		// 		},
 		// 		nil,
@@ -140,7 +140,7 @@ func (m *McpClient) Connect(ctx context.Context) error {
 	// ctx, cancel = context.WithTimeout(ctx, m.options.InitializationTimeout)
 	// defer cancel()
 
-	// params := protocol.InitializeRequestParams{
+	// params := core.InitializeRequestParams{
 	// 	ProtocolVersion: m.options.ProtocolVersion,
 	// 	Capabilities:    m.options.Capabilities,
 	// }
@@ -149,7 +149,7 @@ func (m *McpClient) Connect(ctx context.Context) error {
 	// 	params.ClientInfo = *m.options.ClientInfo
 	// }
 
-	// jsonRpcRequest := protocol.NewJsonRpcRequest(protocol.RequestMethods_Initialize, params, nil)
+	// jsonRpcRequest := core.NewJsonRpcRequest(core.RequestMethods_Initialize, params, nil)
 	// initializeResponse, err := m.SendRequest(ctx, jsonRpcRequest)
 	// if err != nil {
 	// 	return err
@@ -162,22 +162,22 @@ func (m *McpClient) Connect(ctx context.Context) error {
 	// m.ServerCapabilities = initializeResult.Capabilities
 	// m.ServerInfo = initializeResult.ServerInfo
 	// m.ServerInstructions = &initializeResult.Instructions
-	// return m.SendMessage(ctx, protocol.NewJsonRpcNotification(protocol.NotificationMethods_InitializedNotification, nil))
+	// return m.SendMessage(ctx, core.NewJsonRpcNotification(core.NotificationMethods_InitializedNotification, nil))
 	return nil
 }
 
 // CallTool implements IMcpClient.
-func (m *McpClient) CallTool(ctx context.Context, toolName string, arguments map[string]interface{}, reporter any) (*protocol.CallToolResult, error) {
-	// params := protocol.CallToolRequestParams{
-	// 	RequestParams: protocol.RequestParams{},
+func (m *McpClient) CallTool(ctx context.Context, toolName string, arguments map[string]interface{}, reporter any) (*core.CallToolResult, error) {
+	// params := core.CallToolRequestParams{
+	// 	RequestParams: core.RequestParams{},
 	// 	Name:          toolName,
 	// 	Arguments:     arguments,
 	// }
 
 	// if reporter != nil {
-	// progressToken := protocol.NewProgressTokenFromString(uuid.New().String())
-	// var handler protocol.NotificationHandler = func(ctx context.Context, notification *protocol.JsonRpcNotification) error {
-	// 	var pn protocol.ProgressNotification
+	// progressToken := core.NewProgressTokenFromString(uuid.New().String())
+	// var handler core.NotificationHandler = func(ctx context.Context, notification *core.JsonRpcNotification) error {
+	// 	var pn core.ProgressNotification
 	// 	if err := json.Unmarshal(notification.Params, &pn); err != nil {
 	// 		return err
 	// 	}
@@ -186,16 +186,16 @@ func (m *McpClient) CallTool(ctx context.Context, toolName string, arguments map
 	// 	}
 	// 	return nil
 	// }
-	// m.RegisterNotificationHandler(protocol.NotificationMethods_ProgressNotification, handler)
-	// params.Meta = &protocol.RequestParamsMetadata{ProgressToken: &progressToken}
+	// m.RegisterNotificationHandler(core.NotificationMethods_ProgressNotification, handler)
+	// params.Meta = &core.RequestParamsMetadata{ProgressToken: &progressToken}
 	// }
 
-	// jsonRpcRequest := protocol.NewJsonRpcRequest(protocol.RequestMethods_ToolsCall, params, nil)
+	// jsonRpcRequest := core.NewJsonRpcRequest(core.RequestMethods_ToolsCall, params, nil)
 	// resp, err := m.SendRequest(ctx, jsonRpcRequest)
 	// if err != nil {
 	// 	return nil, err
 	// }
-	// var rsult protocol.CallToolResult
+	// var rsult core.CallToolResult
 	// if err := json.Unmarshal(resp.Result, &rsult); err != nil {
 	// 	return nil, err
 	// }
@@ -204,20 +204,20 @@ func (m *McpClient) CallTool(ctx context.Context, toolName string, arguments map
 }
 
 // Complete implements IMcpClient.
-func (m *McpClient) Complete(ctx context.Context, reference protocol.Reference, argumentName string, argumentValue string) (*protocol.CompleteResult, error) {
-	// params := protocol.CompleteRequestParams{
+func (m *McpClient) Complete(ctx context.Context, reference core.Reference, argumentName string, argumentValue string) (*core.CompleteResult, error) {
+	// params := core.CompleteRequestParams{
 	// 	Ref: reference,
-	// 	Argument: protocol.Argument{
+	// 	Argument: core.Argument{
 	// 		Name:  argumentName,
 	// 		Value: argumentValue,
 	// 	},
 	// }
-	// jsonRpcRequest := protocol.NewJsonRpcRequest(protocol.RequestMethods_CompletionComplete, params, nil)
+	// jsonRpcRequest := core.NewJsonRpcRequest(core.RequestMethods_CompletionComplete, params, nil)
 	// resp, err := m.SendRequest(ctx, jsonRpcRequest)
 	// if err != nil {
 	// 	return nil, err
 	// }
-	// var rsult protocol.CompleteResult
+	// var rsult core.CompleteResult
 	// if err := json.Unmarshal(resp.Result, &rsult); err != nil {
 	// 	return nil, err
 	// }
@@ -236,20 +236,20 @@ func (m *McpClient) EnumeratePrompts(ctx context.Context, client IMcpClient) (<-
 
 	// 	var cursor *string
 	// 	for {
-	// 		params := protocol.ListPromptsRequestParams{
-	// 			PaginatedRequestParams: protocol.PaginatedRequestParams{
-	// 				RequestParams: protocol.RequestParams{},
+	// 		params := core.ListPromptsRequestParams{
+	// 			PaginatedRequestParams: core.PaginatedRequestParams{
+	// 				RequestParams: core.RequestParams{},
 	// 				Cursor:        cursor,
 	// 			},
 	// 		}
-	// 		jsonRpcRequest := protocol.NewJsonRpcRequest(protocol.RequestMethods_PromptsList, params, nil)
+	// 		jsonRpcRequest := core.NewJsonRpcRequest(core.RequestMethods_PromptsList, params, nil)
 	// 		resp, err := m.SendRequest(ctx, jsonRpcRequest)
 	// 		if err != nil {
 	// 			errCh <- err
 	// 			return
 	// 		}
 
-	// 		var promptResults protocol.ListPromptsResult
+	// 		var promptResults core.ListPromptsResult
 	// 		if err := json.Unmarshal(resp.Result, &promptResults); err != nil {
 	// 			errCh <- err
 	// 			return
@@ -285,20 +285,20 @@ func (m *McpClient) EnumerateResourceTemplates(ctx context.Context, client IMcpC
 
 	// 	var cursor *string
 	// 	for {
-	// 		params := protocol.ListResourceTemplatesRequestParams{
-	// 			PaginatedRequestParams: protocol.PaginatedRequestParams{
-	// 				RequestParams: protocol.RequestParams{},
+	// 		params := core.ListResourceTemplatesRequestParams{
+	// 			PaginatedRequestParams: core.PaginatedRequestParams{
+	// 				RequestParams: core.RequestParams{},
 	// 				Cursor:        cursor,
 	// 			},
 	// 		}
-	// 		jsonRpcRequest := protocol.NewJsonRpcRequest(protocol.RequestMethods_ResourcesTemplatesList, params, nil)
+	// 		jsonRpcRequest := core.NewJsonRpcRequest(core.RequestMethods_ResourcesTemplatesList, params, nil)
 	// 		resp, err := m.SendRequest(ctx, jsonRpcRequest)
 	// 		if err != nil {
 	// 			errCh <- err
 	// 			return
 	// 		}
 
-	// 		var promptResults protocol.ListResourceTemplatesResult
+	// 		var promptResults core.ListResourceTemplatesResult
 	// 		if err := json.Unmarshal(resp.Result, &promptResults); err != nil {
 	// 			errCh <- err
 	// 			return
@@ -336,20 +336,20 @@ func (m *McpClient) EnumerateResources(ctx context.Context, client IMcpClient) (
 
 	// 	var cursor *string
 	// 	for {
-	// 		params := protocol.ListResourcesRequestParams{
-	// 			PaginatedRequestParams: protocol.PaginatedRequestParams{
-	// 				RequestParams: protocol.RequestParams{},
+	// 		params := core.ListResourcesRequestParams{
+	// 			PaginatedRequestParams: core.PaginatedRequestParams{
+	// 				RequestParams: core.RequestParams{},
 	// 				Cursor:        cursor,
 	// 			},
 	// 		}
-	// 		jsonRpcRequest := protocol.NewJsonRpcRequest(protocol.RequestMethods_ResourcesList, params, nil)
+	// 		jsonRpcRequest := core.NewJsonRpcRequest(core.RequestMethods_ResourcesList, params, nil)
 	// 		resp, err := m.SendRequest(ctx, jsonRpcRequest)
 	// 		if err != nil {
 	// 			errCh <- err
 	// 			return
 	// 		}
 
-	// 		var promptResults protocol.ListResourcesResult
+	// 		var promptResults core.ListResourcesResult
 	// 		if err := json.Unmarshal(resp.Result, &promptResults); err != nil {
 	// 			errCh <- err
 	// 			return
@@ -387,20 +387,20 @@ func (m *McpClient) EnumerateTools(ctx context.Context) (<-chan McpClientTool, <
 
 	// 	var cursor *string
 	// 	for {
-	// 		params := protocol.ListToolsRequestParams{
-	// 			PaginatedRequestParams: protocol.PaginatedRequestParams{
-	// 				RequestParams: protocol.RequestParams{},
+	// 		params := core.ListToolsRequestParams{
+	// 			PaginatedRequestParams: core.PaginatedRequestParams{
+	// 				RequestParams: core.RequestParams{},
 	// 				Cursor:        cursor,
 	// 			},
 	// 		}
-	// 		jsonRpcRequest := protocol.NewJsonRpcRequest(protocol.RequestMethods_ToolsList, params, nil)
+	// 		jsonRpcRequest := core.NewJsonRpcRequest(core.RequestMethods_ToolsList, params, nil)
 	// 		resp, err := m.SendRequest(ctx, jsonRpcRequest)
 	// 		if err != nil {
 	// 			errCh <- err
 	// 			return
 	// 		}
 
-	// 		var promptResults protocol.ListToolsResult
+	// 		var promptResults core.ListToolsResult
 	// 		if err := json.Unmarshal(resp.Result, &promptResults); err != nil {
 	// 			errCh <- err
 	// 			return
@@ -426,18 +426,18 @@ func (m *McpClient) EnumerateTools(ctx context.Context) (<-chan McpClientTool, <
 }
 
 // GetPrompt implements IMcpClient.
-func (m *McpClient) GetPrompt(ctx context.Context, name string, arguments map[string]interface{}) (*protocol.GetPromptResult, error) {
-	// params := protocol.GetPromptRequestParams{
-	// 	RequestParams: protocol.RequestParams{},
+func (m *McpClient) GetPrompt(ctx context.Context, name string, arguments map[string]interface{}) (*core.GetPromptResult, error) {
+	// params := core.GetPromptRequestParams{
+	// 	RequestParams: core.RequestParams{},
 	// 	Name:          name,
 	// 	Arguments:     arguments,
 	// }
-	// jsonRpcRequest := protocol.NewJsonRpcRequest(protocol.RequestMethods_PromptsGet, params, nil)
+	// jsonRpcRequest := core.NewJsonRpcRequest(core.RequestMethods_PromptsGet, params, nil)
 	// resp, err := m.SendRequest(ctx, jsonRpcRequest)
 	// if err != nil {
 	// 	return nil, err
 	// }
-	// var rsult protocol.GetPromptResult
+	// var rsult core.GetPromptResult
 	// if err := json.Unmarshal(resp.Result, &rsult); err != nil {
 	// 	return nil, err
 	// }
@@ -447,12 +447,12 @@ func (m *McpClient) GetPrompt(ctx context.Context, name string, arguments map[st
 }
 
 // GetServerCapabilities implements IMcpClient.
-func (m *McpClient) GetServerCapabilities() *protocol.ServerCapabilities {
+func (m *McpClient) GetServerCapabilities() *core.ServerCapabilities {
 	return &m.ServerCapabilities
 }
 
 // GetServerInfo implements IMcpClient.
-func (m *McpClient) GetServerInfo() *protocol.Implementation {
+func (m *McpClient) GetServerInfo() *core.Implementation {
 	return &m.ServerInfo
 }
 
@@ -466,19 +466,19 @@ func (m *McpClient) ListPrompts(ctx context.Context, client IMcpClient) ([]McpCl
 	prompts := []McpClientPrompt{}
 	// var cursor *string
 	// for {
-	// 	params := protocol.ListPromptsRequestParams{
-	// 		PaginatedRequestParams: protocol.PaginatedRequestParams{
-	// 			RequestParams: protocol.RequestParams{},
+	// 	params := core.ListPromptsRequestParams{
+	// 		PaginatedRequestParams: core.PaginatedRequestParams{
+	// 			RequestParams: core.RequestParams{},
 	// 			Cursor:        cursor,
 	// 		},
 	// 	}
-	// 	jsonRpcRequest := protocol.NewJsonRpcRequest(protocol.RequestMethods_PromptsList, params, nil)
+	// 	jsonRpcRequest := core.NewJsonRpcRequest(core.RequestMethods_PromptsList, params, nil)
 	// 	resp, err := m.SendRequest(ctx, jsonRpcRequest)
 	// 	if err != nil {
 	// 		return nil, err
 	// 	}
 
-	// 	var promptResults protocol.ListPromptsResult
+	// 	var promptResults core.ListPromptsResult
 	// 	if err := json.Unmarshal(resp.Result, &promptResults); err != nil {
 	// 		return nil, err
 	// 	}
@@ -500,19 +500,19 @@ func (m *McpClient) ListResourceTemplates(ctx context.Context, client IMcpClient
 	prompts := []McpClientResourceTemplate{}
 	// var cursor *string
 	// for {
-	// 	params := protocol.ListResourceTemplatesRequestParams{
-	// 		PaginatedRequestParams: protocol.PaginatedRequestParams{
-	// 			RequestParams: protocol.RequestParams{},
+	// 	params := core.ListResourceTemplatesRequestParams{
+	// 		PaginatedRequestParams: core.PaginatedRequestParams{
+	// 			RequestParams: core.RequestParams{},
 	// 			Cursor:        cursor,
 	// 		},
 	// 	}
-	// 	jsonRpcRequest := protocol.NewJsonRpcRequest(protocol.RequestMethods_ResourcesTemplatesList, params, nil)
+	// 	jsonRpcRequest := core.NewJsonRpcRequest(core.RequestMethods_ResourcesTemplatesList, params, nil)
 	// 	resp, err := m.SendRequest(ctx, jsonRpcRequest)
 	// 	if err != nil {
 	// 		return nil, err
 	// 	}
 
-	// 	var promptResults protocol.ListResourceTemplatesResult
+	// 	var promptResults core.ListResourceTemplatesResult
 	// 	if err := json.Unmarshal(resp.Result, &promptResults); err != nil {
 	// 		return nil, err
 	// 	}
@@ -535,19 +535,19 @@ func (m *McpClient) ListResources(ctx context.Context, client IMcpClient) ([]Mcp
 	prompts := []McpClientResource{}
 	// var cursor *string
 	// for {
-	// 	params := protocol.ListResourcesRequestParams{
-	// 		PaginatedRequestParams: protocol.PaginatedRequestParams{
-	// 			RequestParams: protocol.RequestParams{},
+	// 	params := core.ListResourcesRequestParams{
+	// 		PaginatedRequestParams: core.PaginatedRequestParams{
+	// 			RequestParams: core.RequestParams{},
 	// 			Cursor:        cursor,
 	// 		},
 	// 	}
-	// 	jsonRpcRequest := protocol.NewJsonRpcRequest(protocol.RequestMethods_ResourcesList, params, nil)
+	// 	jsonRpcRequest := core.NewJsonRpcRequest(core.RequestMethods_ResourcesList, params, nil)
 	// 	resp, err := m.SendRequest(ctx, jsonRpcRequest)
 	// 	if err != nil {
 	// 		return nil, err
 	// 	}
 
-	// 	var promptResults protocol.ListResourcesResult
+	// 	var promptResults core.ListResourcesResult
 	// 	if err := json.Unmarshal(resp.Result, &promptResults); err != nil {
 	// 		return nil, err
 	// 	}
@@ -570,19 +570,19 @@ func (m *McpClient) ListTools(ctx context.Context) ([]McpClientTool, error) {
 	prompts := []McpClientTool{}
 	// var cursor *string
 	// for {
-	// 	params := protocol.ListToolsRequestParams{
-	// 		PaginatedRequestParams: protocol.PaginatedRequestParams{
-	// 			RequestParams: protocol.RequestParams{},
+	// 	params := core.ListToolsRequestParams{
+	// 		PaginatedRequestParams: core.PaginatedRequestParams{
+	// 			RequestParams: core.RequestParams{},
 	// 			Cursor:        cursor,
 	// 		},
 	// 	}
-	// 	jsonRpcRequest := protocol.NewJsonRpcRequest(protocol.RequestMethods_ToolsList, params, nil)
+	// 	jsonRpcRequest := core.NewJsonRpcRequest(core.RequestMethods_ToolsList, params, nil)
 	// 	resp, err := m.SendRequest(ctx, jsonRpcRequest)
 	// 	if err != nil {
 	// 		return nil, err
 	// 	}
 
-	// 	var promptResults protocol.ListToolsResult
+	// 	var promptResults core.ListToolsResult
 	// 	if err := json.Unmarshal(resp.Result, &promptResults); err != nil {
 	// 		return nil, err
 	// 	}
@@ -601,25 +601,25 @@ func (m *McpClient) ListTools(ctx context.Context) ([]McpClientTool, error) {
 
 // Ping implements IMcpClient.
 func (m *McpClient) Ping(ctx context.Context) error {
-	// params := protocol.PingRequest{}
-	// jsonRpcRequest := protocol.NewJsonRpcRequest(protocol.RequestMethods_Ping, params, nil)
+	// params := core.PingRequest{}
+	// jsonRpcRequest := core.NewJsonRpcRequest(core.RequestMethods_Ping, params, nil)
 	// _, err := m.SendRequest(ctx, jsonRpcRequest)
 	// return err
 	return nil
 }
 
 // ReadResource implements IMcpClient.
-func (m *McpClient) ReadResource(ctx context.Context, uri string) (*protocol.ReadResourceResult, error) {
-	// params := protocol.ReadResourceRequestParams{
-	// 	RequestParams: protocol.RequestParams{},
+func (m *McpClient) ReadResource(ctx context.Context, uri string) (*core.ReadResourceResult, error) {
+	// params := core.ReadResourceRequestParams{
+	// 	RequestParams: core.RequestParams{},
 	// 	Uri:           uri,
 	// }
-	// jsonRpcRequest := protocol.NewJsonRpcRequest(protocol.RequestMethods_ResourcesRead, params, nil)
+	// jsonRpcRequest := core.NewJsonRpcRequest(core.RequestMethods_ResourcesRead, params, nil)
 	// resp, err := m.SendRequest(ctx, jsonRpcRequest)
 	// if err != nil {
 	// 	return nil, err
 	// }
-	// var rsult protocol.ReadResourceResult
+	// var rsult core.ReadResourceResult
 	// if err := json.Unmarshal(resp.Result, &rsult); err != nil {
 	// 	return nil, err
 	// }
@@ -629,12 +629,12 @@ func (m *McpClient) ReadResource(ctx context.Context, uri string) (*protocol.Rea
 }
 
 // ReadResourceWithUri implements IMcpClient.
-func (m *McpClient) ReadResourceWithUri(ctx context.Context, uri url.URL) (*protocol.ReadResourceResult, error) {
+func (m *McpClient) ReadResourceWithUri(ctx context.Context, uri url.URL) (*core.ReadResourceResult, error) {
 	return m.ReadResource(ctx, uri.String())
 }
 
 // ReadResourceWithUriAndArguments implements IMcpClient.
-func (m *McpClient) ReadResourceWithUriAndArguments(ctx context.Context, uriTemplate string, arguments map[string]interface{}) (*protocol.ReadResourceResult, error) {
+func (m *McpClient) ReadResourceWithUriAndArguments(ctx context.Context, uriTemplate string, arguments map[string]interface{}) (*core.ReadResourceResult, error) {
 	url, err := shared.FormatUri(uriTemplate, arguments)
 	if err != nil {
 		return nil, err
@@ -644,12 +644,12 @@ func (m *McpClient) ReadResourceWithUriAndArguments(ctx context.Context, uriTemp
 }
 
 // SetLoggingLevel implements IMcpClient.
-// func (m *McpClient) SetLoggingLevel(ctx context.Context, level protocol.LoggingLevel) error {
-// params := protocol.SetLevelRequestParams{
-// 	RequestParams: protocol.RequestParams{},
+// func (m *McpClient) SetLoggingLevel(ctx context.Context, level core.LoggingLevel) error {
+// params := core.SetLevelRequestParams{
+// 	RequestParams: core.RequestParams{},
 // 	Level:         level,
 // }
-// jsonRpcRequest := protocol.NewJsonRpcRequest(protocol.RequestMethods_LoggingSetLevel, params, nil)
+// jsonRpcRequest := core.NewJsonRpcRequest(core.RequestMethods_LoggingSetLevel, params, nil)
 // _, err := m.SendRequest(ctx, jsonRpcRequest)
 // return err
 // 	return nil
@@ -657,16 +657,16 @@ func (m *McpClient) ReadResourceWithUriAndArguments(ctx context.Context, uriTemp
 
 // SetLoggingLevelWithLogLevel implements IMcpClient.
 // func (m *McpClient) SetLoggingLevelWithLogLevel(ctx context.Context, level logger.LogLevel) error {
-// 	return m.SetLoggingLevel(ctx, protocol.LoggingLevel(level))
+// 	return m.SetLoggingLevel(ctx, core.LoggingLevel(level))
 // }
 
 // SubscribeToResource implements IMcpClient.
 func (m *McpClient) SubscribeToResource(ctx context.Context, uri string) error {
-	// params := protocol.SubscribeRequestParams{
-	// 	RequestParams: protocol.RequestParams{},
+	// params := core.SubscribeRequestParams{
+	// 	RequestParams: core.RequestParams{},
 	// 	Uri:           &uri,
 	// }
-	// jsonRpcRequest := protocol.NewJsonRpcRequest(protocol.RequestMethods_ResourcesSubscribe, params, nil)
+	// jsonRpcRequest := core.NewJsonRpcRequest(core.RequestMethods_ResourcesSubscribe, params, nil)
 	// _, err := m.SendRequest(ctx, jsonRpcRequest)
 	// return err
 	return nil
@@ -679,11 +679,11 @@ func (m *McpClient) SubscribeToResourceWithUri(ctx context.Context, uri url.URL)
 
 // UnsubscribeFromResource implements IMcpClient.
 func (m *McpClient) UnsubscribeFromResource(ctx context.Context, uri string) error {
-	// params := protocol.UnsubscribeRequestParams{
-	// 	RequestParams: protocol.RequestParams{},
+	// params := core.UnsubscribeRequestParams{
+	// 	RequestParams: core.RequestParams{},
 	// 	Uri:           &uri,
 	// }
-	// jsonRpcRequest := protocol.NewJsonRpcRequest(protocol.RequestMethods_ResourcesUnsubscribe, params, nil)
+	// jsonRpcRequest := core.NewJsonRpcRequest(core.RequestMethods_ResourcesUnsubscribe, params, nil)
 	// _, err := m.SendRequest(ctx, jsonRpcRequest)
 	// return err
 	return nil

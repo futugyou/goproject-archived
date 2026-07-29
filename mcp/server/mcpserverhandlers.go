@@ -3,34 +3,34 @@ package server
 import (
 	"context"
 
-	"github.com/futugyou/mcp/protocol"
+	"github.com/futugyou/mcp/core"
 )
 
 type McpServerHandlers struct {
-	ListToolsHandler   func(context.Context, RequestContext[*protocol.ListToolsRequestParams]) (*protocol.ListToolsResult, error)
-	CallToolHandler    func(context.Context, RequestContext[*protocol.CallToolRequestParams]) (*protocol.CallToolResult, error)
-	ListPromptsHandler func(context.Context, RequestContext[*protocol.ListPromptsRequestParams]) (*protocol.ListPromptsResult, error)
-	GetPromptHandler   func(context.Context, RequestContext[*protocol.GetPromptRequestParams]) (*protocol.GetPromptResult, error)
+	ListToolsHandler   func(context.Context, RequestContext[*core.ListToolsRequestParams]) (*core.ListToolsResult, error)
+	CallToolHandler    func(context.Context, RequestContext[*core.CallToolRequestParams]) (*core.CallToolResult, error)
+	ListPromptsHandler func(context.Context, RequestContext[*core.ListPromptsRequestParams]) (*core.ListPromptsResult, error)
+	GetPromptHandler   func(context.Context, RequestContext[*core.GetPromptRequestParams]) (*core.GetPromptResult, error)
 
-	ListResourceTemplatesHandler    func(ctx context.Context, req RequestContext[*protocol.ListResourceTemplatesRequestParams]) (*protocol.ListResourceTemplatesResult, error) `json:"-"`
-	ListResourcesHandler            func(ctx context.Context, req RequestContext[*protocol.ListResourcesRequestParams]) (*protocol.ListResourcesResult, error)                 `json:"-"`
-	ReadResourceHandler             func(ctx context.Context, req RequestContext[*protocol.ReadResourceRequestParams]) (*protocol.ReadResourceResult, error)                   `json:"-"`
-	SubscribeToResourcesHandler     func(ctx context.Context, req RequestContext[*protocol.SubscribeRequestParams]) (*protocol.EmptyResult, error)                             `json:"-"`
-	UnsubscribeFromResourcesHandler func(ctx context.Context, req RequestContext[*protocol.UnsubscribeRequestParams]) (*protocol.EmptyResult, error)
+	ListResourceTemplatesHandler    func(ctx context.Context, req RequestContext[*core.ListResourceTemplatesRequestParams]) (*core.ListResourceTemplatesResult, error) `json:"-"`
+	ListResourcesHandler            func(ctx context.Context, req RequestContext[*core.ListResourcesRequestParams]) (*core.ListResourcesResult, error)                 `json:"-"`
+	ReadResourceHandler             func(ctx context.Context, req RequestContext[*core.ReadResourceRequestParams]) (*core.ReadResourceResult, error)                   `json:"-"`
+	SubscribeToResourcesHandler     func(ctx context.Context, req RequestContext[*core.SubscribeRequestParams]) (*core.EmptyResult, error)                             `json:"-"`
+	UnsubscribeFromResourcesHandler func(ctx context.Context, req RequestContext[*core.UnsubscribeRequestParams]) (*core.EmptyResult, error)
 
-	CompleteHandler func(context.Context, RequestContext[*protocol.CompleteRequestParams]) (*protocol.CompleteResult, error)
-	// SetLoggingLevelHandler func(context.Context, RequestContext[*protocol.SetLevelRequestParams]) (*protocol.EmptyResult, error)
+	CompleteHandler func(context.Context, RequestContext[*core.CompleteRequestParams]) (*core.CompleteResult, error)
+	// SetLoggingLevelHandler func(context.Context, RequestContext[*core.SetLevelRequestParams]) (*core.EmptyResult, error)
 }
 
 func (h *McpServerHandlers) OverwriteWithSetHandlers(option *McpServerOptions) {
 	if option.Capabilities == nil {
-		option.Capabilities = &protocol.ServerCapabilities{}
+		option.Capabilities = &core.ServerCapabilities{}
 	}
 	promptsCapability := option.Capabilities.Prompts
 
 	// if h.ListPromptsHandler != nil || h.GetPromptHandler != nil {
 	// 	if promptsCapability == nil {
-	// 		promptsCapability = &protocol.PromptsCapability{}
+	// 		promptsCapability = &core.PromptsCapability{}
 	// 	}
 	// 	if h.ListPromptsHandler != nil {
 	// 		promptsCapability.ListPromptsHandler = h.ListPromptsHandler
@@ -43,7 +43,7 @@ func (h *McpServerHandlers) OverwriteWithSetHandlers(option *McpServerOptions) {
 	resourcesCapability := option.Capabilities.Resources
 	// if h.ListResourcesHandler != nil || h.ReadResourceHandler != nil {
 	// 	if resourcesCapability == nil {
-	// 		resourcesCapability = &protocol.ResourcesCapability{}
+	// 		resourcesCapability = &core.ResourcesCapability{}
 	// 	}
 	// 	if h.ListResourceTemplatesHandler != nil {
 	// 		resourcesCapability.ListResourceTemplatesHandler = h.ListResourceTemplatesHandler
@@ -68,7 +68,7 @@ func (h *McpServerHandlers) OverwriteWithSetHandlers(option *McpServerOptions) {
 	toolsCapability := option.Capabilities.Tools
 	// if h.ListToolsHandler != nil || h.CallToolHandler != nil {
 	// 	if toolsCapability == nil {
-	// 		toolsCapability = &protocol.ToolsCapability{}
+	// 		toolsCapability = &core.ToolsCapability{}
 	// 	}
 	// 	if h.ListToolsHandler != nil {
 	// 		toolsCapability.ListToolsHandler = h.ListToolsHandler
@@ -91,7 +91,7 @@ func (h *McpServerHandlers) OverwriteWithSetHandlers(option *McpServerOptions) {
 	completionsCapability := option.Capabilities.Completions
 	// if h.CompleteHandler != nil {
 	// 	if completionsCapability == nil {
-	// 		completionsCapability = &protocol.CompletionsCapability{}
+	// 		completionsCapability = &core.CompletionsCapability{}
 	// 	}
 	// 	if h.CompleteHandler != nil {
 	// 		completionsCapability.CompleteHandler = h.CompleteHandler

@@ -1,4 +1,4 @@
-package protocol
+package core
 
 const ErrorCodes_ParseError int = -32700
 const ErrorCodes_InvalidRequest int = -32600

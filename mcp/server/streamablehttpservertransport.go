@@ -6,37 +6,37 @@ import (
 	"io"
 	"sync/atomic"
 
-	"github.com/futugyou/mcp/protocol"
+	"github.com/futugyou/mcp/core"
 	"github.com/futugyou/mcp/shared"
 )
 
-var _ protocol.ITransport = (*StreamableHttpServerTransport)(nil)
+var _ core.ITransport = (*StreamableHttpServerTransport)(nil)
 
 type StreamableHttpServerTransport struct {
 	sseWriter         *shared.SseWriter
 	Stateless         bool
-	InitializeRequest protocol.InitializeRequestParams
-	incomingChannel   chan protocol.JsonRpcMessage
+	InitializeRequest core.InitializeRequestParams
+	incomingChannel   chan core.JsonRpcMessage
 	ctx               context.Context
 	cancelFunc        context.CancelFunc
 	getRequestStarted int32
 }
 
-// SessionId implements [protocol.ITransport].
+// SessionId implements [core.ITransport].
 func (s *StreamableHttpServerTransport) SessionId() string {
 	panic("unimplemented")
 }
 
 // GetTransportKind implements ITransport.
-func (s *StreamableHttpServerTransport) GetTransportKind() protocol.TransportKind {
-	return protocol.TransportKindHttp
+func (s *StreamableHttpServerTransport) GetTransportKind() core.TransportKind {
+	return core.TransportKindHttp
 }
 
 func NewStreamableHttpServerTransport() *StreamableHttpServerTransport {
 	ctx, cancelFunc := context.WithCancel(context.Background())
 	return &StreamableHttpServerTransport{
 		sseWriter:         shared.NewSseWriter(""),
-		incomingChannel:   make(chan protocol.JsonRpcMessage),
+		incomingChannel:   make(chan core.JsonRpcMessage),
 		ctx:               ctx,
 		cancelFunc:        cancelFunc,
 		getRequestStarted: 0,
@@ -53,12 +53,12 @@ func (s *StreamableHttpServerTransport) Close() error {
 }
 
 // MessageReader implements ITransport.
-func (s *StreamableHttpServerTransport) MessageReader() <-chan protocol.JsonRpcMessage {
+func (s *StreamableHttpServerTransport) MessageReader() <-chan core.JsonRpcMessage {
 	return s.incomingChannel
 }
 
 // SendMessage implements ITransport.
-func (s *StreamableHttpServerTransport) SendMessage(ctx context.Context, message protocol.JsonRpcMessage) error {
+func (s *StreamableHttpServerTransport) SendMessage(ctx context.Context, message core.JsonRpcMessage) error {
 	if s.Stateless {
 		return fmt.Errorf("stateless mode is not supported for GET requests")
 	}
@@ -87,7 +87,7 @@ func (s *StreamableHttpServerTransport) HandleGetRequest(ctx context.Context, ss
 }
 
 func (s *StreamableHttpServerTransport) HandlePostRequest(ctx context.Context, httpBodies *shared.DuplexPipe) (bool, error) {
-	ctx, _ = protocol.MergeContexts(s.ctx, ctx)
+	ctx, _ = core.MergeContexts(s.ctx, ctx)
 	postTransport := NewStreamableHttpPostTransport(s, httpBodies)
 	return postTransport.Run(ctx)
 }

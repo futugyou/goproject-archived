@@ -1,4 +1,4 @@
-package protocol
+package core
 
 type Argument struct {
 	Name  string `json:"name"`

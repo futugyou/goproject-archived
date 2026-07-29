@@ -7,7 +7,7 @@ import (
 
 	"github.com/futugyou/extensions_ai/abstractions/contents"
 	"github.com/futugyou/extensions_ai/abstractions/functions"
-	"github.com/futugyou/mcp/protocol"
+	"github.com/futugyou/mcp/core"
 	"github.com/futugyou/mcp/shared"
 )
 
@@ -15,12 +15,12 @@ var _ IMcpServerResource = (*AIFunctionMcpServerResource)(nil)
 
 type AIFunctionMcpServerResource struct {
 	AIFunction       functions.AIFunction
-	Resource         *protocol.Resource
-	ResourceTemplate protocol.ResourceTemplate
+	Resource         *core.Resource
+	ResourceTemplate core.ResourceTemplate
 	uriParser        *shared.UriParser
 }
 
-func NewAIFunctionMcpServerResource(function functions.AIFunction, resourceTemplate protocol.ResourceTemplate) *AIFunctionMcpServerResource {
+func NewAIFunctionMcpServerResource(function functions.AIFunction, resourceTemplate core.ResourceTemplate) *AIFunctionMcpServerResource {
 	r := &AIFunctionMcpServerResource{
 		AIFunction:       function,
 		ResourceTemplate: resourceTemplate,
@@ -40,17 +40,17 @@ func (a *AIFunctionMcpServerResource) GetId() string {
 }
 
 // GetProtocolResource implements IMcpServerResource.
-func (a *AIFunctionMcpServerResource) GetProtocolResource() *protocol.Resource {
+func (a *AIFunctionMcpServerResource) GetProtocolResource() *core.Resource {
 	return a.Resource
 }
 
 // GetProtocolResourceTemplate implements IMcpServerResource.
-func (a *AIFunctionMcpServerResource) GetProtocolResourceTemplate() protocol.ResourceTemplate {
+func (a *AIFunctionMcpServerResource) GetProtocolResourceTemplate() core.ResourceTemplate {
 	return a.ResourceTemplate
 }
 
 // Read implements IMcpServerResource.
-func (m *AIFunctionMcpServerResource) Read(ctx context.Context, request RequestContext[*protocol.ReadResourceRequestParams]) (*protocol.ReadResourceResult, error) {
+func (m *AIFunctionMcpServerResource) Read(ctx context.Context, request RequestContext[*core.ReadResourceRequestParams]) (*core.ReadResourceResult, error) {
 	if m == nil || m.AIFunction == nil {
 		return nil, fmt.Errorf("ai function is nil")
 	}
@@ -82,29 +82,29 @@ func (m *AIFunctionMcpServerResource) Read(ctx context.Context, request RequestC
 	}
 
 	switch r := result.(type) {
-	case *protocol.ReadResourceResult:
+	case *core.ReadResourceResult:
 		return r, nil
 
-	case *protocol.ResourceContents:
-		return &protocol.ReadResourceResult{
-			Contents: []protocol.ResourceContents{*r},
+	case *core.ResourceContents:
+		return &core.ReadResourceResult{
+			Contents: []core.ResourceContents{*r},
 		}, nil
-	case []protocol.ResourceContents:
-		return &protocol.ReadResourceResult{
+	case []core.ResourceContents:
+		return &core.ReadResourceResult{
 			Contents: r,
 		}, nil
 
 	case *contents.TextContent:
-		textRes := &protocol.TextResourceContents{
-			BaseResourceContents: protocol.BaseResourceContents{
+		textRes := &core.TextResourceContents{
+			BaseResourceContents: core.BaseResourceContents{
 				Uri:      request.Params.Uri,
 				MimeType: m.ResourceTemplate.MimeType,
 			},
 			Text: r.Text,
 		}
 
-		return &protocol.ReadResourceResult{
-			Contents: []protocol.ResourceContents{
+		return &core.ReadResourceResult{
+			Contents: []core.ResourceContents{
 				{
 					IResourceContents: textRes,
 				},
@@ -112,11 +112,11 @@ func (m *AIFunctionMcpServerResource) Read(ctx context.Context, request RequestC
 		}, nil
 
 	case *contents.DataContent:
-		return &protocol.ReadResourceResult{
-			Contents: []protocol.ResourceContents{
+		return &core.ReadResourceResult{
+			Contents: []core.ResourceContents{
 				{
-					IResourceContents: &protocol.BlobResourceContents{
-						BaseResourceContents: protocol.BaseResourceContents{Uri: request.Params.Uri, MimeType: &r.MediaType},
+					IResourceContents: &core.BlobResourceContents{
+						BaseResourceContents: core.BaseResourceContents{Uri: request.Params.Uri, MimeType: &r.MediaType},
 						Blob:                 r.GetBase64Data(),
 					},
 				},
@@ -124,11 +124,11 @@ func (m *AIFunctionMcpServerResource) Read(ctx context.Context, request RequestC
 		}, nil
 
 	case *string:
-		return &protocol.ReadResourceResult{
-			Contents: []protocol.ResourceContents{
+		return &core.ReadResourceResult{
+			Contents: []core.ResourceContents{
 				{
-					IResourceContents: &protocol.TextResourceContents{
-						BaseResourceContents: protocol.BaseResourceContents{
+					IResourceContents: &core.TextResourceContents{
+						BaseResourceContents: core.BaseResourceContents{
 							Uri:      request.Params.Uri,
 							MimeType: m.ResourceTemplate.MimeType,
 						},
@@ -138,11 +138,11 @@ func (m *AIFunctionMcpServerResource) Read(ctx context.Context, request RequestC
 			},
 		}, nil
 	case []string:
-		contents := []protocol.ResourceContents{}
+		contents := []core.ResourceContents{}
 		for _, v := range r {
-			contents = append(contents, protocol.ResourceContents{
-				IResourceContents: &protocol.TextResourceContents{
-					BaseResourceContents: protocol.BaseResourceContents{
+			contents = append(contents, core.ResourceContents{
+				IResourceContents: &core.TextResourceContents{
+					BaseResourceContents: core.BaseResourceContents{
 						Uri:      request.Params.Uri,
 						MimeType: m.ResourceTemplate.MimeType,
 					},
@@ -150,16 +150,16 @@ func (m *AIFunctionMcpServerResource) Read(ctx context.Context, request RequestC
 					Text: v,
 				}})
 		}
-		return &protocol.ReadResourceResult{
+		return &core.ReadResourceResult{
 			Contents: contents,
 		}, nil
 	case []contents.IAIContent:
-		conts := []protocol.ResourceContents{}
+		conts := []core.ResourceContents{}
 		for _, v := range r {
 			if a, ok := v.(*contents.TextContent); ok {
-				conts = append(conts, protocol.ResourceContents{
-					IResourceContents: &protocol.TextResourceContents{
-						BaseResourceContents: protocol.BaseResourceContents{
+				conts = append(conts, core.ResourceContents{
+					IResourceContents: &core.TextResourceContents{
+						BaseResourceContents: core.BaseResourceContents{
 							Uri:      request.Params.Uri,
 							MimeType: m.ResourceTemplate.MimeType,
 						},
@@ -167,14 +167,14 @@ func (m *AIFunctionMcpServerResource) Read(ctx context.Context, request RequestC
 					}})
 			}
 			if a, ok := v.(*contents.DataContent); ok {
-				conts = append(conts, protocol.ResourceContents{
-					IResourceContents: &protocol.BlobResourceContents{
-						BaseResourceContents: protocol.BaseResourceContents{Uri: request.Params.Uri, MimeType: &a.MediaType},
+				conts = append(conts, core.ResourceContents{
+					IResourceContents: &core.BlobResourceContents{
+						BaseResourceContents: core.BaseResourceContents{Uri: request.Params.Uri, MimeType: &a.MediaType},
 						Blob:                 a.GetBase64Data(),
 					}})
 			}
 		}
-		return &protocol.ReadResourceResult{
+		return &core.ReadResourceResult{
 			Contents: conts,
 		}, nil
 	default:

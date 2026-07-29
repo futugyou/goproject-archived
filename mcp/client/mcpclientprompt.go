@@ -3,22 +3,22 @@ package client
 import (
 	"context"
 
-	"github.com/futugyou/mcp/protocol"
+	"github.com/futugyou/mcp/core"
 )
 
 type McpClientPrompt struct {
-	prompt protocol.Prompt
+	prompt core.Prompt
 	client IMcpClient
 }
 
-func NewMcpClientPrompt(prompt protocol.Prompt, client IMcpClient) *McpClientPrompt {
+func NewMcpClientPrompt(prompt core.Prompt, client IMcpClient) *McpClientPrompt {
 	return &McpClientPrompt{
 		prompt: prompt,
 		client: client,
 	}
 }
 
-func (p *McpClientPrompt) GetPrompt() *protocol.Prompt {
+func (p *McpClientPrompt) GetPrompt() *core.Prompt {
 	return &p.prompt
 }
 
@@ -30,6 +30,6 @@ func (p *McpClientPrompt) GetDescription() *string {
 	return p.prompt.Description
 }
 
-func (p *McpClientPrompt) Get(ctx context.Context, arguments map[string]interface{}) (*protocol.GetPromptResult, error) {
+func (p *McpClientPrompt) Get(ctx context.Context, arguments map[string]interface{}) (*core.GetPromptResult, error) {
 	return p.client.GetPrompt(ctx, p.prompt.Name, arguments)
 }

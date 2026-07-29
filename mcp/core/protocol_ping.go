@@ -1,4 +1,4 @@
-package protocol
+package core
 
 type PingResult struct {
 	Meta       map[string]any `json:"_meta,omitempty"`

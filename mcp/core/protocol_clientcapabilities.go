@@ -1,4 +1,4 @@
-package protocol
+package core
 
 // ClientCapabilities represents the capabilities supported by the client.
 type ClientCapabilities struct {

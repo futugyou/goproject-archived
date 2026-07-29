@@ -5,13 +5,13 @@ import (
 
 	"github.com/futugyou/extensions_ai/abstractions/chatcompletion"
 	"github.com/futugyou/extensions_ai/abstractions/contents"
-	"github.com/futugyou/mcp/protocol"
+	"github.com/futugyou/mcp/core"
 )
 
-func ResourceContentsToAIContent(content protocol.ResourceContents) contents.IAIContent {
+func ResourceContentsToAIContent(content core.ResourceContents) contents.IAIContent {
 	var c contents.IAIContent
 	switch content := content.IResourceContents.(type) {
-	case *protocol.BlobResourceContents:
+	case *core.BlobResourceContents:
 		decoded := content.Blob
 		mimeType := "application/octet-stream"
 		if content.MimeType != nil && len(*content.MimeType) > 0 {
@@ -20,7 +20,7 @@ func ResourceContentsToAIContent(content protocol.ResourceContents) contents.IAI
 		d := contents.NewDataContent(string(decoded), mimeType)
 		d.AddAdditionalProperty("uri", content.Uri)
 		c = d
-	case *protocol.TextResourceContents:
+	case *core.TextResourceContents:
 		d := contents.NewTextContent(content.Text)
 		d.AddAdditionalProperty("uri", content.Uri)
 		c = d
@@ -28,25 +28,25 @@ func ResourceContentsToAIContent(content protocol.ResourceContents) contents.IAI
 	return c
 }
 
-func ContentToAIContent(content protocol.ContentBlock) contents.IAIContent {
+func ContentToAIContent(content core.ContentBlock) contents.IAIContent {
 	var c contents.IAIContent
 
 	switch block := content.IContentBlock.(type) {
-	case *protocol.ImageContentBlock:
+	case *core.ImageContentBlock:
 		if len(block.GetMeta()) > 0 && len(block.Data) > 0 {
 			d := contents.NewDataContent(string(block.Data), block.MimeType)
 			d.RawRepresentation = content
 			c = d
 		}
-	case *protocol.AudioContentBlock:
+	case *core.AudioContentBlock:
 		if len(block.GetMeta()) > 0 && len(block.Data) > 0 {
 			d := contents.NewDataContent(string(block.Data), block.MimeType)
 			d.RawRepresentation = content
 			c = d
 		}
-	case *protocol.EmbeddedResourceBlock:
+	case *core.EmbeddedResourceBlock:
 		c = ResourceContentsToAIContent(block.Resource)
-	case *protocol.TextContentBlock:
+	case *core.TextContentBlock:
 		d := contents.NewTextContent(block.Text)
 		d.RawRepresentation = content
 		c = d
@@ -55,40 +55,40 @@ func ContentToAIContent(content protocol.ContentBlock) contents.IAIContent {
 	return c
 }
 
-func ChatMessageToPromptMessages(chatMessage chatcompletion.ChatMessage) []protocol.PromptMessage {
-	r := protocol.RoleAssistant
+func ChatMessageToPromptMessages(chatMessage chatcompletion.ChatMessage) []core.PromptMessage {
+	r := core.RoleAssistant
 	if chatMessage.Role == chatcompletion.RoleUser {
-		r = protocol.RoleUser
+		r = core.RoleUser
 	}
-	messages := []protocol.PromptMessage{}
+	messages := []core.PromptMessage{}
 
 	for _, content := range chatMessage.Contents {
 		if c, ok := content.(contents.TextContent); ok {
-			messages = append(messages, protocol.PromptMessage{Role: r, Content: AIContentToContent(c)})
+			messages = append(messages, core.PromptMessage{Role: r, Content: AIContentToContent(c)})
 		}
 		if c, ok := content.(contents.DataContent); ok {
-			messages = append(messages, protocol.PromptMessage{Role: r, Content: AIContentToContent(c)})
+			messages = append(messages, core.PromptMessage{Role: r, Content: AIContentToContent(c)})
 		}
 	}
 	return messages
 }
 
-func AIContentToContent(content contents.IAIContent) protocol.ContentBlock {
+func AIContentToContent(content contents.IAIContent) core.ContentBlock {
 	switch content := content.(type) {
 	case *contents.TextContent:
-		return protocol.ContentBlock{
-			IContentBlock: &protocol.TextContentBlock{
+		return core.ContentBlock{
+			IContentBlock: &core.TextContentBlock{
 				Text: content.Text,
 			}}
 	case *contents.DataContent:
-		c := protocol.ContentBlock{}
+		c := core.ContentBlock{}
 		if content.MediaTypeStartsWith("image") {
-			c.IContentBlock = &protocol.ImageContentBlock{
+			c.IContentBlock = &core.ImageContentBlock{
 				MimeType: content.MediaType,
 				Data:     content.Data,
 			}
 		} else if content.MediaTypeStartsWith("audio") {
-			c.IContentBlock = &protocol.AudioContentBlock{
+			c.IContentBlock = &core.AudioContentBlock{
 				MimeType: content.MediaType,
 				Data:     content.Data,
 			}
@@ -100,15 +100,15 @@ func AIContentToContent(content contents.IAIContent) protocol.ContentBlock {
 			data = []byte{}
 		}
 
-		return protocol.ContentBlock{
-			IContentBlock: &protocol.TextContentBlock{
+		return core.ContentBlock{
+			IContentBlock: &core.TextContentBlock{
 				Text: string(data),
 			},
 		}
 	}
 }
 
-func ResourceContentsListToAIContents(cont []protocol.ResourceContents) []contents.IAIContent {
+func ResourceContentsListToAIContents(cont []core.ResourceContents) []contents.IAIContent {
 	list := []contents.IAIContent{}
 	for _, content := range cont {
 		list = append(list, ResourceContentsToAIContent(content))
@@ -116,7 +116,7 @@ func ResourceContentsListToAIContents(cont []protocol.ResourceContents) []conten
 	return list
 }
 
-func ListContentToAIContents(cont []protocol.ContentBlock) []contents.IAIContent {
+func ListContentToAIContents(cont []core.ContentBlock) []contents.IAIContent {
 	list := []contents.IAIContent{}
 	for _, content := range cont {
 		list = append(list, ContentToAIContent(content))
@@ -124,7 +124,7 @@ func ListContentToAIContents(cont []protocol.ContentBlock) []contents.IAIContent
 	return list
 }
 
-func ToChatMessages(promptResult protocol.GetPromptResult) []chatcompletion.ChatMessage {
+func ToChatMessages(promptResult core.GetPromptResult) []chatcompletion.ChatMessage {
 	list := []chatcompletion.ChatMessage{}
 	for _, v := range promptResult.Messages {
 		list = append(list, PromptMessageToChatMessage(v))
@@ -132,9 +132,9 @@ func ToChatMessages(promptResult protocol.GetPromptResult) []chatcompletion.Chat
 	return list
 }
 
-func PromptMessageToChatMessage(promptMessage protocol.PromptMessage) chatcompletion.ChatMessage {
+func PromptMessageToChatMessage(promptMessage core.PromptMessage) chatcompletion.ChatMessage {
 	role := chatcompletion.RoleAssistant
-	if promptMessage.Role == protocol.RoleUser {
+	if promptMessage.Role == core.RoleUser {
 		role = chatcompletion.RoleUser
 	}
 	return chatcompletion.ChatMessage{

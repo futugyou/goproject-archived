@@ -1,4 +1,4 @@
-package protocol
+package core
 
 type CompleteResult struct {
 	Meta       map[string]any `json:"_meta,omitempty"`

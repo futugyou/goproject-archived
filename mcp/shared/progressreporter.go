@@ -3,23 +3,23 @@ package shared
 import (
 	"context"
 
-	"github.com/futugyou/mcp/protocol"
+	"github.com/futugyou/mcp/core"
 )
 
 type NullProgress struct {
 }
 
-func (p *NullProgress) Report(value protocol.ProgressNotificationValue) {}
+func (p *NullProgress) Report(value core.ProgressNotificationValue) {}
 
 type TokenProgress struct {
 	endpoint      IMcpEndpoint
-	progressToken protocol.ProgressToken
+	progressToken core.ProgressToken
 }
 
-func NewTokenProgress(endpoint IMcpEndpoint, progressToken protocol.ProgressToken) *TokenProgress {
+func NewTokenProgress(endpoint IMcpEndpoint, progressToken core.ProgressToken) *TokenProgress {
 	return &TokenProgress{endpoint, progressToken}
 }
 
-func (p *TokenProgress) Report(value protocol.ProgressNotificationValue) {
+func (p *TokenProgress) Report(value core.ProgressNotificationValue) {
 	p.endpoint.NotifyProgress(context.Background(), p.progressToken, value)
 }

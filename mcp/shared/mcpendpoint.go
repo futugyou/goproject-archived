@@ -5,7 +5,7 @@ import (
 	"errors"
 	"sync"
 
-	"github.com/futugyou/mcp/protocol"
+	"github.com/futugyou/mcp/core"
 )
 
 var _ IMcpEndpoint = (*BaseMcpEndpoint)(nil)
@@ -26,19 +26,19 @@ func (e *BaseMcpEndpoint) GetMcpSession() *McpSession {
 }
 
 // NotifyProgress implements IMcpEndpoint.
-func (e *BaseMcpEndpoint) NotifyProgress(ctx context.Context, progressToken protocol.ProgressToken, progress protocol.ProgressNotificationValue) error {
-	// p := protocol.ProgressNotification{ProgressToken: &progressToken, Progress: &progress}
+func (e *BaseMcpEndpoint) NotifyProgress(ctx context.Context, progressToken core.ProgressToken, progress core.ProgressNotificationValue) error {
+	// p := core.ProgressNotification{ProgressToken: &progressToken, Progress: &progress}
 	// data, err := json.Marshal(p)
 	// if err != nil {
 	// 	return err
 	// }
-	// notification := protocol.NewJsonRpcNotification(protocol.NotificationMethods_ProgressNotification, data)
+	// notification := core.NewJsonRpcNotification(core.NotificationMethods_ProgressNotification, data)
 	// return e.SendNotification(ctx, *notification)
 	return nil
 }
 
 // SendNotification implements IMcpEndpoint.
-func (e *BaseMcpEndpoint) SendNotification(ctx context.Context, notification protocol.JsonRpcNotification) error {
+func (e *BaseMcpEndpoint) SendNotification(ctx context.Context, notification core.JsonRpcNotification) error {
 	return e.SendMessage(ctx, &notification)
 }
 
@@ -66,11 +66,11 @@ func (e *BaseMcpEndpoint) GetNotificationHandlers() *NotificationHandlers {
 	return e.notifHandlers
 }
 
-func (e *BaseMcpEndpoint) InitializeSession(transport protocol.ITransport, isServer bool) {
+func (e *BaseMcpEndpoint) InitializeSession(transport core.ITransport, isServer bool) {
 	e.session = NewMcpSession(isServer, transport, e.endpointName, e.reqHandlers, e.notifHandlers)
 }
 
-func (e *BaseMcpEndpoint) StartSession(ctx context.Context, transport protocol.ITransport) {
+func (e *BaseMcpEndpoint) StartSession(ctx context.Context, transport core.ITransport) {
 	childCtx, cancel := context.WithCancel(ctx)
 	e.sessionCts = cancel
 
@@ -89,14 +89,14 @@ func (e *BaseMcpEndpoint) CancelSession() {
 	}
 }
 
-func (e *BaseMcpEndpoint) SendRequest(ctx context.Context, req *protocol.JsonRpcRequest) (*protocol.JsonRpcResponse, error) {
+func (e *BaseMcpEndpoint) SendRequest(ctx context.Context, req *core.JsonRpcRequest) (*core.JsonRpcResponse, error) {
 	if e == nil || e.session == nil {
 		return nil, errors.New("session not initialized")
 	}
 	return e.session.SendRequest(ctx, req)
 }
 
-func (e *BaseMcpEndpoint) SendMessage(ctx context.Context, msg protocol.IJsonRpcMessage) error {
+func (e *BaseMcpEndpoint) SendMessage(ctx context.Context, msg core.IJsonRpcMessage) error {
 	// if e == nil || e.session == nil {
 	// 	return errors.New("session not initialized")
 	// }
@@ -104,7 +104,7 @@ func (e *BaseMcpEndpoint) SendMessage(ctx context.Context, msg protocol.IJsonRpc
 	return nil
 }
 
-// func (e *BaseMcpEndpoint) RegisterNotificationHandler(method string, handler protocol.NotificationHandler) *RegistrationHandle {
+// func (e *BaseMcpEndpoint) RegisterNotificationHandler(method string, handler core.NotificationHandler) *RegistrationHandle {
 // 	if e.session == nil {
 // 		return nil
 // 	}

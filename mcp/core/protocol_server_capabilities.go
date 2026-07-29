@@ -1,4 +1,4 @@
-package protocol
+package core
 
 type ServerCapabilities struct {
 	Experimental map[string]any         `json:"experimental,omitempty"`

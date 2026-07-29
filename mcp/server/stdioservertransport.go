@@ -4,8 +4,8 @@ import (
 	"bufio"
 	"os"
 
+	"github.com/futugyou/mcp/core"
 	"github.com/futugyou/mcp/logging"
-	"github.com/futugyou/mcp/protocol"
 )
 
 type StdioServerTransport struct {
@@ -23,6 +23,6 @@ func NewStdioServerTransport(serverName string, logger logging.Logger) *StdioSer
 	return t
 }
 
-func (t *StdioServerTransport) GetTransportKind() protocol.TransportKind {
-	return protocol.TransportKindStdio
+func (t *StdioServerTransport) GetTransportKind() core.TransportKind {
+	return core.TransportKindStdio
 }

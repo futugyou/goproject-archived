@@ -1,4 +1,4 @@
-package protocol
+package core
 
 type InitializeRequestParams struct {
 	RequestParams   `json:",inline"`

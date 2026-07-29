@@ -3,19 +3,19 @@ package client
 import (
 	"context"
 
-	"github.com/futugyou/mcp/protocol"
+	"github.com/futugyou/mcp/core"
 )
 
 type McpClientResource struct {
 	client           IMcpClient
-	ProtocolResource protocol.Resource
+	ProtocolResource core.Resource
 	Uri              string
 	Name             string
 	Description      *string
 	MimeTyp          *string
 }
 
-func NewMcpClientResource(client IMcpClient, protocolResource protocol.Resource) *McpClientResource {
+func NewMcpClientResource(client IMcpClient, protocolResource core.Resource) *McpClientResource {
 	return &McpClientResource{
 		client:           client,
 		ProtocolResource: protocolResource,
@@ -26,6 +26,6 @@ func NewMcpClientResource(client IMcpClient, protocolResource protocol.Resource)
 	}
 }
 
-func (m *McpClientResource) Read(ctx context.Context) (*protocol.ReadResourceResult, error) {
+func (m *McpClientResource) Read(ctx context.Context) (*core.ReadResourceResult, error) {
 	return m.client.ReadResource(ctx, m.Uri)
 }

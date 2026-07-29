@@ -3,23 +3,23 @@ package server
 import (
 	"time"
 
-	"github.com/futugyou/mcp/protocol"
+	"github.com/futugyou/mcp/core"
 )
 
 type McpServerOptions struct {
-	ServerInfo            protocol.Implementation
-	Capabilities          *protocol.ServerCapabilities
+	ServerInfo            core.Implementation
+	Capabilities          *core.ServerCapabilities
 	ProtocolVersion       string        // "2024-11-05"
 	InitializationTimeout time.Duration //  60 sec.
 	ServerInstructions    string
 	ScopeRequests         bool
-	KnownClientInfo       *protocol.Implementation
+	KnownClientInfo       *core.Implementation
 }
 
 func NewMcpServerOptions() *McpServerOptions {
 	return &McpServerOptions{
-		ServerInfo:            protocol.Implementation{},
-		Capabilities:          &protocol.ServerCapabilities{},
+		ServerInfo:            core.Implementation{},
+		Capabilities:          &core.ServerCapabilities{},
 		ProtocolVersion:       "2024-11-05",
 		InitializationTimeout: time.Duration(60) * time.Second,
 		ServerInstructions:    "",

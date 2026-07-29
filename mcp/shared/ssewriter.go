@@ -9,24 +9,24 @@ import (
 	"io"
 	"sync"
 
-	"github.com/futugyou/mcp/protocol"
+	"github.com/futugyou/mcp/core"
 	"github.com/futugyou/yomawari/runtime/sse"
 )
 
 type SseWriter struct {
-	messages        chan sse.SseItem[protocol.JsonRpcMessage]
+	messages        chan sse.SseItem[core.JsonRpcMessage]
 	mu              sync.Mutex
 	ctx             context.Context
 	cancelFunc      context.CancelFunc
 	messageEndpoint string
 	task            chan error
 	disposed        bool
-	MessageFilter   func(ctx context.Context, mesg chan sse.SseItem[protocol.JsonRpcMessage]) chan sse.SseItem[protocol.JsonRpcMessage]
+	MessageFilter   func(ctx context.Context, mesg chan sse.SseItem[core.JsonRpcMessage]) chan sse.SseItem[core.JsonRpcMessage]
 }
 
 func NewSseWriter(messageEndpoint string) *SseWriter {
 	return &SseWriter{
-		messages:        make(chan sse.SseItem[protocol.JsonRpcMessage]),
+		messages:        make(chan sse.SseItem[core.JsonRpcMessage]),
 		messageEndpoint: messageEndpoint,
 	}
 }
@@ -47,7 +47,7 @@ func (s *SseWriter) WriteAll(ctx context.Context, sseResponseStream io.Writer) c
 
 	if len(s.messageEndpoint) > 0 {
 		select {
-		case s.messages <- *sse.NewSseItem[protocol.JsonRpcMessage](protocol.JsonRpcMessage{}, "endpoint"):
+		case s.messages <- *sse.NewSseItem[core.JsonRpcMessage](core.JsonRpcMessage{}, "endpoint"):
 		default:
 			s.task <- fmt.Errorf("you must call RunAsync before calling SendMessage")
 			return s.task
@@ -70,8 +70,8 @@ func (s *SseWriter) WriteAll(ctx context.Context, sseResponseStream io.Writer) c
 	return s.task
 }
 
-func (s *SseWriter) writeJsonRpcMessageToBuffer() sse.ItemFormatter[protocol.JsonRpcMessage] {
-	return func(item sse.SseItem[protocol.JsonRpcMessage], writer *bufio.Writer) error {
+func (s *SseWriter) writeJsonRpcMessageToBuffer() sse.ItemFormatter[core.JsonRpcMessage] {
+	return func(item sse.SseItem[core.JsonRpcMessage], writer *bufio.Writer) error {
 		if item.EventType == "endpoint" && len(s.messageEndpoint) > 0 {
 			_, err := fmt.Fprintf(writer, "%s", base64.URLEncoding.EncodeToString([]byte(s.messageEndpoint)))
 			return err
@@ -85,7 +85,7 @@ func (s *SseWriter) writeJsonRpcMessageToBuffer() sse.ItemFormatter[protocol.Jso
 	}
 }
 
-func (s *SseWriter) SendMessage(ctx context.Context, message protocol.JsonRpcMessage) error {
+func (s *SseWriter) SendMessage(ctx context.Context, message core.JsonRpcMessage) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -95,7 +95,7 @@ func (s *SseWriter) SendMessage(ctx context.Context, message protocol.JsonRpcMes
 
 	var err error
 	select {
-	case s.messages <- *sse.NewSseItem[protocol.JsonRpcMessage](message, "message"):
+	case s.messages <- *sse.NewSseItem[core.JsonRpcMessage](message, "message"):
 	default:
 		err = fmt.Errorf("something went wrong sending the message")
 	}

@@ -9,13 +9,13 @@ import (
 	"github.com/futugyou/extensions_ai/abstractions/contents"
 	"github.com/futugyou/extensions_ai/abstractions/functions"
 	"github.com/futugyou/mcp"
-	"github.com/futugyou/mcp/protocol"
+	"github.com/futugyou/mcp/core"
 )
 
 var _ IMcpServerTool = (*AIFunctionMcpServerTool)(nil)
 
 type AIFunctionMcpServerTool struct {
-	ProtocolTool *protocol.Tool
+	ProtocolTool *core.Tool
 	AIFunction   functions.AIFunction
 }
 
@@ -28,7 +28,7 @@ func (a *AIFunctionMcpServerTool) GetId() string {
 }
 
 // GetProtocolTool implements IMcpServerTool.
-func (a *AIFunctionMcpServerTool) GetProtocolTool() *protocol.Tool {
+func (a *AIFunctionMcpServerTool) GetProtocolTool() *core.Tool {
 	if a == nil {
 		return nil
 	}
@@ -36,7 +36,7 @@ func (a *AIFunctionMcpServerTool) GetProtocolTool() *protocol.Tool {
 }
 
 // Invoke implements IMcpServerTool.
-func (m *AIFunctionMcpServerTool) Invoke(ctx context.Context, request RequestContext[*protocol.CallToolRequestParams]) (*protocol.CallToolResult, error) {
+func (m *AIFunctionMcpServerTool) Invoke(ctx context.Context, request RequestContext[*core.CallToolRequestParams]) (*core.CallToolResult, error) {
 
 	if m == nil || m.AIFunction == nil {
 		return nil, fmt.Errorf("ai function is nil")
@@ -72,32 +72,32 @@ func (m *AIFunctionMcpServerTool) Invoke(ctx context.Context, request RequestCon
 		if _, ok := r.(contents.ErrorContent); ok {
 			isError = true
 		}
-		rr := protocol.NewCallToolResultWithContent(mcp.AIContentToContent(r))
+		rr := core.NewCallToolResultWithContent(mcp.AIContentToContent(r))
 		rr.IsError = isError
 		return rr, nil
 	case *string:
-		result := &protocol.CallToolResult{}
-		result.Content = append(result.Content, protocol.ContentBlock{
-			IContentBlock: &protocol.TextContentBlock{
+		result := &core.CallToolResult{}
+		result.Content = append(result.Content, core.ContentBlock{
+			IContentBlock: &core.TextContentBlock{
 				Text: *r,
 			}})
 		return result, nil
-	case *protocol.ContentBlock:
-		return protocol.NewCallToolResultWithContent(*r), nil
+	case *core.ContentBlock:
+		return core.NewCallToolResultWithContent(*r), nil
 	case []string:
-		result := &protocol.CallToolResult{}
+		result := &core.CallToolResult{}
 		for _, v := range r {
-			result.Content = append(result.Content, protocol.ContentBlock{
-				IContentBlock: &protocol.TextContentBlock{
+			result.Content = append(result.Content, core.ContentBlock{
+				IContentBlock: &core.TextContentBlock{
 					Text: v,
 				}})
 		}
 		return result, nil
 	case []contents.IAIContent:
 		return onvertAIContentEnumerableToCallToolResponse(r), nil
-	case []protocol.ContentBlock:
-		return protocol.NewCallToolResultWithContents(r), nil
-	case *protocol.CallToolResult:
+	case []core.ContentBlock:
+		return core.NewCallToolResultWithContents(r), nil
+	case *core.CallToolResult:
 		return r, nil
 	default:
 		// how to marshal?
@@ -106,17 +106,17 @@ func (m *AIFunctionMcpServerTool) Invoke(ctx context.Context, request RequestCon
 			return nil, err
 		}
 		text := string(data)
-		result := &protocol.CallToolResult{}
-		result.Content = append(result.Content, protocol.ContentBlock{
-			IContentBlock: &protocol.TextContentBlock{
+		result := &core.CallToolResult{}
+		result.Content = append(result.Content, core.ContentBlock{
+			IContentBlock: &core.TextContentBlock{
 				Text: text,
 			}})
 		return result, nil
 	}
 }
 
-func onvertAIContentEnumerableToCallToolResponse(contentItems []contents.IAIContent) *protocol.CallToolResult {
-	contentList := []protocol.ContentBlock{}
+func onvertAIContentEnumerableToCallToolResponse(contentItems []contents.IAIContent) *core.CallToolResult {
+	contentList := []core.ContentBlock{}
 	allErrorContent := true
 	hasAny := false
 
@@ -129,7 +129,7 @@ func onvertAIContentEnumerableToCallToolResponse(contentItems []contents.IAICont
 		}
 	}
 
-	return &protocol.CallToolResult{
+	return &core.CallToolResult{
 		Content: contentList,
 		IsError: allErrorContent && hasAny,
 	}

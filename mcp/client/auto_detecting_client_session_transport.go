@@ -4,20 +4,20 @@ import (
 	"context"
 	"net/http"
 
-	"github.com/futugyou/mcp/protocol"
+	"github.com/futugyou/mcp/core"
 )
 
-var _ protocol.ITransport = (*AutoDetectingClientSessionTransport)(nil)
+var _ core.ITransport = (*AutoDetectingClientSessionTransport)(nil)
 
 type AutoDetectingClientSessionTransport struct {
 	options         *SseClientTransportOptions
 	httpClient      *http.Client
 	name            string
-	messageChannel  chan protocol.JsonRpcMessage
-	activeTransport protocol.ITransport
+	messageChannel  chan core.JsonRpcMessage
+	activeTransport core.ITransport
 }
 
-// SessionId implements [protocol.ITransport].
+// SessionId implements [core.ITransport].
 func (a *AutoDetectingClientSessionTransport) SessionId() string {
 	panic("unimplemented")
 }
@@ -30,11 +30,11 @@ func NewAutoDetectingClientSessionTransport(httpClient *http.Client, options *Ss
 		options:        options,
 		httpClient:     httpClient,
 		name:           name,
-		messageChannel: make(chan protocol.JsonRpcMessage),
+		messageChannel: make(chan core.JsonRpcMessage),
 	}
 }
 
-// Close implements protocol.ITransport.
+// Close implements core.ITransport.
 func (a *AutoDetectingClientSessionTransport) Close() error {
 	var err error
 	if a.activeTransport != nil {
@@ -46,21 +46,21 @@ func (a *AutoDetectingClientSessionTransport) Close() error {
 	return err
 }
 
-// GetTransportKind implements protocol.ITransport.
-func (a *AutoDetectingClientSessionTransport) GetTransportKind() protocol.TransportKind {
+// GetTransportKind implements core.ITransport.
+func (a *AutoDetectingClientSessionTransport) GetTransportKind() core.TransportKind {
 	// if a.activeTransport != nil {
 	// 	return a.activeTransport.GetTransportKind()
 	// }
 	panic("active transport is nil")
 }
 
-// MessageReader implements protocol.ITransport.
-func (a *AutoDetectingClientSessionTransport) MessageReader() <-chan protocol.JsonRpcMessage {
+// MessageReader implements core.ITransport.
+func (a *AutoDetectingClientSessionTransport) MessageReader() <-chan core.JsonRpcMessage {
 	return a.messageChannel
 }
 
-// SendMessage implements protocol.ITransport.
-func (a *AutoDetectingClientSessionTransport) SendMessage(ctx context.Context, message protocol.JsonRpcMessage) error {
+// SendMessage implements core.ITransport.
+func (a *AutoDetectingClientSessionTransport) SendMessage(ctx context.Context, message core.JsonRpcMessage) error {
 	if a.activeTransport == nil {
 		return a.initialize(ctx, message)
 	}
@@ -68,12 +68,12 @@ func (a *AutoDetectingClientSessionTransport) SendMessage(ctx context.Context, m
 	return a.activeTransport.SendMessage(ctx, message)
 }
 
-// Close implements protocol.ITransport.
-func (a *AutoDetectingClientSessionTransport) ActiveTransport() protocol.ITransport {
+// Close implements core.ITransport.
+func (a *AutoDetectingClientSessionTransport) ActiveTransport() core.ITransport {
 	return a.activeTransport
 }
 
-func (a *AutoDetectingClientSessionTransport) initialize(ctx context.Context, message protocol.JsonRpcMessage) error {
+func (a *AutoDetectingClientSessionTransport) initialize(ctx context.Context, message core.JsonRpcMessage) error {
 	// Try StreamableHttp first
 	streamableHttpTransport := NewStreamableHttpClientSessionTransport(a.httpClient, a.options, a.name)
 	err := streamableHttpTransport.SendMessage(ctx, message)
@@ -86,7 +86,7 @@ func (a *AutoDetectingClientSessionTransport) initialize(ctx context.Context, me
 	return a.initializeSseTransport(ctx, message)
 }
 
-func (s *AutoDetectingClientSessionTransport) initializeSseTransport(ctx context.Context, message protocol.JsonRpcMessage) error {
+func (s *AutoDetectingClientSessionTransport) initializeSseTransport(ctx context.Context, message core.JsonRpcMessage) error {
 	// sseTransport := NewSseClientSessionTransport(s.name, s.options, s.httpClient, s.messageChannel)
 	// err := sseTransport.Connect(ctx)
 	// if err != nil {

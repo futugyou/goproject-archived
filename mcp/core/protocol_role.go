@@ -1,4 +1,4 @@
-package protocol
+package core
 
 type Role string
 

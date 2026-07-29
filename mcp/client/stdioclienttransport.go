@@ -12,8 +12,8 @@ import (
 	"time"
 
 	"github.com/futugyou/mcp/configuration"
+	"github.com/futugyou/mcp/core"
 	"github.com/futugyou/mcp/logging"
-	"github.com/futugyou/mcp/protocol"
 )
 
 var _ IClientTransport = (*StdioClientTransport)(nil)
@@ -57,7 +57,7 @@ func convertEnvVars(envVars map[string]string) []string {
 }
 
 // Connect implements IClientTransport.
-func (s *StdioClientTransport) Connect(context.Context) (protocol.ITransport, error) {
+func (s *StdioClientTransport) Connect(context.Context) (core.ITransport, error) {
 	endpointName := fmt.Sprintf("Client (stdio) for (%s: %s)", s.serverConfig.Id, s.serverConfig.Name)
 	fmt.Println("Connecting:", endpointName)
 

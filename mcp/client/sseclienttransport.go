@@ -6,7 +6,7 @@ import (
 	"net/http"
 
 	"github.com/futugyou/mcp/configuration"
-	"github.com/futugyou/mcp/protocol"
+	"github.com/futugyou/mcp/core"
 )
 
 var _ IClientTransport = (*SseClientTransport)(nil)
@@ -57,7 +57,7 @@ func NewSseClientTransport(serverConfig *configuration.McpServerConfig, options 
 }
 
 // Connect implements IClientTransport.
-func (s *SseClientTransport) Connect(ctx context.Context) (protocol.ITransport, error) {
+func (s *SseClientTransport) Connect(ctx context.Context) (core.ITransport, error) {
 
 	switch s.options.HttpTransportMode {
 	case HttpTransportModeAutoDetect:
@@ -71,7 +71,7 @@ func (s *SseClientTransport) Connect(ctx context.Context) (protocol.ITransport, 
 	}
 }
 
-func (s *SseClientTransport) connectSseTransport(ctx context.Context) (protocol.ITransport, error) {
+func (s *SseClientTransport) connectSseTransport(ctx context.Context) (core.ITransport, error) {
 	sessionTransport := NewSseClientSessionTransport(s.name, s.options, s.httpClient, nil)
 	err := sessionTransport.Connect(ctx)
 	if err != nil {

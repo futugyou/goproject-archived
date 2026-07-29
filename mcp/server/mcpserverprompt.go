@@ -3,11 +3,11 @@ package server
 import (
 	"context"
 
-	"github.com/futugyou/mcp/protocol"
+	"github.com/futugyou/mcp/core"
 )
 
 type IMcpServerPrompt interface {
 	IMcpServerPrimitive
-	GetProtocolPrompt() *protocol.Prompt
-	Get(ctx context.Context, request RequestContext[*protocol.GetPromptRequestParams]) (*protocol.GetPromptResult, error)
+	GetProtocolPrompt() *core.Prompt
+	Get(ctx context.Context, request RequestContext[*core.GetPromptRequestParams]) (*core.GetPromptResult, error)
 }

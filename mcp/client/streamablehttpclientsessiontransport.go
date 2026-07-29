@@ -5,11 +5,11 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/futugyou/mcp/protocol"
+	"github.com/futugyou/mcp/core"
 )
 
 type StreamableHttpClientSessionTransport struct {
-	*protocol.TransportBase
+	*core.TransportBase
 	httpClient   *http.Client
 	Options      *SseClientTransportOptions
 	ctx          context.Context
@@ -28,7 +28,7 @@ func NewStreamableHttpClientSessionTransport(httpClient *http.Client, options *S
 		options = &SseClientTransportOptions{}
 	}
 	ctx, cancel := context.WithCancel(context.Background())
-	// base := protocol.ClientTransportBase()
+	// base := core.ClientTransportBase()
 	// base.Name = name
 	transport := &StreamableHttpClientSessionTransport{
 		// TransportBase:  base,
@@ -43,15 +43,15 @@ func NewStreamableHttpClientSessionTransport(httpClient *http.Client, options *S
 	return transport
 }
 
-func (t *StreamableHttpClientSessionTransport) GetTransportKind() protocol.TransportKind {
-	return protocol.TransportKindSse
+func (t *StreamableHttpClientSessionTransport) GetTransportKind() core.TransportKind {
+	return core.TransportKindSse
 }
 
-func (t *StreamableHttpClientSessionTransport) SendMessage(ctx context.Context, message protocol.JsonRpcMessage) error {
+func (t *StreamableHttpClientSessionTransport) SendMessage(ctx context.Context, message core.JsonRpcMessage) error {
 	// var err error
-	// ctx, _ = protocol.MergeContexts(t.ctx, ctx)
+	// ctx, _ = core.MergeContexts(t.ctx, ctx)
 
-	// data, err := protocol.MarshalJsonRpcMessage(message)
+	// data, err := core.MarshalJsonRpcMessage(message)
 	// if err != nil {
 	// 	return fmt.Errorf("failed to serialize message: %w", err)
 	// }
@@ -74,14 +74,14 @@ func (t *StreamableHttpClientSessionTransport) SendMessage(ctx context.Context, 
 	// 	return fmt.Errorf("unexpected status code: %d", resp.StatusCode)
 	// }
 
-	// var rpcMessage protocol.JsonRpcMessage
-	// var rpcRequest *protocol.JsonRpcRequest
+	// var rpcMessage core.JsonRpcMessage
+	// var rpcRequest *core.JsonRpcRequest
 
 	// switch resp.Header.Get("Content-Type") {
 	// case "application/json":
 	// 	rpcMessage, err = t.processResponse(ctx, resp)
 	// case "text/event-stream":
-	// 	if condition, ok := message.(*protocol.JsonRpcRequest); ok && condition != nil {
+	// 	if condition, ok := message.(*core.JsonRpcRequest); ok && condition != nil {
 	// 		rpcRequest = condition
 	// 	}
 	// 	rpcMessage, err = t.processSseResponse(ctx, resp, rpcRequest)
@@ -95,11 +95,11 @@ func (t *StreamableHttpClientSessionTransport) SendMessage(ctx context.Context, 
 	// 	return nil
 	// }
 
-	// if messageWithId, ok := rpcMessage.(protocol.JsonRpcMessageWithId); !ok || messageWithId.GetId().String() != rpcRequest.GetId().String() {
+	// if messageWithId, ok := rpcMessage.(core.JsonRpcMessageWithId); !ok || messageWithId.GetId().String() != rpcRequest.GetId().String() {
 	// 	return fmt.Errorf("streamable HTTP POST response completed without a reply to request with ID: %s", rpcRequest.GetId().String())
 	// }
 
-	// if _, ok := rpcMessage.(*protocol.JsonRpcResponse); ok && rpcRequest.Method == protocol.RequestMethods_Initialize {
+	// if _, ok := rpcMessage.(*core.JsonRpcResponse); ok && rpcRequest.Method == core.RequestMethods_Initialize {
 	// 	t.mcpSessionId = resp.Header.Get("mcp-session-id")
 	// 	go t.receiveUnsolicitedMessages()
 	// }
@@ -140,13 +140,13 @@ func CopyAdditionalHeaders(req *http.Request, additionalHeaders map[string]strin
 	}
 }
 
-func (t *StreamableHttpClientSessionTransport) processResponse(ctx context.Context, resp *http.Response) (*protocol.JsonRpcMessage, error) {
+func (t *StreamableHttpClientSessionTransport) processResponse(ctx context.Context, resp *http.Response) (*core.JsonRpcMessage, error) {
 	// body, err := io.ReadAll(resp.Body)
 	// if err != nil {
 	// 	return nil, err
 	// }
 
-	// rpcMessage, err := protocol.UnmarshalJsonRpcMessage(body)
+	// rpcMessage, err := core.UnmarshalJsonRpcMessage(body)
 	// if err != nil {
 	// 	return nil, err
 	// }
@@ -160,7 +160,7 @@ func (t *StreamableHttpClientSessionTransport) processResponse(ctx context.Conte
 	return nil, nil
 }
 
-func (t *StreamableHttpClientSessionTransport) processSseResponse(ctx context.Context, resp *http.Response, rpcRequest *protocol.JsonRpcRequest) (*protocol.JsonRpcMessage, error) {
+func (t *StreamableHttpClientSessionTransport) processSseResponse(ctx context.Context, resp *http.Response, rpcRequest *core.JsonRpcRequest) (*core.JsonRpcMessage, error) {
 	// sseWriter := sse.CreateSseParser(resp.Body)
 	// eventCh, errCh := sseWriter.EnumerateStream(ctx)
 
@@ -182,7 +182,7 @@ func (t *StreamableHttpClientSessionTransport) processSseResponse(ctx context.Co
 
 	// 		switch event.EventType {
 	// 		case "message":
-	// 			rpcMessage, err := protocol.UnmarshalJsonRpcMessage([]byte(event.Data))
+	// 			rpcMessage, err := core.UnmarshalJsonRpcMessage([]byte(event.Data))
 	// 			if err != nil {
 	// 				return nil, err
 	// 			}
@@ -192,7 +192,7 @@ func (t *StreamableHttpClientSessionTransport) processSseResponse(ctx context.Co
 	// 				return nil, err
 	// 			}
 
-	// 			if rpcMessageWithId, ok := rpcMessage.(protocol.JsonRpcMessageWithId); ok && rpcMessageWithId != nil {
+	// 			if rpcMessageWithId, ok := rpcMessage.(core.JsonRpcMessageWithId); ok && rpcMessageWithId != nil {
 	// 				if rpcMessageWithId.GetId().String() == rpcRequestId {
 	// 					return rpcMessageWithId, nil
 	// 				}

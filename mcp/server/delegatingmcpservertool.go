@@ -3,7 +3,7 @@ package server
 import (
 	"context"
 
-	"github.com/futugyou/mcp/protocol"
+	"github.com/futugyou/mcp/core"
 )
 
 var _ IMcpServerTool = (*DelegatingMcpServerTool)(nil)
@@ -24,11 +24,11 @@ func (d *DelegatingMcpServerTool) GetId() string {
 }
 
 // GetProtocolTool implements IMcpServerTool.
-func (d *DelegatingMcpServerTool) GetProtocolTool() *protocol.Tool {
+func (d *DelegatingMcpServerTool) GetProtocolTool() *core.Tool {
 	return d.innerTool.GetProtocolTool()
 }
 
 // Invoke implements IMcpServerTool.
-func (d *DelegatingMcpServerTool) Invoke(ctx context.Context, request RequestContext[*protocol.CallToolRequestParams]) (*protocol.CallToolResult, error) {
+func (d *DelegatingMcpServerTool) Invoke(ctx context.Context, request RequestContext[*core.CallToolRequestParams]) (*core.CallToolResult, error) {
 	return d.innerTool.Invoke(ctx, request)
 }

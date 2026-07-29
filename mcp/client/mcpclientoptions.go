@@ -3,20 +3,20 @@ package client
 import (
 	"time"
 
-	"github.com/futugyou/mcp/protocol"
+	"github.com/futugyou/mcp/core"
 )
 
 type McpClientOptions struct {
-	ClientInfo            *protocol.Implementation
-	Capabilities          *protocol.ClientCapabilities
+	ClientInfo            *core.Implementation
+	Capabilities          *core.ClientCapabilities
 	ProtocolVersion       string
 	InitializationTimeout time.Duration
 }
 
 func NewMcpClientOptions() *McpClientOptions {
 	return &McpClientOptions{
-		ClientInfo:            &protocol.Implementation{},
-		Capabilities:          &protocol.ClientCapabilities{},
+		ClientInfo:            &core.Implementation{},
+		Capabilities:          &core.ClientCapabilities{},
 		ProtocolVersion:       "2024-11-05",
 		InitializationTimeout: time.Duration(60) * time.Second,
 	}

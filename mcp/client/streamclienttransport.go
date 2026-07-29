@@ -5,8 +5,8 @@ import (
 	"io"
 	"sync"
 
+	"github.com/futugyou/mcp/core"
 	"github.com/futugyou/mcp/logging"
-	"github.com/futugyou/mcp/protocol"
 )
 
 var _ IClientTransport = (*StreamClientTransport)(nil)
@@ -41,7 +41,7 @@ func NewStreamClientTransport(serverInput io.Writer, serverOutput io.Reader, log
 }
 
 // Connect creates a new client session transport using the configured streams.
-func (t *StreamClientTransport) Connect(ctx context.Context) (protocol.ITransport, error) {
+func (t *StreamClientTransport) Connect(ctx context.Context) (core.ITransport, error) {
 	// t.mu.Lock()
 	// defer t.mu.Unlock()
 

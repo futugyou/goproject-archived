@@ -1,10 +1,10 @@
 package stateless
 
-import "github.com/futugyou/mcp/protocol"
+import "github.com/futugyou/mcp/core"
 
 type StatelessSessionId struct {
-	ClientInfo  *protocol.Implementation `json:"clientInfo"`
-	UserIdClaim *UserIdClaim             `json:"userIdClaim"`
+	ClientInfo  *core.Implementation `json:"clientInfo"`
+	UserIdClaim *UserIdClaim         `json:"userIdClaim"`
 }
 
 type UserIdClaim struct {

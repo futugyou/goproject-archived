@@ -9,18 +9,18 @@ import (
 	"sync"
 	"time"
 
+	"github.com/futugyou/mcp/core"
 	"github.com/futugyou/mcp/logging"
-	"github.com/futugyou/mcp/protocol"
 )
 
-var _ protocol.ITransport = (*StreamServerTransport)(nil)
+var _ core.ITransport = (*StreamServerTransport)(nil)
 var (
 	newlineBytes = []byte("\n")
 )
 
 // StreamServerTransport provides a server transport implemented around a pair of input/output streams.
 type StreamServerTransport struct {
-	*protocol.TransportBase
+	*core.TransportBase
 	logger logging.Logger
 
 	inputReader  *bufio.Reader
@@ -37,13 +37,13 @@ type StreamServerTransport struct {
 }
 
 // GetTransportKind implements ITransport.
-func (t *StreamServerTransport) GetTransportKind() protocol.TransportKind {
-	return protocol.TransportKindStream
+func (t *StreamServerTransport) GetTransportKind() core.TransportKind {
+	return core.TransportKindStream
 }
 
 // MessageReader implements ITransport.
 // Subtle: this method shadows the method (TransportBase).MessageReader of StreamServerTransport.TransportBase.
-func (t *StreamServerTransport) MessageReader() <-chan protocol.JsonRpcMessage {
+func (t *StreamServerTransport) MessageReader() <-chan core.JsonRpcMessage {
 	panic("unimplemented")
 }
 
@@ -59,7 +59,7 @@ func NewStreamServerTransport(inputStream io.Reader, outputStream io.Writer, ser
 	ctx, cancel := context.WithCancel(context.Background())
 
 	t := &StreamServerTransport{
-		// TransportBase:     protocol.ServerTransportBase(),
+		// TransportBase:     core.ServerTransportBase(),
 		logger:            logger,
 		inputReader:       bufio.NewReader(inputStream),
 		outputStream:      outputStream,
@@ -81,7 +81,7 @@ func NewStreamServerTransport(inputStream io.Reader, outputStream io.Writer, ser
 }
 
 // SendMessage sends a JSON-RPC message through the
-func (t *StreamServerTransport) SendMessage(ctx context.Context, message protocol.JsonRpcMessage) error {
+func (t *StreamServerTransport) SendMessage(ctx context.Context, message core.JsonRpcMessage) error {
 	if !t.IsConnected() {
 		t.logger.TransportNotConnected(t.endpointName)
 		return fmt.Errorf("transport is not connected")
@@ -91,7 +91,7 @@ func (t *StreamServerTransport) SendMessage(ctx context.Context, message protoco
 	defer t.sendLock.Unlock()
 
 	messageID := "(no id)"
-	if msgWithID, ok := message.IJsonRpcMessage.(*protocol.JsonRpcMessageWithId); ok {
+	if msgWithID, ok := message.IJsonRpcMessage.(*core.JsonRpcMessageWithId); ok {
 		messageWithId := msgWithID.ID
 		messageID = messageWithId.String()
 	}
@@ -148,14 +148,14 @@ func (t *StreamServerTransport) readMessages() {
 
 			t.logger.TransportReceivedMessage(t.endpointName, string(line))
 
-			var message protocol.JsonRpcMessage
+			var message core.JsonRpcMessage
 			if err := json.Unmarshal(line, &message); err != nil {
 				t.logger.TransportMessageParseFailed(t.endpointName, string(line), err)
 				continue
 			}
 
 			messageID := "(no id)"
-			if msgWithID, ok := message.IJsonRpcMessage.(*protocol.JsonRpcMessageWithId); ok {
+			if msgWithID, ok := message.IJsonRpcMessage.(*core.JsonRpcMessageWithId); ok {
 				messageWithId := msgWithID.ID
 				messageID = messageWithId.String()
 			}

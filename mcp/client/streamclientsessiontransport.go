@@ -8,15 +8,15 @@ import (
 	"sync"
 	"time"
 
+	"github.com/futugyou/mcp/core"
 	"github.com/futugyou/mcp/logging"
-	"github.com/futugyou/mcp/protocol"
 )
 
-var _ protocol.ITransport = (*StreamClientSessionTransport)(nil)
+var _ core.ITransport = (*StreamClientSessionTransport)(nil)
 
 // StreamClientSessionTransport represents an active client session
 type StreamClientSessionTransport struct {
-	*protocol.TransportBase
+	*core.TransportBase
 	logger logging.Logger
 
 	serverOutput *bufio.Reader
@@ -31,8 +31,8 @@ type StreamClientSessionTransport struct {
 	readLoopCompleted chan struct{}
 }
 
-func (t *StreamClientSessionTransport) GetTransportKind() protocol.TransportKind {
-	return protocol.TransportKindHttp
+func (t *StreamClientSessionTransport) GetTransportKind() core.TransportKind {
+	return core.TransportKindHttp
 }
 
 // NewStreamClientSessionTransport creates a new StreamClientSessionTransport.
@@ -44,7 +44,7 @@ func NewStreamClientSessionTransport(
 ) *StreamClientSessionTransport {
 	ctx, cancel := context.WithCancel(context.Background())
 	t := &StreamClientSessionTransport{
-		// TransportBase:     protocol.ClientTransportBase(),
+		// TransportBase:     core.ClientTransportBase(),
 		logger:            logger,
 		serverOutput:      bufio.NewReader(serverOutput),
 		serverInput:       serverInput,
@@ -127,8 +127,8 @@ func (t *StreamClientSessionTransport) readMessages() {
 
 			t.logger.TransportReceivedMessage(t.EndpointName, string(line))
 
-			// var message protocol.JsonRpcMessage
-			// if m, err := protocol.UnmarshalJsonRpcMessage(line); err != nil {
+			// var message core.JsonRpcMessage
+			// if m, err := core.UnmarshalJsonRpcMessage(line); err != nil {
 			// 	t.logger.TransportMessageParseFailed(t.EndpointName, string(line), err)
 			// 	continue
 			// } else {
@@ -136,7 +136,7 @@ func (t *StreamClientSessionTransport) readMessages() {
 			// }
 
 			// messageID := "(no id)"
-			// if msgWithID, ok := message.(protocol.JsonRpcMessageWithId); ok {
+			// if msgWithID, ok := message.(core.JsonRpcMessageWithId); ok {
 			// 	messageWithId := msgWithID.GetId()
 			// 	messageID = messageWithId.String()
 			// }
@@ -150,7 +150,7 @@ func (t *StreamClientSessionTransport) readMessages() {
 }
 
 // SendMessageAsync implements ITransport.
-func (t *StreamClientSessionTransport) SendMessage(ctx context.Context, message protocol.JsonRpcMessage) error {
+func (t *StreamClientSessionTransport) SendMessage(ctx context.Context, message core.JsonRpcMessage) error {
 	if !t.IsConnected() {
 		t.logger.TransportNotConnected(t.EndpointName)
 		return fmt.Errorf("transport is not connected")
@@ -160,7 +160,7 @@ func (t *StreamClientSessionTransport) SendMessage(ctx context.Context, message 
 	defer t.sendLock.Unlock()
 
 	// messageID := "(no id)"
-	// if msgWithID, ok := message.(protocol.JsonRpcMessageWithId); ok {
+	// if msgWithID, ok := message.(core.JsonRpcMessageWithId); ok {
 	// 	messageWithId := msgWithID.GetId()
 	// 	messageID = messageWithId.String()
 	// }
