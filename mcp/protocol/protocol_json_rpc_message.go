@@ -9,11 +9,14 @@ import (
 type IJsonRpcMessage interface {
 	GetJsonRpc() string
 	SetJsonRpc(version string)
+	GetContext() *JsonRpcMessageContext
+	SetContext(msgContext *JsonRpcMessageContext)
 }
 
 // BaseJsonRpcMessage 包含通用的 JSON-RPC 2.0 基础属性
 type BaseJsonRpcMessage struct {
-	JsonRpc string `json:"jsonrpc"`
+	JsonRpc string                 `json:"jsonrpc"`
+	Context *JsonRpcMessageContext `json:"-"`
 }
 
 func (b BaseJsonRpcMessage) GetJsonRpc() string {
@@ -25,6 +28,20 @@ func (b BaseJsonRpcMessage) GetJsonRpc() string {
 
 func (b *BaseJsonRpcMessage) SetJsonRpc(version string) {
 	b.JsonRpc = version
+}
+
+func (b *BaseJsonRpcMessage) GetContext() *JsonRpcMessageContext {
+	if b == nil {
+		return nil
+	}
+	return b.Context
+}
+
+func (b *BaseJsonRpcMessage) SetContext(msgContext *JsonRpcMessageContext) {
+	if b == nil {
+		return
+	}
+	b.Context = msgContext
 }
 
 type JsonRpcRequest struct {
@@ -243,4 +260,13 @@ func (r *RequestId) UnmarshalJSON(data []byte) error {
 	}
 
 	return errors.New("requestId must be a string or an integer")
+}
+
+type JsonRpcMessageContext struct {
+	RelatedTransport   ITransport
+	Items              map[string]any
+	RoutingName        string
+	ProtocolVersion    string
+	ClientInfo         *Implementation
+	ClientCapabilities *ClientCapabilities
 }

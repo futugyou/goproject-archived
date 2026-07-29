@@ -13,11 +13,6 @@ type PromptsCapability struct {
 	ListChanged *bool `json:"listChanged,omitempty"`
 }
 
-type ResourcesCapability struct {
-	Subscribe   *bool `json:"subscribe,omitempty"`
-	ListChanged *bool `json:"listChanged,omitempty"`
-}
-
 type ToolsCapability struct {
 	ListChanged *bool `json:"listChanged,omitempty"`
 }

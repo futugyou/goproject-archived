@@ -16,7 +16,7 @@ type CacheableResult struct {
 	CacheScope *CacheScope
 }
 
-type Reslut struct {
+type Result struct {
 	Meta       map[string]any `json:"_meta,omitempty"`
 	ResultType string         `json:"resultType"`
 }
@@ -48,6 +48,11 @@ func (r *RequestParams) ProgressToken() *ProgressToken {
 	}
 
 	return &token
+}
+
+type PaginatedRequestParams struct {
+	RequestParams `json:",inline"`
+	Cursor        *string `json:"cursor"`
 }
 
 type RequestParamsMetadata struct {

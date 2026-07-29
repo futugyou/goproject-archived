@@ -1,5 +1,7 @@
 package protocol
 
+import "time"
+
 type GetPromptRequestParams struct {
 	RequestParams `json:",inline"`
 	Name          string         `json:"name"`
@@ -36,4 +38,15 @@ type PromptArgument struct {
 
 type PromptListChangedNotificationParams struct {
 	NotificationParams
+}
+
+type ListPromptsRequestParams struct {
+	PaginatedRequestParams `json:",inline"`
+}
+
+type ListPromptsResult struct {
+	PaginatedResult `json:",inline"`
+	Prompts         []Prompt    `json:"prompts"`
+	TimeToLive      time.Time   `json:"ttlMs"`
+	CacheScope      *CacheScope `json:"cacheScope"`
 }
