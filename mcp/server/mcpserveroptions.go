@@ -8,7 +8,7 @@ import (
 
 type McpServerOptions struct {
 	ServerInfo            protocol.Implementation
-	Capabilities          *ServerCapabilities
+	Capabilities          *protocol.ServerCapabilities
 	ProtocolVersion       string        // "2024-11-05"
 	InitializationTimeout time.Duration //  60 sec.
 	ServerInstructions    string
@@ -19,7 +19,7 @@ type McpServerOptions struct {
 func NewMcpServerOptions() *McpServerOptions {
 	return &McpServerOptions{
 		ServerInfo:            protocol.Implementation{},
-		Capabilities:          &ServerCapabilities{},
+		Capabilities:          &protocol.ServerCapabilities{},
 		ProtocolVersion:       "2024-11-05",
 		InitializationTimeout: time.Duration(60) * time.Second,
 		ServerInstructions:    "",

@@ -103,12 +103,12 @@ func (e *BaseMcpEndpoint) SendMessage(ctx context.Context, msg protocol.IJsonRpc
 	return e.session.SendMessage(ctx, msg)
 }
 
-func (e *BaseMcpEndpoint) RegisterNotificationHandler(method string, handler protocol.NotificationHandler) *RegistrationHandle {
-	if e.session == nil {
-		return nil
-	}
-	return e.session.RegisterNotificationHandler(method, handler)
-}
+// func (e *BaseMcpEndpoint) RegisterNotificationHandler(method string, handler protocol.NotificationHandler) *RegistrationHandle {
+// 	if e.session == nil {
+// 		return nil
+// 	}
+// 	return e.session.RegisterNotificationHandler(method, handler)
+// }
 
 func (e *BaseMcpEndpoint) Dispose(ctx context.Context) error {
 	e.mu.Lock()

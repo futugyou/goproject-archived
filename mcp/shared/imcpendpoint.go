@@ -9,7 +9,7 @@ import (
 type IMcpEndpoint interface {
 	SendRequest(ctx context.Context, req *protocol.JsonRpcRequest) (*protocol.JsonRpcResponse, error)
 	SendMessage(ctx context.Context, msg protocol.IJsonRpcMessage) error
-	RegisterNotificationHandler(method string, handler protocol.NotificationHandler) *RegistrationHandle
+	// RegisterNotificationHandler(method string, handler protocol.NotificationHandler) *RegistrationHandle
 	GetEndpointName() string
 	GetMessageProcessingTask() <-chan struct{}
 	Dispose(ctx context.Context) error

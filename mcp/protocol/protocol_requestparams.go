@@ -3,7 +3,6 @@ package protocol
 import (
 	"encoding/json"
 	"errors"
-	"strings"
 )
 
 type InputResponse struct {
@@ -29,40 +28,6 @@ func InputResponseDeserialize[T any](resp InputResponse) (T, error) {
 	}
 	err := json.Unmarshal(resp.RawValue, &target)
 	return target, err
-}
-
-type ElicitResult struct {
-	Meta       map[string]any             `json:"_meta,omitempty"`
-	ResultType string                     `json:"resultType"`
-	Action     string                     `json:"action"`
-	Content    map[string]json.RawMessage `json:"content,omitempty"`
-}
-
-func (e *ElicitResult) IsAccepted() bool {
-	return strings.EqualFold(e.Action, "accept")
-}
-
-type ElicitResultTyped[T any] struct {
-	Meta       map[string]any `json:"_meta,omitempty"`
-	ResultType string         `json:"resultType"`
-	Action     string         `json:"action"`
-	Content    T              `json:"content,omitempty"`
-}
-
-func (e *ElicitResultTyped[T]) IsAccepted() bool {
-	return strings.EqualFold(e.Action, "accept")
-}
-
-func FromElicitResult(result ElicitResult) (InputResponse, error) {
-	if result.Action == "" {
-		result.Action = "cancel"
-	}
-
-	bytes, err := json.Marshal(result)
-	if err != nil {
-		return InputResponse{}, err
-	}
-	return InputResponse{RawValue: bytes}, nil
 }
 
 type RequestParams struct {

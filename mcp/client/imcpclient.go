@@ -5,19 +5,18 @@ import (
 	"net/url"
 
 	"github.com/futugyou/mcp/protocol"
-	"github.com/futugyou/mcp/server"
 	"github.com/futugyou/mcp/shared"
 	"github.com/futugyou/yomawari/core/logger"
 )
 
 type IMcpClient interface {
 	shared.IMcpEndpoint
-	GetServerCapabilities() *server.ServerCapabilities
+	GetServerCapabilities() *protocol.ServerCapabilities
 	GetServerInfo() *protocol.Implementation
 	GetServerInstructions() *string
 	Ping(ctx context.Context) error
 	ListTools(ctx context.Context) ([]McpClientTool, error)
-	CallTool(ctx context.Context, toolName string, arguments map[string]interface{}, reporter protocol.IProgressReporter) (*protocol.CallToolResult, error)
+	CallTool(ctx context.Context, toolName string, arguments map[string]interface{}, reporter any) (*protocol.CallToolResult, error)
 	GetPrompt(ctx context.Context, name string, arguments map[string]interface{}) (*protocol.GetPromptResult, error)
 	EnumerateTools(ctx context.Context) (<-chan McpClientTool, <-chan error)
 	ListPrompts(ctx context.Context, client IMcpClient) ([]McpClientPrompt, error)

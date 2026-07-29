@@ -160,7 +160,7 @@ func (m *McpSession) handleNotification(ctx context.Context, notification *proto
 		}
 	}
 
-	return m._notificationHandlers.InvokeHandlers(ctx, notification.Method, notification)
+	return m._notificationHandlers.InvokeHandlers(ctx, notification.Method, *notification)
 }
 
 func (m *McpSession) handleMessageWithId(message protocol.IJsonRpcMessage, messageWithId protocol.IJsonRpcMessageWithId) error {
@@ -193,9 +193,9 @@ func (m *McpSession) handleRequest(ctx context.Context, request protocol.JsonRpc
 	return m._transport.SendMessage(ctx, msg)
 }
 
-func (m *McpSession) RegisterNotificationHandler(method string, handler protocol.NotificationHandler) *RegistrationHandle {
-	return m._notificationHandlers.Register(method, handler, true)
-}
+// func (m *McpSession) RegisterNotificationHandler(method string, handler protocol.NotificationHandler) *RegistrationHandle {
+// 	return m._notificationHandlers.Register(method, handler, true)
+// }
 
 func (m *McpSession) createActivityName(method string) string {
 	s := "client"
@@ -252,7 +252,7 @@ func (m *McpSession) SendRequest(ctx context.Context, request *protocol.JsonRpcR
 	m.sendToRelatedTransport(ctx, request)
 
 	tasks.RegisterCancellation(ctx, func() {
-		data, err := json.Marshal(protocol.CancelledNotification{RequestId: *request.Id})
+		data, err := json.Marshal(protocol.CancelledNotificationParams{RequestId: *request.Id})
 		if err != nil {
 			return
 		}
@@ -349,12 +349,12 @@ func (m *McpSession) Dispose() {
 	})
 }
 
-func getCancelledNotificationParams(notificationParams interface{}) *protocol.CancelledNotification {
+func getCancelledNotificationParams(notificationParams interface{}) *protocol.CancelledNotificationParams {
 	d, err := json.Marshal(notificationParams)
 	if err != nil {
 		return nil
 	}
-	var p protocol.CancelledNotification
+	var p protocol.CancelledNotificationParams
 	err = json.Unmarshal(d, &p)
 	if err != nil {
 		return nil

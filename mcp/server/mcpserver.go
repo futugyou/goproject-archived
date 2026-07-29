@@ -31,7 +31,7 @@ type McpServer struct {
 	_serverOnlyEndpointName  string
 	EndpointName             string
 	_started                 int32
-	ServerCapabilities       *ServerCapabilities
+	ServerCapabilities       *protocol.ServerCapabilities
 	ClientCapabilities       *protocol.ClientCapabilities
 	ClientInfo               *protocol.Implementation
 	ServerOptions            McpServerOptions
@@ -65,33 +65,33 @@ func NewMcpServer(itransport protocol.ITransport, options McpServerOptions) *Mcp
 	s.setCompletionHandler(&options)
 	s.setPingHandler()
 
-	if options.Capabilities != nil && len(options.Capabilities.NotificationHandlers) > 0 {
-		s.GetNotificationHandlers().RegisterRange(options.Capabilities.NotificationHandlers)
-	}
+	// if options.Capabilities != nil && len(options.Capabilities.NotificationHandlers) > 0 {
+	// 	s.GetNotificationHandlers().RegisterRange(options.Capabilities.NotificationHandlers)
+	// }
 
-	if t, ok := itransport.(*StreamableHttpServerTransport); !ok || !t.Stateless {
-		if options.Capabilities != nil && options.Capabilities.Tools != nil && options.Capabilities.Tools.ToolCollection.Count() > 0 {
-			s._toolsChangedDelegate = func() {
-				s.SendMessage(context.Background(), protocol.NewJsonRpcNotification(protocol.NotificationMethods_ToolListChangedNotification, nil))
-			}
-			options.Capabilities.Tools.ToolCollection.OnChanged(s._toolsChangedDelegate)
-		}
+	// if t, ok := itransport.(*StreamableHttpServerTransport); !ok || !t.Stateless {
+	// 	if options.Capabilities != nil && options.Capabilities.Tools != nil && options.Capabilities.Tools.ToolCollection.Count() > 0 {
+	// 		s._toolsChangedDelegate = func() {
+	// 			s.SendMessage(context.Background(), protocol.NewJsonRpcNotification(protocol.NotificationMethods_ToolListChangedNotification, nil))
+	// 		}
+	// 		options.Capabilities.Tools.ToolCollection.OnChanged(s._toolsChangedDelegate)
+	// 	}
 
-		if options.Capabilities != nil && options.Capabilities.Prompts != nil && options.Capabilities.Prompts.PromptCollection.Count() > 0 {
-			s._promptsChangedDelegate = func() {
-				s.SendMessage(context.Background(), protocol.NewJsonRpcNotification(protocol.NotificationMethods_PromptListChangedNotification, nil))
-			}
-			options.Capabilities.Prompts.PromptCollection.OnChanged(s._promptsChangedDelegate)
-		}
+	// 	if options.Capabilities != nil && options.Capabilities.Prompts != nil && options.Capabilities.Prompts.PromptCollection.Count() > 0 {
+	// 		s._promptsChangedDelegate = func() {
+	// 			s.SendMessage(context.Background(), protocol.NewJsonRpcNotification(protocol.NotificationMethods_PromptListChangedNotification, nil))
+	// 		}
+	// 		options.Capabilities.Prompts.PromptCollection.OnChanged(s._promptsChangedDelegate)
+	// 	}
 
-		if options.Capabilities != nil && options.Capabilities.Resources != nil && options.Capabilities.Resources.ResourceCollection.Count() > 0 {
-			s._resourceChangedDelegate = func() {
-				s.SendMessage(context.Background(), protocol.NewJsonRpcNotification(protocol.NotificationMethods_ResourceListChangedNotification, nil))
-			}
-			options.Capabilities.Resources.ResourceCollection.OnChanged(s._resourceChangedDelegate)
-		}
+	// 	if options.Capabilities != nil && options.Capabilities.Resources != nil && options.Capabilities.Resources.ResourceCollection.Count() > 0 {
+	// 		s._resourceChangedDelegate = func() {
+	// 			s.SendMessage(context.Background(), protocol.NewJsonRpcNotification(protocol.NotificationMethods_ResourceListChangedNotification, nil))
+	// 		}
+	// 		options.Capabilities.Resources.ResourceCollection.OnChanged(s._resourceChangedDelegate)
+	// 	}
 
-	}
+	// }
 
 	s.InitializeSession(itransport, true)
 	return s
@@ -126,18 +126,13 @@ func (m *McpServer) setInitializeHandler(options *McpServerOptions) {
 }
 
 func (m *McpServer) setToolsHandler(options *McpServerOptions) {
-	var toolsCapability *ToolsCapability
+	// var toolsCapability *protocol.ToolsCapability
 	var listToolsHandler func(ctx context.Context, req RequestContext[*protocol.ListToolsRequestParams]) (*protocol.ListToolsResult, error)
 	var callToolHandler func(ctx context.Context, req RequestContext[*protocol.CallToolRequestParams]) (*protocol.CallToolResult, error)
 	var tools *McpServerPrimitiveCollection[IMcpServerTool]
-	if options.Capabilities != nil {
-		toolsCapability = options.Capabilities.Tools
-	}
-	if toolsCapability != nil {
-		listToolsHandler = toolsCapability.ListToolsHandler
-		callToolHandler = toolsCapability.CallToolHandler
-		tools = toolsCapability.ToolCollection
-	}
+	// if options.Capabilities != nil {
+	// 	toolsCapability = options.Capabilities.Tools
+	// }
 
 	if tools != nil && !tools.IsEmpty() {
 		originalListToolsHandler := listToolsHandler
@@ -176,19 +171,14 @@ func (m *McpServer) setToolsHandler(options *McpServerOptions) {
 			return tool.Invoke(ctx, req)
 		}
 		listChanged := true
-		m.ServerCapabilities = &ServerCapabilities{
+		m.ServerCapabilities = &protocol.ServerCapabilities{
 			Experimental: options.Capabilities.Experimental,
-			Logging:      options.Capabilities.Logging,
 			Prompts:      options.Capabilities.Prompts,
 			Resources:    options.Capabilities.Resources,
-			Tools: &ToolsCapability{
-				ListChanged:      &listChanged,
-				ListToolsHandler: listToolsHandler,
-				CallToolHandler:  callToolHandler,
-				ToolCollection:   tools,
+			Tools: &protocol.ToolsCapability{
+				ListChanged: &listChanged,
 			},
-			Completions:          &CompletionsCapability{},
-			NotificationHandlers: map[string]protocol.NotificationHandler{},
+			Completions: &protocol.CompletionsCapability{},
 		}
 	} else {
 		m.ServerCapabilities = options.Capabilities
@@ -199,18 +189,14 @@ func (m *McpServer) setToolsHandler(options *McpServerOptions) {
 }
 
 func (m *McpServer) setPromptsHandler(options *McpServerOptions) {
-	var promptsCapability *PromptsCapability
+	// var promptsCapability *protocol.PromptsCapability
 	var listPromptsHandler func(context.Context, RequestContext[*protocol.ListPromptsRequestParams]) (*protocol.ListPromptsResult, error)
 	var getPromptHandler func(context.Context, RequestContext[*protocol.GetPromptRequestParams]) (*protocol.GetPromptResult, error)
 	var prompts *McpServerPrimitiveCollection[IMcpServerPrompt]
-	if options.Capabilities != nil {
-		promptsCapability = options.Capabilities.Prompts
-	}
-	if promptsCapability != nil {
-		listPromptsHandler = promptsCapability.ListPromptsHandler
-		getPromptHandler = promptsCapability.GetPromptHandler
-		prompts = promptsCapability.PromptCollection
-	}
+	// if options.Capabilities != nil {
+	// 	promptsCapability = options.Capabilities.Prompts
+	// }
+
 	if (listPromptsHandler == nil) != (getPromptHandler == nil) {
 		return
 	}
@@ -251,18 +237,13 @@ func (m *McpServer) setPromptsHandler(options *McpServerOptions) {
 			return prompt.Get(ctx, request)
 		}
 		listChanged := true
-		m.ServerCapabilities = &ServerCapabilities{
-			Experimental:         options.Capabilities.Experimental,
-			Logging:              options.Capabilities.Logging,
-			Resources:            options.Capabilities.Resources,
-			Tools:                options.Capabilities.Tools,
-			Completions:          &CompletionsCapability{},
-			NotificationHandlers: map[string]protocol.NotificationHandler{},
-			Prompts: &PromptsCapability{
-				ListChanged:        &listChanged,
-				ListPromptsHandler: listPromptsHandler,
-				GetPromptHandler:   getPromptHandler,
-				PromptCollection:   prompts,
+		m.ServerCapabilities = &protocol.ServerCapabilities{
+			Experimental: options.Capabilities.Experimental,
+			Resources:    options.Capabilities.Resources,
+			Tools:        options.Capabilities.Tools,
+			Completions:  &protocol.CompletionsCapability{},
+			Prompts: &protocol.PromptsCapability{
+				ListChanged: &listChanged,
 			},
 		}
 	} else {
@@ -277,50 +258,50 @@ func (m *McpServer) setResourcesHandler(options *McpServerOptions) {
 	if options.Capabilities == nil || options.Capabilities.Resources == nil {
 		return
 	}
-	resourcesCapability := options.Capabilities.Resources
-	listResourcesHandler := resourcesCapability.ListResourcesHandler
-	listResourceTemplatesHandler := resourcesCapability.ListResourceTemplatesHandler
-	readResourceHandler := resourcesCapability.ReadResourceHandler
-	if listResourcesHandler == nil {
-		listResourcesHandler = func(context.Context, RequestContext[*protocol.ListResourcesRequestParams]) (*protocol.ListResourcesResult, error) {
-			return &protocol.ListResourcesResult{}, nil
-		}
-	}
-	if listResourceTemplatesHandler == nil {
-		listResourceTemplatesHandler = func(context.Context, RequestContext[*protocol.ListResourceTemplatesRequestParams]) (*protocol.ListResourceTemplatesResult, error) {
-			return &protocol.ListResourceTemplatesResult{}, nil
-		}
-	}
+	// resourcesCapability := options.Capabilities.Resources
+	// listResourcesHandler := resourcesCapability.ListResourcesHandler
+	// listResourceTemplatesHandler := resourcesCapability.ListResourceTemplatesHandler
+	// readResourceHandler := resourcesCapability.ReadResourceHandler
+	// if listResourcesHandler == nil {
+	// 	listResourcesHandler = func(context.Context, RequestContext[*protocol.ListResourcesRequestParams]) (*protocol.ListResourcesResult, error) {
+	// 		return &protocol.ListResourcesResult{}, nil
+	// 	}
+	// }
+	// if listResourceTemplatesHandler == nil {
+	// 	listResourceTemplatesHandler = func(context.Context, RequestContext[*protocol.ListResourceTemplatesRequestParams]) (*protocol.ListResourceTemplatesResult, error) {
+	// 		return &protocol.ListResourceTemplatesResult{}, nil
+	// 	}
+	// }
 
-	setHandler(m, protocol.RequestMethods_ResourcesList, listResourcesHandler, nil, nil)
-	setHandler(m, protocol.RequestMethods_ResourcesRead, readResourceHandler, nil, nil)
-	setHandler(m, protocol.RequestMethods_ResourcesTemplatesList, listResourceTemplatesHandler, nil, nil)
+	// setHandler(m, protocol.RequestMethods_ResourcesList, listResourcesHandler, nil, nil)
+	// setHandler(m, protocol.RequestMethods_ResourcesRead, readResourceHandler, nil, nil)
+	// setHandler(m, protocol.RequestMethods_ResourcesTemplatesList, listResourceTemplatesHandler, nil, nil)
 
-	if resourcesCapability.Subscribe == nil && !*resourcesCapability.Subscribe {
-		return
-	}
+	// if resourcesCapability.Subscribe == nil && !*resourcesCapability.Subscribe {
+	// 	return
+	// }
 
-	subscribeHandler := resourcesCapability.SubscribeToResourcesHandler
-	unsubscribeHandler := resourcesCapability.UnsubscribeFromResourcesHandler
-	if subscribeHandler == nil || unsubscribeHandler == nil {
-		return
-	}
+	// subscribeHandler := resourcesCapability.SubscribeToResourcesHandler
+	// unsubscribeHandler := resourcesCapability.UnsubscribeFromResourcesHandler
+	// if subscribeHandler == nil || unsubscribeHandler == nil {
+	// 	return
+	// }
 
-	setHandler(m, protocol.RequestMethods_ResourcesSubscribe, subscribeHandler, nil, nil)
-	setHandler(m, protocol.RequestMethods_ResourcesUnsubscribe, unsubscribeHandler, nil, nil)
+	// setHandler(m, protocol.RequestMethods_ResourcesSubscribe, subscribeHandler, nil, nil)
+	// setHandler(m, protocol.RequestMethods_ResourcesUnsubscribe, unsubscribeHandler, nil, nil)
 }
 
 func (m *McpServer) setCompletionHandler(options *McpServerOptions) {
-	if options.Capabilities == nil || options.Capabilities.Completions == nil {
-		return
-	}
-	completionsCapability := options.Capabilities.Completions
-	completeHandler := completionsCapability.CompleteHandler
-	if completeHandler == nil {
-		return
-	}
+	// if options.Capabilities == nil || options.Capabilities.Completions == nil {
+	// 	return
+	// }
+	// completionsCapability := options.Capabilities.Completions
+	// completeHandler := completionsCapability.CompleteHandler
+	// if completeHandler == nil {
+	// 	return
+	// }
 
-	setHandler(m, protocol.RequestMethods_CompletionComplete, completeHandler, nil, nil)
+	// setHandler(m, protocol.RequestMethods_CompletionComplete, completeHandler, nil, nil)
 }
 
 func (m *McpServer) setPingHandler() {
@@ -360,9 +341,9 @@ func (m *McpServer) Run(ctx context.Context) error {
 }
 
 func (e *McpServer) AsSamplingChatClient() (chatcompletion.IChatClient, error) {
-	if e.GetClientCapabilities() == nil || e.GetClientCapabilities().Sampling == nil {
-		return nil, fmt.Errorf("client capabilities sampling not set")
-	}
+	// if e.GetClientCapabilities() == nil || e.GetClientCapabilities().Sampling == nil {
+	// 	return nil, fmt.Errorf("client capabilities sampling not set")
+	// }
 	return NewSamplingChatClient(e), nil
 }
 
@@ -371,9 +352,9 @@ func (e *McpServer) RequestRoots(ctx context.Context, request protocol.ListRoots
 		return nil, err
 	}
 
-	if e.GetClientCapabilities() == nil || e.GetClientCapabilities().Roots == nil {
-		return nil, fmt.Errorf("client capabilities roots not set")
-	}
+	// if e.GetClientCapabilities() == nil || e.GetClientCapabilities().Roots == nil {
+	// 	return nil, fmt.Errorf("client capabilities roots not set")
+	// }
 	req := protocol.NewJsonRpcRequest(protocol.RequestMethods_RootsList, request, nil)
 	resp, err := e.SendRequest(ctx, req)
 	if err != nil {
@@ -567,24 +548,24 @@ func (e *McpServer) SampleWithChatMessage(ctx context.Context, messages []chatco
 }
 
 func throwIfSamplingUnsupported(server IMcpServer) error {
-	if server.GetClientCapabilities() == nil || server.GetClientCapabilities().Sampling == nil {
-		if server.GetMcpServerOptions() != nil && server.GetMcpServerOptions().KnownClientInfo != nil {
-			return fmt.Errorf("sampling is not supported in stateless mode")
-		}
+	// if server.GetClientCapabilities() == nil || server.GetClientCapabilities().Sampling == nil {
+	// 	if server.GetMcpServerOptions() != nil && server.GetMcpServerOptions().KnownClientInfo != nil {
+	// 		return fmt.Errorf("sampling is not supported in stateless mode")
+	// 	}
 
-		return fmt.Errorf("client does not support sampling")
-	}
+	// 	return fmt.Errorf("client does not support sampling")
+	// }
 	return nil
 }
 
 func throwIfRootsUnsupported(server IMcpServer) error {
-	if server.GetClientCapabilities() == nil || server.GetClientCapabilities().Roots == nil {
-		if server.GetMcpServerOptions() != nil && server.GetMcpServerOptions().KnownClientInfo != nil {
-			return fmt.Errorf("roots are not supported in stateless mode")
-		}
+	// if server.GetClientCapabilities() == nil || server.GetClientCapabilities().Roots == nil {
+	// 	if server.GetMcpServerOptions() != nil && server.GetMcpServerOptions().KnownClientInfo != nil {
+	// 		return fmt.Errorf("roots are not supported in stateless mode")
+	// 	}
 
-		return fmt.Errorf("client does not support roots")
-	}
+	// 	return fmt.Errorf("client does not support roots")
+	// }
 	return nil
 }
 

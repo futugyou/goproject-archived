@@ -3,8 +3,8 @@ package server
 import "github.com/futugyou/mcp/protocol"
 
 type InitializeResult struct {
-	ProtocolVersion string                  `json:"protocolVersion"`
-	Capabilities    ServerCapabilities      `json:"capabilities"`
-	ServerInfo      protocol.Implementation `json:"serverInfo"`
-	Instructions    string                  `json:"instructions"`
+	ProtocolVersion string                      `json:"protocolVersion"`
+	Capabilities    protocol.ServerCapabilities `json:"capabilities"`
+	ServerInfo      protocol.Implementation     `json:"serverInfo"`
+	Instructions    string                      `json:"instructions"`
 }

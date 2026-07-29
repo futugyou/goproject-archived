@@ -2,11 +2,9 @@ package server
 
 import (
 	"context"
-	"fmt"
 
 	"github.com/futugyou/extensions_ai/abstractions/chatcompletion"
 	"github.com/futugyou/mcp/protocol"
-	"github.com/futugyou/mcp/shared"
 )
 
 var _ IMcpServer = (*DestinationBoundMcpServer)(nil)
@@ -25,9 +23,9 @@ func NewDestinationBoundMcpServer(server *McpServer, transport protocol.ITranspo
 
 // AsSamplingChatClient implements IMcpServer.
 func (d *DestinationBoundMcpServer) AsSamplingChatClient() (chatcompletion.IChatClient, error) {
-	if d.GetClientCapabilities() == nil || d.GetClientCapabilities().Sampling == nil {
-		return nil, fmt.Errorf("client capabilities sampling not set")
-	}
+	// if d.GetClientCapabilities() == nil || d.GetClientCapabilities().Sampling == nil {
+	// 	return nil, fmt.Errorf("client capabilities sampling not set")
+	// }
 	return NewSamplingChatClient(d), nil
 }
 
@@ -67,9 +65,9 @@ func (d *DestinationBoundMcpServer) NotifyProgress(ctx context.Context, progress
 }
 
 // RegisterNotificationHandler implements IMcpServer.
-func (d *DestinationBoundMcpServer) RegisterNotificationHandler(method string, handler protocol.NotificationHandler) *shared.RegistrationHandle {
-	return d.server.RegisterNotificationHandler(method, handler)
-}
+// func (d *DestinationBoundMcpServer) RegisterNotificationHandler(method string, handler protocol.NotificationHandler) *shared.RegistrationHandle {
+// 	return d.server.RegisterNotificationHandler(method, handler)
+// }
 
 // RequestRoots implements IMcpServer.
 func (d *DestinationBoundMcpServer) RequestRoots(ctx context.Context, request protocol.ListRootsRequestParams) (*protocol.ListRootsResult, error) {

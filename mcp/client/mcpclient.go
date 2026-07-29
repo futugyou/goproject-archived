@@ -10,7 +10,6 @@ import (
 	"github.com/futugyou/mcp/server"
 	"github.com/futugyou/mcp/shared"
 	"github.com/futugyou/yomawari/core/logger"
-	"github.com/google/uuid"
 )
 
 var McpClientDefaultImplementation protocol.Implementation = protocol.Implementation{
@@ -33,7 +32,7 @@ type McpClient struct {
 	mu         sync.Mutex
 	disposed   bool
 
-	ServerCapabilities server.ServerCapabilities
+	ServerCapabilities protocol.ServerCapabilities
 	ServerInfo         protocol.Implementation
 	ServerInstructions *string
 	EndpointName       string
@@ -61,50 +60,50 @@ func NewMcpClient(clientTransport IClientTransport, options McpClientOptions) *M
 
 	capabilities := options.Capabilities
 	if capabilities != nil {
-		notificationHandlers := capabilities.NotificationHandlers
-		if notificationHandlers != nil {
-			client.notifHandlers.RegisterRange(notificationHandlers)
-		}
-		samplingCapability := capabilities.Sampling
-		if samplingCapability != nil && samplingCapability.SamplingHandler != nil {
-			shared.GenericRequestHandlerAdd(
-				client.reqHandlers,
-				protocol.RequestMethods_SamplingCreateMessage,
-				func(ctx context.Context, request *protocol.CreateMessageRequestParams, tran protocol.ITransport) (*protocol.CreateMessageResult, error) {
-					var progres protocol.IProgressReporter = &shared.NullProgress{}
-					if request.Meta != nil && request.ProgressToken() != nil {
-						progres = shared.NewTokenProgress(client, *request.ProgressToken())
-					}
-					return samplingCapability.SamplingHandler(ctx, request, progres)
-				},
-				nil,
-				nil,
-			)
-		}
+		// notificationHandlers := capabilities.NotificationHandlers
+		// if notificationHandlers != nil {
+		// 	client.notifHandlers.RegisterRange(notificationHandlers)
+		// }
+		// samplingCapability := capabilities.Sampling
+		// if samplingCapability != nil && samplingCapability.SamplingHandler != nil {
+		// 	shared.GenericRequestHandlerAdd(
+		// 		client.reqHandlers,
+		// 		protocol.RequestMethods_SamplingCreateMessage,
+		// 		func(ctx context.Context, request *protocol.CreateMessageRequestParams, tran protocol.ITransport) (*protocol.CreateMessageResult, error) {
+		// 			var progres protocol.IProgressReporter = &shared.NullProgress{}
+		// 			if request.Meta != nil && request.ProgressToken() != nil {
+		// 				progres = shared.NewTokenProgress(client, *request.ProgressToken())
+		// 			}
+		// 			return samplingCapability.SamplingHandler(ctx, request, progres)
+		// 		},
+		// 		nil,
+		// 		nil,
+		// 	)
+		// }
 
-		if capabilities.Roots != nil && capabilities.Roots.RootsHandler != nil {
-			shared.GenericRequestHandlerAdd(
-				client.reqHandlers,
-				protocol.RequestMethods_RootsList,
-				func(ctx context.Context, request *protocol.ListRootsRequestParams, tran protocol.ITransport) (*protocol.ListRootsResult, error) {
-					return capabilities.Roots.RootsHandler(ctx, request)
-				},
-				nil,
-				nil,
-			)
-		}
+		// if capabilities.Roots != nil && capabilities.Roots.RootsHandler != nil {
+		// 	shared.GenericRequestHandlerAdd(
+		// 		client.reqHandlers,
+		// 		protocol.RequestMethods_RootsList,
+		// 		func(ctx context.Context, request *protocol.ListRootsRequestParams, tran protocol.ITransport) (*protocol.ListRootsResult, error) {
+		// 			return capabilities.Roots.RootsHandler(ctx, request)
+		// 		},
+		// 		nil,
+		// 		nil,
+		// 	)
+		// }
 
-		if capabilities.Elicitation != nil && capabilities.Elicitation.ElicitationHandler != nil {
-			shared.GenericRequestHandlerAdd(
-				client.reqHandlers,
-				protocol.RequestMethods_ElicitationCreate,
-				func(ctx context.Context, request *protocol.ElicitRequestParams, tran protocol.ITransport) (*protocol.ElicitResult, error) {
-					return capabilities.Elicitation.ElicitationHandler(ctx, request)
-				},
-				nil,
-				nil,
-			)
-		}
+		// if capabilities.Elicitation != nil && capabilities.Elicitation.ElicitationHandler != nil {
+		// 	shared.GenericRequestHandlerAdd(
+		// 		client.reqHandlers,
+		// 		protocol.RequestMethods_ElicitationCreate,
+		// 		func(ctx context.Context, request *protocol.ElicitRequestParams, tran protocol.ITransport) (*protocol.ElicitResult, error) {
+		// 			return capabilities.Elicitation.ElicitationHandler(ctx, request)
+		// 		},
+		// 		nil,
+		// 		nil,
+		// 	)
+		// }
 	}
 	return client
 }
@@ -170,7 +169,7 @@ func (m *McpClient) Connect(ctx context.Context) error {
 }
 
 // CallTool implements IMcpClient.
-func (m *McpClient) CallTool(ctx context.Context, toolName string, arguments map[string]interface{}, reporter protocol.IProgressReporter) (*protocol.CallToolResult, error) {
+func (m *McpClient) CallTool(ctx context.Context, toolName string, arguments map[string]interface{}, reporter any) (*protocol.CallToolResult, error) {
 	params := protocol.CallToolRequestParams{
 		RequestParams: protocol.RequestParams{},
 		Name:          toolName,
@@ -178,18 +177,18 @@ func (m *McpClient) CallTool(ctx context.Context, toolName string, arguments map
 	}
 
 	if reporter != nil {
-		progressToken := protocol.NewProgressTokenFromString(uuid.New().String())
-		var handler protocol.NotificationHandler = func(ctx context.Context, notification *protocol.JsonRpcNotification) error {
-			var pn protocol.ProgressNotification
-			if err := json.Unmarshal(notification.Params, &pn); err != nil {
-				return err
-			}
-			if pn.ProgressToken != nil && *pn.ProgressToken == progressToken {
-				reporter.Report(*pn.Progress)
-			}
-			return nil
-		}
-		m.RegisterNotificationHandler(protocol.NotificationMethods_ProgressNotification, handler)
+		// progressToken := protocol.NewProgressTokenFromString(uuid.New().String())
+		// var handler protocol.NotificationHandler = func(ctx context.Context, notification *protocol.JsonRpcNotification) error {
+		// 	var pn protocol.ProgressNotification
+		// 	if err := json.Unmarshal(notification.Params, &pn); err != nil {
+		// 		return err
+		// 	}
+		// 	if pn.ProgressToken != nil && *pn.ProgressToken == progressToken {
+		// 		reporter.Report(*pn.Progress)
+		// 	}
+		// 	return nil
+		// }
+		// m.RegisterNotificationHandler(protocol.NotificationMethods_ProgressNotification, handler)
 		// params.Meta = &protocol.RequestParamsMetadata{ProgressToken: &progressToken}
 	}
 
@@ -446,7 +445,7 @@ func (m *McpClient) GetPrompt(ctx context.Context, name string, arguments map[st
 }
 
 // GetServerCapabilities implements IMcpClient.
-func (m *McpClient) GetServerCapabilities() *server.ServerCapabilities {
+func (m *McpClient) GetServerCapabilities() *protocol.ServerCapabilities {
 	return &m.ServerCapabilities
 }
 
