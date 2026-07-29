@@ -4,12 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"strings"
 	"sync/atomic"
 
 	"github.com/futugyou/extensions_ai/abstractions/chatcompletion"
-	"github.com/futugyou/extensions_ai/abstractions/contents"
-	"github.com/futugyou/mcp"
 	"github.com/futugyou/mcp/protocol"
 	"github.com/futugyou/mcp/shared"
 )
@@ -414,137 +411,138 @@ func (e *McpServer) Elicit(ctx context.Context, request protocol.ElicitRequestPa
 	return &result, nil
 }
 
-func (e *McpServer) Sample(ctx context.Context, request protocol.CreateMessageRequestParams) (*protocol.CreateMessageResult, error) {
-	if err := throwIfSamplingUnsupported(e); err != nil {
-		return nil, err
-	}
+// func (e *McpServer) Sample(ctx context.Context, request protocol.CreateMessageRequestParams) (*protocol.CreateMessageResult, error) {
+// 	if err := throwIfSamplingUnsupported(e); err != nil {
+// 		return nil, err
+// 	}
 
-	req := protocol.NewJsonRpcRequest(protocol.RequestMethods_SamplingCreateMessage, request, nil)
-	resp, err := e.SendRequest(ctx, req)
-	if err != nil {
-		return nil, err
-	}
-	var result protocol.CreateMessageResult
-	if err := json.Unmarshal(resp.Result, &result); err != nil {
-		return nil, err
-	}
-	return &result, nil
-}
+// 	req := protocol.NewJsonRpcRequest(protocol.RequestMethods_SamplingCreateMessage, request, nil)
+// 	resp, err := e.SendRequest(ctx, req)
+// 	if err != nil {
+// 		return nil, err
+// 	}
+// 	var result protocol.CreateMessageResult
+// 	if err := json.Unmarshal(resp.Result, &result); err != nil {
+// 		return nil, err
+// 	}
+// 	return &result, nil
+// }
 
 func (e *McpServer) SampleWithChatMessage(ctx context.Context, messages []chatcompletion.ChatMessage, options *chatcompletion.ChatOptions) (*chatcompletion.ChatResponse, error) {
-	if err := throwIfSamplingUnsupported(e); err != nil {
-		return nil, err
-	}
+	// if err := throwIfSamplingUnsupported(e); err != nil {
+	// 	return nil, err
+	// }
 
-	samplingMessages := []protocol.SamplingMessage{}
-	var systemPrompt *strings.Builder
-	for _, message := range messages {
-		if message.Role == chatcompletion.RoleSystem {
-			if systemPrompt == nil {
-				systemPrompt = &strings.Builder{}
-			} else {
-				systemPrompt.WriteString("\n")
-			}
+	// samplingMessages := []protocol.SamplingMessage{}
+	// var systemPrompt *strings.Builder
+	// for _, message := range messages {
+	// 	if message.Role == chatcompletion.RoleSystem {
+	// 		if systemPrompt == nil {
+	// 			systemPrompt = &strings.Builder{}
+	// 		} else {
+	// 			systemPrompt.WriteString("\n")
+	// 		}
 
-			systemPrompt.WriteString(message.Text())
-			continue
-		}
+	// 		systemPrompt.WriteString(message.Text())
+	// 		continue
+	// 	}
 
-		if message.Role == chatcompletion.RoleUser || message.Role == chatcompletion.RoleAssistant {
-			role := protocol.RoleUser
-			if message.Role == chatcompletion.RoleAssistant {
-				role = protocol.RoleAssistant
-			}
-			for _, content := range message.Contents {
-				switch con := content.(type) {
-				case *contents.TextContent:
-					samplingMessages = append(samplingMessages, protocol.SamplingMessage{
-						Content: protocol.ContentBlock{
-							IContentBlock: &protocol.TextContentBlock{
-								Text: con.Text,
-							}},
-						Role: role,
-					})
-				case *contents.DataContent:
-					if con.MediaTypeStartsWith("image") || con.MediaTypeStartsWith("audio") {
-						t := "image"
-						if con.MediaTypeStartsWith("audio") {
-							t = "audio"
-						}
-						// decoded := base64.URLEncoding.EncodeToString(con.Data)
+	// 	if message.Role == chatcompletion.RoleUser || message.Role == chatcompletion.RoleAssistant {
+	// 		role := protocol.RoleUser
+	// 		if message.Role == chatcompletion.RoleAssistant {
+	// 			role = protocol.RoleAssistant
+	// 		}
+	// 		for _, content := range message.Contents {
+	// 			switch con := content.(type) {
+	// 			case *contents.TextContent:
+	// 				samplingMessages = append(samplingMessages, protocol.SamplingMessage{
+	// 					Content: protocol.ContentBlock{
+	// 						IContentBlock: &protocol.TextContentBlock{
+	// 							Text: con.Text,
+	// 						}},
+	// 					Role: role,
+	// 				})
+	// 			case *contents.DataContent:
+	// 				if con.MediaTypeStartsWith("image") || con.MediaTypeStartsWith("audio") {
+	// 					t := "image"
+	// 					if con.MediaTypeStartsWith("audio") {
+	// 						t = "audio"
+	// 					}
+	// 					// decoded := base64.URLEncoding.EncodeToString(con.Data)
 
-						if t == "image" {
-							samplingMessages = append(samplingMessages, protocol.SamplingMessage{
-								Content: protocol.ContentBlock{
-									IContentBlock: &protocol.ImageContentBlock{
-										Data:     con.Data,
-										MimeType: con.MediaType,
-									}},
-								Role: role,
-							})
-						} else {
-							samplingMessages = append(samplingMessages, protocol.SamplingMessage{
-								Content: protocol.ContentBlock{
-									IContentBlock: &protocol.AudioContentBlock{
-										Data:     con.Data,
-										MimeType: con.MediaType,
-									}},
-								Role: role,
-							})
-						}
-					}
-				}
-			}
-		}
-	}
+	// 					if t == "image" {
+	// 						samplingMessages = append(samplingMessages, protocol.SamplingMessage{
+	// 							Content: protocol.ContentBlock{
+	// 								IContentBlock: &protocol.ImageContentBlock{
+	// 									Data:     con.Data,
+	// 									MimeType: con.MediaType,
+	// 								}},
+	// 							Role: role,
+	// 						})
+	// 					} else {
+	// 						samplingMessages = append(samplingMessages, protocol.SamplingMessage{
+	// 							Content: protocol.ContentBlock{
+	// 								IContentBlock: &protocol.AudioContentBlock{
+	// 									Data:     con.Data,
+	// 									MimeType: con.MediaType,
+	// 								}},
+	// 							Role: role,
+	// 						})
+	// 					}
+	// 				}
+	// 			}
+	// 		}
+	// 	}
+	// }
 
-	var modelPreferences protocol.ModelPreferences
-	if options != nil && options.ModelId != nil {
-		modelPreferences = protocol.ModelPreferences{
-			Hints: []protocol.ModelHint{{
-				Name: options.ModelId,
-			}},
-		}
-	}
+	// var modelPreferences protocol.ModelPreferences
+	// if options != nil && options.ModelId != nil {
+	// 	modelPreferences = protocol.ModelPreferences{
+	// 		Hints: []protocol.ModelHint{{
+	// 			Name: options.ModelId,
+	// 		}},
+	// 	}
+	// }
 
-	systemPromptString := systemPrompt.String()
-	request := protocol.CreateMessageRequestParams{
-		RequestParams:    protocol.RequestParams{},
-		MaxTokens:        options.MaxOutputTokens,
-		Messages:         samplingMessages,
-		Metadata:         nil,
-		ModelPreferences: modelPreferences,
-		StopSequences:    options.StopSequences,
-		SystemPrompt:     &systemPromptString,
-		Temperature:      options.Temperature,
-	}
+	// systemPromptString := systemPrompt.String()
+	// request := protocol.CreateMessageRequestParams{
+	// 	RequestParams:    protocol.RequestParams{},
+	// 	MaxTokens:        options.MaxOutputTokens,
+	// 	Messages:         samplingMessages,
+	// 	Metadata:         nil,
+	// 	ModelPreferences: modelPreferences,
+	// 	StopSequences:    options.StopSequences,
+	// 	SystemPrompt:     &systemPromptString,
+	// 	Temperature:      options.Temperature,
+	// }
 
-	result, err := e.Sample(ctx, request)
-	if err != nil {
-		return nil, err
-	}
+	// result, err := e.Sample(ctx, request)
+	// if err != nil {
+	// 	return nil, err
+	// }
 
-	message := &chatcompletion.ChatMessage{
-		Contents: []contents.IAIContent{mcp.ContentToAIContent(result.Content)},
-	}
-	if result.Role == protocol.RoleUser {
-		message.Role = chatcompletion.RoleUser
-	}
-	if result.Role == protocol.RoleAssistant {
-		message.Role = chatcompletion.RoleAssistant
-	}
-	resp := chatcompletion.NewChatResponse(nil, message)
-	if result.StopReason != nil {
-		if *result.StopReason == "maxTokens" {
-			t := chatcompletion.ReasonLength
-			resp.FinishReason = &t
-		} else {
+	// message := &chatcompletion.ChatMessage{
+	// 	Contents: []contents.IAIContent{mcp.ContentToAIContent(result.Content)},
+	// }
+	// if result.Role == protocol.RoleUser {
+	// 	message.Role = chatcompletion.RoleUser
+	// }
+	// if result.Role == protocol.RoleAssistant {
+	// 	message.Role = chatcompletion.RoleAssistant
+	// }
+	// resp := chatcompletion.NewChatResponse(nil, message)
+	// if result.StopReason != nil {
+	// 	if *result.StopReason == "maxTokens" {
+	// 		t := chatcompletion.ReasonLength
+	// 		resp.FinishReason = &t
+	// 	} else {
 
-			t := chatcompletion.ReasonStop
-			resp.FinishReason = &t
-		}
-	}
-	return resp, nil
+	// 		t := chatcompletion.ReasonStop
+	// 		resp.FinishReason = &t
+	// 	}
+	// }
+	// return resp, nil
+	return nil, nil
 }
 
 func throwIfSamplingUnsupported(server IMcpServer) error {

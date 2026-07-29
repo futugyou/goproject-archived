@@ -360,3 +360,8 @@ type BooleanSchema struct {
 	Type    string `json:"type"`
 	Default *bool  `json:"default,omitempty"`
 }
+
+type ElicitationCompleteNotificationParams struct {
+	Meta          map[string]any `json:"_meta,omitempty"`
+	ElicitationId string         `json:"elicitationId"`
+}

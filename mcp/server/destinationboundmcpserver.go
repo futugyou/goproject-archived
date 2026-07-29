@@ -75,9 +75,9 @@ func (d *DestinationBoundMcpServer) RequestRoots(ctx context.Context, request pr
 }
 
 // Sample implements IMcpServer.
-func (d *DestinationBoundMcpServer) Sample(ctx context.Context, request protocol.CreateMessageRequestParams) (*protocol.CreateMessageResult, error) {
-	return d.server.Sample(ctx, request)
-}
+// func (d *DestinationBoundMcpServer) Sample(ctx context.Context, request protocol.CreateMessageRequestParams) (*protocol.CreateMessageResult, error) {
+// 	return d.server.Sample(ctx, request)
+// }
 
 // SampleWithChatMessage implements IMcpServer.
 func (d *DestinationBoundMcpServer) SampleWithChatMessage(ctx context.Context, messages []chatcompletion.ChatMessage, options *chatcompletion.ChatOptions) (*chatcompletion.ChatResponse, error) {
