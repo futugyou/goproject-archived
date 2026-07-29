@@ -105,12 +105,12 @@ func (m *McpServer) setInitializeHandler(options *McpServerOptions) {
 	shared.GenericRequestHandlerAdd(
 		m.GetRequestHandlers(),
 		protocol.RequestMethods_Initialize,
-		func(ctx context.Context, request *protocol.InitializeRequestParams, tran protocol.ITransport) (*InitializeResult, error) {
+		func(ctx context.Context, request *protocol.InitializeRequestParams, tran protocol.ITransport) (*protocol.InitializeResult, error) {
 			m.ClientCapabilities = request.Capabilities
 			m.ClientInfo = &request.ClientInfo
 			_endpointName := fmt.Sprintf("%s, Client (%s %s)", m.EndpointName, m.ClientInfo.Name, m.ClientInfo.Version)
 			m.GetMcpSession().EndpointName = _endpointName
-			return &InitializeResult{
+			return &protocol.InitializeResult{
 				ProtocolVersion: options.ProtocolVersion,
 				Capabilities:    *m.ServerCapabilities,
 				ServerInfo:      options.ServerInfo,

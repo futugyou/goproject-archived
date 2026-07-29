@@ -64,3 +64,12 @@ type PaginatedResult struct {
 	ResultType string         `json:"resultType"`
 	NextCursor *string
 }
+
+type Implementation struct {
+	Name        string `json:"name"`
+	Title       string `json:"title"`
+	Version     string `json:"version"`
+	Description string `json:"description"`
+	Icons       []Icon `json:"icons"`
+	WebsiteUrl  string `json:"websiteUrl"`
+}
