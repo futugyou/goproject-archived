@@ -305,7 +305,7 @@ func (m *McpServer) setPingHandler() {
 	setHandler(
 		m,
 		protocol.RequestMethods_Ping,
-		func(context.Context, RequestContext[*protocol.PingRequest]) (*protocol.PingResult, error) {
+		func(context.Context, RequestContext[*protocol.PingRequestParams]) (*protocol.PingResult, error) {
 			return &protocol.PingResult{}, nil
 		}, nil, nil)
 }
@@ -344,29 +344,29 @@ func (e *McpServer) AsSamplingChatClient() (chatcompletion.IChatClient, error) {
 	return NewSamplingChatClient(e), nil
 }
 
-func (e *McpServer) RequestRoots(ctx context.Context, request protocol.ListRootsRequestParams) (*protocol.ListRootsResult, error) {
-	if err := throwIfRootsUnsupported(e); err != nil {
-		return nil, err
-	}
+// func (e *McpServer) RequestRoots(ctx context.Context, request protocol.ListRootsRequestParams) (*protocol.ListRootsResult, error) {
+// 	if err := throwIfRootsUnsupported(e); err != nil {
+// 		return nil, err
+// 	}
 
-	// if e.GetClientCapabilities() == nil || e.GetClientCapabilities().Roots == nil {
-	// 	return nil, fmt.Errorf("client capabilities roots not set")
-	// }
-	data, err := json.Marshal(request)
-	if err != nil {
-		return nil, err
-	}
-	req := &protocol.JsonRpcRequest{Method: protocol.RequestMethods_RootsList, Params: data}
-	resp, err := e.SendRequest(ctx, req)
-	if err != nil {
-		return nil, err
-	}
-	var result protocol.ListRootsResult
-	if err := json.Unmarshal(resp.Result, &result); err != nil {
-		return nil, err
-	}
-	return &result, nil
-}
+// 	// if e.GetClientCapabilities() == nil || e.GetClientCapabilities().Roots == nil {
+// 	// 	return nil, fmt.Errorf("client capabilities roots not set")
+// 	// }
+// 	data, err := json.Marshal(request)
+// 	if err != nil {
+// 		return nil, err
+// 	}
+// 	req := &protocol.JsonRpcRequest{Method: protocol.RequestMethods_RootsList, Params: data}
+// 	resp, err := e.SendRequest(ctx, req)
+// 	if err != nil {
+// 		return nil, err
+// 	}
+// 	var result protocol.ListRootsResult
+// 	if err := json.Unmarshal(resp.Result, &result); err != nil {
+// 		return nil, err
+// 	}
+// 	return &result, nil
+// }
 
 func setHandler[TRequest any, TResponse any](
 	m *McpServer,

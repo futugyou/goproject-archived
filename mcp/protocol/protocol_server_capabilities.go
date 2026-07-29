@@ -12,7 +12,3 @@ type ServerCapabilities struct {
 type PromptsCapability struct {
 	ListChanged *bool `json:"listChanged,omitempty"`
 }
-
-type ToolsCapability struct {
-	ListChanged *bool `json:"listChanged,omitempty"`
-}

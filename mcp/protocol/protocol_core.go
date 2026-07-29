@@ -58,3 +58,9 @@ type PaginatedRequestParams struct {
 type RequestParamsMetadata struct {
 	ProgressToken *ProgressToken `json:"progressToken"`
 }
+
+type PaginatedResult struct {
+	Meta       map[string]any `json:"_meta,omitempty"`
+	ResultType string         `json:"resultType"`
+	NextCursor *string
+}

@@ -70,9 +70,9 @@ func (d *DestinationBoundMcpServer) NotifyProgress(ctx context.Context, progress
 // }
 
 // RequestRoots implements IMcpServer.
-func (d *DestinationBoundMcpServer) RequestRoots(ctx context.Context, request protocol.ListRootsRequestParams) (*protocol.ListRootsResult, error) {
-	return d.server.RequestRoots(ctx, request)
-}
+// func (d *DestinationBoundMcpServer) RequestRoots(ctx context.Context, request protocol.ListRootsRequestParams) (*protocol.ListRootsResult, error) {
+// 	return d.server.RequestRoots(ctx, request)
+// }
 
 // Sample implements IMcpServer.
 // func (d *DestinationBoundMcpServer) Sample(ctx context.Context, request protocol.CreateMessageRequestParams) (*protocol.CreateMessageResult, error) {

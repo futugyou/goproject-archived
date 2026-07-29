@@ -18,5 +18,5 @@ type IMcpServer interface {
 	Elicit(ctx context.Context, request protocol.ElicitRequestParams) (*protocol.ElicitResult, error)
 	SampleWithChatMessage(ctx context.Context, messages []chatcompletion.ChatMessage, options *chatcompletion.ChatOptions) (*chatcompletion.ChatResponse, error)
 	AsSamplingChatClient() (chatcompletion.IChatClient, error)
-	RequestRoots(ctx context.Context, request protocol.ListRootsRequestParams) (*protocol.ListRootsResult, error)
+	// RequestRoots(ctx context.Context, request protocol.ListRootsRequestParams) (*protocol.ListRootsResult, error)
 }

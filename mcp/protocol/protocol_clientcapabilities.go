@@ -6,3 +6,7 @@ type ClientCapabilities struct {
 	Elicitation  *ElicitationCapability `json:"elicitation,omitempty"`
 	Extensions   map[string]any         `json:"extensions,omitempty"`
 }
+
+type MissingRequiredClientCapabilityErrorData struct {
+	RequiredCapabilities ClientCapabilities `json:"requiredCapabilities"`
+}
