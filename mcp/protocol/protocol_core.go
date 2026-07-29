@@ -36,13 +36,13 @@ func (r *RequestParams) ProgressToken() *ProgressToken {
 
 	switch v := r.Meta["progressToken"].(type) {
 	case int64:
-		token = NewProgressTokenFromInt(v)
+		token = NewIntProgressToken(v)
 	case float64:
-		token = NewProgressTokenFromInt(int64(v))
+		token = NewIntProgressToken(int64(v))
 	case int:
-		token = NewProgressTokenFromInt(int64(v))
+		token = NewIntProgressToken(int64(v))
 	case string:
-		token = NewProgressTokenFromString(v)
+		token = NewStringProgressToken(v)
 	default:
 		return nil
 	}
