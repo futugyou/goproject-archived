@@ -27,14 +27,52 @@ type RequestSchema struct {
 }
 
 type ElicitResult struct {
-	Meta       map[string]any  `json:"_meta,omitempty"`
-	ResultType string          `json:"resultType"`
-	Action     string          `json:"action"`
-	Content    json.RawMessage `json:"content,omitempty"`
+	Meta       map[string]any             `json:"_meta,omitempty"`
+	ResultType string                     `json:"resultType"`
+	Action     string                     `json:"action"`
+	Content    map[string]json.RawMessage `json:"content,omitempty"`
 }
 
 func (e *ElicitResult) IsAccepted() bool {
 	return strings.EqualFold(e.Action, "accept")
+}
+
+func ElicitResultWithDefaults(requestParams *ElicitRequestParams, result ElicitResult) ElicitResult {
+	if result.IsAccepted() &&
+		requestParams != nil &&
+		requestParams.RequestedSchema != nil &&
+		requestParams.RequestedSchema.Properties != nil {
+
+		properties := requestParams.RequestedSchema.Properties
+		var newContent map[string]json.RawMessage = nil
+
+		for key, schema := range properties {
+			_, keyExists := result.Content[key]
+			element, hasDefault := schema.GetDefaultAsJsonElement()
+
+			if (result.Content == nil || !keyExists) && hasDefault {
+				if newContent == nil {
+					newContent = make(map[string]json.RawMessage)
+					if result.Content != nil {
+						for k, v := range result.Content {
+							newContent[k] = v
+						}
+					}
+				}
+				newContent[key] = element
+			}
+		}
+
+		if newContent != nil {
+			return ElicitResult{
+				Action:  result.Action,
+				Content: newContent,
+				Meta:    result.Meta,
+			}
+		}
+	}
+
+	return result
 }
 
 type ElicitResultTyped[T any] struct {
@@ -150,6 +188,17 @@ func (b *BasePrimitiveSchemaDefinition) SetDescription(desc *string) { b.Descrip
 
 type PrimitiveSchemaDefinition struct {
 	IPrimitiveSchemaDefinition
+}
+
+func (p PrimitiveSchemaDefinition) GetDefaultAsJsonElement() (json.RawMessage, bool) {
+	if p.IPrimitiveSchemaDefinition == nil {
+		return nil, false
+	}
+	data, err := json.Marshal(p.IPrimitiveSchemaDefinition)
+	if err != nil {
+		return nil, false
+	}
+	return data, true
 }
 
 func (p *PrimitiveSchemaDefinition) UnmarshalJSON(data []byte) error {
