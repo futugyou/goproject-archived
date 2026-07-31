@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"reflect"
 	"strings"
 
 	"github.com/google/jsonschema-go/jsonschema"
@@ -363,7 +364,8 @@ type ElicitationCompleteNotificationParams struct {
 	ElicitationId string         `json:"elicitationId"`
 }
 
-var primitiveSchemas []*jsonschema.Schema
+var PrimitiveSchemasMap map[reflect.Type]*jsonschema.Schema
+var primitiveSchemasSlice []*jsonschema.Schema
 
 func init() {
 	str, _ := jsonschema.For[StringSchema](nil)
@@ -374,14 +376,58 @@ func init() {
 	multtile, _ := jsonschema.For[TitledMultiSelectEnumSchema](nil)
 	multunit, _ := jsonschema.For[UntitledMultiSelectEnumSchema](nil)
 
-	primitiveSchemas = []*jsonschema.Schema{
-		str, num, boo, title, unitsingle, multtile, multunit,
+	PrimitiveSchemasMap = map[reflect.Type]*jsonschema.Schema{
+		reflect.TypeFor[StringSchema]():                   str,
+		reflect.TypeFor[NumberSchema]():                   num,
+		reflect.TypeFor[BooleanSchema]():                  boo,
+		reflect.TypeFor[TitledSingleSelectEnumSchema]():   title,
+		reflect.TypeFor[UntitledSingleSelectEnumSchema](): unitsingle,
+		reflect.TypeFor[TitledMultiSelectEnumSchema]():    multtile,
+		reflect.TypeFor[UntitledMultiSelectEnumSchema]():  multunit,
+	}
+
+	primitiveSchemasSlice = make([]*jsonschema.Schema, 0, len(PrimitiveSchemasMap))
+	for _, schema := range PrimitiveSchemasMap {
+		primitiveSchemasSlice = append(primitiveSchemasSlice, schema)
 	}
 }
 
 func (PrimitiveSchemaDefinition) JSONSchema() *jsonschema.Schema {
 	return &jsonschema.Schema{
 		Description: "Primitive schema definition accommodating string, number, boolean, or enum types.",
-		OneOf:       primitiveSchemas,
+		OneOf:       primitiveSchemasSlice,
 	}
+}
+
+func GetPrimitiveSchemaByType[T any]() (*jsonschema.Schema, bool) {
+	schemaType := reflect.TypeOf((*T)(nil)).Elem()
+	if schemaType.Kind() == reflect.Pointer {
+		schemaType = schemaType.Elem()
+	}
+	s, exists := PrimitiveSchemasMap[schemaType]
+	return s, exists
+}
+
+func ValidatePrimitiveSchemaDefinition[T any](jsonBytes []byte) error {
+	schema, exists := GetPrimitiveSchemaByType[T]()
+	if !exists {
+		typeName := reflect.TypeFor[T]().Name()
+		return fmt.Errorf("%s type exist", typeName)
+	}
+
+	resolved, err := schema.Resolve(&jsonschema.ResolveOptions{ValidateDefaults: true})
+	if err != nil {
+		return err
+	}
+
+	var value any
+	if err := json.Unmarshal(jsonBytes, &value); err != nil {
+		return err
+	}
+
+	if err := resolved.Validate(value); err != nil {
+		return err
+	}
+
+	return nil
 }
