@@ -5,6 +5,7 @@ go 1.26.2
 require (
 	github.com/futugyou/extensions_ai v0.0.1
 	github.com/futugyou/yomawari v0.0.1
+	github.com/google/jsonschema-go v0.4.3
 	github.com/google/uuid v1.6.0
 	go.opentelemetry.io/otel v1.44.0
 	go.opentelemetry.io/otel/metric v1.44.0

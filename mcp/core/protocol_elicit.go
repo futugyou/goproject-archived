@@ -5,12 +5,17 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+
+	"github.com/google/jsonschema-go/jsonschema"
 )
 
 type ElicitRequestParams struct {
 	RequestParams
-	Message       string        `json:"message"`
-	RequestSchema RequestSchema `json:"requestSchema"`
+	Mode            string         `json:"mode"`
+	ElicitationId   *string        `json:"elicitationId,omitempty"`
+	Url             *string        `json:"url,omitempty"`
+	Message         string         `json:"message"`
+	RequestedSchema *RequestSchema `json:"requestedSchema,omitempty"`
 }
 
 type RequestSchema struct {
@@ -190,10 +195,10 @@ func (p *PrimitiveSchemaDefinition) UnmarshalJSON(data []byte) error {
 				_ = json.Unmarshal(raw.Default, &def)
 			}
 			target = &TitledSingleSelectEnumSchema{
-				Type:    "string",
 				OneOf:   raw.OneOf,
 				Default: def,
 			}
+			target.SetType("string")
 		} else if len(raw.Enum) > 0 {
 			// UntitledSingleSelectEnumSchema
 			var def *string
@@ -201,10 +206,10 @@ func (p *PrimitiveSchemaDefinition) UnmarshalJSON(data []byte) error {
 				_ = json.Unmarshal(raw.Default, &def)
 			}
 			target = &UntitledSingleSelectEnumSchema{
-				Type:    "string",
 				Enum:    raw.Enum,
 				Default: def,
 			}
+			target.SetType("string")
 		} else {
 			// StringSchema
 			var def *string
@@ -212,12 +217,12 @@ func (p *PrimitiveSchemaDefinition) UnmarshalJSON(data []byte) error {
 				_ = json.Unmarshal(raw.Default, &def)
 			}
 			target = &StringSchema{
-				Type:      "string",
 				MinLength: raw.MinLength,
 				MaxLength: raw.MaxLength,
 				Format:    raw.Format,
 				Default:   def,
 			}
+			target.SetType("string")
 		}
 
 	case "array":
@@ -247,20 +252,20 @@ func (p *PrimitiveSchemaDefinition) UnmarshalJSON(data []byte) error {
 		switch it := itemsObj.(type) {
 		case TitledEnumItemsSchema:
 			target = &TitledMultiSelectEnumSchema{
-				Type:     "array",
 				MinItems: raw.MinItems,
 				MaxItems: raw.MaxItems,
 				Items:    it,
 				Default:  def,
 			}
+			target.SetType("array")
 		case UntitledEnumItemsSchema:
 			target = &UntitledMultiSelectEnumSchema{
-				Type:     "array",
 				MinItems: raw.MinItems,
 				MaxItems: raw.MaxItems,
 				Items:    it,
 				Default:  def,
 			}
+			target.SetType("array")
 		}
 
 	case "number", "integer":
@@ -269,21 +274,20 @@ func (p *PrimitiveSchemaDefinition) UnmarshalJSON(data []byte) error {
 			_ = json.Unmarshal(raw.Default, &def)
 		}
 		target = &NumberSchema{
-			Type:    "number",
 			Minimum: raw.Minimum,
 			Maximum: raw.Maximum,
 			Default: def,
 		}
-
+		target.SetType("number")
 	case "boolean":
 		var def *bool
 		if len(raw.Default) > 0 {
 			_ = json.Unmarshal(raw.Default, &def)
 		}
 		target = &BooleanSchema{
-			Type:    "boolean",
 			Default: def,
 		}
+		target.SetType("boolean")
 	}
 
 	if target == nil {
@@ -307,8 +311,7 @@ func (p PrimitiveSchemaDefinition) MarshalJSON() ([]byte, error) {
 }
 
 type StringSchema struct {
-	PrimitiveSchemaDefinition
-	Type      string  `json:"type"`
+	BasePrimitiveSchemaDefinition
 	Format    *string `json:"format,omitempty"`
 	Default   *string `json:"default,omitempty"`
 	MinLength *int    `json:"minLength,omitempty"`
@@ -316,22 +319,19 @@ type StringSchema struct {
 }
 
 type TitledSingleSelectEnumSchema struct {
-	PrimitiveSchemaDefinition
-	Type    string             `json:"type"`
+	BasePrimitiveSchemaDefinition
 	OneOf   []EnumSchemaOption `json:"oneOf"`
 	Default *string            `json:"default,omitempty"`
 }
 
 type UntitledSingleSelectEnumSchema struct {
-	PrimitiveSchemaDefinition
-	Type    string   `json:"type"`
+	BasePrimitiveSchemaDefinition
 	Default *string  `json:"default,omitempty"`
 	Enum    []string `json:"enum"`
 }
 
 type TitledMultiSelectEnumSchema struct {
-	PrimitiveSchemaDefinition
-	Type     string                `json:"type"`
+	BasePrimitiveSchemaDefinition
 	Default  []string              `json:"default,omitempty"`
 	MinItems *int                  `json:"minItems"`
 	MaxItems *int                  `json:"maxItems"`
@@ -339,8 +339,7 @@ type TitledMultiSelectEnumSchema struct {
 }
 
 type UntitledMultiSelectEnumSchema struct {
-	PrimitiveSchemaDefinition
-	Type     string                  `json:"type"`
+	BasePrimitiveSchemaDefinition
 	Default  []string                `json:"default,omitempty"`
 	MinItems *int                    `json:"minItems"`
 	MaxItems *int                    `json:"maxItems"`
@@ -348,20 +347,41 @@ type UntitledMultiSelectEnumSchema struct {
 }
 
 type NumberSchema struct {
-	PrimitiveSchemaDefinition
-	Type    string   `json:"type"`
+	BasePrimitiveSchemaDefinition
 	Default *float64 `json:"default,omitempty"`
 	Minimum *float64 `json:"minimum"`
 	Maximum *float64 `json:"maximum"`
 }
 
 type BooleanSchema struct {
-	PrimitiveSchemaDefinition
-	Type    string `json:"type"`
-	Default *bool  `json:"default,omitempty"`
+	BasePrimitiveSchemaDefinition
+	Default *bool `json:"default,omitempty"`
 }
 
 type ElicitationCompleteNotificationParams struct {
 	Meta          map[string]any `json:"_meta,omitempty"`
 	ElicitationId string         `json:"elicitationId"`
+}
+
+var primitiveSchemas []*jsonschema.Schema
+
+func init() {
+	str, _ := jsonschema.For[StringSchema](nil)
+	num, _ := jsonschema.For[NumberSchema](nil)
+	boo, _ := jsonschema.For[BooleanSchema](nil)
+	title, _ := jsonschema.For[TitledSingleSelectEnumSchema](nil)
+	unitsingle, _ := jsonschema.For[UntitledSingleSelectEnumSchema](nil)
+	multtile, _ := jsonschema.For[TitledMultiSelectEnumSchema](nil)
+	multunit, _ := jsonschema.For[UntitledMultiSelectEnumSchema](nil)
+
+	primitiveSchemas = []*jsonschema.Schema{
+		str, num, boo, title, unitsingle, multtile, multunit,
+	}
+}
+
+func (PrimitiveSchemaDefinition) JSONSchema() *jsonschema.Schema {
+	return &jsonschema.Schema{
+		Description: "Primitive schema definition accommodating string, number, boolean, or enum types.",
+		OneOf:       primitiveSchemas,
+	}
 }
