@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"reflect"
 	"strings"
+	"sync"
 
 	"github.com/google/jsonschema-go/jsonschema"
 )
@@ -26,10 +27,10 @@ type RequestSchema struct {
 }
 
 type ElicitResult struct {
-	Meta       map[string]any             `json:"_meta,omitempty"`
-	ResultType string                     `json:"resultType"`
-	Action     string                     `json:"action"`
-	Content    map[string]json.RawMessage `json:"content,omitempty"`
+	Meta       map[string]any  `json:"_meta,omitempty"`
+	ResultType string          `json:"resultType"`
+	Action     string          `json:"action"`
+	Content    json.RawMessage `json:"content,omitempty"`
 }
 
 func (e *ElicitResult) IsAccepted() bool {
@@ -400,7 +401,7 @@ func (PrimitiveSchemaDefinition) JSONSchema() *jsonschema.Schema {
 }
 
 func GetPrimitiveSchemaByType[T any]() (*jsonschema.Schema, bool) {
-	schemaType := reflect.TypeOf((*T)(nil)).Elem()
+	schemaType := reflect.TypeFor[T]()
 	if schemaType.Kind() == reflect.Pointer {
 		schemaType = schemaType.Elem()
 	}
@@ -430,4 +431,60 @@ func ValidatePrimitiveSchemaDefinition[T any](jsonBytes []byte) error {
 	}
 
 	return nil
+}
+
+var elicitTypeCache sync.Map
+
+func ElicitTypeCache[T any]() (*RequestSchema, error) {
+	t := reflect.TypeFor[T]()
+	if t.Kind() == reflect.Pointer {
+		t = t.Elem()
+	}
+
+	if cached, ok := elicitTypeCache.Load(t); ok {
+		return cached.(*RequestSchema), nil
+	}
+
+	result := &RequestSchema{
+		Type:       "object",
+		Properties: make(map[string]PrimitiveSchemaDefinition),
+	}
+
+	if t.Kind() != reflect.Struct {
+		raw, err := jsonschema.ForType(t, nil)
+		if err != nil {
+			return nil, err
+		}
+		data, _ := json.Marshal(raw)
+		var sch PrimitiveSchemaDefinition
+		if err := json.Unmarshal(data, &sch); err != nil {
+			return nil, err
+		}
+
+		actual, _ := elicitTypeCache.LoadOrStore(t, result)
+		return actual.(*RequestSchema), nil
+	}
+
+	for f := range t.Fields() {
+		f := f
+		if f.IsExported() {
+			raw, err := jsonschema.ForType(f.Type, nil)
+			if err != nil {
+				return nil, err
+			}
+			data, err := json.Marshal(raw)
+			if err != nil {
+				return nil, err
+			}
+
+			var sch PrimitiveSchemaDefinition
+			if err := json.Unmarshal(data, &sch); err != nil {
+				return nil, err
+			}
+			result.Properties[f.Name] = sch
+		}
+	}
+
+	actual, _ := elicitTypeCache.LoadOrStore(t, result)
+	return actual.(*RequestSchema), nil
 }
