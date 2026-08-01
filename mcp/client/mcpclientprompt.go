@@ -30,6 +30,6 @@ func (p *McpClientPrompt) GetDescription() *string {
 	return p.prompt.Description
 }
 
-func (p *McpClientPrompt) Get(ctx context.Context, arguments map[string]interface{}) (*core.GetPromptResult, error) {
+func (p *McpClientPrompt) Get(ctx context.Context, arguments map[string]any) (*core.GetPromptResult, error) {
 	return p.client.GetPrompt(ctx, p.prompt.Name, arguments)
 }

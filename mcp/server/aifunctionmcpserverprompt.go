@@ -96,8 +96,8 @@ func createPromptCreateOption(options McpServerPromptCreateOptions, methodInfo r
 	op := &functions.AIFunctionFactoryOptions{
 		SerializerOptions:    &json.Encoder{},
 		ParameterNames:       []string{},
-		JSONSchemaOptions:    map[string]interface{}{},
-		AdditionalProperties: map[string]interface{}{},
+		JSONSchemaOptions:    map[string]any{},
+		AdditionalProperties: map[string]any{},
 	}
 	if options.Name != nil {
 		op.Name = *options.Name
@@ -126,7 +126,7 @@ func (m *AIFunctionMcpServerPrompt) Get(ctx context.Context, request RequestCont
 	}
 
 	arguments := functions.AIFunctionArguments{
-		Context: map[interface{}]interface{}{reflect.TypeOf(request): request},
+		Context: map[any]any{reflect.TypeOf(request): request},
 	}
 
 	if request.Params.Arguments != nil {

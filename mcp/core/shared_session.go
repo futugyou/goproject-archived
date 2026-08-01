@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"strings"
 )
 
@@ -152,9 +153,7 @@ func (o *RequestOptions) GetMetaForRequest() map[string]any {
 		return o.Meta
 	}
 	result := make(map[string]any, len(o.Meta)+1)
-	for k, v := range o.Meta {
-		result[k] = v
-	}
+	maps.Copy(result, o.Meta)
 	result["progressToken"] = o.ProgressToken
 
 	return result

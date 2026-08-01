@@ -26,6 +26,6 @@ func NewMcpClientResourceTemplate(client IMcpClient, protocolResourceTemplate co
 	}
 }
 
-func (m *McpClientResourceTemplate) Read(ctx context.Context, arguments map[string]interface{}) (*core.ReadResourceResult, error) {
+func (m *McpClientResourceTemplate) Read(ctx context.Context, arguments map[string]any) (*core.ReadResourceResult, error) {
 	return m.client.ReadResourceWithUriAndArguments(ctx, m.UriTemplate, arguments)
 }

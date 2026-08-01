@@ -25,7 +25,7 @@ type McpSession struct {
 	_isServer                 bool
 	_transportKind            string
 	_transport                core.ITransport
-	_requestHandlers          *RequestHandlers
+	_requestHandlers          *core.RequestHandlers
 	_notificationHandlers     *NotificationHandlers
 	_sessionStartingTimestamp int64
 	_pendingRequests          sync.Map // map[RequestId]*tasks.TaskCompletionSource[core.JsonRpcMessage]
@@ -35,7 +35,7 @@ type McpSession struct {
 	EndpointName              string
 }
 
-func NewMcpSession(isServer bool, transp core.ITransport, endpointName string, requestHandlers *RequestHandlers, notificationHandlers *NotificationHandlers) *McpSession {
+func NewMcpSession(isServer bool, transp core.ITransport, endpointName string, requestHandlers *core.RequestHandlers, notificationHandlers *NotificationHandlers) *McpSession {
 	// transportKind := transp.GetTransportKind()
 
 	return &McpSession{
@@ -105,7 +105,7 @@ func (m *McpSession) ProcessMessages(ctx context.Context) error {
 
 	processor.Run(ctx)
 
-	m._pendingRequests.Range(func(key, value interface{}) bool {
+	m._pendingRequests.Range(func(key, value any) bool {
 		if tcs, ok := value.(*tasks.TaskCompletionSource[core.JsonRpcMessage]); ok {
 			tcs.TrySetError(fmt.Errorf("the server shut down unexpectedly"))
 		}
@@ -344,7 +344,7 @@ func (m *McpSession) Dispose() {
 	incr := m._sessionStartingTimestamp - time.Now().UnixNano()
 	durationMetric.Record(context.Background(), (float64)(incr), metric.WithAttributes(tags...))
 
-	m._pendingRequests.Range(func(key, value interface{}) bool {
+	m._pendingRequests.Range(func(key, value any) bool {
 		if tcs, ok := value.(*tasks.TaskCompletionSource[core.JsonRpcMessage]); ok {
 			tcs.Cancel()
 		}
@@ -357,7 +357,7 @@ func (m *McpSession) Dispose() {
 	})
 }
 
-func getCancelledNotificationParams(notificationParams interface{}) *core.CancelledNotificationParams {
+func getCancelledNotificationParams(notificationParams any) *core.CancelledNotificationParams {
 	d, err := json.Marshal(notificationParams)
 	if err != nil {
 		return nil
@@ -416,7 +416,7 @@ func addRpcRequestTags(tags *[]attribute.KeyValue, request core.JsonRpcRequest) 
 		if err != nil {
 			return
 		}
-		var p map[string]interface{}
+		var p map[string]any
 		err = json.Unmarshal(d, &p)
 		if err != nil {
 			return

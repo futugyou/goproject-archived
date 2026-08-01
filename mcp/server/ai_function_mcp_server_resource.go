@@ -66,7 +66,7 @@ func (m *AIFunctionMcpServerResource) Read(ctx context.Context, request RequestC
 	}
 
 	arguments := functions.AIFunctionArguments{
-		Context: map[interface{}]interface{}{reflect.TypeOf(request): request},
+		Context: map[any]any{reflect.TypeOf(request): request},
 	}
 	var matches map[string]string
 	if m.uriParser != nil {

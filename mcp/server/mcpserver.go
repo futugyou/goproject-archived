@@ -102,7 +102,7 @@ func (m *McpServer) updateEndpointNameWithClientInfo() {
 }
 
 func (m *McpServer) setInitializeHandler(options *McpServerOptions) {
-	shared.GenericRequestHandlerAdd(
+	core.GenericRequestHandlerAdd(
 		m.GetRequestHandlers(),
 		core.RequestMethods_Initialize,
 		func(ctx context.Context, request *core.InitializeRequestParams, tran core.ITransport) (*core.InitializeResult, error) {
@@ -372,10 +372,10 @@ func setHandler[TRequest any, TResponse any](
 	m *McpServer,
 	method string,
 	handler func(context.Context, RequestContext[*TRequest]) (*TResponse, error),
-	unmarshaler shared.RequestUnmarshaler[TRequest],
-	marshaler shared.RepsonseMarshaler[TResponse],
+	unmarshaler core.RequestUnmarshaler[TRequest],
+	marshaler core.RepsonseMarshaler[TResponse],
 ) {
-	shared.GenericRequestHandlerAdd(
+	core.GenericRequestHandlerAdd(
 		m.GetRequestHandlers(),
 		method,
 		func(ctx context.Context, request *TRequest, destinationTransport core.ITransport) (*TResponse, error) {

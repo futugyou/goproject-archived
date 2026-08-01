@@ -1,19 +1,20 @@
-package shared
+package core
 
 import (
 	"context"
 	"encoding/json"
 	"sync"
-
-	"github.com/futugyou/mcp/core"
 )
 
-type RequestHandler func(ctx context.Context, request *core.JsonRpcRequest) (json.RawMessage, error)
-type GenericRequestHandler[TRequest any, TResponse any] func(ctx context.Context, request *TRequest, tran core.ITransport) (*TResponse, error)
-type RequestUnmarshaler[TRequest any] func(data interface{}) (*TRequest, error)
+type RequestHandler func(ctx context.Context, request *JsonRpcRequest) (json.RawMessage, error)
+type TypedRequestHandler[TRequest, TResponse any] func(ctx context.Context, request *TRequest) (*TResponse, error)
+type ResultOrAlternateRequestHandler[TRequest, TResponse any] func(ctx context.Context, request *TRequest) (*ResultOrAlternate[TResponse], error)
+
+type GenericRequestHandler[TRequest any, TResponse any] func(ctx context.Context, request *TRequest, tran ITransport) (*TResponse, error)
+type RequestUnmarshaler[TRequest any] func(data any) (*TRequest, error)
 type RepsonseMarshaler[TResponse any] func(data TResponse) (json.RawMessage, error)
 
-func DefaultJsonUnmarshaler[TRequest any](data interface{}) (*TRequest, error) {
+func DefaultJsonUnmarshaler[TRequest any](data any) (*TRequest, error) {
 	bytes, err := json.Marshal(data)
 	if err != nil {
 		return nil, err
@@ -108,7 +109,7 @@ func GenericRequestHandlerAdd[TRequest any, TResponse any](
 
 	handers.mu.Lock()
 	defer handers.mu.Unlock()
-	handers.handlers[method] = func(ctx context.Context, request *core.JsonRpcRequest) (json.RawMessage, error) {
+	handers.handlers[method] = func(ctx context.Context, request *JsonRpcRequest) (json.RawMessage, error) {
 		requestBody := request.Params
 		req, err := unmarshaler(requestBody)
 		if err != nil {
@@ -119,5 +120,71 @@ func GenericRequestHandlerAdd[TRequest any, TResponse any](
 			return nil, err
 		}
 		return marshaler(*resp)
+	}
+}
+
+func SetRequestHandler[TRequest any, TResponse any](
+	handers *RequestHandlers,
+	method string,
+	handler TypedRequestHandler[TRequest, TResponse],
+) {
+	if handers == nil {
+		return
+	}
+
+	handers.mu.Lock()
+	defer handers.mu.Unlock()
+	handers.handlers[method] = func(ctx context.Context, request *JsonRpcRequest) (json.RawMessage, error) {
+		requestBody := request.Params
+		var req TRequest
+		if err := json.Unmarshal(requestBody, &req); err != nil {
+			return nil, err
+		}
+		resp, err := handler(ctx, &req)
+		if err != nil {
+			return nil, err
+		}
+
+		data, err := json.Marshal(resp)
+		if err != nil {
+			return nil, err
+		}
+		return data, nil
+	}
+}
+
+func SetWithAlternateRequestHandler[TRequest any, TResponse any](
+	handers *RequestHandlers,
+	method string,
+	handler ResultOrAlternateRequestHandler[TRequest, TResponse],
+) {
+	if handers == nil {
+		return
+	}
+
+	handers.mu.Lock()
+	defer handers.mu.Unlock()
+	handers.handlers[method] = func(ctx context.Context, request *JsonRpcRequest) (json.RawMessage, error) {
+		requestBody := request.Params
+		var req TRequest
+		if err := json.Unmarshal(requestBody, &req); err != nil {
+			return nil, err
+		}
+		resp, err := handler(ctx, &req)
+		if err != nil {
+			return nil, err
+		}
+
+		var result any
+		if resp.IsAlternate() {
+			result = resp.Alternate()
+		} else {
+			result = resp.Result()
+		}
+		data, err := json.Marshal(result)
+		if err != nil {
+			return nil, err
+		}
+		return data, nil
 	}
 }

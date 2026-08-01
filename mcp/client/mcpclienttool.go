@@ -12,7 +12,7 @@ var _ functions.AIFunction = &McpClientTool{}
 
 type McpClientTool struct {
 	functions.BaseAIFunction
-	additionalProperties map[string]interface{}
+	additionalProperties map[string]any
 	client               IMcpClient
 	name                 string
 	description          *string
@@ -21,7 +21,7 @@ type McpClientTool struct {
 
 func NewMcpClientTool(client IMcpClient, name string, description *string, protocolTool core.Tool) *McpClientTool {
 	return &McpClientTool{
-		additionalProperties: map[string]interface{}{"Strict": false},
+		additionalProperties: map[string]any{"Strict": false},
 		client:               client,
 		name:                 name,
 		description:          description,
@@ -38,7 +38,7 @@ func (m *McpClientTool) WithDescription(description string) *McpClientTool {
 }
 
 // GetAdditionalProperties implements functions.AIFunction.
-func (m *McpClientTool) GetAdditionalProperties() map[string]interface{} {
+func (m *McpClientTool) GetAdditionalProperties() map[string]any {
 	return m.additionalProperties
 }
 
@@ -51,8 +51,8 @@ func (m *McpClientTool) GetDescription() string {
 }
 
 // GetJsonSchema implements functions.AIFunction.
-func (m *McpClientTool) GetJsonSchema() map[string]interface{} {
-	var result map[string]interface{}
+func (m *McpClientTool) GetJsonSchema() map[string]any {
+	var result map[string]any
 	if err := json.Unmarshal(m.ProtocolTool.InputSchema, &result); err != nil {
 		return nil
 	}
@@ -69,6 +69,6 @@ func (m *McpClientTool) GetName() string {
 }
 
 // Invoke implements functions.AIFunction.
-func (m *McpClientTool) Invoke(ctx context.Context, arguments functions.AIFunctionArguments) (interface{}, error) {
+func (m *McpClientTool) Invoke(ctx context.Context, arguments functions.AIFunctionArguments) (any, error) {
 	return m.client.CallTool(ctx, m.ProtocolTool.Name, arguments.Items(), nil)
 }

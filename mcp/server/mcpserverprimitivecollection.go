@@ -21,7 +21,7 @@ func NewMcpServerPrimitiveCollection[T IMcpServerPrimitive]() *McpServerPrimitiv
 // Count returns the number of primitives in the collection
 func (c *McpServerPrimitiveCollection[T]) Count() int {
 	count := 0
-	c.primitives.Range(func(_, _ interface{}) bool {
+	c.primitives.Range(func(_, _ any) bool {
 		count++
 		return true
 	})
@@ -31,7 +31,7 @@ func (c *McpServerPrimitiveCollection[T]) Count() int {
 // IsEmpty returns true if the collection contains no primitives
 func (c *McpServerPrimitiveCollection[T]) IsEmpty() bool {
 	count := 0
-	c.primitives.Range(func(_, _ interface{}) bool {
+	c.primitives.Range(func(_, _ any) bool {
 		count++
 		return true
 	})
@@ -71,7 +71,7 @@ func (c *McpServerPrimitiveCollection[T]) Get(name string) (T, bool) {
 
 // Clear removes all primitives from the collection
 func (c *McpServerPrimitiveCollection[T]) Clear() {
-	c.primitives.Range(func(key, _ interface{}) bool {
+	c.primitives.Range(func(key, _ any) bool {
 		c.primitives.Delete(key)
 		return true
 	})
@@ -121,7 +121,7 @@ func (c *McpServerPrimitiveCollection[T]) Contains(primitive T) bool {
 // Names returns all primitive names in the collection
 func (c *McpServerPrimitiveCollection[T]) Names() []string {
 	var names []string
-	c.primitives.Range(func(key, _ interface{}) bool {
+	c.primitives.Range(func(key, _ any) bool {
 		names = append(names, key.(string))
 		return true
 	})
@@ -131,7 +131,7 @@ func (c *McpServerPrimitiveCollection[T]) Names() []string {
 // ToSlice returns all primitives as a slice
 func (c *McpServerPrimitiveCollection[T]) ToSlice() []T {
 	var slice []T
-	c.primitives.Range(func(_, value interface{}) bool {
+	c.primitives.Range(func(_, value any) bool {
 		slice = append(slice, value.(T))
 		return true
 	})

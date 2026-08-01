@@ -21,7 +21,7 @@ type McpClient struct {
 	clientTransport  IClientTransport
 	options          McpClientOptions
 	sessionTransport core.ITransport
-	reqHandlers      *shared.RequestHandlers
+	reqHandlers      *core.RequestHandlers
 	notifHandlers    *shared.NotificationHandlers
 
 	ctx        context.Context
@@ -51,7 +51,7 @@ func NewMcpClient(clientTransport IClientTransport, options McpClientOptions) *M
 		clientTransport: clientTransport,
 		options:         options,
 		EndpointName:    clientTransport.GetName(),
-		reqHandlers:     shared.NewRequestHandlers(),
+		reqHandlers:     core.NewRequestHandlers(),
 		notifHandlers:   shared.NewNotificationHandlers(),
 	}
 
@@ -167,7 +167,7 @@ func (m *McpClient) Connect(ctx context.Context) error {
 }
 
 // CallTool implements IMcpClient.
-func (m *McpClient) CallTool(ctx context.Context, toolName string, arguments map[string]interface{}, reporter any) (*core.CallToolResult, error) {
+func (m *McpClient) CallTool(ctx context.Context, toolName string, arguments map[string]any, reporter any) (*core.CallToolResult, error) {
 	// params := core.CallToolRequestParams{
 	// 	RequestParams: core.RequestParams{},
 	// 	Name:          toolName,
@@ -426,7 +426,7 @@ func (m *McpClient) EnumerateTools(ctx context.Context) (<-chan McpClientTool, <
 }
 
 // GetPrompt implements IMcpClient.
-func (m *McpClient) GetPrompt(ctx context.Context, name string, arguments map[string]interface{}) (*core.GetPromptResult, error) {
+func (m *McpClient) GetPrompt(ctx context.Context, name string, arguments map[string]any) (*core.GetPromptResult, error) {
 	// params := core.GetPromptRequestParams{
 	// 	RequestParams: core.RequestParams{},
 	// 	Name:          name,
@@ -634,7 +634,7 @@ func (m *McpClient) ReadResourceWithUri(ctx context.Context, uri url.URL) (*core
 }
 
 // ReadResourceWithUriAndArguments implements IMcpClient.
-func (m *McpClient) ReadResourceWithUriAndArguments(ctx context.Context, uriTemplate string, arguments map[string]interface{}) (*core.ReadResourceResult, error) {
+func (m *McpClient) ReadResourceWithUriAndArguments(ctx context.Context, uriTemplate string, arguments map[string]any) (*core.ReadResourceResult, error) {
 	url, err := shared.FormatUri(uriTemplate, arguments)
 	if err != nil {
 		return nil, err

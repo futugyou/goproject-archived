@@ -16,7 +16,7 @@ type BaseMcpEndpoint struct {
 	session       *McpSession
 	sessionCts    context.CancelFunc
 	messageTask   <-chan struct{}
-	reqHandlers   *RequestHandlers
+	reqHandlers   *core.RequestHandlers
 	notifHandlers *NotificationHandlers
 	endpointName  string
 }
@@ -44,7 +44,7 @@ func (e *BaseMcpEndpoint) SendNotification(ctx context.Context, notification cor
 
 func NewBaseMcpEndpoint() *BaseMcpEndpoint {
 	return &BaseMcpEndpoint{
-		reqHandlers:   NewRequestHandlers(),
+		reqHandlers:   core.NewRequestHandlers(),
 		notifHandlers: NewNotificationHandlers(),
 		endpointName:  "",
 	}
@@ -58,7 +58,7 @@ func (e *BaseMcpEndpoint) GetMessageProcessingTask() <-chan struct{} {
 	return e.messageTask
 }
 
-func (e *BaseMcpEndpoint) GetRequestHandlers() *RequestHandlers {
+func (e *BaseMcpEndpoint) GetRequestHandlers() *core.RequestHandlers {
 	return e.reqHandlers
 }
 
