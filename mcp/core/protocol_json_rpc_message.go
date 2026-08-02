@@ -69,6 +69,14 @@ type JsonRpcError struct {
 	Error JsonRpcErrorDetail `json:"error"`
 }
 
+func (j *JsonRpcError) ErrorMessage() string {
+	data, err := json.Marshal(j)
+	if err != nil {
+		return ""
+	}
+	return string(data)
+}
+
 func NewJsonRpcError(id *RequestId, errDetail *JsonRpcErrorDetail, msgContext *JsonRpcMessageContext) *JsonRpcMessage {
 	result := &JsonRpcError{
 		BaseJsonRpcMessage: BaseJsonRpcMessage{
