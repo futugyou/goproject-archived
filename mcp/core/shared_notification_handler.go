@@ -1,14 +1,12 @@
-package shared
+package core
 
 import (
 	"context"
 	"fmt"
 	"sync"
-
-	"github.com/futugyou/mcp/core"
 )
 
-type HandlerFunc func(ctx context.Context, notif core.JsonRpcNotification) error
+type HandlerFunc func(ctx context.Context, notif JsonRpcNotification) error
 
 // contextKey 用于在 Context 中传递“正在执行的 handler 标记”，防止死锁
 type contextKey struct{}
@@ -125,14 +123,14 @@ func (r *Registration) Close(ctx context.Context) error {
 	}
 }
 
-func (r *Registration) invoke(ctx context.Context, notif core.JsonRpcNotification) error {
+func (r *Registration) invoke(ctx context.Context, notif JsonRpcNotification) error {
 	if !r.temporary {
 		return r.handler(ctx, notif)
 	}
 	return r.invokeTemporary(ctx, notif)
 }
 
-func (r *Registration) invokeTemporary(ctx context.Context, notif core.JsonRpcNotification) error {
+func (r *Registration) invokeTemporary(ctx context.Context, notif JsonRpcNotification) error {
 	r.handlers.mu.Lock()
 	r.mu.Lock()
 
@@ -173,7 +171,7 @@ func (r *Registration) invokeTemporary(ctx context.Context, notif core.JsonRpcNo
 }
 
 // InvokeHandlers 触发特定方法的所有 Handler，按照逆序（最新注册优先）顺序调用
-func (nh *NotificationHandlers) InvokeHandlers(ctx context.Context, method string, notif core.JsonRpcNotification) error {
+func (nh *NotificationHandlers) InvokeHandlers(ctx context.Context, method string, notif JsonRpcNotification) error {
 	nh.mu.Lock()
 	reg, ok := nh.handlers[method]
 	nh.mu.Unlock()

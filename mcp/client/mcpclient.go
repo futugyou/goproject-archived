@@ -22,7 +22,7 @@ type McpClient struct {
 	options          McpClientOptions
 	sessionTransport core.ITransport
 	reqHandlers      *core.RequestHandlers
-	notifHandlers    *shared.NotificationHandlers
+	notifHandlers    *core.NotificationHandlers
 
 	ctx        context.Context
 	connectCts context.CancelFunc
@@ -52,7 +52,7 @@ func NewMcpClient(clientTransport IClientTransport, options McpClientOptions) *M
 		options:         options,
 		EndpointName:    clientTransport.GetName(),
 		reqHandlers:     core.NewRequestHandlers(),
-		notifHandlers:   shared.NewNotificationHandlers(),
+		notifHandlers:   core.NewNotificationHandlers(),
 	}
 
 	capabilities := options.Capabilities

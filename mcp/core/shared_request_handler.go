@@ -7,8 +7,8 @@ import (
 )
 
 type RequestHandler func(ctx context.Context, request *JsonRpcRequest) (json.RawMessage, error)
-type TypedRequestHandler[TRequest, TResponse any] func(ctx context.Context, request *TRequest) (*TResponse, error)
-type ResultOrAlternateRequestHandler[TRequest, TResponse any] func(ctx context.Context, request *TRequest) (*ResultOrAlternate[TResponse], error)
+type TypedRequestHandler[TRequest, TResponse any] func(ctx context.Context, params *TRequest, request *JsonRpcRequest) (*TResponse, error)
+type ResultOrAlternateRequestHandler[TRequest, TResponse any] func(ctx context.Context, params *TRequest, request *JsonRpcRequest) (*ResultOrAlternate[TResponse], error)
 
 type GenericRequestHandler[TRequest any, TResponse any] func(ctx context.Context, request *TRequest, tran ITransport) (*TResponse, error)
 type RequestUnmarshaler[TRequest any] func(data any) (*TRequest, error)
@@ -140,7 +140,7 @@ func SetRequestHandler[TRequest any, TResponse any](
 		if err := json.Unmarshal(requestBody, &req); err != nil {
 			return nil, err
 		}
-		resp, err := handler(ctx, &req)
+		resp, err := handler(ctx, &req, request)
 		if err != nil {
 			return nil, err
 		}
@@ -170,7 +170,7 @@ func SetWithAlternateRequestHandler[TRequest any, TResponse any](
 		if err := json.Unmarshal(requestBody, &req); err != nil {
 			return nil, err
 		}
-		resp, err := handler(ctx, &req)
+		resp, err := handler(ctx, &req, request)
 		if err != nil {
 			return nil, err
 		}

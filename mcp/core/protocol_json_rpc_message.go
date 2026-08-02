@@ -69,6 +69,24 @@ type JsonRpcError struct {
 	Error JsonRpcErrorDetail `json:"error"`
 }
 
+func NewJsonRpcError(id *RequestId, errDetail *JsonRpcErrorDetail, msgContext *JsonRpcMessageContext) *JsonRpcMessage {
+	result := &JsonRpcError{
+		BaseJsonRpcMessage: BaseJsonRpcMessage{
+			Context: msgContext,
+			JsonRpc: "2.0",
+		},
+		ID: id,
+	}
+
+	if errDetail != nil {
+		result.Error = *errDetail
+	}
+
+	return &JsonRpcMessage{
+		IJsonRpcMessage: result,
+	}
+}
+
 type JsonRpcResponse struct {
 	BaseJsonRpcMessage
 	ID     *RequestId      `json:"id"`
@@ -82,6 +100,20 @@ type JsonRpcMessageWithId struct {
 
 type JsonRpcMessage struct {
 	IJsonRpcMessage
+}
+
+func (j *JsonRpcMessage) GetParams() json.RawMessage {
+	re, ok := j.ToJsonRpcRequest()
+	if ok {
+		return re.Params
+	}
+
+	r, ok := j.ToJsonRpcNotification()
+	if ok {
+		return r.Params
+	}
+
+	return nil
 }
 
 func (j *JsonRpcMessage) GetType() string {
