@@ -105,7 +105,12 @@ func (j *JsonRpcMessage) GetType() string {
 	}
 }
 
-func (j *JsonRpcMessage) IsJsonRpcRequest() (*JsonRpcRequest, bool) {
+func (j *JsonRpcMessage) IsJsonRpcRequest() bool {
+	_, ok := j.ToJsonRpcRequest()
+	return ok
+}
+
+func (j *JsonRpcMessage) ToJsonRpcRequest() (*JsonRpcRequest, bool) {
 	if j == nil || j.IJsonRpcMessage == nil {
 		return nil, false
 	}
@@ -118,7 +123,12 @@ func (j *JsonRpcMessage) IsJsonRpcRequest() (*JsonRpcRequest, bool) {
 	}
 }
 
-func (j *JsonRpcMessage) IsJsonRpcNotification() (*JsonRpcNotification, bool) {
+func (j *JsonRpcMessage) IsJsonRpcNotification() bool {
+	_, ok := j.ToJsonRpcNotification()
+	return ok
+}
+
+func (j *JsonRpcMessage) ToJsonRpcNotification() (*JsonRpcNotification, bool) {
 	if j == nil || j.IJsonRpcMessage == nil {
 		return nil, false
 	}
@@ -131,7 +141,12 @@ func (j *JsonRpcMessage) IsJsonRpcNotification() (*JsonRpcNotification, bool) {
 	}
 }
 
-func (j *JsonRpcMessage) IsJsonRpcError() (*JsonRpcError, bool) {
+func (j *JsonRpcMessage) IsJsonRpcError() bool {
+	_, ok := j.ToJsonRpcError()
+	return ok
+}
+
+func (j *JsonRpcMessage) ToJsonRpcError() (*JsonRpcError, bool) {
 	if j == nil || j.IJsonRpcMessage == nil {
 		return nil, false
 	}
@@ -144,7 +159,12 @@ func (j *JsonRpcMessage) IsJsonRpcError() (*JsonRpcError, bool) {
 	}
 }
 
-func (j *JsonRpcMessage) IsJsonRpcResponse() (*JsonRpcResponse, bool) {
+func (j *JsonRpcMessage) IsJsonRpcResponse() bool {
+	_, ok := j.ToJsonRpcResponse()
+	return ok
+}
+
+func (j *JsonRpcMessage) ToJsonRpcResponse() (*JsonRpcResponse, bool) {
 	if j == nil || j.IJsonRpcMessage == nil {
 		return nil, false
 	}
@@ -157,7 +177,12 @@ func (j *JsonRpcMessage) IsJsonRpcResponse() (*JsonRpcResponse, bool) {
 	}
 }
 
-func (j *JsonRpcMessage) IsJsonRpcMessageWithId() (*JsonRpcMessageWithId, bool) {
+func (j *JsonRpcMessage) IsJsonRpcMessageWithId() bool {
+	_, ok := j.ToJsonRpcMessageWithId()
+	return ok
+}
+
+func (j *JsonRpcMessage) ToJsonRpcMessageWithId() (*JsonRpcMessageWithId, bool) {
 	if j == nil || j.IJsonRpcMessage == nil {
 		return nil, false
 	}
