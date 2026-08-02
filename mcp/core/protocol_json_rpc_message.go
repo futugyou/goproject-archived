@@ -84,6 +84,92 @@ type JsonRpcMessage struct {
 	IJsonRpcMessage
 }
 
+func (j *JsonRpcMessage) GetType() string {
+	if j == nil || j.IJsonRpcMessage == nil {
+		return "unknown"
+	}
+
+	switch j.IJsonRpcMessage.(type) {
+	case *JsonRpcRequest:
+		return "JsonRpcRequest"
+	case *JsonRpcNotification:
+		return "JsonRpcNotification"
+	case *JsonRpcError:
+		return "JsonRpcError"
+	case *JsonRpcResponse:
+		return "JsonRpcResponse"
+	case *JsonRpcMessageWithId:
+		return "JsonRpcMessageWithId"
+	default:
+		return "unknown"
+	}
+}
+
+func (j *JsonRpcMessage) IsJsonRpcRequest() (*JsonRpcRequest, bool) {
+	if j == nil || j.IJsonRpcMessage == nil {
+		return nil, false
+	}
+
+	switch msg := j.IJsonRpcMessage.(type) {
+	case *JsonRpcRequest:
+		return msg, true
+	default:
+		return nil, false
+	}
+}
+
+func (j *JsonRpcMessage) IsJsonRpcNotification() (*JsonRpcNotification, bool) {
+	if j == nil || j.IJsonRpcMessage == nil {
+		return nil, false
+	}
+
+	switch msg := j.IJsonRpcMessage.(type) {
+	case *JsonRpcNotification:
+		return msg, true
+	default:
+		return nil, false
+	}
+}
+
+func (j *JsonRpcMessage) IsJsonRpcError() (*JsonRpcError, bool) {
+	if j == nil || j.IJsonRpcMessage == nil {
+		return nil, false
+	}
+
+	switch msg := j.IJsonRpcMessage.(type) {
+	case *JsonRpcError:
+		return msg, true
+	default:
+		return nil, false
+	}
+}
+
+func (j *JsonRpcMessage) IsJsonRpcResponse() (*JsonRpcResponse, bool) {
+	if j == nil || j.IJsonRpcMessage == nil {
+		return nil, false
+	}
+
+	switch msg := j.IJsonRpcMessage.(type) {
+	case *JsonRpcResponse:
+		return msg, true
+	default:
+		return nil, false
+	}
+}
+
+func (j *JsonRpcMessage) IsJsonRpcMessageWithId() (*JsonRpcMessageWithId, bool) {
+	if j == nil || j.IJsonRpcMessage == nil {
+		return nil, false
+	}
+
+	switch msg := j.IJsonRpcMessage.(type) {
+	case *JsonRpcMessageWithId:
+		return msg, true
+	default:
+		return nil, false
+	}
+}
+
 func (r *JsonRpcMessage) UnmarshalJSON(data []byte) error {
 	if len(data) == 0 || string(data) == "null" {
 		r.IJsonRpcMessage = nil
