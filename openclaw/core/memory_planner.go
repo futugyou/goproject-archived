@@ -97,10 +97,7 @@ func (cb *ContextBudgetPlanner) BuildContext(
 		marker := "\n...[truncated]\n</fractal_memory_context>"
 		markerRunes := []rune(marker)
 
-		contentBudget := maxChars - len(markerRunes)
-		if contentBudget < 0 {
-			contentBudget = 0
-		}
+		contentBudget := max(maxChars-len(markerRunes), 0)
 
 		if contentBudget == 0 {
 			limit := min(maxChars, len(markerRunes))
@@ -134,10 +131,7 @@ func (cb *ContextBudgetPlanner) resolveBestPath(
 	}
 
 	if query != "" {
-		search, err := cb.provider.Search(ctx, query, 3, request.Scope)
-		if err != nil {
-			return "", err
-		}
+		search := cb.provider.Search(ctx, query, 3, request.Scope)
 		if search.Success {
 			for _, item := range search.Items {
 				if strings.TrimSpace(item.Path) != "" {

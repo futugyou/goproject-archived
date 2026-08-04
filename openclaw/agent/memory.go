@@ -2,7 +2,6 @@ package agent
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -24,7 +23,7 @@ import (
 type ToolCallOutcome struct {
 	Success           bool
 	Text              string
-	StructuredContent json.RawMessage
+	StructuredContent any
 	Error             string
 }
 
@@ -306,7 +305,10 @@ func (p *FractalMemoryMcpProvider) buildRepositoryWarnings(resolvedRoot string) 
 
 // Close 用于清理并释放 MCP 进程连接
 func (p *FractalMemoryMcpProvider) Close() error {
-	p.disposed.Store(true)
+	if !p.disposed.CompareAndSwap(false, true) {
+		return nil
+	}
+
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
@@ -317,4 +319,144 @@ func (p *FractalMemoryMcpProvider) Close() error {
 		return err
 	}
 	return nil
+}
+
+func (p *FractalMemoryMcpProvider) callTool(ctx context.Context, toolName string, arguments map[string]any) (*ToolCallOutcome, error) {
+	client, err := p.ensureSession(ctx)
+	if err != nil {
+		return nil, err
+	}
+	initCtx, cancel := context.WithTimeout(ctx, 60*time.Second)
+	defer cancel()
+
+	response, err := client.CallTool(initCtx, p.compactArguments(toolName, arguments))
+	if err != nil {
+		return nil, err
+	}
+	var text = p.formatResponseContent(response)
+	if response.IsError {
+		if text == "" {
+			text = fmt.Sprintf("fractal Memory MCP tool '%s' returned an error", toolName)
+		}
+		return FailToolCallOutcome(text), nil
+	}
+
+	return &ToolCallOutcome{Success: true, Text: text, StructuredContent: response.StructuredContent}, nil
+}
+
+func (f *FractalMemoryMcpProvider) formatResponseContent(response *mcp.CallToolResult) string {
+	parts := []string{}
+	for _, v := range response.Content {
+		if d, ok := v.(*mcp.TextContent); ok {
+			parts = append(parts, d.Text)
+		}
+		if d, ok := v.(*mcp.EmbeddedResource); ok {
+			if d.Resource != nil && d.Resource.Text != "" {
+				parts = append(parts, d.Resource.Text)
+			}
+		}
+	}
+	return strings.TrimSpace(strings.Join(parts, "\n\n"))
+}
+
+func (f *FractalMemoryMcpProvider) compactArguments(toolName string, arguments map[string]any) *mcp.CallToolParams {
+	return &mcp.CallToolParams{Name: toolName, Arguments: arguments}
+}
+
+func parseSourceRefsFromText(text string) []core.StructuredMemorySourceRef {
+	if text == "" {
+		return []core.StructuredMemorySourceRef{}
+	}
+
+	return []core.StructuredMemorySourceRef{
+		{
+			Path:    "unknown",
+			Snippet: util.Truncate(text, 500),
+		},
+	}
+}
+
+func parseRecentItems(data any) []core.StructuredMemorySourceRef {
+	items, ok1 := util.TryGetArrayOrObjectArray(data, "items")
+	results, ok2 := util.TryGetArrayOrObjectArray(data, "results")
+	if !ok1 && !ok2 {
+		return nil
+	}
+
+	result := []core.StructuredMemorySourceRef{}
+
+	for _, item := range append(items, results...) {
+		obj, ok := util.TryGetObject(item)
+		if !ok {
+			continue
+		}
+
+		path := util.GetString(obj, "relativePath")
+		if path == nil {
+			path = util.GetString(obj, "path")
+		}
+
+		title := util.GetString(obj, "title")
+		fileName := util.GetString(obj, "fileName")
+		lastModified := util.GetDateTimeOffset(obj, "lastModified")
+		ref := core.StructuredMemorySourceRef{
+			LastModifiedUtc: lastModified,
+		}
+		if path != nil {
+			ref.Path = *path
+		}
+
+		if title != nil {
+			ref.Title = *title
+		}
+
+		if fileName != nil {
+			ref.FileName = *fileName
+		}
+
+		result = append(result, ref)
+	}
+
+	return result
+}
+
+func (p *FractalMemoryMcpProvider) Search(ctx context.Context, query string, limit int, scope string) *core.StructuredMemorySearchResult {
+	if query == "" {
+		return &core.StructuredMemorySearchResult{
+			Error: "query is required",
+		}
+	}
+
+	result, err := p.callTool(ctx, "memory_search", map[string]any{
+		"query": query,
+		"limit": util.Clamp(limit, 1, 50),
+		"scope": p.normalizeOptional(scope),
+	})
+
+	if err != nil {
+		return &core.StructuredMemorySearchResult{
+			Error: err.Error(),
+		}
+	}
+
+	if !result.Success {
+		return &core.StructuredMemorySearchResult{
+			Query: query,
+			Error: result.Error,
+			Scope: p.normalizeOptional(scope),
+		}
+	}
+
+	res := &core.StructuredMemorySearchResult{
+		Query:   query,
+		Success: true,
+		Scope:   p.normalizeOptional(scope),
+	}
+	items := parseRecentItems(result.StructuredContent)
+	if len(items) == 0 {
+		items = parseSourceRefsFromText(result.Text)
+	}
+	res.Items = items
+
+	return res
 }
