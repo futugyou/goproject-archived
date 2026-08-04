@@ -1010,7 +1010,7 @@ func (p *FractalMemoryMcpProvider) CreateHandoff(ctx context.Context, path strin
 func (p *FractalMemoryMcpProvider) Validate(ctx context.Context) (*core.StructuredMemoryValidationResult, error) {
 	result, err := p.callTool(ctx, "memory_validate", map[string]any{})
 	if err != nil {
-		return nil, err
+		return &core.StructuredMemoryValidationResult{Error: err.Error()}, nil
 	}
 
 	if result.Success {
@@ -1099,4 +1099,22 @@ func parseValidationIssues(root map[string]any) []core.StructuredMemoryValidatio
 	}
 
 	return result
+}
+
+func (p *FractalMemoryMcpProvider) RefreshIndex(ctx context.Context) (*core.StructuredMemoryValidationResult, error) {
+	if p.config.Memory.Fractal == nil || !p.config.Memory.Fractal.AllowWrites {
+		return &core.StructuredMemoryValidationResult{Error: "fractal Memory index refresh is disabled by configuration"}, nil
+	}
+
+	result, err := p.callTool(ctx, "memory_index_refresh", map[string]any{})
+	if err != nil {
+		return &core.StructuredMemoryValidationResult{Error: err.Error()}, nil
+	}
+
+	if result.Success {
+		successSummary := "fractal Memory index refresh completed"
+		return parseValidationResult(result.StructuredContent, result.Text, &successSummary), nil
+	}
+
+	return &core.StructuredMemoryValidationResult{Error: result.Error}, nil
 }
