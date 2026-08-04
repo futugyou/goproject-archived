@@ -1,58 +1,43 @@
 package core
 
-// type  MessageContext struct{
-// Server McpSession
-// }
+import (
+	"context"
+	"errors"
+	"time"
+)
 
-//     public MessageContext(McpServer server, JsonRpcMessage jsonRpcMessage)
-//     {
-//         Throw.IfNull(server);
-//         Throw.IfNull(jsonRpcMessage);
+type MessageContext struct {
+	Server         McpSession
+	JsonRpcMessage *JsonRpcMessage
+	Items          map[string]any
+}
 
-//         Server = server;
-//         JsonRpcMessage = jsonRpcMessage;
-//         Services = server.Services;
-//     }
+func NewMessageContext(server McpSession, jsonRpcMessage *JsonRpcMessage) *MessageContext {
+	return &MessageContext{
+		Server:         server,
+		JsonRpcMessage: jsonRpcMessage,
+	}
+}
 
-//     /// <summary>Gets or sets the server with which this instance is associated.</summary>
-//     public McpServer Server
-//     {
-//         get => field;
-//         set
-//         {
-//             Throw.IfNull(value);
-//             field = value;
-//         }
-//     }
+type RequestContext[TParams any] struct {
+	Server         McpSession
+	JsonRpcMessage *JsonRpcMessage
+	Items          map[string]any
+	Params         TParams
+	JsonRpcRequest *JsonRpcRequest
+}
 
-//     /// <summary>
-//     /// Gets or sets a key/value collection that can be used to share data within the scope of this message.
-//     /// </summary>
-//     /// <remarks>
-//     /// <para>
-//     /// This dictionary is shared with the <see cref="Protocol.JsonRpcMessageContext.Items"/> property
-//     /// on the underlying <see cref="JsonRpcMessage"/>, ensuring that data set in message filters
-//     /// flows through to request-specific filters and handlers.
-//     /// </para>
-//     /// </remarks>
-//     public IDictionary<string, object?> Items
-//     {
-//         get
-//         {
-//             JsonRpcMessage.Context ??= new();
-//             return JsonRpcMessage.Context.Items ??= new Dictionary<string, object?>();
-//         }
-//         set
-//         {
-//             JsonRpcMessage.Context ??= new();
-//             JsonRpcMessage.Context.Items = value;
-//         }
-//     }
+func (r *RequestContext[TParams]) EnablePollingAsync(ctx context.Context, retryInterval time.Duration) error {
+	jsonContext := r.JsonRpcRequest.GetContext()
+	if jsonContext == nil {
+		return errors.New("JsonRpcRequest has null context")
+	}
+	return nil
+	// TODO
+	// transport, ok := jsonContext.RelatedTransport.(*StreamableHttpPostTransport)
+	// if !ok {
+	// 	return errors.New("polling is only supported for Streamable HTTP transports")
+	// }
 
-//     public JsonRpcMessage JsonRpcMessage { get; set; }
-// }
-
-// type RequestContext[TParams any] struct {
-// 	Params TParams
-// 	Server IMcpServer
-// }
+	// return transport.EnablePolling(ctx, retryInterval)
+}
