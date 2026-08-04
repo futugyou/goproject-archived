@@ -959,3 +959,51 @@ func buildExportContent(root map[string]any, fallback string) string {
 	}
 	return text
 }
+
+func parseHandoffResult(structured any, path, text string) *core.StructuredMemoryHandoffResult {
+	if root, ok := util.TryGetObject(structured); ok {
+
+		var handoffPath = getStringOrDefault(util.GetString(root, "handoffFilePath"), "")
+		var content = getStringOrDefault(util.GetString(root, "renderedContent"), text)
+		return &core.StructuredMemoryHandoffResult{
+			Success:         true,
+			Path:            getStringOrDefault(util.GetString(root, "relativePath"), path),
+			HandoffFilePath: handoffPath,
+			Content:         content,
+			Sources:         parseSourceArray(root, "sourceReferences"),
+		}
+	}
+
+	return &core.StructuredMemoryHandoffResult{
+		Success: true,
+		Path:    path,
+		Content: text,
+		Sources: []core.StructuredMemorySourceRef{
+			{Path: path, Snippet: util.Truncate(text, 500)},
+		},
+	}
+}
+
+func (p *FractalMemoryMcpProvider) CreateHandoff(ctx context.Context, path string) (*core.StructuredMemoryHandoffResult, error) {
+	path, err := p.requirePath(path)
+	if err != nil {
+		return nil, err
+	}
+	if p.config.Memory.Fractal == nil || !p.config.Memory.Fractal.AllowWrites {
+		return &core.StructuredMemoryHandoffResult{Path: path, Error: "fractal Memory writes are disabled by configuration"}, nil
+	}
+
+	result, err := p.callTool(ctx, "memory_handoff_create", map[string]any{
+		"path": path,
+	})
+
+	if err != nil {
+		return &core.StructuredMemoryHandoffResult{Path: path, Error: err.Error()}, nil
+	}
+
+	if !result.Success {
+		return &core.StructuredMemoryHandoffResult{Path: path, Error: result.Error}, nil
+	}
+
+	return parseHandoffResult(result.StructuredContent, path, result.Text), nil
+}
