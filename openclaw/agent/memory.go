@@ -124,6 +124,13 @@ func (f *FractalMemoryMcpProvider) buildValidationSummary(issues []core.Structur
 	return fmt.Sprintf("fractal Memory validation reported %d issue(s)", count)
 }
 
+func getStringOrDefault(ptr *string, defaultValue string) string {
+	if ptr != nil {
+		return *ptr
+	}
+	return defaultValue
+}
+
 func appendList(sb *strings.Builder, label string, values []string) {
 	if len(values) == 0 {
 		return
@@ -742,4 +749,213 @@ func (p *FractalMemoryMcpProvider) Open(ctx context.Context, path string, depth 
 
 	res := parseOpenResult(result.StructuredContent, path, depth, view, result.Text)
 	return &res, nil
+}
+
+func (p *FractalMemoryMcpProvider) Recent(ctx context.Context, days int, limit int, scope string) (*core.StructuredMemoryRecentResult, error) {
+	result, err := p.callTool(ctx, "memory_recent", map[string]any{
+		"days":  util.Clamp(days, 1, 3650),
+		"limit": util.Clamp(limit, 1, 100),
+		"scope": p.normalizeOptional(scope),
+	})
+
+	if err != nil {
+		return &core.StructuredMemoryRecentResult{Days: util.Clamp(days, 1, 3650), Scope: p.normalizeOptional(scope), Error: err.Error()}, nil
+	}
+
+	if !result.Success {
+		return &core.StructuredMemoryRecentResult{Days: util.Clamp(days, 1, 3650), Scope: p.normalizeOptional(scope), Error: result.Error}, nil
+	}
+
+	res := &core.StructuredMemoryRecentResult{
+		Success: true,
+		Days:    util.Clamp(days, 1, 3650),
+		Scope:   p.normalizeOptional(scope),
+	}
+	items := parseRecentItems(result.StructuredContent)
+	if len(items) == 0 {
+		items = parseSourceRefsFromText(result.Text)
+	}
+	res.Items = items
+
+	return res, nil
+}
+
+func (p *FractalMemoryMcpProvider) Export(ctx context.Context, path string, mode string) (*core.StructuredMemoryExportResult, error) {
+	path, err := p.requirePath(path)
+	if err != nil {
+		return nil, err
+	}
+	mode = p.normalizeExportMode(mode)
+
+	result, err := p.callTool(ctx, "memory_export", map[string]any{
+		"path": path,
+		"mode": mode,
+	})
+
+	if err != nil {
+		return &core.StructuredMemoryExportResult{Path: path, Mode: mode, Error: err.Error()}, nil
+	}
+
+	if !result.Success {
+		return &core.StructuredMemoryExportResult{Path: path, Mode: mode, Error: result.Error}, nil
+	}
+
+	return parseExportResult(result.StructuredContent, path, mode, result.Text), nil
+}
+
+func parseExportResult(structured any, path, mode, text string) *core.StructuredMemoryExportResult {
+	if root, ok := util.TryGetObject(structured); ok {
+		exportPath := getStringOrDefault(util.GetString(root, "relativePath"), path)
+		sources := parseAnswerContextSources(root)
+		content := buildExportContent(root, text)
+
+		var parsedMode string
+		if modeStr := util.GetString(root, "mode"); modeStr != nil {
+			parsedMode = strings.ToLower(*modeStr)
+		} else {
+			parsedMode = mode
+		}
+
+		finalSources := sources
+		if len(finalSources) == 0 {
+			finalSources = []core.StructuredMemorySourceRef{
+				{Path: exportPath},
+			}
+		}
+
+		return &core.StructuredMemoryExportResult{
+			Success:   true,
+			Path:      exportPath,
+			Mode:      parsedMode,
+			Title:     getStringOrDefault(util.GetString(root, "title"), ""),
+			Content:   content,
+			Sources:   finalSources,
+			CharCount: len([]rune(content)),
+		}
+	}
+
+	snippet := util.Truncate(text, 500)
+	return &core.StructuredMemoryExportResult{
+		Success: true,
+		Path:    path,
+		Mode:    mode,
+		Content: text,
+		Sources: []core.StructuredMemorySourceRef{
+			{
+				Path:    path,
+				Snippet: snippet,
+			},
+		},
+		CharCount: len([]rune(text)),
+	}
+}
+
+func parseAnswerContextSources(root map[string]any) []core.StructuredMemorySourceRef {
+	val, ok := util.TryGetProperty(root, "answerContext")
+	if !ok {
+		return nil
+	}
+
+	answerContext, ok := val.(map[string]any)
+	if !ok {
+		return nil
+	}
+
+	return parseSourceArray(answerContext, "supportingSources")
+}
+
+func parseSourceArray(root map[string]any, propertyName string) []core.StructuredMemorySourceRef {
+	val, ok := util.TryGetProperty(root, propertyName)
+	if !ok {
+		return nil
+	}
+
+	array, ok := val.([]any)
+	if !ok {
+		return nil
+	}
+
+	var result []core.StructuredMemorySourceRef
+
+	for _, item := range array {
+		if item == nil {
+			continue
+		}
+
+		if strVal, isStr := item.(string); isStr {
+			result = append(result, core.StructuredMemorySourceRef{
+				Path:  strVal,
+				Title: strVal,
+			})
+			continue
+		}
+
+		itemObj, isObj := item.(map[string]any)
+		if !isObj {
+			continue
+		}
+
+		var path string
+		if p := util.GetString(itemObj, "relativePath"); p != nil {
+			path = *p
+		} else if p := util.GetString(itemObj, "path"); p != nil {
+			path = *p
+		} else if p := util.GetString(itemObj, "sourcePath"); p != nil {
+			path = *p
+		}
+
+		var snippet *string
+		if s := util.GetString(itemObj, "excerpt"); s != nil {
+			snippet = s
+		} else {
+			snippet = util.GetString(itemObj, "snippet")
+		}
+
+		sourceRef := core.StructuredMemorySourceRef{
+			Path:           path,
+			Title:          getStringOrDefault(util.GetString(itemObj, "title"), ""),
+			SourcePath:     getStringOrDefault(util.GetString(itemObj, "sourcePath"), ""),
+			SectionHeading: getStringOrDefault(util.GetString(itemObj, "sectionHeading"), ""),
+			StartLine:      util.GetInt(itemObj, "startLine"),
+			EndLine:        util.GetInt(itemObj, "endLine"),
+			Snippet:        *snippet,
+		}
+
+		hasPath := strings.TrimSpace(sourceRef.Path) != ""
+		hasSnippet := strings.TrimSpace(sourceRef.Snippet) != ""
+
+		if hasPath || hasSnippet {
+			result = append(result, sourceRef)
+		}
+	}
+
+	return result
+}
+
+func buildExportContent(root map[string]any, fallback string) string {
+	var sb strings.Builder
+
+	appendField(&sb, "Title", getStringOrDefault(util.GetString(root, "title"), ""))
+	appendField(&sb, "Summary", getStringOrDefault(util.GetString(root, "summary"), ""))
+	appendField(&sb, "Current state", getStringOrDefault(util.GetString(root, "currentState"), ""))
+	appendList(&sb, "Children", util.ParseStringArray(root, "children"))
+	appendList(&sb, "Timeline highlights", util.ParseStringArray(root, "timelineHighlights"))
+	appendList(&sb, "Decision highlights", util.ParseStringArray(root, "decisionHighlights"))
+
+	if val, ok := util.TryGetProperty(root, "answerContext"); ok {
+		if answerContext, isObj := val.(map[string]any); isObj {
+			appendField(&sb, "Project branch", getStringOrDefault(util.GetString(answerContext, "projectBranch"), ""))
+			appendField(&sb, "Current objective", getStringOrDefault(util.GetString(answerContext, "currentObjective"), ""))
+			appendList(&sb, "Key prior decisions", util.ParseStringArray(answerContext, "keyPriorDecisions"))
+			appendList(&sb, "Active constraints", util.ParseStringArray(answerContext, "activeConstraints"))
+			appendList(&sb, "Next best actions", util.ParseStringArray(answerContext, "nextBestActions"))
+			appendList(&sb, "Missing information", util.ParseStringArray(answerContext, "missingInformation"))
+		}
+	}
+
+	text := strings.TrimSpace(sb.String())
+	if len(text) == 0 {
+		return fallback
+	}
+	return text
 }

@@ -17,7 +17,7 @@ func ReadStringArray(raw json.RawMessage) []string {
 }
 
 func ParseStringArray(root map[string]any, propertyName string) []string {
-	val, ok := tryGetProperty(root, propertyName)
+	val, ok := TryGetProperty(root, propertyName)
 	if !ok {
 		return []string{}
 	}
@@ -75,7 +75,7 @@ func TryGetArrayOrObjectArray(element any, propertyName string) ([]any, bool) {
 	}
 
 	if obj, ok := element.(map[string]any); ok {
-		if val, found := tryGetProperty(obj, propertyName); found {
+		if val, found := TryGetProperty(obj, propertyName); found {
 			if arr, ok := val.([]any); ok {
 				return arr, true
 			}
@@ -86,7 +86,7 @@ func TryGetArrayOrObjectArray(element any, propertyName string) ([]any, bool) {
 }
 
 func GetString(root map[string]any, name string) *string {
-	val, ok := tryGetProperty(root, name)
+	val, ok := TryGetProperty(root, name)
 	if !ok || val == nil {
 		return nil
 	}
@@ -101,7 +101,7 @@ func GetString(root map[string]any, name string) *string {
 }
 
 func GetInt(root map[string]any, name string) *int {
-	val, ok := tryGetProperty(root, name)
+	val, ok := TryGetProperty(root, name)
 	if !ok || val == nil {
 		return nil
 	}
@@ -119,7 +119,7 @@ func GetInt(root map[string]any, name string) *int {
 }
 
 func GetFloat64(root map[string]any, name string) *float64 {
-	val, ok := tryGetProperty(root, name)
+	val, ok := TryGetProperty(root, name)
 	if !ok || val == nil {
 		return nil
 	}
@@ -136,7 +136,7 @@ func GetFloat64(root map[string]any, name string) *float64 {
 }
 
 func GetBool(root map[string]any, name string) *bool {
-	val, ok := tryGetProperty(root, name)
+	val, ok := TryGetProperty(root, name)
 	if !ok || val == nil {
 		return nil
 	}
@@ -165,7 +165,7 @@ func GetDateTimeOffset(root map[string]any, name string) *time.Time {
 	return nil
 }
 
-func tryGetProperty(root map[string]any, name string) (any, bool) {
+func TryGetProperty(root map[string]any, name string) (any, bool) {
 	if root == nil {
 		return nil, false
 	}
