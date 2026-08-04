@@ -115,7 +115,7 @@ func (f *FractalMemoryMcpProvider) requirePath(path string) (string, error) {
 	return path, nil
 }
 
-func (f *FractalMemoryMcpProvider) buildValidationSummary(issues []core.StructuredMemoryValidationIssue) string {
+func buildValidationSummary(issues []core.StructuredMemoryValidationIssue) string {
 	count := len(issues)
 	if count == 0 {
 		return "fractal Memory validation completed with no reported issues"
@@ -962,7 +962,6 @@ func buildExportContent(root map[string]any, fallback string) string {
 
 func parseHandoffResult(structured any, path, text string) *core.StructuredMemoryHandoffResult {
 	if root, ok := util.TryGetObject(structured); ok {
-
 		var handoffPath = getStringOrDefault(util.GetString(root, "handoffFilePath"), "")
 		var content = getStringOrDefault(util.GetString(root, "renderedContent"), text)
 		return &core.StructuredMemoryHandoffResult{
@@ -1006,4 +1005,98 @@ func (p *FractalMemoryMcpProvider) CreateHandoff(ctx context.Context, path strin
 	}
 
 	return parseHandoffResult(result.StructuredContent, path, result.Text), nil
+}
+
+func (p *FractalMemoryMcpProvider) Validate(ctx context.Context) (*core.StructuredMemoryValidationResult, error) {
+	result, err := p.callTool(ctx, "memory_validate", map[string]any{})
+	if err != nil {
+		return nil, err
+	}
+
+	if result.Success {
+		return parseValidationResult(result.StructuredContent, result.Text, nil), nil
+	}
+
+	return &core.StructuredMemoryValidationResult{Error: result.Error}, nil
+}
+
+func parseValidationResult(structured any, text string, successSummary *string) *core.StructuredMemoryValidationResult {
+	if root, ok := util.TryGetObject(structured); ok {
+		issues := parseValidationIssues(root)
+
+		var hasErrors bool
+		if boolPtr := util.GetBool(root, "hasErrors"); boolPtr != nil {
+			hasErrors = *boolPtr
+		} else {
+			for _, issue := range issues {
+				if strings.EqualFold(issue.Severity, "error") {
+					hasErrors = true
+					break
+				}
+			}
+		}
+
+		var summary string
+		if successSummary != nil {
+			summary = *successSummary
+		} else {
+			summary = buildValidationSummary(issues)
+		}
+
+		return &core.StructuredMemoryValidationResult{
+			Success:   true,
+			HasErrors: hasErrors,
+			Issues:    issues,
+			Summary:   summary,
+		}
+	}
+
+	var summary string
+	if successSummary != nil && strings.TrimSpace(*successSummary) != "" {
+		summary = *successSummary
+	} else {
+		summary = text
+	}
+
+	return &core.StructuredMemoryValidationResult{
+		Success:   true,
+		HasErrors: strings.Contains(strings.ToLower(text), "error"),
+		Summary:   summary,
+	}
+}
+
+func parseValidationIssues(root map[string]any) []core.StructuredMemoryValidationIssue {
+	rawArray, ok := util.TryGetArrayOrObjectArray(root, "issues")
+	if !ok || len(rawArray) == 0 {
+		return []core.StructuredMemoryValidationIssue{}
+	}
+
+	var result []core.StructuredMemoryValidationIssue
+
+	for _, item := range rawArray {
+		itemObj, ok := item.(map[string]any)
+		if !ok {
+			continue
+		}
+
+		var path string
+		if relPath := util.GetString(itemObj, "relativePath"); relPath != nil {
+			path = *relPath
+		} else if p := util.GetString(itemObj, "path"); p != nil {
+			path = *p
+		}
+
+		severity := getStringOrDefault(util.GetString(itemObj, "severity"), "")
+		message := getStringOrDefault(util.GetString(itemObj, "message"), "")
+
+		if strings.TrimSpace(message) != "" {
+			result = append(result, core.StructuredMemoryValidationIssue{
+				Severity: severity,
+				Path:     path,
+				Message:  message,
+			})
+		}
+	}
+
+	return result
 }
