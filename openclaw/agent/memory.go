@@ -2,6 +2,7 @@ package agent
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -123,7 +124,7 @@ func (f *FractalMemoryMcpProvider) buildValidationSummary(issues []core.Structur
 	return fmt.Sprintf("fractal Memory validation reported %d issue(s)", count)
 }
 
-func (f *FractalMemoryMcpProvider) appendList(sb *strings.Builder, label string, values []string) {
+func appendList(sb *strings.Builder, label string, values []string) {
 	if len(values) == 0 {
 		return
 	}
@@ -136,7 +137,7 @@ func (f *FractalMemoryMcpProvider) appendList(sb *strings.Builder, label string,
 	sb.WriteString("\n")
 }
 
-func (f *FractalMemoryMcpProvider) appendField(sb *strings.Builder, label string, value string) {
+func appendField(sb *strings.Builder, label string, value string) {
 	value = strings.TrimSpace(value)
 	if value == "" {
 		return
@@ -459,4 +460,286 @@ func (p *FractalMemoryMcpProvider) Search(ctx context.Context, query string, lim
 	res.Items = items
 
 	return res
+}
+
+type sourceRefDTO struct {
+	Path           string `json:"path"`
+	RelativePath   string `json:"relativePath"`
+	Title          string `json:"title"`
+	SourcePath     string `json:"sourcePath"`
+	SectionHeading string `json:"sectionHeading"`
+	StartLine      *int   `json:"startLine"`
+	EndLine        *int   `json:"endLine"`
+	Snippet        string `json:"snippet"`
+	Excerpt        string `json:"excerpt"`
+}
+
+func (dto *sourceRefDTO) UnmarshalJSON(data []byte) error {
+	var str string
+	if err := json.Unmarshal(data, &str); err == nil {
+		dto.Path = str
+		dto.Title = str
+		return nil
+	}
+
+	type plainDTO sourceRefDTO
+	var p plainDTO
+	if err := json.Unmarshal(data, &p); err != nil {
+		return err
+	}
+	*dto = sourceRefDTO(p)
+	return nil
+}
+
+func (dto sourceRefDTO) toModel() (core.StructuredMemorySourceRef, bool) {
+	path := dto.Path
+	if path == "" {
+		if dto.RelativePath != "" {
+			path = dto.RelativePath
+		} else if dto.SourcePath != "" {
+			path = dto.SourcePath
+		}
+	}
+
+	snippet := dto.Snippet
+	if snippet == "" {
+		snippet = dto.Excerpt
+	}
+
+	if strings.TrimSpace(path) == "" && strings.TrimSpace(snippet) == "" {
+		return core.StructuredMemorySourceRef{}, false
+	}
+
+	return core.StructuredMemorySourceRef{
+		Path:           path,
+		Title:          dto.Title,
+		SourcePath:     dto.SourcePath,
+		SectionHeading: dto.SectionHeading,
+		StartLine:      dto.StartLine,
+		EndLine:        dto.EndLine,
+		Snippet:        snippet,
+	}, true
+}
+
+type rootDTO struct {
+	RelativePath    *string           `json:"relativePath"`
+	Title           *string           `json:"title"`
+	Summary         *string           `json:"summary"`
+	IndexSummary    *string           `json:"indexSummary"`
+	CurrentState    *string           `json:"currentState"`
+	Depth           *int              `json:"depth"`
+	View            *string           `json:"view"`
+	Children        []sourceRefDTO    `json:"children"`
+	SuggestedReads  []sourceRefDTO    `json:"suggestedReads"`
+	RecentTimeline  []json.RawMessage `json:"recentTimeline"`
+	RecentDecisions []json.RawMessage `json:"recentDecisions"`
+}
+
+func parseRootDTO(data []byte) (*rootDTO, bool) {
+	trimmed := strings.TrimSpace(string(data))
+	if trimmed == "" || trimmed == "null" {
+		return nil, false
+	}
+
+	if strings.HasPrefix(trimmed, "[") {
+		var list []json.RawMessage
+		if err := json.Unmarshal(data, &list); err != nil || len(list) == 0 {
+			return nil, false
+		}
+		data = list[0]
+	} else if !strings.HasPrefix(trimmed, "{") {
+		return nil, false
+	}
+
+	var root rootDTO
+	if err := json.Unmarshal(data, &root); err != nil {
+		return nil, false
+	}
+
+	return &root, true
+}
+
+func parseOpenResult(structured any, path string, depth int, view string, text string) core.StructuredMemoryOpenResult {
+	rawJSON, err := toJSONBytes(structured)
+
+	if err == nil && len(rawJSON) > 0 {
+		if root, ok := parseRootDTO(rawJSON); ok {
+			children := parseSourceRefs(root.Children)
+			suggestedReads := parseSourceRefs(root.SuggestedReads)
+
+			timeline := parseStringRefs(root.RecentTimeline, path)
+			decisions := parseStringRefs(root.RecentDecisions, path)
+
+			finalPath := path
+			if root.RelativePath != nil && *root.RelativePath != "" {
+				finalPath = *root.RelativePath
+			}
+
+			finalDepth := depth
+			if root.Depth != nil {
+				finalDepth = *root.Depth
+			}
+
+			finalView := view
+			if root.View != nil && *root.View != "" {
+				finalView = strings.ToLower(*root.View)
+			}
+
+			var title, summary string
+			if root.Title != nil {
+				title = *root.Title
+			}
+			if root.Summary != nil {
+				summary = *root.Summary
+			}
+
+			sources := make([]core.StructuredMemorySourceRef, 0, len(children)+len(suggestedReads)+len(timeline)+len(decisions))
+			sources = append(sources, children...)
+			sources = append(sources, suggestedReads...)
+			sources = append(sources, timeline...)
+			sources = append(sources, decisions...)
+
+			return core.StructuredMemoryOpenResult{
+				Success:         true,
+				Path:            finalPath,
+				Title:           title,
+				Summary:         summary,
+				Depth:           finalDepth,
+				View:            finalView,
+				Content:         buildOpenContent(root, text),
+				Children:        children,
+				SuggestedReads:  suggestedReads,
+				RecentTimeline:  timeline,
+				RecentDecisions: decisions,
+				Sources:         sources,
+			}
+		}
+	}
+
+	return core.StructuredMemoryOpenResult{
+		Success: true,
+		Path:    path,
+		Depth:   depth,
+		View:    view,
+		Content: text,
+		Sources: []core.StructuredMemorySourceRef{
+			{
+				Path:    path,
+				Snippet: util.Truncate(text, 500),
+			},
+		},
+	}
+}
+
+func buildOpenContent(root *rootDTO, fallback string) string {
+	if root == nil {
+		return fallback
+	}
+
+	var sb strings.Builder
+
+	// 解析 string 数组供 Timeline 和 Decisions 使用
+	timelineStrs := parseStringArray(root.RecentTimeline)
+	decisionStrs := parseStringArray(root.RecentDecisions)
+
+	appendField(&sb, "Title", getString(root.Title))
+	appendField(&sb, "Summary", getString(root.Summary))
+	appendField(&sb, "Index", getString(root.IndexSummary))
+	appendField(&sb, "Current state", getString(root.CurrentState))
+	appendList(&sb, "Recent timeline", timelineStrs)
+	appendList(&sb, "Recent decisions", decisionStrs)
+
+	text := strings.TrimSpace(sb.String())
+	if len(text) == 0 {
+		return fallback
+	}
+	return text
+}
+
+func getString(ptr *string) string {
+	if ptr == nil {
+		return ""
+	}
+	return *ptr
+}
+func parseStringArray(rawList []json.RawMessage) []string {
+	res := make([]string, 0, len(rawList))
+	for _, raw := range rawList {
+		var str string
+		if json.Unmarshal(raw, &str) != nil {
+			str = string(raw)
+		}
+		str = strings.TrimSpace(str)
+		if str != "" {
+			res = append(res, str)
+		}
+	}
+	return res
+}
+func parseSourceRefs(dtos []sourceRefDTO) []core.StructuredMemorySourceRef {
+	res := make([]core.StructuredMemorySourceRef, 0, len(dtos))
+	for _, dto := range dtos {
+		if ref, valid := dto.toModel(); valid {
+			res = append(res, ref)
+		}
+	}
+	return res
+}
+
+func parseStringRefs(rawList []json.RawMessage, path string) []core.StructuredMemorySourceRef {
+	res := make([]core.StructuredMemorySourceRef, 0, len(rawList))
+	for _, itemRaw := range rawList {
+		var str string
+		if json.Unmarshal(itemRaw, &str) != nil {
+			str = string(itemRaw)
+		}
+
+		if strings.TrimSpace(str) != "" {
+			res = append(res, core.StructuredMemorySourceRef{
+				Path:    path,
+				Snippet: str,
+			})
+		}
+	}
+	return res
+}
+
+func toJSONBytes(v any) ([]byte, error) {
+	if v == nil {
+		return nil, nil
+	}
+	switch val := v.(type) {
+	case []byte:
+		return val, nil
+	case string:
+		return []byte(val), nil
+	default:
+		return json.Marshal(v)
+	}
+}
+
+func (p *FractalMemoryMcpProvider) Open(ctx context.Context, path string, depth int, view string) (*core.StructuredMemoryOpenResult, error) {
+	path, err := p.requirePath(path)
+	if err != nil {
+		return nil, err
+	}
+	view = p.normalizeView(view)
+	var depthName = p.depthName(depth)
+
+	result, err := p.callTool(ctx, "memory_open", map[string]any{
+		"path":  path,
+		"depth": depthName,
+		"view":  util.ToPascal(view),
+	})
+
+	if err != nil {
+		return &core.StructuredMemoryOpenResult{Path: path, Depth: depth, View: view, Error: err.Error()}, nil
+	}
+
+	if !result.Success {
+		return &core.StructuredMemoryOpenResult{Path: path, Depth: depth, View: view, Error: result.Error}, nil
+	}
+
+	res := parseOpenResult(result.StructuredContent, path, depth, view, result.Text)
+	return &res, nil
 }
