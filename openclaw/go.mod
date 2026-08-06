@@ -5,6 +5,7 @@ go 1.26.2
 require github.com/google/uuid v1.6.0
 
 require (
+	github.com/Microsoft/go-winio v0.6.2
 	github.com/flosch/pongo2/v7 v7.0.0-alpha.1
 	github.com/futugyou/extensions_ai v0.0.1
 	github.com/google/shlex v0.0.0-20191202100458-e7afc7fbc510
