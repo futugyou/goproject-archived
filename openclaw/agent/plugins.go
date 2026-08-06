@@ -4,12 +4,16 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"os"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/futugyou/openclaw/core"
 	"github.com/futugyou/openclaw/util"
@@ -58,7 +62,7 @@ type bridgeResponseResult struct {
 type BridgeTransportBase struct {
 	pending             sync.Map //map[string]chan bridgeResponseResult
 	logger              *slog.Logger
-	nextId              int
+	nextId              atomic.Int32
 	reader              io.Reader
 	writer              *bufio.Writer
 	notificationHandler BridgeNotificationHandler
@@ -156,4 +160,48 @@ func (p *BridgeTransportBase) cancelPendingRequests(err error) {
 		}
 		return true
 	})
+}
+
+func (p *BridgeTransportBase) SendAndWait(ctx context.Context, method string, parameters any) (*core.BridgeResponse, error) {
+	if p.writer == nil {
+		return nil, errors.New("bridge transport is not ready")
+	}
+
+	id := strconv.Itoa(int(p.nextId.Add(1)))
+
+	done := make(chan bridgeResponseResult, 1)
+	p.pending.Store(id, done)
+	defer p.pending.Delete(id)
+
+	req := core.BridgeRequest{
+		Method: method,
+		Id:     id,
+		Params: parameters,
+	}
+
+	reqBytes, err := json.Marshal(req)
+	if err != nil {
+		return nil, fmt.Errorf("marshal request failed: %w", err)
+	}
+
+	if _, err := p.writer.Write(append(reqBytes, '\n')); err != nil {
+		return nil, fmt.Errorf("write request failed: %w", err)
+	}
+	if err := p.writer.Flush(); err != nil {
+		return nil, fmt.Errorf("flush writer failed: %w", err)
+	}
+
+	timeoutCtx, cancel := context.WithTimeout(ctx, 60*time.Second)
+	defer cancel()
+
+	select {
+	case res := <-done:
+		return res.msg, res.err
+
+	case <-timeoutCtx.Done():
+		if errors.Is(ctx.Err(), context.Canceled) {
+			return nil, ctx.Err()
+		}
+		return nil, fmt.Errorf("request timed out or canceled: %w", timeoutCtx.Err())
+	}
 }

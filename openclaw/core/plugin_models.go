@@ -722,9 +722,9 @@ type DiscoveredNativeDynamicPlugin struct {
 
 // BridgeRequest 用于插件桥接通信的 JSON-RPC 请求外壳。
 type BridgeRequest struct {
-	Method string           `json:"method"`
-	Id     string           `json:"id"`
-	Params *json.RawMessage `json:"params,omitempty"`
+	Method string `json:"method"`
+	Id     string `json:"id"`
+	Params any    `json:"params,omitempty"`
 }
 
 // BridgeResponse 来自插件桥的 JSON-RPC 响应外壳。
