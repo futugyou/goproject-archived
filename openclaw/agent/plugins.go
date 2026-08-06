@@ -199,9 +199,63 @@ func (p *BridgeTransportBase) SendAndWait(ctx context.Context, method string, pa
 		return res.msg, res.err
 
 	case <-timeoutCtx.Done():
+		select {
+		case res := <-done:
+			return res.msg, res.err
+		default:
+		}
+
 		if errors.Is(ctx.Err(), context.Canceled) {
 			return nil, ctx.Err()
 		}
-		return nil, fmt.Errorf("request timed out or canceled: %w", timeoutCtx.Err())
+		return nil, fmt.Errorf("request timed out after 60s: %w", timeoutCtx.Err())
 	}
 }
+
+func (p *BridgeTransportBase) SendRequest(ctx context.Context, method string, parameters any) error {
+	if p.writer == nil {
+		return errors.New("bridge transport is not ready")
+	}
+
+	id := strconv.Itoa(int(p.nextId.Add(1)))
+
+	done := make(chan bridgeResponseResult, 1)
+	p.pending.Store(id, done)
+	defer p.pending.Delete(id)
+
+	req := core.BridgeRequest{
+		Method: method,
+		Id:     id,
+		Params: parameters,
+	}
+
+	reqBytes, err := json.Marshal(req)
+	if err != nil {
+		return fmt.Errorf("marshal request failed: %w", err)
+	}
+
+	if _, err := p.writer.Write(append(reqBytes, '\n')); err != nil {
+		return fmt.Errorf("write request failed: %w", err)
+	}
+
+	return p.writer.Flush()
+}
+
+func (p *BridgeTransportBase) Close() error {
+	if !p.disposed.CompareAndSwap(false, true) {
+		return nil
+	}
+
+	p.cancelPendingRequests(context.Canceled)
+	p.CloseCore()
+	if p.done != nil {
+		select {
+		case <-p.done:
+		case <-time.After(3 * time.Second):
+		}
+	}
+
+	return nil
+}
+
+func (p *BridgeTransportBase) CloseCore() error { return nil }
