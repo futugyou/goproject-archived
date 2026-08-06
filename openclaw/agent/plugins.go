@@ -350,7 +350,7 @@ func (s *SocketBridgeTransport) Prepare(ctx context.Context) error {
 	s.listener = l
 
 	// 轮询等待 Socket 文件生成，避免测试高负载下的 connection refused 竞态
-	for attempt := 0; attempt < 20; attempt++ {
+	for range 20 {
 		if err := ctx.Err(); err != nil {
 			_ = l.Close()
 			return err
@@ -396,7 +396,7 @@ func (s *SocketBridgeTransport) Start(ctx context.Context, proc *exec.Cmd) error
 			}
 		}
 
-		reader, writer, ok := s.tryAuthenticateStream(conn, connectCtx)
+		reader, writer, ok := s.tryAuthenticateStream(connectCtx, conn)
 		if !ok {
 			_ = conn.Close()
 			continue
@@ -444,8 +444,8 @@ func (s *SocketBridgeTransport) CloseCore() error {
 }
 
 // 尝试认证 Client 连接
-func (s *SocketBridgeTransport) tryAuthenticateStream(conn net.Conn, ctx context.Context) (io.Reader, *bufio.Writer, bool) {
-	reader, writer, err := s.authenticateStream(conn, ctx)
+func (s *SocketBridgeTransport) tryAuthenticateStream(ctx context.Context, conn net.Conn) (io.Reader, *bufio.Writer, bool) {
+	reader, writer, err := s.authenticateStream(ctx, conn)
 	if err != nil {
 		if s.metrics != nil {
 			s.metrics.IncrementPluginBridgeAuthFailures()
@@ -458,7 +458,7 @@ func (s *SocketBridgeTransport) tryAuthenticateStream(conn net.Conn, ctx context
 	return reader, writer, true
 }
 
-func (s *SocketBridgeTransport) authenticateStream(conn net.Conn, ctx context.Context) (io.Reader, *bufio.Writer, error) {
+func (s *SocketBridgeTransport) authenticateStream(ctx context.Context, conn net.Conn) (io.Reader, *bufio.Writer, error) {
 	bufReader := bufio.NewReader(conn)
 	bufWriter := bufio.NewWriter(conn)
 
@@ -533,4 +533,134 @@ func normalizePipeName(socketPath string) string {
 	sanitized = strings.ReplaceAll(sanitized, ":", "-")
 
 	return strings.Trim(sanitized, "-")
+}
+
+var _ IBridgeTransport = (*StdioBridgeTransport)(nil)
+
+type StdioBridgeTransport struct {
+	BridgeTransportBase
+}
+
+func NewStdioBridgeTransport(logger *slog.Logger) *StdioBridgeTransport {
+	return &StdioBridgeTransport{BridgeTransportBase: BridgeTransportBase{
+		logger: logger,
+	}}
+}
+
+func (s *StdioBridgeTransport) Start(ctx context.Context, cmd *exec.Cmd) error {
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		return fmt.Errorf("failed to get stdout pipe: %w", err)
+	}
+
+	stdin, err := cmd.StdinPipe()
+	if err != nil {
+		return fmt.Errorf("failed to get stdin pipe: %w", err)
+	}
+
+	writer := bufio.NewWriter(stdin)
+
+	s.AttachReaderWriter(stdout, writer)
+
+	return nil
+}
+
+var _ IBridgeTransport = (*HybridBridgeTransport)(nil)
+
+type HybridBridgeTransport struct {
+	bootstrap      *StdioBridgeTransport
+	socket         *SocketBridgeTransport
+	logger         *slog.Logger
+	currentHandler BridgeNotificationHandler
+	useSocket      atomic.Bool
+}
+
+func NewHybridBridgeTransport(socketPath, socketDir string, ownsDir bool, authToken string, logger *slog.Logger, metrics *core.RuntimeMetrics) *HybridBridgeTransport {
+	return &HybridBridgeTransport{
+		logger:    logger,
+		bootstrap: NewStdioBridgeTransport(logger),
+		socket:    NewSocketBridgeTransport(socketPath, socketDir, ownsDir, authToken, logger, metrics),
+	}
+}
+
+func (h *HybridBridgeTransport) Prepare(ctx context.Context) error {
+	return h.socket.Prepare(ctx)
+}
+
+func (h *HybridBridgeTransport) Start(ctx context.Context, process *exec.Cmd) error {
+	if err := h.bootstrap.Start(ctx, process); err != nil {
+		return err
+	}
+
+	return h.socket.Start(ctx, process)
+}
+
+func (h *HybridBridgeTransport) UseSocketTransport() {
+	h.useSocket.Store(true)
+	if h.bootstrap != nil {
+		h.bootstrap.SetNotificationHandler(nil)
+	}
+}
+
+func (h *HybridBridgeTransport) SetNotificationHandler(handler BridgeNotificationHandler) error {
+	h.currentHandler = handler
+	if h.useSocket.Load() {
+		return h.socket.SetNotificationHandler(handler)
+	} else {
+		if err := h.bootstrap.SetNotificationHandler(handler); err != nil {
+			return err
+		}
+
+		return h.socket.SetNotificationHandler(handler)
+	}
+}
+
+func (h *HybridBridgeTransport) SendAndWait(ctx context.Context, method string, parameters any) (*core.BridgeResponse, error) {
+	if !h.useSocket.Load() {
+		return h.bootstrap.SendAndWait(ctx, method, parameters)
+	}
+
+	response, err := h.socket.SendAndWait(ctx, method, parameters)
+	if err == nil {
+		return response, nil
+	}
+
+	if h.isFallbackError(err) || method == "shutdown" {
+		h.logger.Warn("socket transport failed, falling back to stdio", "method", method, "error", err.Error())
+		h.useSocket.Store(false)
+		if h.currentHandler != nil {
+			h.bootstrap.SetNotificationHandler(h.currentHandler)
+		}
+
+		return h.bootstrap.SendAndWait(ctx, method, parameters)
+	}
+
+	return nil, err
+}
+
+func (b *HybridBridgeTransport) isFallbackError(err error) bool {
+	if err == nil {
+		return false
+	}
+	if errors.Is(err, io.EOF) || errors.Is(err, io.ErrClosedPipe) || errors.Is(err, io.ErrUnexpectedEOF) {
+		return true
+	}
+
+	if _, ok := errors.AsType[net.Error](err); ok {
+		return true
+	}
+	var opErr *net.OpError
+	return errors.As(err, &opErr)
+}
+
+func (h *HybridBridgeTransport) SendRequest(ctx context.Context, method string, parameters any) error {
+	_, err := h.SendAndWait(ctx, method, parameters)
+	return err
+}
+
+func (h *HybridBridgeTransport) Close() error {
+	h.socket.Close()
+	h.bootstrap.Close()
+
+	return nil
 }
