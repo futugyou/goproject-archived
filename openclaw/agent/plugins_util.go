@@ -1,0 +1,203 @@
+package agent
+
+import (
+	"crypto/sha256"
+	"encoding/hex"
+	"fmt"
+	"log/slog"
+	"os"
+	"os/user"
+	"path/filepath"
+	"runtime"
+	"strings"
+	"unicode"
+
+	"github.com/futugyou/openclaw/core"
+	"github.com/google/uuid"
+)
+
+const unixSocketPathBudget = 96
+
+func CreateBridgeTransport(
+	config core.BridgeTransportConfig,
+	pluginID string,
+	logger *slog.Logger,
+	runtimeRoot string,
+	metrics *core.RuntimeMetrics,
+) (IBridgeTransport, *core.BridgeTransportRuntimeConfig, error) {
+
+	mode := normalizeMode(config.Mode)
+	var socketOpts *SocketTransportOptions
+	var err error
+
+	if mode != "stdio" {
+		socketOpts, err = resolveSocketOptions(config.SocketPath, pluginID, runtimeRoot)
+		if err != nil {
+			return nil, nil, fmt.Errorf("resolve socket options failed: %w", err)
+		}
+	}
+
+	switch mode {
+	case "stdio":
+		transport := NewStdioBridgeTransport(logger)
+		runtimeCfg := &core.BridgeTransportRuntimeConfig{Mode: mode}
+		return transport, runtimeCfg, nil
+
+	case "socket":
+		transport := NewSocketBridgeTransport(
+			socketOpts.SocketPath,
+			socketOpts.SocketDirectory,
+			socketOpts.OwnsSocketDirectory,
+			socketOpts.AuthToken,
+			logger,
+			metrics,
+		)
+		return transport, createRuntimeConfig(mode, socketOpts), nil
+
+	case "hybrid":
+		transport := NewHybridBridgeTransport(
+			socketOpts.SocketPath,
+			socketOpts.SocketDirectory,
+			socketOpts.OwnsSocketDirectory,
+			socketOpts.AuthToken,
+			logger,
+			metrics,
+		)
+		return transport, createRuntimeConfig(mode, socketOpts), nil
+
+	default:
+		return nil, nil, fmt.Errorf("unsupported plugin bridge transport mode '%s'. Supported modes: stdio, socket, hybrid", config.Mode)
+	}
+}
+
+func createRuntimeConfig(mode string, socketOptions *SocketTransportOptions) *core.BridgeTransportRuntimeConfig {
+	return &core.BridgeTransportRuntimeConfig{
+		Mode:            mode,
+		SocketPath:      socketOptions.SocketPath,
+		SocketDirectory: socketOptions.SocketDirectory,
+		SocketAuthToken: socketOptions.AuthToken,
+		SecurityMode:    "hardened_local_ipc",
+	}
+}
+
+func normalizeMode(mode string) string {
+	trimmed := strings.TrimSpace(mode)
+	if trimmed == "" {
+		return "stdio"
+	}
+	return strings.ToLower(trimmed)
+}
+
+func resolveSocketOptions(configuredPath, pluginID, runtimeRoot string) (*SocketTransportOptions, error) {
+	if runtime.GOOS == "windows" {
+		var pipePath string
+		if strings.TrimSpace(configuredPath) != "" {
+			pipePath = normalizePipePath(configuredPath)
+		} else {
+			pipePath = fmt.Sprintf(`\\.\pipe\openclaw-%s-%s`, sanitize(pluginID), strings.ReplaceAll(uuid.New().String(), "-", ""))
+		}
+		return &SocketTransportOptions{
+			SocketPath:          pipePath,
+			SocketDirectory:     "",
+			OwnsSocketDirectory: false,
+			AuthToken:           createAuthToken(),
+		}, nil
+	}
+
+	if strings.TrimSpace(configuredPath) != "" {
+		absPath, err := filepath.Abs(configuredPath)
+		if err != nil {
+			return nil, err
+		}
+		return &SocketTransportOptions{
+			SocketPath:          absPath,
+			SocketDirectory:     filepath.Dir(absPath),
+			OwnsSocketDirectory: false,
+			AuthToken:           createAuthToken(),
+		}, nil
+	}
+
+	socketDirectory := createUnixSocketDirectory(pluginID, runtimeRoot)
+	if err := os.MkdirAll(socketDirectory, 0700); err != nil {
+		return nil, err
+	}
+
+	return &SocketTransportOptions{
+		SocketPath:          filepath.Join(socketDirectory, "s"),
+		SocketDirectory:     socketDirectory,
+		OwnsSocketDirectory: true,
+		AuthToken:           createAuthToken(),
+	}, nil
+}
+
+func createUnixSocketDirectory(pluginID, runtimeRoot string) string {
+	rawInput := fmt.Sprintf("%s:%s", pluginID, strings.ReplaceAll(uuid.New().String(), "-", ""))
+	hashBytes := sha256.Sum256([]byte(rawInput))
+	hash := strings.ToLower(hex.EncodeToString(hashBytes[:]))[:16]
+
+	parent := resolveUnixSocketParent(runtimeRoot)
+	socketDirectory := filepath.Join(parent, hash)
+
+	if len(socketDirectory) > unixSocketPathBudget {
+		shortenedParent := resolveShortUnixSocketParent()
+		socketDirectory = filepath.Join(shortenedParent, hash)
+	}
+
+	return socketDirectory
+}
+
+func resolveUnixSocketParent(runtimeRoot string) string {
+	if strings.TrimSpace(runtimeRoot) != "" {
+		absRoot, err := filepath.Abs(runtimeRoot)
+		if err == nil {
+			return filepath.Join(absRoot, "pb")
+		}
+	}
+
+	return resolveShortUnixSocketParent()
+}
+
+func resolveShortUnixSocketParent() string {
+	tempRoot := "/tmp"
+	userComponent := "user"
+
+	currentUser, err := user.Current()
+	if err == nil && currentUser.Username != "" {
+		sanitized := sanitize(currentUser.Username)
+		if sanitized != "" {
+			userComponent = sanitized
+		}
+	}
+
+	return filepath.Join(tempRoot, fmt.Sprintf(".openclaw-%s", userComponent), "pb")
+}
+
+func normalizePipePath(configuredPath string) string {
+	prefix := `\\.\pipe\`
+	if strings.HasPrefix(strings.ToLower(configuredPath), strings.ToLower(prefix)) {
+		return configuredPath
+	}
+	trimmed := strings.Trim(configuredPath, `\/`)
+	return prefix + trimmed
+}
+
+func createAuthToken() string {
+	uuid1 := strings.ReplaceAll(uuid.New().String(), "-", "")
+	uuid2 := strings.ReplaceAll(uuid.New().String(), "-", "")
+	return strings.ToUpper(uuid1 + uuid2)
+}
+
+func sanitize(value string) string {
+	var builder strings.Builder
+	builder.Grow(len(value))
+
+	for _, ch := range value {
+		if unicode.IsLetter(ch) || unicode.IsNumber(ch) {
+			builder.WriteRune(unicode.ToLower(ch))
+		} else {
+			builder.WriteByte('-')
+		}
+	}
+
+	return strings.Trim(builder.String(), "-")
+}
