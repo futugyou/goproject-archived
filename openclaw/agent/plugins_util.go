@@ -1,11 +1,13 @@
 package agent
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
 	"log/slog"
 	"os"
+	"os/exec"
 	"os/user"
 	"path/filepath"
 	"runtime"
@@ -200,4 +202,94 @@ func sanitize(value string) string {
 	}
 
 	return strings.Trim(builder.String(), "-")
+}
+
+func FindNodeExecutable() string {
+	candidates := []string{"node"}
+	if runtime.GOOS == "windows" {
+		candidates = []string{"node.exe"}
+	}
+
+	// 1. 查找 PATH 中的候选可执行文件
+	for _, candidate := range candidates {
+		if path := FindExecutable(candidate); path != "" {
+			return path
+		}
+	}
+
+	// 2. 查找常见的固定路径/通配符路径
+	var commonPaths []string
+	homeDir, err := os.UserHomeDir()
+
+	if runtime.GOOS == "windows" {
+		commonPaths = []string{
+			`C:\Program Files\nodejs\node.exe`,
+			`C:\Program Files (x86)\nodejs\node.exe`,
+		}
+		if err == nil {
+			commonPaths = append(commonPaths, filepath.Join(homeDir, `AppData\Roaming\nvm\v*\node.exe`))
+		}
+	} else {
+		commonPaths = []string{
+			"/usr/local/bin/node",
+			"/usr/bin/node",
+			"/opt/homebrew/bin/node",
+		}
+		if err == nil {
+			commonPaths = append(commonPaths, filepath.Join(homeDir, ".nvm/versions/node/v*/bin/node"))
+		}
+	}
+
+	for _, path := range commonPaths {
+		if strings.Contains(path, "*") {
+			// 处理带有通配符的路径（例如 nvm 版本目录）
+			matches, err := filepath.Glob(path)
+			if err == nil && len(matches) > 0 {
+				for _, match := range matches {
+					if info, err := os.Stat(match); err == nil && !info.IsDir() {
+						return match
+					}
+				}
+			}
+		} else {
+			if info, err := os.Stat(path); err == nil && !info.IsDir() {
+				return path
+			}
+		}
+	}
+
+	return ""
+}
+
+func FindExecutable(name string) string {
+	if path, err := exec.LookPath(name); err == nil {
+		if absPath, err := filepath.Abs(path); err == nil {
+			return absPath
+		}
+		return path
+	}
+
+	cmdName := "which"
+	if runtime.GOOS == "windows" {
+		cmdName = "where"
+	}
+
+	cmd := exec.Command(cmdName, name)
+	var stdout bytes.Buffer
+	cmd.Stdout = &stdout
+
+	if err := cmd.Run(); err == nil {
+		output := strings.TrimSpace(stdout.String())
+		if output != "" {
+			// 按换行符分割，获取第一行结果
+			lines := strings.FieldsFunc(output, func(r rune) bool {
+				return r == '\n' || r == '\r'
+			})
+			if len(lines) > 0 {
+				return strings.TrimSpace(lines[0])
+			}
+		}
+	}
+
+	return ""
 }
