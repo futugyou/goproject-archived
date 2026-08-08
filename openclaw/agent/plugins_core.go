@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -466,4 +467,90 @@ func toMarkerLine(marker core.MediaMarker) string {
 	default:
 		return marker.Value
 	}
+}
+
+type BridgedToolHook struct {
+	name               string
+	bridge             *PluginBridgeProcess
+	pluginId           string
+	eventSubscriptions []string
+	logger             *slog.Logger
+	beforeTimeout      time.Duration
+}
+
+func NewBridgedToolHook(bridge *PluginBridgeProcess, pluginId string, eventSubscriptions []string, logger *slog.Logger) *BridgedToolHook {
+	if logger == nil {
+		logger = slog.Default()
+	}
+	hook := &BridgedToolHook{
+		bridge:             bridge,
+		pluginId:           pluginId,
+		eventSubscriptions: eventSubscriptions,
+		logger:             logger,
+		name:               fmt.Sprintf("plugin:%s", pluginId),
+		beforeTimeout:      time.Second * 5,
+	}
+	return hook
+}
+
+func (b *BridgedToolHook) AfterExecute(ctx context.Context, toolName string, arguments string, result string, duration time.Duration, failed bool) error {
+	var eventName = "tool:after"
+	if !slices.Contains(b.eventSubscriptions, eventName) && !slices.Contains(b.eventSubscriptions, "tool:*") {
+		return nil
+	}
+
+	err := b.bridge.SendRequest(ctx, "hook_after", core.BridgeHookAfterRequest{
+		EventName:  eventName,
+		ToolName:   toolName,
+		Arguments:  arguments,
+		Result:     result,
+		DurationMs: float64(duration.Milliseconds()),
+		Failed:     failed,
+	})
+
+	if err != nil {
+		b.logger.Warn("hook failed", "PluginId", b.pluginId, "ToolName", toolName)
+	}
+
+	return err
+}
+
+func (b *BridgedToolHook) BeforeExecute(ctx context.Context, toolName string, arguments string) bool {
+	var eventName = "tool:before"
+	if !slices.Contains(b.eventSubscriptions, eventName) && !slices.Contains(b.eventSubscriptions, "tool:*") {
+		return true
+	}
+
+	initCtx, cancel := context.WithTimeout(ctx, b.beforeTimeout)
+	defer cancel()
+
+	response, err := b.bridge.SendAndWait(initCtx, "hook_before", core.BridgeHookBeforeRequest{
+		EventName: eventName,
+		ToolName:  toolName,
+		Arguments: arguments,
+	})
+
+	if err != nil {
+		b.logger.Warn("hook failed on tool", "PluginId", b.pluginId, "ToolName", toolName)
+		return true
+	}
+
+	if response.Result == nil {
+		return true
+	}
+
+	var raw map[string]any
+	if err := json.Unmarshal(*response.Result, &raw); err != nil {
+		return true
+	}
+
+	if value, ok := raw["allow"].(bool); ok {
+		return value
+	}
+
+	return true
+}
+
+func (b *BridgedToolHook) Name() string {
+	return b.name
 }
