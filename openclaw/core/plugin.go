@@ -11,6 +11,8 @@ import (
 	"time"
 
 	"github.com/futugyou/openclaw/util"
+
+	"golang.org/x/mod/semver"
 )
 
 type ExecutionHostKind uint8
@@ -79,7 +81,7 @@ var allowedKeywords = map[string]bool{
 	"minItems": true, "maxItems": true, "pattern": true, "oneOf": true, "anyOf": true,
 }
 
-func (p *PluginConfigValidator) Validate(manifest PluginManifest, config *json.RawMessage) []PluginCompatibilityDiagnostic {
+func (p *PluginConfigValidator) Validate(manifest PluginManifest, config json.RawMessage) []PluginCompatibilityDiagnostic {
 	if manifest.ConfigSchema == nil {
 		return nil
 	}
@@ -100,10 +102,10 @@ func (p *PluginConfigValidator) Validate(manifest PluginManifest, config *json.R
 
 	// 2. 处理 Config 默认值
 	var cfg any
-	if config == nil || len(*config) == 0 {
+	if len(config) == 0 {
 		cfg = make(map[string]any)
 	} else {
-		_ = json.Unmarshal(*config, &cfg)
+		_ = json.Unmarshal(config, &cfg)
 	}
 
 	// 3. 校验 Config 值
@@ -974,4 +976,125 @@ func (p *PluginDiscovery) Discover(pluginsConfig *PluginsConfig, workspacePath s
 		return result.Plugins
 	}
 	return []DiscoveredPlugin{}
+}
+
+var (
+	SupportedPluginAPIVersion = "v2026.5.4"
+	HostCompatibilityVersion  = "v2026.5.4"
+)
+
+func ValidateDiscoveredPlugin(plugin DiscoveredPlugin) []PluginCompatibilityDiagnostic {
+	diagnostics := ValidatePlugin(
+		plugin.PluginApiRange,
+		plugin.MinHostVersion,
+		plugin.Manifest.ID,
+		plugin.RootPath,
+	)
+
+	if strings.TrimSpace(plugin.ExpectedIntegrity) != "" {
+		diagnostics = append(diagnostics, PluginCompatibilityDiagnostic{
+			Severity: "error",
+			Code:     "package_integrity_unverified",
+			Message:  fmt.Sprintf("Plugin '%s' declares package integrity, but extracted plugin directories cannot currently be verified against package-manager integrity metadata.", plugin.Manifest.ID),
+			Surface:  "package_metadata",
+			Path:     plugin.RootPath,
+		})
+	}
+
+	return diagnostics
+}
+
+func ValidatePlugin(pluginAPIRange, minHostVersion, pluginID, path string) []PluginCompatibilityDiagnostic {
+	var diagnostics []PluginCompatibilityDiagnostic
+
+	validateFloor(
+		pluginAPIRange,
+		SupportedPluginAPIVersion,
+		"plugin_api_version_unsupported",
+		"plugin API",
+		pluginID,
+		path,
+		&diagnostics,
+	)
+
+	validateFloor(
+		minHostVersion,
+		HostCompatibilityVersion,
+		"host_version_unsupported",
+		"host",
+		pluginID,
+		path,
+		&diagnostics,
+	)
+
+	return diagnostics
+}
+
+func validateFloor(
+	declaredRange string,
+	supportedVersion string,
+	diagnosticCode string,
+	label string,
+	pluginID string,
+	path string,
+	diagnostics *[]PluginCompatibilityDiagnostic,
+) {
+	normalized := strings.TrimSpace(declaredRange)
+	if normalized == "" {
+		return
+	}
+
+	// 1. 移除范围前缀运算符
+	operators := []string{">=", "<=", "==", ">", "=", "^", "~"}
+	for _, op := range operators {
+		if strings.HasPrefix(normalized, op) {
+			normalized = strings.TrimSpace(normalized[len(op):])
+			break
+		}
+	}
+
+	// 2. 移除 'v' 或 'V' 前缀
+	if strings.HasPrefix(normalized, "v") || strings.HasPrefix(normalized, "V") {
+		normalized = normalized[1:]
+	}
+
+	// 3. 截断后缀分隔符（如预发布版本号、构建元数据等）
+	if idx := strings.IndexAny(normalized, "-+ <>|"); idx >= 0 {
+		normalized = normalized[:idx]
+	}
+
+	// 4. 如果没有包含主次版本分隔符 '.'，补全 '.0'
+	if !strings.Contains(normalized, ".") && len(normalized) > 0 {
+		normalized += ".0"
+	}
+
+	// 5. 构造成 SemVer 兼容格式 (vX.Y.Z) 进行比较
+	semverCandidate := "v" + normalized
+	// 若缺失修订号 (Patch) 自动补齐，确保 semver 格式有效 (例如 v2026.5 -> v2026.5.0)
+	if strings.Count(normalized, ".") == 1 {
+		semverCandidate += ".0"
+	}
+
+	if !semver.IsValid(semverCandidate) {
+		*diagnostics = append(*diagnostics, PluginCompatibilityDiagnostic{
+			Severity: "error",
+			Code:     "invalid_plugin_version_range",
+			Message:  fmt.Sprintf("Plugin '%s' declares an unsupported %s version range '%s'.", pluginID, label, declaredRange),
+			Surface:  "package_metadata",
+			Path:     path,
+		})
+		return
+	}
+
+	// 6. 版本比较：如果要求的版本 > 当前宿主支持的版本，则产生 Diagnostic error
+	// semver.Compare 返回 1 表示 semverCandidate > supportedVersion
+	if semver.Compare(semverCandidate, supportedVersion) > 0 {
+		*diagnostics = append(*diagnostics, PluginCompatibilityDiagnostic{
+			Severity: "error",
+			Code:     diagnosticCode,
+			Message:  fmt.Sprintf("Plugin '%s' requires %s version %s, but this bridge supports %s.", pluginID, label, normalized, strings.TrimPrefix(supportedVersion, "v")),
+			Surface:  "package_metadata",
+			Path:     path,
+		})
+	}
 }

@@ -29,15 +29,22 @@ func NewDefaultPluginManifest() *PluginManifest {
 
 // DiscoveredPlugin 代表在磁盘上扫描到的插件
 type DiscoveredPlugin struct {
-	Manifest  PluginManifest `json:"manifest"`
-	RootPath  string         `json:"root_path"`
-	EntryPath string         `json:"entry_path"`
+	Manifest                   PluginManifest `json:"manifest"`
+	RootPath                   string         `json:"root_path"`
+	EntryPath                  string         `json:"entry_path"`
+	Format                     string         `json:"format"`
+	BundleFormat               string         `json:"bundle_format"`
+	BundleMappedCapabilities   []string       `json:"bundle_mapped_capabilities"`
+	BundleDetectedCapabilities []string       `json:"bundle_detected_capabilities"`
+	PluginApiRange             string         `json:"plugin_api_range"`
+	MinHostVersion             string         `json:"min_host_version"`
+	ExpectedIntegrity          string         `json:"expected_integrity"`
 }
 
 // PluginEntryConfig 代表网关配置中针对单个插件的设置
 type PluginEntryConfig struct {
-	Enabled bool             `json:"enabled"`
-	Config  *json.RawMessage `json:"config,omitempty"`
+	Enabled bool            `json:"enabled"`
+	Config  json.RawMessage `json:"config,omitempty"`
 }
 
 func NewDefaultPluginEntryConfig() *PluginEntryConfig {
@@ -206,6 +213,7 @@ type PluginLoadReport struct {
 	SourcePath             string                          `json:"source_path"`
 	EntryPath              string                          `json:"entry_path"`
 	Origin                 string                          `json:"origin"`
+	BundleFormat           string                          `json:"bundle_format"`
 	Loaded                 bool                            `json:"loaded"`
 	EffectiveRuntimeMode   string                          `json:"effective_runtime_mode"`
 	RequestedCapabilities  []string                        `json:"requested_capabilities"`
@@ -899,7 +907,7 @@ func DefaultBridgeToolDescriptor() BridgeToolDescriptor {
 type BridgeInitRequest struct {
 	EntryPath string                        `json:"entry_path"`
 	PluginId  string                        `json:"plugin_id"`
-	Config    *json.RawMessage              `json:"config,omitempty"`
+	Config    json.RawMessage               `json:"config,omitempty"`
 	Transport *BridgeTransportRuntimeConfig `json:"transport"`
 }
 
