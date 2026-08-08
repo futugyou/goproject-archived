@@ -189,7 +189,6 @@ const (
 	PluginCompatibilityDiagnosticDefaultCode     = ""
 	PluginCompatibilityDiagnosticDefaultMessage  = ""
 	PluginLoadReportDefaultOrigin                = "bridge"
-	PluginLoadReportDefaultEffectiveRuntimeMode  = "jit"
 )
 
 type PluginCompatibilityDiagnostic struct {
@@ -215,13 +214,14 @@ type PluginLoadReport struct {
 	Origin                 string                          `json:"origin"`
 	BundleFormat           string                          `json:"bundle_format"`
 	Loaded                 bool                            `json:"loaded"`
-	EffectiveRuntimeMode   string                          `json:"effective_runtime_mode"`
 	RequestedCapabilities  []string                        `json:"requested_capabilities"`
 	BlockedByRuntimeMode   bool                            `json:"blocked_by_runtime_mode"`
 	BlockedReason          string                          `json:"blocked_reason,omitempty"`
 	ToolCount              int                             `json:"tool_count"`
 	ChannelCount           int                             `json:"channel_count"`
 	CommandCount           int                             `json:"command_count"`
+	CliCommandCount        int                             `json:"cli_command_count"`
+	CliCommandNames        []string                        `json:"cli_command_name"`
 	EventSubscriptionCount int                             `json:"event_subscription_count"`
 	ProviderCount          int                             `json:"provider_count"`
 	SkillDirectories       []string                        `json:"skill_directories"`
@@ -231,8 +231,7 @@ type PluginLoadReport struct {
 
 func DefaultPluginLoadReport() PluginLoadReport {
 	return PluginLoadReport{
-		Origin:               PluginLoadReportDefaultOrigin,
-		EffectiveRuntimeMode: PluginLoadReportDefaultEffectiveRuntimeMode,
+		Origin: PluginLoadReportDefaultOrigin,
 	}
 }
 

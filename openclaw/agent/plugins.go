@@ -15,6 +15,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -1199,4 +1200,580 @@ func (p *PluginBridgeProcess) cleanupProcess() {
 
 	_ = p.process.Process.Kill()
 	p.process = nil
+}
+
+type ChannelRegistration struct {
+	PluginId  string
+	ChannelId string
+	Adapter   core.IChannelAdapter
+}
+
+type CommandRegistration struct {
+	PluginId    string
+	CommandName string
+	Description string
+	Bridge      *PluginBridgeProcess
+}
+
+type ProviderRegistration struct {
+	ProviderId string
+	Models     []string
+	Bridge     *PluginBridgeProcess
+}
+
+type PluginProviderRegistration struct {
+	PluginId   string
+	ProviderId string
+	Models     []string
+	Bridge     *PluginBridgeProcess
+}
+
+type PluginHost struct {
+	config           core.PluginsConfig
+	bridgeScriptPath string
+	logger           *slog.Logger
+	blockedPluginIds map[string]struct{}
+	runtimeRoot      *string
+	metrics          *core.RuntimeMetrics
+
+	pluginTools    []core.ITool
+	reports        []core.PluginLoadReport
+	skillRoots     []string
+	pluginChannels []core.IChannelAdapter
+	bridges        []*PluginBridgeProcess
+
+	bridgesByPluginID           map[string]*PluginBridgeProcess
+	pluginChannelRegistrations  []ChannelRegistration
+	pluginHooks                 []core.IToolHook
+	pluginCommands              []CommandRegistration
+	pluginProviders             []ProviderRegistration
+	pluginProviderRegistrations []PluginProviderRegistration
+}
+
+func NewPluginHost(
+	config core.PluginsConfig,
+	bridgeScriptPath string,
+	logger *slog.Logger,
+	blockedPluginIds []string,
+	runtimeRoot *string,
+	metrics *core.RuntimeMetrics,
+) *PluginHost {
+	blockedMap := make(map[string]struct{})
+	for _, id := range blockedPluginIds {
+		if id != "" {
+			blockedMap[id] = struct{}{}
+		}
+	}
+
+	if logger == nil {
+		logger = slog.Default()
+	}
+
+	return &PluginHost{
+		config:           config,
+		bridgeScriptPath: bridgeScriptPath,
+		logger:           logger,
+		blockedPluginIds: blockedMap,
+		runtimeRoot:      runtimeRoot,
+		metrics:          metrics,
+	}
+}
+
+func (ph *PluginHost) Tools() []core.ITool                     { return ph.pluginTools }
+func (ph *PluginHost) Reports() []core.PluginLoadReport        { return ph.reports }
+func (ph *PluginHost) SkillRoots() []string                    { return ph.skillRoots }
+func (ph *PluginHost) ChannelAdapters() []core.IChannelAdapter { return ph.pluginChannels }
+
+func (ph *PluginHost) Load(ctx context.Context, workspacePath *string) ([]core.ITool, error) {
+	if !ph.config.Enabled {
+		ph.logger.Info("Plugin system is disabled")
+		return nil, nil
+	}
+
+	ph.resetState()
+
+	path := ""
+	if workspacePath != nil {
+		path = *workspacePath
+	}
+	discovery := core.PluginDiscoveryInstance.DiscoverWithDiagnostics(&ph.config, path)
+	ph.reports = append(ph.reports, discovery.Reports...)
+	ph.logger.Info("Discovered plugins", "count", len(discovery.Plugins))
+
+	enabled := core.PluginDiscoveryInstance.Filter(discovery.Plugins, &ph.config)
+	ph.logger.Info("Plugins enabled after filtering", "count", len(enabled))
+
+	// 逐个加载
+	for _, plugin := range enabled {
+		if _, isBlocked := ph.blockedPluginIds[plugin.Manifest.ID]; isBlocked {
+			msg := fmt.Sprintf("Plugin '%s' is disabled or quarantined by operator state.", plugin.Manifest.ID)
+			ph.reports = append(ph.reports, core.PluginLoadReport{
+				PluginId:      plugin.Manifest.ID,
+				SourcePath:    plugin.RootPath,
+				EntryPath:     plugin.EntryPath,
+				Origin:        ph.getOriginFormat(plugin),
+				BundleFormat:  plugin.BundleFormat,
+				Loaded:        false,
+				BlockedReason: msg,
+				Error:         msg,
+				Diagnostics: []core.PluginCompatibilityDiagnostic{
+					{
+						Severity: "warning",
+						Code:     "operator_blocked",
+						Message:  msg,
+						Surface:  "operator_state",
+						Path:     plugin.Manifest.ID,
+					},
+				},
+			})
+			continue
+		}
+
+		if err := ph.loadPlugin(ctx, plugin); err != nil {
+			ph.reports = append(ph.reports, core.PluginLoadReport{
+				PluginId:     plugin.Manifest.ID,
+				SourcePath:   plugin.RootPath,
+				EntryPath:    plugin.EntryPath,
+				Origin:       ph.getOriginFormat(plugin),
+				BundleFormat: plugin.BundleFormat,
+				Loaded:       false,
+				Error:        err.Error(),
+			})
+			ph.logger.Error("Failed to load plugin", "pluginId", plugin.Manifest.ID, "error", err.Error())
+		}
+	}
+
+	ph.logger.Info("Loaded tools and plugins", "toolCount", len(ph.pluginTools), "bridgeCount", len(ph.bridges))
+	return ph.pluginTools, nil
+}
+
+func (ph *PluginHost) loadPlugin(ctx context.Context, plugin core.DiscoveredPlugin) error {
+	id := plugin.Manifest.ID
+
+	if plugin.Format == "bundle" {
+		ph.loadBundle(plugin)
+		return nil
+	}
+
+	ph.logger.Info("Loading plugin bridge", "pluginId", id, "entryPath", plugin.EntryPath)
+
+	configDiagnostics := append(
+		core.ValidateDiscoveredPlugin(plugin),
+		core.PluginConfigValidatorinstance.Validate(plugin.Manifest, *ph.getPluginConfig(id))...,
+	)
+
+	if len(configDiagnostics) > 0 {
+		ph.reports = append(ph.reports, core.PluginLoadReport{
+			PluginId:    id,
+			SourcePath:  plugin.RootPath,
+			EntryPath:   plugin.EntryPath,
+			Origin:      "bridge",
+			Loaded:      false,
+			Diagnostics: configDiagnostics,
+			Error:       "Plugin package or config compatibility validation failed.",
+		})
+		return errors.New("compatibility validation failed")
+	}
+
+	runtimeRoot := ""
+	if ph.runtimeRoot != nil {
+		runtimeRoot = *ph.runtimeRoot
+	}
+	bridge := NewPluginBridgeProcess(ph.bridgeScriptPath, ph.logger, &ph.config.Transport, nil, runtimeRoot, ph.metrics)
+	pluginCfg := ph.getPluginConfig(id)
+
+	initResult, err := bridge.Start(ctx, plugin.EntryPath, id, pluginCfg)
+	if err != nil {
+		_ = bridge.Close()
+		return err
+	}
+
+	var skillDiagnostics []core.PluginCompatibilityDiagnostic
+	skillDirs := ph.resolveSkillDirectories(plugin, &skillDiagnostics)
+	requestedCapabilities := ph.determineRequestedCapabilities(initResult, skillDirs)
+
+	if !initResult.Compatible {
+		ph.reports = append(ph.reports, core.PluginLoadReport{
+			PluginId:              id,
+			SourcePath:            plugin.RootPath,
+			EntryPath:             plugin.EntryPath,
+			Origin:                "bridge",
+			RequestedCapabilities: requestedCapabilities,
+			Loaded:                false,
+			Diagnostics:           append(initResult.Diagnostics, skillDiagnostics...),
+			Error:                 "Plugin uses unsupported OpenClaw extension APIs.",
+		})
+		_ = bridge.Close()
+		return errors.New("plugin incompatible")
+	}
+
+	// 检查能力受限规则
+	blockedCapabilities := core.PluginCapabilityPolicyInstance.GetBlockedCapabilities(
+		requestedCapabilities,
+		core.ExecutionHostKind_Bridge,
+	)
+
+	if len(blockedCapabilities) > 0 {
+		msg := fmt.Sprintf("Plugin '%s' requires JIT runtime mode for capabilities: %v.", id, blockedCapabilities)
+		diags := append(initResult.Diagnostics, skillDiagnostics...)
+		diags = append(diags, core.PluginCompatibilityDiagnostic{
+			Severity: "error",
+			Message:  msg,
+			Surface:  "runtime_mode",
+			Path:     id,
+		})
+
+		ph.reports = append(ph.reports, core.PluginLoadReport{
+			PluginId:              id,
+			SourcePath:            plugin.RootPath,
+			EntryPath:             plugin.EntryPath,
+			Origin:                "bridge",
+			RequestedCapabilities: requestedCapabilities,
+			Loaded:                false,
+			BlockedByRuntimeMode:  true,
+			BlockedReason:         msg,
+			Diagnostics:           diags,
+			Error:                 msg,
+		})
+		_ = bridge.Close()
+		return errors.New(msg)
+	}
+
+	// 保存跨进程 Bridge 引用
+	ph.bridges = append(ph.bridges, bridge)
+	ph.bridgesByPluginID[id] = bridge
+
+	for _, sDir := range skillDirs {
+		if !slices.Contains(ph.skillRoots, sDir) {
+			ph.skillRoots = append(ph.skillRoots, sDir)
+		}
+	}
+
+	reportDiagnostics := append([]core.PluginCompatibilityDiagnostic{}, skillDiagnostics...)
+	registeredCount := 0
+
+	// 注册 Tools
+	for _, reg := range initResult.Tools {
+		if ph.hasToolName(reg.Name) {
+			ph.logger.Info("Plugin tool skipped — name already registered", "pluginId", id, "toolName", reg.Name)
+			reportDiagnostics = append(reportDiagnostics, core.PluginCompatibilityDiagnostic{
+				Severity: "warning",
+				Code:     "duplicate_tool_name",
+				Message:  fmt.Sprintf("Tool '%s' from plugin '%s' was skipped because that tool name is already registered.", reg.Name, id),
+				Surface:  "registerTool",
+				Path:     reg.Name,
+			})
+			continue
+		}
+
+		tool := NewBridgedPluginTool(bridge, id, reg)
+		ph.pluginTools = append(ph.pluginTools, tool)
+		registeredCount++
+	}
+
+	// 注册 Channels
+	var channelAdapters []*BridgedChannelAdapter
+	for _, ch := range initResult.Channels {
+		adapter := NewBridgedChannelAdapter(bridge, ch.Id, ph.logger)
+		channelAdapters = append(channelAdapters, adapter)
+		ph.pluginChannels = append(ph.pluginChannels, adapter)
+		ph.pluginChannelRegistrations = append(ph.pluginChannelRegistrations, ChannelRegistration{
+			PluginId: id, ChannelId: ch.Id, Adapter: adapter,
+		})
+	}
+
+	// 设置 Channel 异步通知回调
+	if len(channelAdapters) > 0 {
+		bridge.SetNotificationHandler(func(notification core.BridgeNotification) error {
+			if notification.Params == nil {
+				return nil
+			}
+
+			channelID, ok := util.TryGetPropertyString(*notification.Params, "channelId")
+			if !ok || channelID == "" {
+				return nil
+			}
+
+			var target *BridgedChannelAdapter
+			for _, a := range channelAdapters {
+				if a.channelId == channelID {
+					target = a
+					break
+				}
+			}
+			if target == nil {
+				return nil
+			}
+
+			switch notification.Notification {
+			case "channel_message":
+				go func() {
+					if err := target.HandleInbound(context.Background(), *notification.Params); err != nil {
+						ph.logger.Error("Failed to handle inbound channel message", "channelId", channelID, "error", err.Error())
+					}
+				}()
+			case "channel_auth_event":
+				target.HandleAuthEvent(*notification.Params)
+			case "channel_typing", "channel_receipt", "channel_reaction":
+				ph.logger.Info("Received channel notification", "type", notification.Notification, "channelId", channelID)
+			}
+			return nil
+		})
+	}
+
+	// 注册 Commands
+	for _, cmd := range initResult.Commands {
+		ph.pluginCommands = append(ph.pluginCommands, CommandRegistration{
+			PluginId: id, CommandName: cmd.Name, Description: cmd.Description, Bridge: bridge,
+		})
+	}
+
+	// 注册 Hooks
+	if len(initResult.EventSubscriptions) > 0 {
+		hook := NewBridgedToolHook(bridge, id, initResult.EventSubscriptions, ph.logger)
+		ph.pluginHooks = append(ph.pluginHooks, hook)
+	}
+
+	// 注册 Providers
+	for _, prov := range initResult.Providers {
+		ph.pluginProviders = append(ph.pluginProviders, ProviderRegistration{
+			ProviderId: prov.Id, Models: prov.Models, Bridge: bridge,
+		})
+		ph.pluginProviderRegistrations = append(ph.pluginProviderRegistrations, PluginProviderRegistration{
+			PluginId: id, ProviderId: prov.Id, Models: prov.Models, Bridge: bridge,
+		})
+	}
+
+	ph.reports = append(ph.reports, core.PluginLoadReport{
+		PluginId:               id,
+		SourcePath:             plugin.RootPath,
+		EntryPath:              plugin.EntryPath,
+		Origin:                 "bridge",
+		RequestedCapabilities:  requestedCapabilities,
+		Loaded:                 true,
+		ToolCount:              registeredCount,
+		ChannelCount:           len(initResult.Channels),
+		CommandCount:           len(initResult.Commands),
+		CliCommandCount:        len(initResult.CliCommands),
+		CliCommandNames:        extractCommandNames(initResult.CliCommands),
+		EventSubscriptionCount: len(initResult.EventSubscriptions),
+		ProviderCount:          len(initResult.Providers),
+		SkillDirectories:       skillDirs,
+		Diagnostics:            append(initResult.Diagnostics, reportDiagnostics...),
+	})
+
+	return nil
+}
+
+func (ph *PluginHost) loadBundle(plugin core.DiscoveredPlugin) {
+	id := plugin.Manifest.ID
+	var diagnostics []core.PluginCompatibilityDiagnostic
+
+	skillDirs := ph.resolveSkillDirectories(plugin, &diagnostics)
+	for _, capName := range plugin.BundleDetectedCapabilities {
+		diagnostics = append(diagnostics, core.PluginCompatibilityDiagnostic{
+			Severity: "warning",
+			Code:     "bundle_capability_detected_only",
+			Message:  fmt.Sprintf("Bundle capability '%s' was detected but has no OpenClaw.NET runtime mapping.", capName),
+			Surface:  capName,
+			Path:     plugin.RootPath,
+		})
+	}
+
+	if len(plugin.BundleMappedCapabilities) == 0 {
+		diagnostics = append(diagnostics, core.PluginCompatibilityDiagnostic{
+			Severity: "warning",
+			Code:     "bundle_has_no_mapped_capabilities",
+			Message:  fmt.Sprintf("%s bundle '%s' was detected, but it contains no mapped skill or command content.", plugin.BundleFormat, id),
+			Surface:  "bundle",
+			Path:     plugin.RootPath,
+		})
+	}
+
+	hasErrors := false
+	for _, diag := range diagnostics {
+		if diag.Severity == "error" {
+			hasErrors = true
+			break
+		}
+	}
+
+	if !hasErrors {
+		for _, sDir := range skillDirs {
+			if !slices.Contains(ph.skillRoots, sDir) {
+				ph.skillRoots = append(ph.skillRoots, sDir)
+			}
+		}
+	}
+
+	var errStr *string
+	if hasErrors {
+		msg := "Bundle content validation failed."
+		errStr = &msg
+	}
+
+	ph.reports = append(ph.reports, core.PluginLoadReport{
+		PluginId:              id,
+		SourcePath:            plugin.RootPath,
+		Origin:                "bridge",
+		BundleFormat:          plugin.BundleFormat,
+		RequestedCapabilities: core.PluginCapabilityPolicyInstance.Normalize(plugin.BundleMappedCapabilities),
+		Loaded:                !hasErrors,
+		SkillDirectories:      skillDirs,
+		Diagnostics:           diagnostics,
+		Error:                 derefString(errStr),
+	})
+}
+
+// RegisterCommandsWith 注册动态聊天命令
+func (ph *PluginHost) RegisterCommandsWith(processor *core.ChatCommandProcessor) {
+	for _, cmd := range ph.pluginCommands {
+		c := cmd
+		processor.RegisterDynamic(c.CommandName, func(ctx context.Context, args string) (string, error) {
+			resp, err := c.Bridge.SendAndWait(ctx, "command_execute", core.BridgeCommandExecuteRequest{
+				Name: c.CommandName,
+				Args: args,
+			})
+			if err != nil {
+				return fmt.Sprintf("Command error: %v", err), nil
+			}
+
+			if resp.Error != nil {
+				return fmt.Sprintf("Command error: %s", resp.Error.Message), nil
+			}
+
+			if resp.Result != nil {
+				if rVal, ok := util.TryGetPropertyString(*resp.Result, "result"); ok {
+					return rVal, nil
+				}
+			}
+			return "", nil
+		})
+	}
+}
+
+func (ph *PluginHost) Close() error {
+	for _, b := range ph.bridges {
+		_ = b.Close()
+	}
+	ph.resetState()
+	return nil
+}
+
+// 辅助私有方法
+func (ph *PluginHost) resetState() {
+	ph.reports = nil
+	ph.skillRoots = nil
+	ph.bridges = nil
+	ph.bridgesByPluginID = make(map[string]*PluginBridgeProcess)
+	ph.pluginTools = nil
+	ph.pluginChannels = nil
+	ph.pluginChannelRegistrations = nil
+	ph.pluginHooks = nil
+	ph.pluginCommands = nil
+	ph.pluginProviders = nil
+	ph.pluginProviderRegistrations = nil
+}
+
+func (ph *PluginHost) hasToolName(name string) bool {
+	for _, t := range ph.pluginTools {
+		if t.Name() == name {
+			return true
+		}
+	}
+	return false
+}
+
+func (ph *PluginHost) getOriginFormat(p core.DiscoveredPlugin) string {
+	if p.Format == "bundle" {
+		return "bundle"
+	}
+	return "bridge"
+}
+
+func (ph *PluginHost) getPluginConfig(pluginID string) *json.RawMessage {
+	if entry, ok := ph.config.Entries[pluginID]; ok {
+		return entry.Config
+	}
+	return nil
+}
+
+func (ph *PluginHost) determineRequestedCapabilities(initResult *core.BridgeInitResult, skillDirs []string) []string {
+	caps := append([]string{}, initResult.Capabilities...)
+	if len(skillDirs) > 0 {
+		caps = append(caps, "skills")
+	}
+
+	if len(caps) == 0 {
+		if len(initResult.Tools) > 0 {
+			caps = append(caps, "tools")
+		}
+		if len(initResult.Channels) > 0 {
+			caps = append(caps, "channels")
+		}
+		if len(initResult.Commands) > 0 {
+			caps = append(caps, "commands")
+		}
+		if len(initResult.EventSubscriptions) > 0 {
+			caps = append(caps, "hooks")
+		}
+		if len(initResult.Providers) > 0 {
+			caps = append(caps, "providers")
+		}
+	}
+	return core.PluginCapabilityPolicyInstance.Normalize(caps)
+}
+
+func (ph *PluginHost) resolveSkillDirectories(plugin core.DiscoveredPlugin, diagnostics *[]core.PluginCompatibilityDiagnostic) []string {
+	var resolvedDirs []string
+	for _, skillDir := range plugin.Manifest.Skills {
+		if skillDir == "" {
+			continue
+		}
+
+		resolved, ok := core.PluginDiscoveryInstance.TryResolveContainedPath(plugin.RootPath, skillDir)
+		if !ok {
+			if diagnostics != nil {
+				*diagnostics = append(*diagnostics, core.PluginCompatibilityDiagnostic{
+					Severity: "error",
+					Code:     "skill_dir_outside_root",
+					Message:  fmt.Sprintf("Plugin '%s' skill directory resolves outside the plugin root.", plugin.Manifest.ID),
+					Surface:  "skills",
+					Path:     skillDir,
+				})
+			}
+			continue
+		}
+
+		if !util.DirectoryExists(resolved) {
+			if diagnostics != nil {
+				*diagnostics = append(*diagnostics, core.PluginCompatibilityDiagnostic{
+					Severity: "error",
+					Code:     "skill_directory_missing",
+					Message:  fmt.Sprintf("Plugin '%s' declared a skill directory that does not exist.", plugin.Manifest.ID),
+					Surface:  "skills",
+					Path:     resolved,
+				})
+			}
+			continue
+		}
+
+		resolvedDirs = append(resolvedDirs, resolved)
+	}
+	return resolvedDirs
+}
+
+func extractCommandNames(cmds []core.BridgeCliCommandRegistration) []string {
+	names := make([]string, len(cmds))
+	for i, c := range cmds {
+		names[i] = c.Name
+	}
+	return names
+}
+
+func derefString(s *string) string {
+	if s == nil {
+		return ""
+	}
+	return *s
 }
