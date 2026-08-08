@@ -673,10 +673,23 @@ type PluginDiscoveryResult struct {
 
 // PluginToolRegistration 来自插件桥的工具注册 — 描述插件导出的工具。
 type PluginToolRegistration struct {
-	Name        string          `json:"name"`
-	Description string          `json:"description"`
-	Parameters  json.RawMessage `json:"parameters"` // 对应 JsonElement
-	Optional    bool            `json:"optional"`
+	Name         string          `json:"name"`
+	Description  string          `json:"description"`
+	Parameters   json.RawMessage `json:"parameters"` // 对应 JsonElement
+	OutputSchema json.RawMessage `json:"output_schema"`
+	Optional     bool            `json:"optional"`
+}
+
+func (p PluginToolRegistration) GetParameterSchema() string {
+	var schema string
+	json.Unmarshal(p.Parameters, &schema)
+	return schema
+}
+
+func (p PluginToolRegistration) GetOutputSchema() string {
+	var schema string
+	json.Unmarshal(p.OutputSchema, &schema)
+	return schema
 }
 
 // NativeDynamicPluginsConfig 动态原生插件整体配置
@@ -907,7 +920,7 @@ func DefaultBridgeToolDescriptor() BridgeToolDescriptor {
 type BridgeInitRequest struct {
 	EntryPath string                        `json:"entry_path"`
 	PluginId  string                        `json:"plugin_id"`
-	Config    json.RawMessage               `json:"config,omitempty"`
+	Config    *json.RawMessage              `json:"config,omitempty"`
 	Transport *BridgeTransportRuntimeConfig `json:"transport"`
 }
 
