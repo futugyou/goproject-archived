@@ -43,8 +43,8 @@ type DiscoveredPlugin struct {
 
 // PluginEntryConfig 代表网关配置中针对单个插件的设置
 type PluginEntryConfig struct {
-	Enabled bool            `json:"enabled"`
-	Config  json.RawMessage `json:"config,omitempty"`
+	Enabled bool             `json:"enabled"`
+	Config  *json.RawMessage `json:"config,omitempty"`
 }
 
 func NewDefaultPluginEntryConfig() *PluginEntryConfig {
@@ -772,11 +772,17 @@ type BridgeInitResult struct {
 	Tools              []PluginToolRegistration        `json:"tools"`
 	Channels           []BridgeChannelRegistration     `json:"channels"`
 	Commands           []BridgeCommandRegistration     `json:"commands"`
+	CliCommands        []BridgeCliCommandRegistration  `json:"cli_commands"`
 	EventSubscriptions []string                        `json:"event_subscriptions"`
 	Providers          []BridgeProviderRegistration    `json:"providers"`
 	Capabilities       []string                        `json:"capabilities"`
 	Diagnostics        []PluginCompatibilityDiagnostic `json:"diagnostics"`
 	Compatible         bool                            `json:"compatible"`
+}
+
+type BridgeCliCommandRegistration struct {
+	Name        string `json:"name"`
+	Description string `json:"description"`
 }
 
 func DefaultBridgeInitResult() BridgeInitResult {

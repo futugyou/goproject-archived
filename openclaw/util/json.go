@@ -16,6 +16,19 @@ func ReadStringArray(raw json.RawMessage) []string {
 	return nil
 }
 
+func TryGetPropertyString(raw json.RawMessage, propertyName string) (string, bool) {
+	var data map[string]any
+	if err := json.Unmarshal(raw, &data); err != nil {
+		return "", false
+	}
+
+	if value, ok := data[propertyName].(string); ok {
+		return value, true
+	}
+
+	return "", false
+}
+
 func ParseStringArray(root map[string]any, propertyName string) []string {
 	val, ok := TryGetProperty(root, propertyName)
 	if !ok {

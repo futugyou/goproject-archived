@@ -17,9 +17,9 @@ type BridgedPluginTool struct {
 	bridge   *PluginBridgeProcess
 	pluginId string
 
-	Name            string
-	Description     string
-	ParameterSchema string
+	name            string
+	description     string
+	parameterSchema string
 	OutputSchema    string
 	Optional        bool
 }
@@ -28,17 +28,29 @@ func NewBridgedPluginTool(bridge *PluginBridgeProcess, pluginId string, registra
 	tool := &BridgedPluginTool{
 		bridge:          bridge,
 		pluginId:        pluginId,
-		Name:            registration.Name,
-		Description:     registration.Description,
+		name:            registration.Name,
+		description:     registration.Description,
 		Optional:        registration.Optional,
-		ParameterSchema: registration.GetParameterSchema(),
+		parameterSchema: registration.GetParameterSchema(),
 		OutputSchema:    registration.GetOutputSchema(),
 	}
 	return tool
 }
 
 func (b *BridgedPluginTool) Execute(ctx context.Context, argumentsJson string) (string, error) {
-	return b.bridge.ExecuteTool(ctx, b.Name, argumentsJson)
+	return b.bridge.ExecuteTool(ctx, b.name, argumentsJson)
+}
+
+func (b *BridgedPluginTool) Name() string {
+	return b.name
+}
+
+func (b *BridgedPluginTool) Description() string {
+	return b.description
+}
+
+func (b *BridgedPluginTool) ParameterSchema() string {
+	return b.parameterSchema
 }
 
 type BridgedChannelAdapter struct {
