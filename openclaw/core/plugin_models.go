@@ -792,8 +792,8 @@ type BridgeTransportRuntimeConfig struct {
 	SecurityMode    string `json:"security_mode"`
 }
 
-func DefaultBridgeTransportRuntimeConfig() BridgeTransportRuntimeConfig {
-	return BridgeTransportRuntimeConfig{
+func DefaultBridgeTransportRuntimeConfig() *BridgeTransportRuntimeConfig {
+	return &BridgeTransportRuntimeConfig{
 		Mode:         "stdio",
 		SecurityMode: "legacy",
 	}
@@ -897,10 +897,10 @@ func DefaultBridgeToolDescriptor() BridgeToolDescriptor {
 
 // BridgeInitRequest 代表初始化请求
 type BridgeInitRequest struct {
-	EntryPath string                       `json:"entry_path"`
-	PluginId  string                       `json:"plugin_id"`
-	Config    *json.RawMessage             `json:"config,omitempty"`
-	Transport BridgeTransportRuntimeConfig `json:"transport"`
+	EntryPath string                        `json:"entry_path"`
+	PluginId  string                        `json:"plugin_id"`
+	Config    *json.RawMessage              `json:"config,omitempty"`
+	Transport *BridgeTransportRuntimeConfig `json:"transport"`
 }
 
 // DefaultBridgeInitRequest 设置默认值
@@ -912,8 +912,8 @@ func DefaultBridgeInitRequest() BridgeInitRequest {
 
 // BridgeExecuteRequest 代表执行请求
 type BridgeExecuteRequest struct {
-	Name   string           `json:"name"`
-	Params *json.RawMessage `json:"params,omitempty"`
+	Name   string          `json:"name"`
+	Params json.RawMessage `json:"params,omitempty"`
 }
 
 // BridgeChannelControlRequest 代表通道控制请求

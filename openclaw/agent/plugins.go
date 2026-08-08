@@ -2,6 +2,7 @@ package agent
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"crypto/subtle"
 	"encoding/json"
@@ -23,6 +24,7 @@ import (
 	"github.com/Microsoft/go-winio"
 	"github.com/futugyou/openclaw/core"
 	"github.com/futugyou/openclaw/util"
+	"github.com/shirou/gopsutil/v4/process"
 )
 
 type BridgeProcessLaunchSpec struct {
@@ -40,6 +42,7 @@ type IBridgeTransport interface {
 	SendRequest(ctx context.Context, method string, parameters any) error
 	SendAndWait(ctx context.Context, method string, parameters any) (*core.BridgeResponse, error)
 	SetNotificationHandler(handler BridgeNotificationHandler) error
+	Close() error
 }
 
 type PluginBridgeMemorySnapshot struct {
@@ -663,4 +666,537 @@ func (h *HybridBridgeTransport) Close() error {
 	h.bootstrap.Close()
 
 	return nil
+}
+
+type PluginBridgeProcess struct {
+	mu                  sync.Mutex
+	process             *exec.Cmd
+	bridgeScriptPath    string
+	logger              *slog.Logger
+	transportConfig     core.BridgeTransportConfig
+	launchSpec          *BridgeProcessLaunchSpec
+	runtimeRoot         string
+	metrics             *core.RuntimeMetrics
+	transport           IBridgeTransport
+	runtimeTransport    *core.BridgeTransportRuntimeConfig
+	entryPath           string
+	pluginID            string
+	pluginConfig        *json.RawMessage
+	notificationHandler BridgeNotificationHandler
+
+	initialized         atomic.Bool
+	disposed            atomic.Bool
+	intentionalShutdown atomic.Bool
+	restartCount        atomic.Int32
+
+	// Exit notification signaling channel
+	exitChan chan struct{}
+}
+
+func NewPluginBridgeProcess(
+	bridgeScriptPath string,
+	logger *slog.Logger,
+	transportConfig *core.BridgeTransportConfig,
+	launchSpec *BridgeProcessLaunchSpec,
+	runtimeRoot string,
+	metrics *core.RuntimeMetrics,
+) *PluginBridgeProcess {
+	if logger == nil {
+		logger = slog.Default()
+	}
+
+	cfg := core.BridgeTransportConfig{}
+	if transportConfig != nil {
+		cfg = *transportConfig
+	}
+
+	return &PluginBridgeProcess{
+		bridgeScriptPath: bridgeScriptPath,
+		logger:           logger,
+		transportConfig:  cfg,
+		launchSpec:       launchSpec,
+		runtimeRoot:      runtimeRoot,
+		metrics:          metrics,
+	}
+}
+
+func (p *PluginBridgeProcess) RestartCount() int32 {
+	return p.restartCount.Load()
+}
+
+func (p *PluginBridgeProcess) SetNotificationHandler(handler BridgeNotificationHandler) {
+	p.mu.Lock()
+	p.notificationHandler = handler
+	transport := p.transport
+	p.mu.Unlock()
+
+	if transport != nil {
+		transport.SetNotificationHandler(handler)
+	}
+}
+
+// GetMemorySnapshot fetches cross-platform process metrics using gopsutil.
+func (p *PluginBridgeProcess) GetMemorySnapshot() *PluginBridgeMemorySnapshot {
+	p.mu.Lock()
+	cmd := p.process
+	p.mu.Unlock()
+
+	if cmd == nil || cmd.Process == nil {
+		return nil
+	}
+
+	proc, err := process.NewProcess(int32(cmd.Process.Pid))
+	if err != nil {
+		return nil
+	}
+
+	memInfo, err := proc.MemoryInfo()
+	if err != nil {
+		return nil
+	}
+
+	return &PluginBridgeMemorySnapshot{
+		ProcessId:          cmd.Process.Pid,
+		WorkingSetBytes:    int64(memInfo.RSS),
+		PrivateMemoryBytes: int64(memInfo.VMS),
+	}
+}
+
+func (p *PluginBridgeProcess) Start(
+	ctx context.Context,
+	entryPath string,
+	pluginID string,
+	pluginConfig *json.RawMessage,
+) (*core.BridgeInitResult, error) {
+	p.entryPath = entryPath
+	p.pluginID = pluginID
+	p.pluginConfig = pluginConfig
+	p.intentionalShutdown.Store(false)
+
+	resp, err := p.initializeProcess(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	if resp.Error != nil {
+		return nil, fmt.Errorf("plugin init failed: %s", resp.Error.Message)
+	}
+
+	if resp.Result == nil {
+		return &core.BridgeInitResult{}, nil
+	}
+
+	var init core.BridgeInitResult
+	if err := json.Unmarshal(*resp.Result, &init); err != nil {
+		return nil, fmt.Errorf("failed to deserialize init response: %w", err)
+	}
+
+	return &init, nil
+}
+
+func (p *PluginBridgeProcess) ExecuteTool(ctx context.Context, toolName string, argumentsJSON string) (string, error) {
+	if err := p.ensureProcessRunning(ctx); err != nil {
+		return "", err
+	}
+
+	p.mu.Lock()
+	cmd := p.process
+	p.mu.Unlock()
+
+	if cmd == nil || cmd.Process == nil {
+		return "Error: Plugin bridge process is not running.", nil
+	}
+
+	var rawParams json.RawMessage
+	if err := json.Unmarshal([]byte(argumentsJSON), &rawParams); err != nil {
+		return "", fmt.Errorf("invalid arguments json: %w", err)
+	}
+
+	execRequest := core.BridgeExecuteRequest{
+		Name:   toolName,
+		Params: rawParams,
+	}
+
+	resp, err := p.SendAndWait(ctx, "execute", execRequest)
+	if err != nil {
+		return "", err
+	}
+
+	if resp.Error != nil {
+		return fmt.Sprintf("Error: %s", resp.Error.Message), nil
+	}
+
+	if resp.Result != nil {
+		var resultObj map[string]json.RawMessage
+		if err := json.Unmarshal(*resp.Result, &resultObj); err == nil {
+			if details, ok := resultObj["details"]; ok && string(details) != "null" {
+				return string(details), nil
+			}
+
+			if contentArray, ok := resultObj["content"]; ok {
+				var items []struct {
+					Text string `json:"text"`
+				}
+				if err := json.Unmarshal(contentArray, &items); err == nil {
+					var buf bytes.Buffer
+					for i, item := range items {
+						if i > 0 {
+							buf.WriteByte('\n')
+						}
+						buf.WriteString(item.Text)
+					}
+					return buf.String(), nil
+				}
+			}
+		}
+		return string(*resp.Result), nil
+	}
+
+	return "", nil
+}
+
+func (p *PluginBridgeProcess) SendRequest(ctx context.Context, method string, parameters any) error {
+	_, err := p.SendAndWait(ctx, method, parameters)
+	return err
+}
+
+func (p *PluginBridgeProcess) SendAndWait(ctx context.Context, method string, parameters any) (*core.BridgeResponse, error) {
+	if err := p.ensureProcessRunning(ctx); err != nil {
+		return nil, err
+	}
+
+	p.mu.Lock()
+	transport := p.transport
+	p.mu.Unlock()
+
+	if transport == nil {
+		return nil, errors.New("plugin bridge transport is not running")
+	}
+
+	return transport.SendAndWait(ctx, method, parameters)
+}
+
+// Close implements asynchronous teardown / graceful disposal.
+func (p *PluginBridgeProcess) Close() error {
+	p.disposed.Store(true)
+	p.intentionalShutdown.Store(true)
+
+	p.mu.Lock()
+	cmd := p.process
+	p.mu.Unlock()
+
+	if cmd == nil || cmd.Process == nil {
+		return p.disposeTransport()
+	}
+
+	// Graceful shutdown ping
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+
+	_, _ = p.SendAndWait(shutdownCtx, "shutdown", nil)
+
+	// Wait for exit or force kill
+	done := make(chan struct{})
+	go func() {
+		if cmd.ProcessState != nil {
+			close(done)
+			return
+		}
+		_, _ = cmd.Process.Wait()
+		close(done)
+	}()
+
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		_ = cmd.Process.Kill()
+	}
+
+	_ = p.disposeTransport()
+	p.cleanupProcess()
+
+	return nil
+}
+
+func (p *PluginBridgeProcess) ensureProcessRunning(ctx context.Context) error {
+	p.mu.Lock()
+	isRunning := p.initialized.Load() && p.process != nil && p.transport != nil
+	p.mu.Unlock()
+
+	if isRunning {
+		return nil
+	}
+
+	return p.restart(ctx)
+}
+
+func (p *PluginBridgeProcess) restart(ctx context.Context) error {
+	if p.disposed.Load() || p.entryPath == "" || p.pluginID == "" {
+		return nil
+	}
+
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	if p.disposed.Load() {
+		return nil
+	}
+
+	if p.initialized.Load() && p.process != nil && p.transport != nil {
+		return nil
+	}
+
+	delay := 1 * time.Second
+	var lastErr error
+
+	for attempt := 1; attempt <= 3; attempt++ {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		default:
+		}
+
+		if p.metrics != nil {
+			p.metrics.IncrementPluginBridgeRestartAttempts()
+		}
+
+		_ = p.disposeTransport()
+		p.cleanupProcess()
+		p.intentionalShutdown.Store(false)
+
+		_, err := p.initializeProcess(ctx)
+		if err == nil {
+			p.restartCount.Add(1)
+			p.logger.Info("Plugin bridge restarted successfully", "pluginId", p.pluginID, "attempt", attempt)
+			return nil
+		}
+
+		lastErr = err
+		if p.metrics != nil {
+			p.metrics.IncrementPluginBridgeRestartFailures()
+		}
+
+		p.logger.Warn("Failed to restart plugin bridge", "pluginId", p.pluginID, "attempt", attempt, "err", err)
+
+		_ = p.disposeTransport()
+		p.cleanupProcess()
+
+		if attempt < 3 {
+			select {
+			case <-time.After(delay):
+				delay *= 2
+			case <-ctx.Done():
+				return ctx.Err()
+			}
+		}
+	}
+
+	p.logger.Error("Plugin bridge could not be restarted", "pluginId", p.pluginID, "err", lastErr)
+	return fmt.Errorf("failed to restart bridge process after 3 attempts: %w", lastErr)
+}
+
+func (p *PluginBridgeProcess) initializeProcess(ctx context.Context) (*core.BridgeResponse, error) {
+	p.initialized.Store(false)
+
+	transport, runtimeTransport, err := CreateBridgeTransport(p.transportConfig, p.pluginID, p.logger, p.runtimeRoot, p.metrics)
+	if err != nil {
+		return nil, err
+	}
+
+	if p.notificationHandler != nil {
+		transport.SetNotificationHandler(p.notificationHandler)
+	}
+
+	if err := transport.Prepare(ctx); err != nil {
+		return nil, err
+	}
+
+	cmd, err := p.startProcess(runtimeTransport)
+	if err != nil {
+		return nil, err
+	}
+
+	if err := transport.Start(ctx, cmd); err != nil {
+		_ = cmd.Process.Kill()
+		return nil, err
+	}
+
+	p.process = cmd
+	p.transport = transport
+	p.runtimeTransport = runtimeTransport
+
+	exitChan := make(chan struct{})
+	p.exitChan = exitChan
+	go p.monitorProcess(cmd, exitChan)
+
+	initReq := core.BridgeInitRequest{
+		EntryPath: p.entryPath,
+		PluginId:  p.pluginID,
+		Config:    p.pluginConfig,
+		Transport: runtimeTransport,
+	}
+
+	resp, err := transport.SendAndWait(ctx, "init", initReq)
+	if err != nil {
+		_ = transport.Close()
+		p.transport = nil
+		p.cleanupProcess()
+		return nil, err
+	}
+
+	if hybrid, ok := transport.(*HybridBridgeTransport); ok {
+		hybrid.UseSocketTransport()
+	}
+
+	p.initialized.Store(true)
+
+	return resp, nil
+}
+
+func (p *PluginBridgeProcess) startProcess(transport *core.BridgeTransportRuntimeConfig) (*exec.Cmd, error) {
+	if p.launchSpec != nil {
+		return p.startExternalProcess(transport)
+	}
+
+	nodeExe := FindNodeExecutable()
+	if len(nodeExe) == 0 {
+		return nil, errors.New("Node.js is required for OpenClaw plugin support but was not found. " +
+			"Install Node.js 18+ and ensure 'node' is on your PATH")
+	}
+
+	args := []string{"--experimental-vm-modules", p.bridgeScriptPath}
+	cmd := exec.Command(nodeExe, args...)
+
+	workDir := filepath.Dir(p.entryPath)
+	if workDir == "" {
+		workDir = "."
+	}
+	cmd.Dir = workDir
+
+	cmd.Env = os.Environ()
+	cmd.Env = append(cmd.Env, fmt.Sprintf("OPENCLAW_BRIDGE_TRANSPORT_MODE=%s", transport.Mode))
+	if transport.SocketPath != "" {
+		cmd.Env = append(cmd.Env, fmt.Sprintf("OPENCLAW_BRIDGE_SOCKET_PATH=%s", transport.SocketPath))
+	}
+	if transport.SocketAuthToken != "" {
+		cmd.Env = append(cmd.Env, fmt.Sprintf("OPENCLAW_BRIDGE_SOCKET_AUTH_TOKEN=%s", transport.SocketAuthToken))
+	}
+
+	stderr, err := cmd.StderrPipe()
+	if err == nil {
+		go p.streamStderr(stderr, "[Node]")
+	}
+
+	if err := cmd.Start(); err != nil {
+		return nil, fmt.Errorf("failed to start Node.js plugin bridge process: %w", err)
+	}
+
+	return cmd, nil
+}
+
+func (p *PluginBridgeProcess) startExternalProcess(transport *core.BridgeTransportRuntimeConfig) (*exec.Cmd, error) {
+	spec := p.launchSpec
+	cmd := exec.Command(spec.FileName, spec.Arguments...)
+
+	if spec.WorkingDirectory != "" {
+		cmd.Dir = spec.WorkingDirectory
+	} else {
+		cmd.Dir, _ = os.Getwd()
+	}
+
+	envMap := make(map[string]string)
+	for _, env := range os.Environ() {
+		// Basic split key-value
+		envMap[env] = env
+	}
+
+	envMap["OPENCLAW_BRIDGE_TRANSPORT_MODE"] = transport.Mode
+	if transport.SocketPath != "" {
+		envMap["OPENCLAW_BRIDGE_SOCKET_PATH"] = transport.SocketPath
+	}
+	if transport.SocketAuthToken != "" {
+		envMap["OPENCLAW_BRIDGE_SOCKET_AUTH_TOKEN"] = transport.SocketAuthToken
+	}
+
+	for k, v := range spec.EnvironmentVariables {
+		if v == "" {
+			delete(envMap, k)
+		} else {
+			envMap[k] = fmt.Sprintf("%s=%s", k, v)
+		}
+	}
+
+	cmd.Env = make([]string, 0, len(envMap))
+	for _, v := range envMap {
+		cmd.Env = append(cmd.Env, v)
+	}
+
+	stderr, err := cmd.StderrPipe()
+	if err == nil {
+		go p.streamStderr(stderr, "[Bridge]")
+	}
+
+	if err := cmd.Start(); err != nil {
+		return nil, fmt.Errorf("failed to start bridge child process '%s': %w", spec.FileName, err)
+	}
+
+	return cmd, nil
+}
+
+func (p *PluginBridgeProcess) monitorProcess(cmd *exec.Cmd, exitChan chan struct{}) {
+	_ = cmd.Wait()
+	close(exitChan)
+
+	p.mu.Lock()
+	if p.process != cmd {
+		// A prior process exited after a replacement was spun up. Ignore.
+		p.mu.Unlock()
+		return
+	}
+
+	p.initialized.Store(false)
+	_ = p.disposeTransport()
+	p.cleanupProcess()
+
+	shouldRestart := !p.disposed.Load() && !p.intentionalShutdown.Load()
+	p.mu.Unlock()
+
+	if shouldRestart {
+		p.logger.Warn("Plugin bridge process exited unexpectedly. Restarting...", "pluginId", p.pluginID)
+		go func() {
+			_ = p.restart(context.Background())
+		}()
+	}
+}
+
+func (p *PluginBridgeProcess) streamStderr(r io.Reader, prefix string) {
+	buf := make([]byte, 1024)
+	for {
+		n, err := r.Read(buf)
+		if n > 0 {
+			p.logger.Info(fmt.Sprintf("%s %s", prefix, string(buf[:n])))
+		}
+		if err != nil {
+			break
+		}
+	}
+}
+
+func (p *PluginBridgeProcess) disposeTransport() error {
+	if p.transport == nil {
+		return nil
+	}
+	err := p.transport.Close()
+	p.transport = nil
+	return err
+}
+
+func (p *PluginBridgeProcess) cleanupProcess() {
+	p.initialized.Store(false)
+	if p.process == nil || p.process.Process == nil {
+		return
+	}
+
+	_ = p.process.Process.Kill()
+	p.process = nil
 }
