@@ -101,13 +101,13 @@ type IChannelAdapter interface {
 	ChannelId() string
 	Start(ctx context.Context) error
 	Send(ctx context.Context, message *OutboundMessage) error
-	OnMessageReceived(handler func(ctx context.Context, msg *InboundMessage) error)
+	GetMessageReceivedHandler() (handler func(ctx context.Context, msg *InboundMessage) error)
 }
 
 type IBridgedChannelControl interface {
 	IChannelAdapter
 
-	SelfId() (string, bool)
+	SelfId() *string
 	SelfIds() []string
 	SendTyping(ctx context.Context, recipientId string, isTyping bool, accountId string) error
 	SendReadReceipt(ctx context.Context, messageId string, remoteJid string, participant string, accountId string) error

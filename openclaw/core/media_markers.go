@@ -5,19 +5,19 @@ import "strings"
 type MediaMarkerKind byte
 
 const (
-	ImageUrl MediaMarkerKind = iota
-	ImagePath
-	FileUrl
-	FilePath
-	TelegramImageFileId
-	TelegramVideoFileId
-	TelegramAudioFileId
-	TelegramDocumentFileId
-	TelegramStickerFileId
-	VideoUrl
-	AudioUrl
-	DocumentUrl
-	StickerUrl
+	MediaMarkerImageUrl MediaMarkerKind = iota
+	MediaMarkerImagePath
+	MediaMarkerFileUrl
+	MediaMarkerFilePath
+	MediaMarkerTelegramImageFileId
+	MediaMarkerTelegramVideoFileId
+	MediaMarkerTelegramAudioFileId
+	MediaMarkerTelegramDocumentFileId
+	MediaMarkerTelegramStickerFileId
+	MediaMarkerVideoUrl
+	MediaMarkerAudioUrl
+	MediaMarkerDocumentUrl
+	MediaMarkerStickerUrl
 )
 
 type MediaMarker struct {
@@ -58,14 +58,14 @@ func TryParseMarker(line string) (MediaMarker, bool) {
 		prefix string
 		kind   MediaMarkerKind
 	}{
-		{"IMAGE_URL:", ImageUrl},
-		{"IMAGE_PATH:", ImagePath},
-		{"FILE_URL:", FileUrl},
-		{"FILE_PATH:", FilePath},
-		{"VIDEO_URL:", VideoUrl},
-		{"AUDIO_URL:", AudioUrl},
-		{"DOCUMENT_URL:", DocumentUrl},
-		{"STICKER_URL:", StickerUrl},
+		{"IMAGE_URL:", MediaMarkerImageUrl},
+		{"IMAGE_PATH:", MediaMarkerImagePath},
+		{"FILE_URL:", MediaMarkerFileUrl},
+		{"FILE_PATH:", MediaMarkerFilePath},
+		{"VIDEO_URL:", MediaMarkerVideoUrl},
+		{"AUDIO_URL:", MediaMarkerAudioUrl},
+		{"DOCUMENT_URL:", MediaMarkerDocumentUrl},
+		{"STICKER_URL:", MediaMarkerStickerUrl},
 	}
 
 	for _, p := range prefixes {
@@ -78,11 +78,11 @@ func TryParseMarker(line string) (MediaMarker, bool) {
 		mediaType string
 		kind      MediaMarkerKind
 	}{
-		{"IMAGE", TelegramImageFileId},
-		{"VIDEO", TelegramVideoFileId},
-		{"AUDIO", TelegramAudioFileId},
-		{"DOCUMENT", TelegramDocumentFileId},
-		{"STICKER", TelegramStickerFileId},
+		{"IMAGE", MediaMarkerTelegramImageFileId},
+		{"VIDEO", MediaMarkerTelegramVideoFileId},
+		{"AUDIO", MediaMarkerTelegramAudioFileId},
+		{"DOCUMENT", MediaMarkerTelegramDocumentFileId},
+		{"STICKER", MediaMarkerTelegramStickerFileId},
 	}
 
 	for _, tg := range tgTypes {

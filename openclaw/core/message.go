@@ -5,39 +5,44 @@ import "time"
 type InboundMessage struct {
 	ChannelId               string    `json:"channel_id"`
 	SenderId                string    `json:"sender_id"`
-	AccountId               string    `json:"account_id,omitempty"`
+	AccountId               string    `json:"account_id"`
 	SessionId               string    `json:"session_id"`
 	CronJobName             string    `json:"cron_job_name"`
-	AutomationRunId         string    `json:"automation_run_id,omitempty"`
-	AutomationTriggerSource string    `json:"automation_trigger_source,omitempty"`
-	Type                    string    `json:"type,omitempty"`
+	AutomationRunId         string    `json:"automation_run_id"`
+	AutomationTriggerSource string    `json:"automation_trigger_source"`
+	Type                    string    `json:"type"`
 	Text                    string    `json:"text"`
-	SenderName              string    `json:"sender_name,omitempty"`
-	MessageId               string    `json:"message_id,omitempty"`
-	ReplyToMessageId        string    `json:"reply_to_message_id,omitempty"`
-	RequestId               string    `json:"request_id,omitempty"`
-	SurfaceId               string    `json:"surface_id,omitempty"`
-	ComponentId             string    `json:"component_id,omitempty"`
-	Event                   string    `json:"event,omitempty"`
-	ValueJson               string    `json:"value_json,omitempty"`
-	Sequence                *int64    `json:"sequence,omitempty"`
+	SenderName              string    `json:"sender_name"`
+	MessageId               string    `json:"message_id"`
+	ReplyToMessageId        string    `json:"reply_to_message_id"`
+	RequestId               string    `json:"request_id"`
+	SurfaceId               string    `json:"surface_id"`
+	ComponentId             string    `json:"component_id"`
+	Event                   string    `json:"event"`
+	ValueJson               string    `json:"value_json"`
+	Sequence                *int64    `json:"sequence"`
 	IsSystem                bool      `json:"is_system"`
 	Subject                 string    `json:"subject"`
-	ApprovalId              string    `json:"approval_id,omitempty"`
-	Approved                *bool     `json:"approved,omitempty"`
+	ApprovalId              string    `json:"approval_id"`
+	Approved                *bool     `json:"approved"`
 	ReceivedAt              time.Time `json:"received_at"`
 
 	// Group chat fields
 	IsGroup      bool     `json:"is_group"`
-	GroupId      string   `json:"group_id,omitempty"`
-	GroupName    string   `json:"group_name,omitempty"`
+	GroupId      string   `json:"group_id"`
+	GroupName    string   `json:"group_name"`
 	MentionedIds []string `json:"mentioned_ids,omitempty"`
 
 	// Media fields
-	MediaType     string `json:"media_type,omitempty"`
-	MediaUrl      string `json:"media_url,omitempty"`
-	MediaMimeType string `json:"media_mime_type,omitempty"`
-	MediaFileName string `json:"media_file_name,omitempty"`
+	MediaType     string `json:"media_type"`
+	MediaUrl      string `json:"media_url"`
+	MediaMimeType string `json:"media_mime_type"`
+	MediaFileName string `json:"media_file_name"`
+
+	BackgroundRunId                string            `json:"background_run_id"`
+	BackgroundContinuationSequence int               `json:"background_continuation_sequence"`
+	AuthenticatedUserId            string            `json:"authenticated_user_id"`
+	Attachments                    []MediaAttachment `json:"attachments,omitempty"`
 }
 
 func DefaultInboundMessage() InboundMessage {
@@ -57,4 +62,11 @@ type OutboundMessage struct {
 	AutomationRunId  string `json:"automation_run_id,omitempty"`
 	Subject          string `json:"subject,omitempty"`
 	ReplyToMessageId string `json:"reply_to_message_id,omitempty"`
+}
+
+type MediaAttachment struct {
+	MediaType string `json:"media_type"`
+	Url       string `json:"url"`
+	MimeType  string `json:"mime_type"`
+	FileName  string `json:"file_name"`
 }

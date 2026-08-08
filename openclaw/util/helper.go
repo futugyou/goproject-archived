@@ -288,3 +288,15 @@ func ToPascal(value string) string {
 	runes := []rune(value)
 	return string(unicode.ToUpper(runes[0])) + strings.ToLower(string(runes[1:]))
 }
+
+func Deref[T any](ptr *T) T {
+	if ptr == nil {
+		var zero T
+		return zero
+	}
+	return *ptr
+}
+
+func Ptr[T any](val T) *T {
+	return &val
+}
