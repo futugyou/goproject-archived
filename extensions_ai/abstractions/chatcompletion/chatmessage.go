@@ -8,12 +8,12 @@ import (
 )
 
 type ChatMessage struct {
-	AuthorName           *string                `json:"authorName"`
-	Role                 ChatRole               `json:"role"`
-	Contents             []contents.IAIContent  `json:"contents"`
-	MessageId            *string                `json:"messageId"`
-	RawRepresentation    interface{}            `json:"-"`
-	AdditionalProperties map[string]interface{} `json:"additionalProperties,omitempty"`
+	AuthorName           *string               `json:"authorName"`
+	Role                 ChatRole              `json:"role"`
+	Contents             []contents.IAIContent `json:"contents"`
+	MessageId            *string               `json:"messageId"`
+	RawRepresentation    any                   `json:"-"`
+	AdditionalProperties map[string]any        `json:"additionalProperties,omitempty"`
 }
 
 func NewChatMessage(role ChatRole, contents []contents.IAIContent) *ChatMessage {
@@ -38,11 +38,11 @@ func (c *ChatMessage) Text() string {
 
 func (cru *ChatMessage) UnmarshalJSON(data []byte) error {
 	temp := struct {
-		Role                 ChatRole               `json:"role"`
-		MessageId            *string                `json:"messageId"`
-		AuthorName           *string                `json:"authorName"`
-		AdditionalProperties map[string]interface{} `json:"additionalProperties,omitempty"`
-		Contents             []json.RawMessage      `json:"contents"`
+		Role                 ChatRole          `json:"role"`
+		MessageId            *string           `json:"messageId"`
+		AuthorName           *string           `json:"authorName"`
+		AdditionalProperties map[string]any    `json:"additionalProperties,omitempty"`
+		Contents             []json.RawMessage `json:"contents"`
 	}{}
 
 	if err := json.Unmarshal(data, &temp); err != nil {
@@ -89,11 +89,11 @@ func (cru *ChatMessage) MarshalJSON() ([]byte, error) {
 	}
 
 	temp := struct {
-		Role                 ChatRole               `json:"role"`
-		MessageId            *string                `json:"messageId"`
-		AuthorName           *string                `json:"authorName"`
-		AdditionalProperties map[string]interface{} `json:"additionalProperties,omitempty"`
-		Contents             []json.RawMessage      `json:"contents"`
+		Role                 ChatRole          `json:"role"`
+		MessageId            *string           `json:"messageId"`
+		AuthorName           *string           `json:"authorName"`
+		AdditionalProperties map[string]any    `json:"additionalProperties,omitempty"`
+		Contents             []json.RawMessage `json:"contents"`
 	}{
 		Role:                 cru.Role,
 		MessageId:            cru.MessageId,

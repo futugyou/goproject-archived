@@ -306,3 +306,34 @@ func CleanUUID() string {
 	rawUUID := uuid.New().String()
 	return strings.ReplaceAll(rawUUID, "-", "")
 }
+
+func SlicesRemoveRange[T any](array []T, index, count int) []T {
+	if index < 0 || count < 0 || index+count > len(array) {
+		return array
+	}
+	return append(array[:index], array[index+count:]...)
+}
+
+func SlicesInsert[T any](s []T, index int, value T) []T {
+	if index < 0 || index > len(s) {
+		panic("index out of range")
+	}
+	s = append(s, value)
+	copy(s[index+1:], s[index:])
+	s[index] = value
+	return s
+}
+
+func SlicesInsertRange[T any](s []T, index int, values []T) []T {
+	if index < 0 || index > len(s) {
+		panic("index out of range")
+	}
+	if len(values) == 0 {
+		return s
+	}
+
+	s = append(s, make([]T, len(values))...)
+	copy(s[index+len(values):], s[index:])
+	copy(s[index:], values)
+	return s
+}

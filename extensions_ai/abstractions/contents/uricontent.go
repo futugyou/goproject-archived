@@ -11,6 +11,14 @@ type UriContent struct {
 	MediaType  string `json:"mediaType,omitempty"`
 }
 
+func NewUriContent(url, mediaType string) *UriContent {
+	return &UriContent{
+		AIContent: NewAIContent(nil, nil),
+		URI:       url,
+		MediaType: mediaType,
+	}
+}
+
 func (dc *UriContent) MediaTypeStartsWith(prefix string) bool {
 	return strings.HasPrefix(dc.MediaType, prefix)
 }
