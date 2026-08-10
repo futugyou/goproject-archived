@@ -26,8 +26,7 @@ func BuildSystemPrompt(skills []core.SkillDefinition, requireApproval bool, skil
 	basePrompt := BuildBaseSystemPrompt(requireApproval)
 
 	// Divulgation progressive : émet seulement l'index des métadonnées.
-	builder := core.SkillPromptBuilder{}
-	skillSection := builder.BuildIndex(skills, skillsInstructionPrompt)
+	skillSection := core.SkillPromptBuilderInstance.BuildIndex(skills, skillsInstructionPrompt)
 
 	if skillSection == "" {
 		return basePrompt

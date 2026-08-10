@@ -736,6 +736,8 @@ func (r *ReadSkillResourceTool) Execute(ctx context.Context, argumentsJson strin
 	return string(data), nil
 }
 
+var SkillPromptBuilderInstance = &SkillPromptBuilder{}
+
 type SkillPromptBuilder struct{}
 
 func (s SkillPromptBuilder) BuildSkillBody(skill *SkillDefinition) string {
