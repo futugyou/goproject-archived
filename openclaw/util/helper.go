@@ -21,6 +21,7 @@ import (
 
 	_ "time/tzdata"
 
+	"github.com/google/uuid"
 	"gorm.io/gorm"
 )
 
@@ -299,4 +300,9 @@ func Deref[T any](ptr *T) T {
 
 func Ptr[T any](val T) *T {
 	return &val
+}
+
+func CleanUUID() string {
+	rawUUID := uuid.New().String()
+	return strings.ReplaceAll(rawUUID, "-", "")
 }

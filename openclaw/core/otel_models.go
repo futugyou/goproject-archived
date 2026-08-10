@@ -22,9 +22,9 @@ import (
 )
 
 type TurnContext struct {
-	CorrelationID string `json:"correlation_id"`
-	SessionID     string `json:"session_id"`
-	ChannelID     string `json:"channel_id"`
+	CorrelationId string `json:"correlation_id"`
+	SessionId     string `json:"session_id"`
+	ChannelId     string `json:"channel_id"`
 
 	// ── LLM metrics (内部私有字段，全小写，避免外部误操作) ──
 	llmCallCount         atomic.Int32
@@ -67,9 +67,9 @@ func NewTurnContext(ctx context.Context, sessionID, channelID string) *TurnConte
 	}
 
 	return &TurnContext{
-		CorrelationID: correlationID,
-		SessionID:     sessionID,
-		ChannelID:     channelID,
+		CorrelationId: correlationID,
+		SessionId:     sessionID,
+		ChannelId:     channelID,
 	}
 }
 
@@ -141,8 +141,8 @@ func (c *TurnContext) RecordToolCall(duration time.Duration, failed, timedOut bo
 func (c *TurnContext) String() string {
 	return fmt.Sprintf(
 		"Turn[%s] session=%s llm=%d retries=%d tokens=%din/%dout tools=%d toolFails=%d toolTimeouts=%d llmLatency=%dms toolDuration=%dms",
-		c.CorrelationID,
-		c.SessionID,
+		c.CorrelationId,
+		c.SessionId,
 		c.LlmCallCount(),
 		c.RetryCount(),
 		c.TotalInputTokens(),
