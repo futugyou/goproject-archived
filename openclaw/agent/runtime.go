@@ -591,3 +591,87 @@ func (a *AgentPromptContextAssembler) SkillPromptLength() int {
 
 	return a.skillPromptLength
 }
+
+type AgentTurnStopReason string
+
+const (
+	AgentTurnCompleted                AgentTurnStopReason = "Completed"
+	AgentTurnGoalContinuationRequired AgentTurnStopReason = "GoalContinuationRequired"
+	AgentTurnBatchLimitReached        AgentTurnStopReason = "BatchLimitReached"
+	AgentTurnBlocked                  AgentTurnStopReason = "CompBlockedleted"
+	AgentTurnBudgetLimited            AgentTurnStopReason = "BudgetLimited"
+	AgentTurnFailed                   AgentTurnStopReason = "Failed"
+)
+
+type AgentTurnResult struct {
+	Text           string
+	ShouldContinue bool
+	StopReason     AgentTurnStopReason
+	ContinuePrompt string
+}
+
+func CompletedAgentTurnResult(text string) *AgentTurnResult {
+	return &AgentTurnResult{
+		Text:       text,
+		StopReason: AgentTurnCompleted,
+	}
+}
+
+type AuditLogHook struct {
+	logger *slog.Logger
+}
+
+func NewAuditLogHook(logger *slog.Logger) *AuditLogHook {
+	if logger == nil {
+		logger = slog.Default()
+	}
+
+	return &AuditLogHook{logger: logger}
+}
+
+func (a *AuditLogHook) Name() string {
+	return "AuditLog"
+}
+
+func (a *AuditLogHook) BeforeExecute(ctx context.Context, toolName string, arguments string) bool {
+	return true
+}
+
+func (a *AuditLogHook) BeforeExecuteContext(ctx context.Context, context core.ToolHookContext) bool {
+	a.logger.Info("[Audit] Tool invoked for session",
+		"ToolName", context.ToolName,
+		"SessionId", context.SessionId,
+		"ChannelId", context.ChannelId,
+		"SenderId", context.SenderId,
+		"Length", len(context.ArgumentsJson),
+	)
+	return true
+}
+
+func (a *AuditLogHook) AfterExecute(ctx context.Context, toolName string, arguments string, result string, duration time.Duration, failed bool) error {
+	return nil
+}
+
+func (a *AuditLogHook) AfterExecuteContext(ctx context.Context, context core.ToolHookContext, result string, duration time.Duration, failed bool) error {
+	if failed {
+		a.logger.Warn("[Audit] Tool FAILED for session ",
+			"ToolName", context.ToolName,
+			"SessionId", context.SessionId,
+			"ChannelId", context.ChannelId,
+			"SenderId", context.SenderId,
+			"TotalMilliseconds", duration.Milliseconds(),
+			"Length", len(result),
+		)
+	} else {
+		a.logger.Info("[Audit] Tool completed for session ",
+			"ToolName", context.ToolName,
+			"SessionId", context.SessionId,
+			"ChannelId", context.ChannelId,
+			"SenderId", context.SenderId,
+			"TotalMilliseconds", duration.Milliseconds(),
+			"Length", len(result),
+		)
+	}
+
+	return nil
+}
