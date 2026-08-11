@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"os"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -673,5 +674,237 @@ func (a *AuditLogHook) AfterExecuteContext(ctx context.Context, context core.Too
 		)
 	}
 
+	return nil
+}
+
+func expandTilde(path string) string {
+	if strings.HasPrefix(path, "~/") || path == "~" {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return path
+		}
+
+		if len(path) == 1 {
+			return home
+		}
+
+		return filepath.Join(home, path[2:])
+	}
+
+	return path
+}
+
+func resolveWorkspaceRoot(cfg core.ToolingConfig) string {
+	if !cfg.WorkspaceOnly {
+		return ""
+	}
+
+	var resolved = core.SecretResolverInstance.Resolve(cfg.WorkspaceRoot)
+	if resolved == "" {
+		return ""
+	}
+
+	var expanded = expandTilde(resolved)
+	full, err := filepath.Abs(expanded)
+	if err != nil {
+		return ""
+	}
+	if !util.DirectoryExists(full) {
+		return ""
+	}
+
+	return ResolveRealPath(full)
+}
+
+func tryExtractPathArgument(toolName, arguments string) (string, bool) {
+	prop := "path"
+	switch toolName {
+	case "git":
+		prop = "cwd"
+	case "process":
+		prop = "working_directory"
+	}
+
+	var data map[string]any
+	if err := json.Unmarshal([]byte(arguments), &data); err != nil {
+		return "", false
+	}
+
+	if value, ok := data[prop].(string); ok {
+		value = strings.TrimSpace(value)
+		return value, value != ""
+	}
+
+	return "", false
+}
+
+func isUnderWorkspace(path, workspaceRoot string) bool {
+	var expanded = expandTilde(path)
+	var full = ResolveRealPath(expanded)
+
+	if strings.EqualFold(full, workspaceRoot) {
+		return true
+	}
+
+	root := workspaceRoot
+	if !strings.HasSuffix(root, "/") {
+		root += "/"
+	}
+
+	return strings.HasPrefix(full, root)
+}
+
+func tryExtractShellCommand(arguments string) (string, bool) {
+	var data map[string]any
+	if err := json.Unmarshal([]byte(arguments), &data); err != nil {
+		return "", false
+	}
+
+	if value, ok := data["command"].(string); ok {
+		value = strings.TrimSpace(value)
+		return value, value != ""
+	}
+
+	return "", false
+}
+
+type AutonomyHook struct {
+	config        core.ToolingConfig
+	logger        *slog.Logger
+	workspaceRoot string
+}
+
+func NewAutonomyHook(config core.ToolingConfig, logger *slog.Logger) *AutonomyHook {
+	if logger != nil {
+		logger = slog.Default()
+	}
+
+	return &AutonomyHook{
+		config:        config,
+		logger:        logger,
+		workspaceRoot: resolveWorkspaceRoot(config),
+	}
+}
+
+func (a *AutonomyHook) Name() string {
+	return "Autonomy"
+}
+
+func (a *AutonomyHook) isForbiddenPath(path string) bool {
+	var expanded = expandTilde(path)
+	var full = ResolveRealPath(expanded)
+	for _, pat := range a.config.ForbiddenPathGlobs {
+		pat = strings.TrimSpace(pat)
+		if pat == "" {
+			continue
+		}
+
+		var p = expandTilde(pat)
+		if core.GlobMatcherInstance.IsMatch(p, expanded) || core.GlobMatcherInstance.IsMatch(p, full) {
+			return true
+		}
+	}
+
+	return false
+}
+
+func (a *AutonomyHook) isForbiddenCommand(command string) bool {
+	for _, pat := range a.config.ForbiddenPathGlobs {
+		pat = strings.TrimSpace(pat)
+		if pat == "" {
+			continue
+		}
+
+		envelope := pat
+		if !strings.HasPrefix(envelope, "*") {
+			envelope = "*" + envelope
+		}
+		if !strings.HasSuffix(envelope, "*") {
+			envelope = envelope + "*"
+		}
+
+		if core.GlobMatcherInstance.IsMatch(envelope, command) {
+			return true
+		}
+	}
+
+	return false
+}
+
+func (a *AutonomyHook) isShellCommandAllowed(command string) bool {
+	var allow = a.config.AllowedShellCommandGlobs
+	if len(allow) == 0 {
+		return false
+	}
+
+	// Special-case: ["*"] means allow all
+	if len(allow) == 1 && allow[0] == "*" {
+		return true
+	}
+
+	for _, pat := range allow {
+		pat = strings.TrimSpace(pat)
+		if pat == "" {
+			continue
+		}
+
+		if core.GlobMatcherInstance.IsMatch(pat, command) {
+			return true
+		}
+	}
+
+	return false
+}
+
+func (a *AutonomyHook) BeforeExecute(ctx context.Context, toolName string, arguments string) bool {
+	mode := "full"
+	if strings.TrimSpace(a.config.AutonomyMode) != "" {
+		mode = strings.ToLower(strings.TrimSpace(a.config.AutonomyMode))
+	}
+
+	if mode == "readonly" {
+		if core.ToolActionPolicyResolverInstance.IsMutationCapable(toolName, arguments) {
+			a.logger.Info("autonomy readonly: denied tool", "ToolName", toolName)
+			return false
+		}
+	}
+
+	if a.config.WorkspaceOnly && a.config.WorkspaceRoot != "" {
+		path, ok := tryExtractPathArgument(toolName, arguments)
+		if ok && !isUnderWorkspace(path, a.workspaceRoot) {
+			a.logger.Info("workspace only: denied tool", "ToolName", toolName, "Path", path)
+			return false
+		}
+	}
+	if len(a.config.ForbiddenPathGlobs) > 0 {
+		path, ok := tryExtractPathArgument(toolName, arguments)
+		if ok && a.isForbiddenPath(path) {
+			a.logger.Info("ForbiddenPathGlobs: denied tool", "ToolName", toolName, "Path", path)
+			return false
+		}
+
+		cmd, ok := tryExtractShellCommand(arguments)
+		if toolName == "shell" && ok && a.isForbiddenCommand(cmd) {
+			a.logger.Info("ForbiddenPathGlobs: denied shell command")
+			return false
+		}
+	}
+
+	if toolName == "shell" {
+		if !a.config.AllowShell {
+			return false
+		}
+
+		cmd, ok := tryExtractShellCommand(arguments)
+		if ok && !a.isShellCommandAllowed(cmd) {
+			a.logger.Info("AllowedShellCommandGlobs: denied shell command")
+			return false
+		}
+	}
+
+	return true
+}
+
+func (a *AutonomyHook) AfterExecute(ctx context.Context, toolName string, arguments string, result string, duration time.Duration, failed bool) error {
 	return nil
 }
