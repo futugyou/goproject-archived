@@ -1,4 +1,4 @@
-package agent
+package pathpolicy
 
 import (
 	"errors"
@@ -6,24 +6,21 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+
+	"github.com/futugyou/openclaw/core"
 )
 
 const maxSymlinkResolutionDepth = 64
 
-type ToolingConfig struct {
-	AllowedReadRoots  []string
-	AllowedWriteRoots []string
-}
-
 type ToolPathPolicy struct{}
 
 // 检查路径是否允许读取
-func IsReadAllowed(config ToolingConfig, path string) bool {
+func IsReadAllowed(config core.ToolingConfig, path string) bool {
 	return isToolPathPolicyAllowed(config.AllowedReadRoots, path)
 }
 
 // 检查路径是否允许写入
-func IsWriteAllowed(config ToolingConfig, path string) bool {
+func IsWriteAllowed(config core.ToolingConfig, path string) bool {
 	return isToolPathPolicyAllowed(config.AllowedWriteRoots, path)
 }
 

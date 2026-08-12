@@ -5,9 +5,16 @@ import "encoding/json"
 // FunctionResultContent represents the result of a function call.
 type FunctionResultContent struct {
 	*AIContent `json:",inline"`
-	CallId     string      `json:"callId,omitempty"`
-	Result     interface{} `json:"result,omitempty"`
-	Error      error       `json:"-"`
+	CallId     string `json:"callId,omitempty"`
+	Result     any    `json:"result,omitempty"`
+	Error      error  `json:"-"`
+}
+
+func NewFunctionResultContent(callId, result string) *FunctionResultContent {
+	return &FunctionResultContent{
+		CallId: callId,
+		Result: result,
+	}
 }
 
 func (ac FunctionResultContent) MarshalJSON() ([]byte, error) {

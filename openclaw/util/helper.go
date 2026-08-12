@@ -314,6 +314,10 @@ func SlicesRemoveRange[T any](array []T, index, count int) []T {
 	return append(array[:index], array[index+count:]...)
 }
 
+func SlicesRemoveAt[T any](array []T, index int) []T {
+	return SlicesRemoveRange(array, index, 1)
+}
+
 func SlicesInsert[T any](s []T, index int, value T) []T {
 	if index < 0 || index > len(s) {
 		panic("index out of range")

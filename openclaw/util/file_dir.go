@@ -1,6 +1,7 @@
 package util
 
 import (
+	"bufio"
 	"context"
 	"encoding/json"
 	"errors"
@@ -389,4 +390,31 @@ func EnumerateAllFiles(root string) []string {
 	})
 
 	return files
+}
+
+func ReadAllLines(ctx context.Context, path string) ([]string, error) {
+	file, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer file.Close()
+
+	var lines []string
+	scanner := bufio.NewScanner(file)
+
+	for scanner.Scan() {
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		default:
+		}
+
+		lines = append(lines, scanner.Text())
+	}
+
+	if err := scanner.Err(); err != nil {
+		return nil, err
+	}
+
+	return lines, nil
 }
