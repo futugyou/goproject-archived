@@ -795,9 +795,9 @@ func (p *PluginBridgeProcess) Start(
 	return &init, nil
 }
 
-func (p *PluginBridgeProcess) ExecuteTool(ctx context.Context, toolName string, argumentsJSON string) (string, error) {
+func (p *PluginBridgeProcess) ExecuteTool(ctx context.Context, toolName string, argumentsJSON string) string {
 	if err := p.ensureProcessRunning(ctx); err != nil {
-		return "", err
+		return err.Error()
 	}
 
 	p.mu.Lock()
@@ -805,12 +805,12 @@ func (p *PluginBridgeProcess) ExecuteTool(ctx context.Context, toolName string, 
 	p.mu.Unlock()
 
 	if cmd == nil || cmd.Process == nil {
-		return "Error: Plugin bridge process is not running.", nil
+		return "Error: Plugin bridge process is not running."
 	}
 
 	var rawParams json.RawMessage
 	if err := json.Unmarshal([]byte(argumentsJSON), &rawParams); err != nil {
-		return "", fmt.Errorf("invalid arguments json: %w", err)
+		return fmt.Sprintf("invalid arguments json: %s", err.Error())
 	}
 
 	execRequest := core.BridgeExecuteRequest{
@@ -820,18 +820,18 @@ func (p *PluginBridgeProcess) ExecuteTool(ctx context.Context, toolName string, 
 
 	resp, err := p.SendAndWait(ctx, "execute", execRequest)
 	if err != nil {
-		return "", err
+		return err.Error()
 	}
 
 	if resp.Error != nil {
-		return fmt.Sprintf("Error: %s", resp.Error.Message), nil
+		return fmt.Sprintf("Error: %s", resp.Error.Message)
 	}
 
 	if resp.Result != nil {
 		var resultObj map[string]json.RawMessage
 		if err := json.Unmarshal(*resp.Result, &resultObj); err == nil {
 			if details, ok := resultObj["details"]; ok && string(details) != "null" {
-				return string(details), nil
+				return string(details)
 			}
 
 			if contentArray, ok := resultObj["content"]; ok {
@@ -846,14 +846,14 @@ func (p *PluginBridgeProcess) ExecuteTool(ctx context.Context, toolName string, 
 						}
 						buf.WriteString(item.Text)
 					}
-					return buf.String(), nil
+					return buf.String()
 				}
 			}
 		}
-		return string(*resp.Result), nil
+		return string(*resp.Result)
 	}
 
-	return "", nil
+	return ""
 }
 
 func (p *PluginBridgeProcess) SendRequest(ctx context.Context, method string, parameters any) error {

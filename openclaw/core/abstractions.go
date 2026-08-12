@@ -238,7 +238,7 @@ type ITool interface {
 	Name() string
 	Description() string
 	ParameterSchema() string
-	Execute(ctx context.Context, argumentsJson string) (string, error)
+	Execute(ctx context.Context, argumentsJson string) string
 }
 
 // IToolActionDescriptorProvider 工具动作描述符解析器
