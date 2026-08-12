@@ -131,7 +131,7 @@ func (p *ProviderSmokeProbe) Probe(ctx context.Context, httpClient *http.Client,
 		}, nil
 	}
 
-	detail := p.SafeReadBody(response.Body, timeoutCtx)
+	detail := p.SafeReadBody(timeoutCtx, response.Body)
 	summary := fmt.Sprintf("Provider smoke failed for '%s/%s' with HTTP %d.", provider, config.Model, response.StatusCode)
 
 	// 处理需要熔断/跳过的特定临时上游状态码
@@ -399,7 +399,7 @@ func (p *ProviderSmokeProbe) GetProbeTimeout(configuredTimeoutSeconds int) time.
 	return time.Duration(seconds) * time.Second
 }
 
-func (p *ProviderSmokeProbe) SafeReadBody(body io.Reader, ctx context.Context) string {
+func (p *ProviderSmokeProbe) SafeReadBody(ctx context.Context, body io.Reader) string {
 	// 使用带 context 的 LimitedReader 避免读取无限的错误报文
 	limitedReader := io.LimitReader(body, 400)
 	payloadBytes, err := io.ReadAll(limitedReader)

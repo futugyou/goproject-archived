@@ -118,7 +118,7 @@ func (cb *CircuitBreaker) Reset() {
 	cb.halfOpenProbeActive = false
 }
 
-// 针对流式场景/无需 ExecuteAsync 包裹场景的检查
+// 针对流式场景/无需 Execute 包裹场景的检查
 func (cb *CircuitBreaker) ThrowIfOpen() error {
 	cb.mu.Lock()
 	defer cb.mu.Unlock()

@@ -908,3 +908,202 @@ func (a *AutonomyHook) BeforeExecute(ctx context.Context, toolName string, argum
 func (a *AutonomyHook) AfterExecute(ctx context.Context, toolName string, arguments string, result string, duration time.Duration, failed bool) error {
 	return nil
 }
+
+type ContractResolver func(string) *core.ContractPolicy
+type ToolCallCounter func(string) int
+type ContractScopeHook struct {
+	contractResolver ContractResolver
+	toolCallCounter  ToolCallCounter
+	logger           *slog.Logger
+}
+
+func NewContractScopeHook(
+	contractResolver ContractResolver,
+	toolCallCounter ToolCallCounter,
+	logger *slog.Logger,
+) *ContractScopeHook {
+
+	if logger == nil {
+		logger = slog.Default()
+	}
+	return &ContractScopeHook{
+		logger:           logger,
+		contractResolver: contractResolver,
+		toolCallCounter:  toolCallCounter,
+	}
+}
+
+func (c *ContractScopeHook) Name() string {
+	return "ContractScope"
+}
+
+func (c *ContractScopeHook) BeforeExecute(ctx context.Context, toolName string, arguments string) bool {
+	return true
+}
+
+func (c *ContractScopeHook) AfterExecute(ctx context.Context, toolName string, arguments string, result string, duration time.Duration, failed bool) error {
+	return nil
+}
+
+func (c *ContractScopeHook) AfterExecuteContext(ctx context.Context, context core.ToolHookContext, result string, duration time.Duration, failed bool) error {
+	return nil
+}
+
+func findToolScope(policy *core.ContractPolicy, toolName string) *core.ScopedCapability {
+	for _, scope := range policy.ScopedCapabilities {
+		if strings.EqualFold(scope.ToolName, toolName) {
+			return scope
+		}
+	}
+
+	return nil
+}
+
+func hasScopedFilesystemCapability(policy *core.ContractPolicy) bool {
+	for _, scope := range policy.ScopedCapabilities {
+		if len(scope.AllowedPaths) > 0 {
+			return true
+		}
+	}
+	return false
+}
+
+func isFilesystemAffectingTool(toolName string) bool {
+	switch toolName {
+	case "shell", "code_exec", "git", "process", "file_read", "file_write", "edit_file", "apply_patch":
+		return true
+	default:
+		return false
+	}
+}
+
+func tryReadStringList(root map[string]any, propertyName string) ([]string, bool) {
+	str := util.GetString(root, propertyName)
+	if str == nil || strings.TrimSpace(*str) == "" {
+		return []string{}, false
+	}
+
+	return []string{strings.TrimSpace(*str)}, true
+}
+
+func tryReadProcessPaths(root map[string]any) ([]string, bool) {
+	var action = util.GetString(root, "action")
+
+	if action == nil || strings.TrimSpace(*action) != "start" {
+		return []string{}, false
+	}
+
+	return tryReadStringList(root, "working_directory")
+}
+
+func tryExtractScopedPaths(toolName, arguments string) ([]string, bool) {
+	var root map[string]any
+	if err := json.Unmarshal([]byte(arguments), &root); err != nil {
+		return []string{}, false
+	}
+
+	switch toolName {
+	case "git":
+		return tryReadStringList(root, "cwd")
+	case "process":
+		return tryReadProcessPaths(root)
+	case "file_read", "file_write", "edit_file", "apply_patch":
+		return tryReadStringList(root, "path")
+	case "shell":
+		return []string{}, false
+	default:
+		return tryReadStringList(root, "path")
+	}
+}
+
+func isPathAllowed(path string, allowedPaths []string) bool {
+	var expanded = expandTilde(path)
+	var full = ResolveRealPath(expanded)
+	for _, allowed := range allowedPaths {
+		allowed = strings.TrimSpace(allowed)
+		var allowedExpanded = expandTilde(allowed)
+		var allowedFull = ResolveRealPath(allowedExpanded)
+
+		if strings.EqualFold(full, allowedFull) {
+			return true
+		}
+
+		root := allowedFull
+		if !strings.HasSuffix(root, "/") {
+			root += "/"
+		}
+
+		if strings.HasPrefix(full, root) {
+			return true
+		}
+	}
+
+	return false
+}
+
+func (c *ContractScopeHook) BeforeExecuteContext(ctx context.Context, context core.ToolHookContext) bool {
+	if c.contractResolver == nil || c.toolCallCounter == nil {
+		return true
+	}
+	var policy = c.contractResolver(context.SessionId)
+	if policy == nil {
+		return true
+	}
+
+	if policy.MaxToolCalls > 0 {
+		var count = c.toolCallCounter(context.SessionId)
+		if count >= policy.MaxToolCalls {
+			c.logger.Info("ContractScope: denied tool", "Tool", context.ToolName, "SessionId", context.SessionId, "MaxToolCalls", policy.MaxToolCalls)
+			return false
+		}
+	}
+
+	// Check scoped capabilities (path restrictions)
+	var scope = findToolScope(policy, context.ToolName)
+	var hasScopedFilesystemCapability = hasScopedFilesystemCapability(policy)
+	if scope == nil && hasScopedFilesystemCapability && isFilesystemAffectingTool(context.ToolName) {
+		// Shell is always denied under scoped contracts unless explicitly granted
+		// with an unscoped shell capability (AllowedPaths empty). Other filesystem
+		// tools are denied because they lack a matching scope entry.
+		if context.ToolName == "shell" || context.ToolName == "code_exec" {
+			c.logger.Info(
+				"ContractScope: denied tool — shell/exec tools require an explicit grant under scoped filesystem contracts",
+				"ToolName", context.ToolName,
+				"SessionId", context.SessionId)
+		} else {
+			c.logger.Info(
+				"ContractScope: denied tool — tool is unscoped under a scoped filesystem contract",
+				"ToolName", context.ToolName,
+				"SessionId", context.SessionId)
+		}
+		return false
+	}
+
+	if scope != nil && len(scope.AllowedPaths) > 0 {
+		paths, ok := tryExtractScopedPaths(context.ToolName, context.ArgumentsJson)
+		if ok {
+			for _, path := range paths {
+				path = strings.TrimSpace(path)
+				if path == "" {
+					continue
+				}
+
+				if !isPathAllowed(path, scope.AllowedPaths) {
+					c.logger.Info(
+						"ContractScope: denied tool — outside scoped paths",
+						"ToolName", context.ToolName,
+						"SessionId", context.SessionId)
+					return false
+				}
+			}
+		} else if context.ToolName == "git" || context.ToolName == "process" || context.ToolName == "shell" {
+			c.logger.Info(
+				"ContractScope: denied tool — scoped path could not be resolved safely",
+				"ToolName", context.ToolName,
+				"SessionId", context.SessionId)
+			return false
+		}
+	}
+
+	return true
+}

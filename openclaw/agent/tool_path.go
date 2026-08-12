@@ -19,15 +19,15 @@ type ToolPathPolicy struct{}
 
 // 检查路径是否允许读取
 func IsReadAllowed(config ToolingConfig, path string) bool {
-	return isPathAllowed(config.AllowedReadRoots, path)
+	return isToolPathPolicyAllowed(config.AllowedReadRoots, path)
 }
 
 // 检查路径是否允许写入
 func IsWriteAllowed(config ToolingConfig, path string) bool {
-	return isPathAllowed(config.AllowedWriteRoots, path)
+	return isToolPathPolicyAllowed(config.AllowedWriteRoots, path)
 }
 
-func isPathAllowed(roots []string, path string) bool {
+func isToolPathPolicyAllowed(roots []string, path string) bool {
 	if len(roots) == 0 {
 		return false
 	}

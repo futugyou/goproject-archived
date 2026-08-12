@@ -1107,9 +1107,7 @@ func (s *ToolApprovalService) TrySetDecision(
 	}
 }
 
-func (s *ToolApprovalService) WaitForDecisionOutcomeAsync(
-	approvalId string, timeout time.Duration, ctx context.Context,
-) (ToolApprovalWaitOutcome, error) {
+func (s *ToolApprovalService) WaitForDecisionOutcome(ctx context.Context, approvalId string, timeout time.Duration) (ToolApprovalWaitOutcome, error) {
 	s.mu.RLock()
 	p, exists := s.pending[approvalId]
 	s.mu.RUnlock()
@@ -1437,7 +1435,7 @@ func NewSessionAbortRegistry() *SessionAbortRegistry {
 	}
 }
 
-func (r *SessionAbortRegistry) Register(sessionId string, parentCtx context.Context) (context.Context, context.CancelFunc) {
+func (r *SessionAbortRegistry) Register(parentCtx context.Context, sessionId string) (context.Context, context.CancelFunc) {
 	ctx, cancel := context.WithCancel(parentCtx)
 
 	r.mu.Lock()
