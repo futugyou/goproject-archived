@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"reflect"
+	"strings"
 )
 
 var _ IAIContent = (*AIContent)(nil)
@@ -82,13 +83,13 @@ func (ac *AIContent) UnmarshalJSON(data []byte) error {
 }
 
 func ConcatTextContents(contents []IAIContent) string {
-	var text string
+	var text strings.Builder
 	for _, content := range contents {
 		if textContent, ok := content.(TextContent); ok {
-			text += textContent.Text
+			text.WriteString(textContent.Text)
 		}
 	}
-	return text
+	return text.String()
 }
 
 var ContentTypeRegistry = map[string]func() IAIContent{

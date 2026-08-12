@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"math"
 	"os"
 	"path/filepath"
 	"slices"
@@ -1202,4 +1203,111 @@ func AgentRuntimeFactorySelect(factories []IAgentRuntimeFactory, orchestratorId 
 	msg := "no agent runtime factory is registered for orchestrator " + normalizedOrchestrator
 
 	return nil, errors.New(msg)
+}
+
+func LlmExecutionEstimateInputTokens(messages []chatcompletion.ChatMessage, additionalSystemPromptChars int) int {
+	var charCount = max(0, additionalSystemPromptChars)
+	for _, message := range messages {
+		value := contents.ConcatTextContents(message.Contents)
+		value = strings.TrimSpace(value)
+		if value != "" {
+			charCount += len(value)
+		}
+	}
+	return LlmExecutionEstimateTokenCount(charCount)
+}
+
+func LlmExecutionEstimateTokenCount(charCount int) int {
+	if charCount <= 0 {
+		return 0
+	}
+
+	return max(1, (charCount+3)/4)
+}
+
+func LlmExecutionEstimateCreate(
+	messages []chatcompletion.ChatMessage,
+	skillPromptLength int,
+	additionalSystemPromptChars int) LlmExecutionEstimate {
+	var estimatedInputTokens = LlmExecutionEstimateInputTokens(messages, additionalSystemPromptChars)
+	return LlmExecutionEstimate{
+		EstimatedInputTokens: int64(estimatedInputTokens),
+		EstimatedInputTokensByComponent: BuildInputTokenEstimate(
+			messages,
+			estimatedInputTokens,
+			skillPromptLength,
+			additionalSystemPromptChars),
+	}
+}
+
+func BuildInputTokenEstimate(messages []chatcompletion.ChatMessage, totalInputTokens, skillPromptLength, additionalSystemPromptChars int) core.InputTokenComponentEstimate {
+	var systemChars int64 = int64(max(0, additionalSystemPromptChars))
+	var historyChars int64 = 0
+	var toolChars int64 = 0
+	var userChars int64 = 0
+
+	for i := 0; i < len(messages); i++ {
+		var message = messages[i]
+		var chars int64 = 0
+		value := contents.ConcatTextContents(message.Contents)
+		value = strings.TrimSpace(value)
+		if value != "" {
+			chars += int64(len(value))
+		}
+
+		if i == 0 && message.Role == chatcompletion.RoleSystem {
+			systemChars += chars
+			continue
+		}
+
+		if message.Role == chatcompletion.RoleTool {
+			toolChars += chars
+			continue
+		}
+
+		if message.Role == chatcompletion.RoleUser && i == len(messages)-1 {
+			userChars += chars
+			continue
+		}
+
+		historyChars += chars
+	}
+
+	var skillChars = min(systemChars, int64(skillPromptLength))
+	var systemPromptChars = max(0, systemChars-skillChars)
+
+	return distributeEstimatedTokens(
+		int64(totalInputTokens),
+		systemPromptChars,
+		skillChars,
+		historyChars,
+		toolChars,
+		userChars)
+}
+
+func distributeEstimatedTokens(
+	totalTokens,
+	systemPromptChars,
+	skillChars,
+	historyChars,
+	toolChars,
+	userChars int64) core.InputTokenComponentEstimate {
+	var totalChars = systemPromptChars + skillChars + historyChars + toolChars + userChars
+	if totalTokens <= 0 || totalChars <= 0 {
+		return core.InputTokenComponentEstimate{}
+	}
+
+	var systemTokens = math.Round((float64)(totalTokens * systemPromptChars / totalChars))
+	var skillTokens = math.Round((float64)(totalTokens * skillChars / totalChars))
+	var historyTokens = math.Round((float64)(totalTokens * historyChars / totalChars))
+	var toolTokens = math.Round((float64)(totalTokens * toolChars / totalChars))
+	var userTokens = max(0, (float64)(totalTokens)-systemTokens-skillTokens-historyTokens-toolTokens)
+
+	return core.InputTokenComponentEstimate{
+		SystemPrompt: int64(systemTokens),
+		Skills:       int64(skillTokens),
+		History:      int64(historyTokens),
+		ToolOutputs:  int64(toolTokens),
+		UserInput:    int64(userTokens),
+	}
 }
