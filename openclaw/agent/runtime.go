@@ -13,8 +13,10 @@ import (
 	"sync"
 	"time"
 
+	"github.com/futugyou/extensions_ai/abstractions"
 	"github.com/futugyou/extensions_ai/abstractions/chatcompletion"
 	"github.com/futugyou/extensions_ai/abstractions/contents"
+	"github.com/futugyou/openclaw/circuitbreaker"
 	"github.com/futugyou/openclaw/core"
 	"github.com/futugyou/openclaw/util"
 )
@@ -1106,4 +1108,98 @@ func (c *ContractScopeHook) BeforeExecuteContext(ctx context.Context, context co
 	}
 
 	return true
+}
+
+type ToolApprovalCallback func(ctx context.Context, toolName, arguments string) bool
+
+type IAgentRuntime interface {
+	CircuitBreakerState() circuitbreaker.CircuitState
+	LoadedSkillNames() []string
+	LoadedSkills() []core.SkillDefinition
+	LoadedTools() []abstractions.AITool
+	Run(ctx context.Context, session core.Session, userMessage string, approvalCallback ToolApprovalCallback, responseSchema any, correlationId string) string
+	RunTurn(ctx context.Context, session core.Session, userMessage string, approvalCallback ToolApprovalCallback, responseSchema any, correlationId string) (*AgentTurnResult, error)
+	ReloadSkills(ctx context.Context) []string
+	RunStreaming(ctx context.Context, session core.Session, userMessage string, approvalCallback ToolApprovalCallback, correlationId string) chan core.AgentStreamEvent
+	ApplyMcpToolChanges(ctx context.Context, toAdd []core.ITool, toRemove []string) error
+}
+
+type LlmExecutionResult struct {
+	ProfileId            string
+	ProviderId           string
+	ModelId              string
+	PolicyRuleId         string
+	SelectionExplanation string
+	Response             *chatcompletion.ChatResponse
+}
+
+type LlmExecutionEstimate struct {
+	EstimatedInputTokens            int64
+	EstimatedInputTokensByComponent core.InputTokenComponentEstimate
+}
+
+type LlmStreamingExecutionResult struct {
+	ProfileId            string
+	ProviderId           string
+	ModelId              string
+	PolicyRuleId         string
+	SelectionExplanation string
+	Updates              chan chatcompletion.ChatResponseUpdate
+}
+
+type ILlmExecutionService interface {
+	DefaultCircuitState() circuitbreaker.CircuitState
+	GetResponse(ctx context.Context, session core.Session, messages []chatcompletion.ChatMessage, options chatcompletion.ChatOptions, turnContext core.TurnContext, estimate LlmExecutionEstimate) (*LlmExecutionResult, error)
+	StartStreaming(ctx context.Context, session core.Session, messages []chatcompletion.ChatMessage, options chatcompletion.ChatOptions, turnContext core.TurnContext, estimate LlmExecutionEstimate) (*LlmStreamingExecutionResult, error)
+}
+
+type AgentRuntimeFactoryContext struct {
+	Config                core.GatewayConfig
+	ChatClient            chatcompletion.IChatClient
+	Tools                 []abstractions.AITool
+	MemoryStore           core.IMemoryStore
+	RuntimeMetrics        *core.RuntimeMetrics
+	ProviderUsage         core.ProviderUsageTracker
+	LlmExecutionService   ILlmExecutionService
+	Skills                []core.SkillDefinition
+	SkillsConfig          core.SkillsConfig
+	WorkspacePath         *string
+	PluginSkillDirs       []string
+	Logger                *slog.Logger
+	Hooks                 []core.IToolHook
+	RequireToolApproval   bool
+	ApprovalRequiredTools []string
+
+	TurnTokenUsageObserver core.ITurnTokenUsageObserver
+	ToolSandbox            core.IToolSandbox
+	ToolGovernance         core.IToolGovernanceService
+	PlanExecuteVerify      core.IPlanExecuteVerifyOrchestrator
+	ToolUsageTracker       *core.ToolUsageTracker
+	ToolAuditLog           *core.ToolAuditLog
+	Interceptors           []core.IToolResultInterceptor
+
+	IsContractTokenBudgetExceeded   func(session *core.Session) bool
+	IsContractRuntimeBudgetExceeded func(session *core.Session) bool
+
+	RecordContractTurnUsage func(session *core.Session, provider, model string, promptTokens, completionTokens int64)
+
+	AppendContractSnapshot func(session *core.Session, snapshot string)
+}
+
+type IAgentRuntimeFactory interface {
+	OrchestratorId() string
+	Create(facContext *AgentRuntimeFactoryContext) IAgentRuntime
+}
+
+func AgentRuntimeFactorySelect(factories []IAgentRuntimeFactory, orchestratorId string) (IAgentRuntimeFactory, error) {
+	normalizedOrchestrator := core.RuntimeOrchestratorNormalize(orchestratorId)
+	for _, candidate := range factories {
+		if strings.EqualFold(candidate.OrchestratorId(), normalizedOrchestrator) {
+			return candidate, nil
+		}
+	}
+
+	msg := "no agent runtime factory is registered for orchestrator " + normalizedOrchestrator
+
+	return nil, errors.New(msg)
 }
