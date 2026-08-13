@@ -5,6 +5,8 @@ import (
 	"strings"
 )
 
+var SandboxCommandLineInstance = &SandboxCommandLine{}
+
 type SandboxCommandLine struct{}
 
 func (s SandboxCommandLine) Quote(value string) string {

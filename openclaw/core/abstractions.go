@@ -194,7 +194,7 @@ type IRestartableChannelAdapter interface {
 type ISandboxCapableTool interface {
 	DefaultSandboxMode() ToolSandboxMode
 	CreateSandboxRequest(argumentsJson string) (*SandboxExecutionRequest, error)
-	FormatSandboxResult(argumentsJson string, result SandboxResult) (string, error)
+	FormatSandboxResult(argumentsJson string, result SandboxResult) string
 }
 
 // ISessionAdminStore 会话管理存储
