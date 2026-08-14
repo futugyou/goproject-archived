@@ -14,8 +14,8 @@ import (
 	"log/slog"
 
 	_ "github.com/go-sql-driver/mysql"
+	_ "github.com/jackc/pgx/v5/stdlib"
 	_ "github.com/mattn/go-sqlite3"
-	_ "gorm.io/driver/postgres"
 )
 
 type DatabaseTool struct {
@@ -407,12 +407,14 @@ func (a *DatabaseTool) formatResultSet(ctx context.Context, rows *sql.Rows, head
 func (a *DatabaseTool) openDB(ctx context.Context, connString string) (*sql.DB, error) {
 	driver := strings.ToLower(a.config.Provider)
 	switch driver {
-	case "sqlite":
-		driver = "sqlite"
-	case "postgres":
-		driver = "postgres"
+	case "sqlite", "sqlite3":
+		driver = "sqlite3"
+	case "postgres", "postgresql", "pgx":
+		driver = "pgx"
 	case "mysql":
 		driver = "mysql"
+	default:
+		return nil, fmt.Errorf("unsupported database driver: %s", driver)
 	}
 
 	db, err := sql.Open(driver, connString)
