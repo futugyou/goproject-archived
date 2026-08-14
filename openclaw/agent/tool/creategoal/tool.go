@@ -40,7 +40,7 @@ type Token struct {
 	TokenBudget int64   `json:"token_budget,omitempty"`
 }
 
-func (a *CreateGoalTool) ExecuteWithContext(ctx context.Context, argumentsJson string, toolContext core.ToolExecutionContext) string {
+func (a *CreateGoalTool) ExecuteContext(ctx context.Context, argumentsJson string, toolContext core.ToolExecutionContext) string {
 	if argumentsJson == "" {
 		return "Error: arguments payload is empty."
 	}
