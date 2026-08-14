@@ -780,9 +780,9 @@ type ToolActionPolicyResolver struct{}
 
 var ToolActionPolicyResolverInstance = &ToolActionPolicyResolver{}
 
-func (t *ToolActionPolicyResolver) Resolve(toolName string, argumentsJson string) *ToolActionDescriptor {
+func (t *ToolActionPolicyResolver) Resolve(toolName string, argumentsJson string) ToolActionDescriptor {
 	if strings.TrimSpace(toolName) == "" {
-		return &ToolActionDescriptor{}
+		return ToolActionDescriptor{}
 	}
 
 	var root map[string]any
@@ -791,7 +791,7 @@ func (t *ToolActionPolicyResolver) Resolve(toolName string, argumentsJson string
 	}
 
 	if err := json.Unmarshal([]byte(argumentsJson), &root); err != nil {
-		return &ToolActionDescriptor{
+		return ToolActionDescriptor{
 			Summary: fmt.Sprintf("Execute tool '%s'.", toolName),
 		}
 	}
@@ -856,7 +856,7 @@ func (t *ToolActionPolicyResolver) Resolve(toolName string, argumentsJson string
 			summary = "Inspect background processes."
 		}
 
-		return &ToolActionDescriptor{
+		return ToolActionDescriptor{
 			Action:     action,
 			IsMutation: isOneOf(action, "start", "write", "kill"),
 			Summary:    summary,
@@ -913,7 +913,7 @@ func (t *ToolActionPolicyResolver) Resolve(toolName string, argumentsJson string
 			summary = "List automations."
 		}
 
-		return &ToolActionDescriptor{
+		return ToolActionDescriptor{
 			Action:     action,
 			IsMutation: isOneOf(action, "create", "update", "pause", "resume", "run"),
 			Summary:    summary,
@@ -955,7 +955,7 @@ func (t *ToolActionPolicyResolver) Resolve(toolName string, argumentsJson string
 			summary = "List external CLI connectors."
 		}
 
-		return &ToolActionDescriptor{
+		return ToolActionDescriptor{
 			Action:           action,
 			IsMutation:       action == "execute",
 			RequiresApproval: action == "execute",
@@ -983,14 +983,14 @@ func (t *ToolActionPolicyResolver) Resolve(toolName string, argumentsJson string
 			summary = "List todo items."
 		}
 
-		return &ToolActionDescriptor{
+		return ToolActionDescriptor{
 			Action:     action,
 			IsMutation: action != "list",
 			Summary:    summary,
 		}
 	}
 
-	return &ToolActionDescriptor{
+	return ToolActionDescriptor{
 		Summary: fmt.Sprintf("Execute tool '%s'.", toolName),
 	}
 }

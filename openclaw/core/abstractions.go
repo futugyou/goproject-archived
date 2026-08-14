@@ -281,7 +281,7 @@ type IToolSandbox interface {
 
 type IToolWithContext interface {
 	ITool
-	ExecuteContext(ctx context.Context, argumentsJson string, toolContext ToolExecutionContext) (string, error)
+	ExecuteContext(ctx context.Context, argumentsJson string, toolContext ToolExecutionContext) string
 }
 
 type ITurnTokenUsageObserver interface {

@@ -122,7 +122,7 @@ func (e *EmailTool) Execute(ctx context.Context, argumentsJson string) string {
 	}
 }
 
-func (e *EmailTool) sendEmail(ctx context.Context, args emailArgs) string {
+func (e *EmailTool) sendEmail(_ context.Context, args emailArgs) string {
 	if strings.TrimSpace(e.config.SmtpHost) == "" {
 		return "Error: SMTP host not configured. Set Email.SmtpHost."
 	}
@@ -322,7 +322,7 @@ func (e *EmailTool) searchEmails(ctx context.Context, args emailArgs) string {
 
 // ── IMAP 底层网络通讯辅助函数 ────────────────────────────────────
 
-func (e *EmailTool) executeImap(ctx context.Context, action func(reader *bufio.Reader, conn net.Conn) (string, error)) string {
+func (e *EmailTool) executeImap(_ context.Context, action func(reader *bufio.Reader, conn net.Conn) (string, error)) string {
 	if strings.TrimSpace(e.config.ImapHost) == "" {
 		return "Error: IMAP host not configured. Set Email.ImapHost."
 	}

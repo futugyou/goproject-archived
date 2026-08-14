@@ -305,8 +305,8 @@ func DefaultExternalCliInvocationPreview() ExternalCliInvocationPreview {
 }
 
 type ExternalCliPreviewResponse struct {
-	Preview      ExternalCliInvocationPreview `json:"preview"`
-	DryRunResult *ExternalCliExecutionResult  `json:"dry_run_result,omitempty"`
+	Preview      *ExternalCliInvocationPreview `json:"preview,omitempty"`
+	DryRunResult *ExternalCliExecutionResult   `json:"dry_run_result,omitempty"`
 }
 
 type ExternalCliExecutionResult struct {
