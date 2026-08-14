@@ -25,7 +25,7 @@ func New(config *core.ToolingConfig) *FileReadTool {
 }
 
 func (a *FileReadTool) Name() string {
-	return "read_file	"
+	return "read_file"
 }
 
 func (a *FileReadTool) Description() string {

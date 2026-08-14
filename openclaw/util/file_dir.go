@@ -190,6 +190,23 @@ func SaveOneFile(ctx context.Context, path string, item any) error {
 	return os.Rename(tempPath, path)
 }
 
+func SaveFile(ctx context.Context, path string, content string) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+
+	tempPath := path + ".tmp"
+	if err := os.WriteFile(tempPath, []byte(content), 0644); err != nil {
+		return err
+	}
+
+	if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+		return err
+	}
+
+	return os.Rename(tempPath, path)
+}
+
 // 定义一个结构体来存放分组数据
 type FileGroup struct {
 	BaseName     string
