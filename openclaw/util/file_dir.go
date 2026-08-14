@@ -401,6 +401,8 @@ func ReadAllLines(ctx context.Context, path string) ([]string, error) {
 
 	var lines []string
 	scanner := bufio.NewScanner(file)
+	buf := make([]byte, 64*1024)
+	scanner.Buffer(buf, 10*1024*1024)
 
 	for scanner.Scan() {
 		select {
