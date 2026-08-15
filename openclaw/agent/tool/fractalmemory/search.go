@@ -57,8 +57,10 @@ func (a *FractalMemorySearchTool) Execute(ctx context.Context, argumentsJson str
 	}
 
 	model.Limit = util.Clamp(model.Limit, 1, 50)
-	response := a.provider.Search(ctx, model.Query, model.Limit, model.Scope)
-
+	response, err := a.provider.Search(ctx, model.Query, model.Limit, model.Scope)
+	if err != nil {
+		return FractalMemoryError(err.Error())
+	}
 	d, err := json.Marshal(response)
 	if err != nil {
 		return FractalMemoryError(err.Error())

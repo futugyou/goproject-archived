@@ -61,6 +61,6 @@ func (a *FractalMemoryHandoffCreateTool) Execute(ctx context.Context, argumentsJ
 	return string(d)
 }
 
-func (a *FractalMemoryHandoffCreateTool) ResolveActionDescriptor(argumentsJson string) core.ToolActionDescriptor {
-	return BuildWriteDescriptor(a.Name(), "create_handoff", argumentsJson, a.config.RequireApprovalForWrites)
+func (a *FractalMemoryHandoffCreateTool) ResolveActionDescriptor(argumentsJson string) (*core.ToolActionDescriptor, error) {
+	return BuildWriteDescriptor(a.Name(), "create_handoff", argumentsJson, a.config.RequireApprovalForWrites), nil
 }

@@ -42,6 +42,6 @@ func (a *FractalMemoryIndexRefreshTool) Execute(ctx context.Context, argumentsJs
 	return string(d)
 }
 
-func (a *FractalMemoryIndexRefreshTool) ResolveActionDescriptor(argumentsJson string) core.ToolActionDescriptor {
-	return BuildWriteDescriptor(a.Name(), "refresh_index", argumentsJson, a.config.RequireApprovalForWrites)
+func (a *FractalMemoryIndexRefreshTool) ResolveActionDescriptor(argumentsJson string) (*core.ToolActionDescriptor, error) {
+	return BuildWriteDescriptor(a.Name(), "refresh_index", argumentsJson, a.config.RequireApprovalForWrites), nil
 }

@@ -36,6 +36,8 @@ func FailToolCallOutcome(err string) *ToolCallOutcome {
 	return &ToolCallOutcome{Error: err}
 }
 
+var _ core.IStructuredMemoryProvider = (*FractalMemoryMcpProvider)(nil)
+
 type FractalMemoryMcpProvider struct {
 	config        *core.GatewayConfig
 	workspacePath string
@@ -428,11 +430,11 @@ func parseRecentItems(data any) []core.StructuredMemorySourceRef {
 	return result
 }
 
-func (p *FractalMemoryMcpProvider) Search(ctx context.Context, query string, limit int, scope string) core.StructuredMemorySearchResult {
+func (p *FractalMemoryMcpProvider) Search(ctx context.Context, query string, limit int, scope string) (*core.StructuredMemorySearchResult, error) {
 	if query == "" {
-		return core.StructuredMemorySearchResult{
+		return &core.StructuredMemorySearchResult{
 			Error: "query is required",
-		}
+		}, nil
 	}
 
 	result, err := p.callTool(ctx, "memory_search", map[string]any{
@@ -442,20 +444,20 @@ func (p *FractalMemoryMcpProvider) Search(ctx context.Context, query string, lim
 	})
 
 	if err != nil {
-		return core.StructuredMemorySearchResult{
+		return &core.StructuredMemorySearchResult{
 			Error: err.Error(),
-		}
+		}, nil
 	}
 
 	if !result.Success {
-		return core.StructuredMemorySearchResult{
+		return &core.StructuredMemorySearchResult{
 			Query: query,
 			Error: result.Error,
 			Scope: p.normalizeOptional(scope),
-		}
+		}, nil
 	}
 
-	res := core.StructuredMemorySearchResult{
+	res := &core.StructuredMemorySearchResult{
 		Query:   query,
 		Success: true,
 		Scope:   p.normalizeOptional(scope),
@@ -466,7 +468,7 @@ func (p *FractalMemoryMcpProvider) Search(ctx context.Context, query string, lim
 	}
 	res.Items = items
 
-	return res
+	return res, nil
 }
 
 type sourceRefDTO struct {

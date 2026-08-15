@@ -260,27 +260,27 @@ func (a *ExternalCliTool) preview(ctx context.Context, request core.ExternalCliT
 	}, nil
 }
 
-func (a *ExternalCliTool) ResolveActionDescriptor(argumentsJson string) core.ToolActionDescriptor {
+func (a *ExternalCliTool) ResolveActionDescriptor(argumentsJson string) (*core.ToolActionDescriptor, error) {
 	var request core.ExternalCliToolRequest
 	if err := json.Unmarshal([]byte(argumentsJson), &request); err != nil {
-		return core.ToolActionPolicyResolverInstance.Resolve(a.Name(), argumentsJson)
+		return core.ToolActionPolicyResolverInstance.Resolve(a.Name(), argumentsJson), nil
 	}
 
 	if request.Action != "execute" && request.Action != "preview" {
-		return core.ToolActionDescriptor{
+		return &core.ToolActionDescriptor{
 			Action:  request.Action,
 			Summary: buildSummary(request),
-		}
+		}, nil
 	}
 
 	dryRun := request.Action == "preview" && request.ExecuteDryRun
 
 	prepared, err := a.registry.BuildPreview(toPreviewRequest(&request), dryRun)
 	if err != nil {
-		return core.ToolActionPolicyResolverInstance.Resolve(a.Name(), argumentsJson)
+		return core.ToolActionPolicyResolverInstance.Resolve(a.Name(), argumentsJson), nil
 	}
 
-	return core.ToolActionDescriptor{
+	return &core.ToolActionDescriptor{
 		Action:              request.Action,
 		IsMutation:          !prepared.Preview.ReadOnly,
 		RequiresApproval:    prepared.Preview.RequiresApproval,
@@ -288,7 +288,7 @@ func (a *ExternalCliTool) ResolveActionDescriptor(argumentsJson string) core.Too
 		ApprovalFingerprint: prepared.Preview.Fingerprint,
 		RiskLevel:           prepared.Preview.RiskLevel,
 		ReadOnly:            &prepared.Preview.ReadOnly,
-	}
+	}, nil
 }
 
 func (a *ExternalCliTool) ExecuteContext(ctx context.Context, argumentsJson string, toolContext core.ToolExecutionContext) string {

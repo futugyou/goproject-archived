@@ -131,7 +131,10 @@ func (cb *ContextBudgetPlanner) resolveBestPath(
 	}
 
 	if query != "" {
-		search := cb.provider.Search(ctx, query, 3, request.Scope)
+		search, err := cb.provider.Search(ctx, query, 3, request.Scope)
+		if err != nil {
+			return "", err
+		}
 		if search.Success {
 			for _, item := range search.Items {
 				if strings.TrimSpace(item.Path) != "" {

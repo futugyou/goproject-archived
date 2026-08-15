@@ -17,7 +17,7 @@ func BuildWriteDescriptor(
 	toolName,
 	action,
 	argumentsJson string,
-	requireApproval bool) core.ToolActionDescriptor {
+	requireApproval bool) *core.ToolActionDescriptor {
 	var path = ""
 	var model struct {
 		Path string `json:"path"`
@@ -29,7 +29,7 @@ func BuildWriteDescriptor(
 	if model.Path != "" {
 		summary = fmt.Sprintf("%s updates Fractal Memory state for '%s'.", toolName, model.Path)
 	}
-	return core.ToolActionDescriptor{
+	return &core.ToolActionDescriptor{
 		Action:              action,
 		IsMutation:          true,
 		RequiresApproval:    requireApproval,

@@ -224,7 +224,7 @@ type IStreamingTool interface {
 // IStructuredMemoryProvider 结构化内存提供者
 type IStructuredMemoryProvider interface {
 	GetStatus(ctx context.Context) (*StructuredMemoryStatusResponse, error)
-	Search(ctx context.Context, query string, limit int, scope string) StructuredMemorySearchResult
+	Search(ctx context.Context, query string, limit int, scope string) (*StructuredMemorySearchResult, error)
 	Open(ctx context.Context, path string, depth int, view string) (*StructuredMemoryOpenResult, error)
 	Recent(ctx context.Context, days int, limit int, scope string) (*StructuredMemoryRecentResult, error)
 	Export(ctx context.Context, path string, mode string) (*StructuredMemoryExportResult, error)
@@ -243,7 +243,7 @@ type ITool interface {
 
 // IToolActionDescriptorProvider 工具动作描述符解析器
 type IToolActionDescriptorProvider interface {
-	ResolveActionDescriptor(argumentsJson string) ToolActionDescriptor
+	ResolveActionDescriptor(argumentsJson string) (*ToolActionDescriptor, error)
 }
 
 // IToolGovernanceService 工具合规/治理服务
