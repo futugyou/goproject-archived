@@ -2,8 +2,6 @@ package agent
 
 import (
 	"bytes"
-	"crypto/sha256"
-	"encoding/hex"
 	"fmt"
 	"log/slog"
 	"os"
@@ -15,6 +13,7 @@ import (
 	"unicode"
 
 	"github.com/futugyou/openclaw/core"
+	"github.com/futugyou/openclaw/util"
 	"github.com/google/uuid"
 )
 
@@ -134,8 +133,7 @@ func resolveSocketOptions(configuredPath, pluginID, runtimeRoot string) (*Socket
 
 func createUnixSocketDirectory(pluginID, runtimeRoot string) string {
 	rawInput := fmt.Sprintf("%s:%s", pluginID, strings.ReplaceAll(uuid.New().String(), "-", ""))
-	hashBytes := sha256.Sum256([]byte(rawInput))
-	hash := strings.ToLower(hex.EncodeToString(hashBytes[:]))[:16]
+	hash := strings.ToLower(util.ComputeTurnHash(rawInput))[:16]
 
 	parent := resolveUnixSocketParent(runtimeRoot)
 	socketDirectory := filepath.Join(parent, hash)

@@ -2,8 +2,6 @@ package core
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -15,6 +13,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/futugyou/openclaw/util"
 )
 
 type ArchiveResult struct {
@@ -243,8 +243,7 @@ func (m *MemoryRetentionArchive) PurgeExpiredArchives(
 
 // 将 ID 计算为 SHA256 小写十六进制字符串
 func (m *MemoryRetentionArchive) encodeID(id string) string {
-	hash := sha256.Sum256([]byte(id))
-	return hex.EncodeToString(hash[:])
+	return util.ComputeTurnHash(id)
 }
 
 // 尝试从路径的 yyyy/MM/dd 结构中提取时间

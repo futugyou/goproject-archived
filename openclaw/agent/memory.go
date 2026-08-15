@@ -428,9 +428,9 @@ func parseRecentItems(data any) []core.StructuredMemorySourceRef {
 	return result
 }
 
-func (p *FractalMemoryMcpProvider) Search(ctx context.Context, query string, limit int, scope string) *core.StructuredMemorySearchResult {
+func (p *FractalMemoryMcpProvider) Search(ctx context.Context, query string, limit int, scope string) core.StructuredMemorySearchResult {
 	if query == "" {
-		return &core.StructuredMemorySearchResult{
+		return core.StructuredMemorySearchResult{
 			Error: "query is required",
 		}
 	}
@@ -442,20 +442,20 @@ func (p *FractalMemoryMcpProvider) Search(ctx context.Context, query string, lim
 	})
 
 	if err != nil {
-		return &core.StructuredMemorySearchResult{
+		return core.StructuredMemorySearchResult{
 			Error: err.Error(),
 		}
 	}
 
 	if !result.Success {
-		return &core.StructuredMemorySearchResult{
+		return core.StructuredMemorySearchResult{
 			Query: query,
 			Error: result.Error,
 			Scope: p.normalizeOptional(scope),
 		}
 	}
 
-	res := &core.StructuredMemorySearchResult{
+	res := core.StructuredMemorySearchResult{
 		Query:   query,
 		Success: true,
 		Scope:   p.normalizeOptional(scope),

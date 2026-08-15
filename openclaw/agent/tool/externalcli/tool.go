@@ -2,8 +2,6 @@ package externalcli
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -194,8 +192,7 @@ func (a *ExternalCliTool) recordAudit(execContext core.ToolExecutionContext, res
 }
 
 func computeArgsHash(args []string) string {
-	d := sha256.Sum256([]byte(strings.Join(args, "\n")))
-	return hex.EncodeToString(d[:])
+	return util.ComputeTurnHash(strings.Join(args, "\n"))
 }
 
 func (a *ExternalCliTool) executeCommand(ctx context.Context, request core.ExternalCliToolRequest, execContext core.ToolExecutionContext) (*core.ExternalCliExecutionResult, error) {

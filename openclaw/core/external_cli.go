@@ -4,8 +4,6 @@ import (
 	"bytes"
 	"cmp"
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -1911,8 +1909,7 @@ func (e *ExternalCliConnectorRegistry) computeParametersHash(parameters map[stri
 		builder.WriteByte('\n')
 	}
 
-	hash := sha256.Sum256([]byte(builder.String()))
-	return hex.EncodeToString(hash[:])
+	return util.ComputeTurnHash(builder.String())
 }
 
 func (e *ExternalCliConnectorRegistry) computeFingerprint(connectorName string, commandName string, resolvedExecutable string, args []string, workingDirectory string, timeout int, outputFormat string, dryRun bool, command *ExternalCliCommandOptions) string {
@@ -1955,8 +1952,8 @@ func (e *ExternalCliConnectorRegistry) computeFingerprint(connectorName string, 
 		builder.WriteString(arg)
 		builder.WriteByte('\n')
 	}
-	hash := sha256.Sum256([]byte(builder.String()))
-	return hex.EncodeToString(hash[:])
+
+	return util.ComputeTurnHash(builder.String())
 }
 
 func (e *ExternalCliConnectorRegistry) redactArgs(args []string, redactionRules []string) []string {

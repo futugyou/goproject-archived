@@ -1632,10 +1632,10 @@ func (f *FileMemoryStore) encodeKey(key string) string {
 	// 大于 200 长度使用 SHA256 压缩避免超出文件系统限制
 	if len(key) > 200 {
 		hash := sha256.Sum256([]byte(key))
-		return strings.NewReplacer("+", "-", "/", "_").Replace(strings.TrimRight(base64.StdEncoding.EncodeToString(hash[:]), "="))
+		return base64.RawURLEncoding.EncodeToString(hash[:])
 	}
 
-	return strings.NewReplacer("+", "-", "/", "_").Replace(strings.TrimRight(base64.StdEncoding.EncodeToString([]byte(key)), "="))
+	return base64.RawURLEncoding.EncodeToString([]byte(key))
 }
 
 func (f *FileMemoryStore) persistOriginalNoteKey(key, keyPath, keyTempPath string) error {

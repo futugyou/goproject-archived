@@ -3,8 +3,6 @@ package core
 import (
 	"cmp"
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -62,8 +60,7 @@ func buildSnapshotKey(configPath string) string {
 		safeStem = "config"
 	}
 
-	hashBytes := sha256.Sum256([]byte(configPath))
-	hashHex := hex.EncodeToString(hashBytes[:])
+	hashHex := util.ComputeTurnHash(configPath)
 	shortHash := hashHex[:12]
 
 	return fmt.Sprintf("%s-%s", safeStem, shortHash)
