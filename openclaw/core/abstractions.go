@@ -243,7 +243,7 @@ type ITool interface {
 
 // IToolActionDescriptorProvider 工具动作描述符解析器
 type IToolActionDescriptorProvider interface {
-	ResolveActionDescriptor(argumentsJson string) (*ToolActionDescriptor, error)
+	ResolveActionDescriptor(argumentsJson string) ToolActionDescriptor
 }
 
 // IToolGovernanceService 工具合规/治理服务
