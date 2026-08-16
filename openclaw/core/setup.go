@@ -904,29 +904,11 @@ func (l *LocalModelCache) CopyInstallFile(ctx context.Context, packageData *Loca
 
 	destinationPath := l.GetPackageFilePath(packageData, file, modelsRoot)
 
-	if err := copyFile(sourcePath, destinationPath); err != nil {
+	if err := util.CopyFile(sourcePath, destinationPath); err != nil {
 		return nil, err
 	}
 
 	return l.BuildManifestEntry(ctx, packageData, file, destinationPath, sourcePath)
-}
-
-func copyFile(src, dst string) error {
-	sourceFile, err := os.Open(src)
-	if err != nil {
-		return err
-	}
-	defer sourceFile.Close()
-
-	// os.Create 会默认清空并覆盖已存在的文件（对应 overwrite: true）
-	destFile, err := os.Create(dst)
-	if err != nil {
-		return err
-	}
-	defer destFile.Close()
-
-	_, err = io.Copy(destFile, sourceFile)
-	return err
 }
 
 func (l *LocalModelCache) GetStatus(pkg *LocalModelPackageDefinition, modelsRoot string) *LocalModelPackageStatus {

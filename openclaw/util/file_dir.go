@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -436,4 +437,64 @@ func ReadAllLines(ctx context.Context, path string) ([]string, error) {
 	}
 
 	return lines, nil
+}
+
+func CopyFile(src, dst string) error {
+	sourceFile, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+	defer sourceFile.Close()
+
+	// os.Create 会默认清空并覆盖已存在的文件（对应 overwrite: true）
+	destFile, err := os.Create(dst)
+	if err != nil {
+		return err
+	}
+	defer destFile.Close()
+
+	_, err = io.Copy(destFile, sourceFile)
+	return err
+}
+
+func CopyFileWithContext(ctx context.Context, sourcePath, destPath string) error {
+	src, err := os.Open(sourcePath)
+	if err != nil {
+		return err
+	}
+	defer src.Close()
+
+	dest, err := os.Create(destPath)
+	if err != nil {
+		return err
+	}
+	defer dest.Close()
+
+	// 使用 32KB 缓冲区，分块读取并检查 Context 是否已取消
+	buf := make([]byte, 32*1024)
+	for {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		default:
+			// 读取一块数据
+			nr, readErr := src.Read(buf)
+			if nr > 0 {
+				// 写入目标文件
+				nw, writeErr := dest.Write(buf[0:nr])
+				if writeErr != nil {
+					return writeErr
+				}
+				if nr != nw {
+					return io.ErrShortWrite
+				}
+			}
+			if readErr != nil {
+				if readErr == io.EOF {
+					return nil // 复制完成
+				}
+				return readErr
+			}
+		}
+	}
 }
