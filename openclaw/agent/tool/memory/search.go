@@ -92,9 +92,9 @@ func (a *MemorySearchTool) Execute(ctx context.Context, argumentsJson string) st
 	}
 
 	var sb = strings.Builder{}
-	sb.WriteString(fmt.Sprintf("Matches: %d\n", len(hits)))
+	fmt.Fprintf(&sb, "Matches: %d\n", len(hits))
 	for _, hit := range hits {
-		sb.WriteString(fmt.Sprintf("- %s (updated %s, score %f)\n", hit.Key, hit.UpdatedAt.Format(time.RFC3339Nano), hit.Score))
+		fmt.Fprintf(&sb, "- %s (updated %s, score %f)\n", hit.Key, hit.UpdatedAt.Format(time.RFC3339Nano), hit.Score)
 		sb.WriteString(indent(util.Truncate(hit.Content, 400)))
 		sb.WriteString("\n")
 	}
