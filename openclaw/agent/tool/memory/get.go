@@ -11,7 +11,7 @@ type MemoryGetTool struct {
 	store core.IMemoryStore
 }
 
-func New(store core.IMemoryStore) *MemoryGetTool {
+func NewMemoryGetTool(store core.IMemoryStore) *MemoryGetTool {
 	return &MemoryGetTool{store: store}
 }
 
