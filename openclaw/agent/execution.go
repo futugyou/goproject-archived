@@ -1347,7 +1347,7 @@ func (s *ExecutionProcessService) GetStatus(processId, ownerSessionId string) *c
 	return nil
 }
 
-func (s *ExecutionProcessService) ReadLog(req *core.ExecutionProcessLogRequest) interface{} {
+func (s *ExecutionProcessService) ReadLog(req *core.ExecutionProcessLogRequest) *core.ExecutionProcessLogResult {
 	s.pruneCompletedProcesses()
 	if proc, ok := s.tryGetOwnedProcess(req.ProcessId, req.OwnerSessionId); ok {
 		return proc.ReadLog(req)
@@ -1369,19 +1369,19 @@ func (s *ExecutionProcessService) Wait(ctx context.Context, processId, ownerSess
 	return &status, nil
 }
 
-func (s *ExecutionProcessService) Write(ctx context.Context, processId, ownerSessionId string, data []byte) (bool, error) {
+func (s *ExecutionProcessService) Write(ctx context.Context, request core.ExecutionProcessInputRequest) (bool, error) {
 	s.pruneCompletedProcesses()
-	proc, ok := s.tryGetOwnedProcess(processId, ownerSessionId)
+	proc, ok := s.tryGetOwnedProcess(request.ProcessId, request.OwnerSessionId)
 	if !ok {
 		return false, nil
 	}
 
-	if err := proc.Write(ctx, string(data)); err != nil {
+	if err := proc.Write(ctx, request.Data); err != nil {
 		return false, err
 	}
 
 	if s.OnRuntimeEvent != nil {
-		s.OnRuntimeEvent("process", "input", fmt.Sprintf("Input written to process %s (%d chars).", processId, len(data)))
+		s.OnRuntimeEvent("process", "input", fmt.Sprintf("Input written to process %s (%d chars).", request.ProcessId, len(request.Data)))
 	}
 	return true, nil
 }
