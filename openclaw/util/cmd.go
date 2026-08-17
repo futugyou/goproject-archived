@@ -24,7 +24,7 @@ func ReadLimited(r io.Reader, maxBytes int64) (string, error) {
 	result := buf.String()
 
 	// 2. 如果读取的字节数达到了上限，说明可能还有剩余输出
-	if n == maxBytes {
+	if n == maxBytes { // 这里可能刚好相等，多的一次io.copy可能会堵塞
 		// 继续读取并丢弃剩余所有内容，防止管道堵塞导致子进程死锁
 		written, _ := io.Copy(io.Discard, r)
 		if written > 0 {
@@ -95,12 +95,18 @@ func RunProcess(ctx context.Context, exe string, args []string, cwd string, time
 	stderrChan := make(chan readResult, 1)
 
 	go func() {
-		out, err := ReadLimited(stdoutPipe, stdoutMaxbytes)
+		out, truncated, err := ReadLimitedClean(stdoutPipe, stdoutMaxbytes)
+		if truncated {
+			out += "\n... (output truncated)"
+		}
 		stdoutChan <- readResult{out, err}
 	}()
 
 	go func() {
-		errOut, err := ReadLimited(stderrPipe, stderrMaxbytes)
+		errOut, truncated, err := ReadLimitedClean(stderrPipe, stderrMaxbytes)
+		if truncated {
+			errOut += "\n... (output truncated)"
+		}
 		stderrChan <- readResult{errOut, err}
 	}()
 
@@ -124,4 +130,22 @@ func RunProcess(ctx context.Context, exe string, args []string, cwd string, time
 	result.StderrText = stderrRes.text
 
 	return result
+}
+
+func ReadLimitedClean(r io.Reader, maxBytes int64) (string, bool, error) {
+	// 多读 1 个字节，用于精确检测是否超出 maxBytes，避免误判
+	lr := io.LimitReader(r, maxBytes+1)
+	b, err := io.ReadAll(lr)
+	if err != nil {
+		return "", false, err
+	}
+
+	truncated := int64(len(b)) > maxBytes
+	if truncated {
+		b = b[:maxBytes]
+		// 丢弃后续剩余流，防止堵塞子进程/管道
+		io.Copy(io.Discard, r)
+	}
+
+	return string(b), truncated, nil
 }

@@ -1,12 +1,10 @@
 package codeexec
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"os"
 	"os/exec"
 	"runtime"
@@ -177,7 +175,7 @@ func (a *CodeExecTool) CreateSandboxRequest(argumentsJson string) (*core.Sandbox
 
 func (a *CodeExecTool) FormatSandboxResult(argumentsJson string, result core.SandboxResult) string {
 	var sb = strings.Builder{}
-	sb.WriteString(fmt.Sprintf("Exit code: %d\n", result.ExitCode))
+	fmt.Fprintf(&sb, "Exit code: %d\n", result.ExitCode)
 
 	if result.Stdout != "" {
 		sb.WriteString("--- stdout ---\n")
@@ -196,103 +194,29 @@ func (a *CodeExecTool) FormatSandboxResult(argumentsJson string, result core.San
 	return sb.String()
 }
 
-func readLimited(r io.Reader, maxBytes int64) (string, error) {
-	// 1. 创建一个只读取 maxBytes 的 Reader
-	limitedReader := io.LimitReader(r, maxBytes)
-
-	var buf bytes.Buffer
-	// 读取前 maxBytes 字节
-	n, err := buf.ReadFrom(limitedReader)
-	if err != nil {
-		return "", err
-	}
-
-	result := buf.String()
-
-	// 2. 如果读取的字节数达到了上限，说明可能还有剩余输出
-	if n == maxBytes {
-		// 继续读取并丢弃剩余所有内容，防止管道堵塞导致子进程死锁
-		written, _ := io.Copy(io.Discard, r)
-		if written > 0 {
-			result += "\n... (output truncated)"
-		}
-	}
-
-	return result, nil
-}
-
 func (a *CodeExecTool) runProcess(ctx context.Context, exe string, args []string, timeoutSec int) string {
-	// 创建带有超时的 Context
-	timeoutCtx, cancel := context.WithTimeout(ctx, time.Duration(timeoutSec)*time.Second)
-	defer cancel()
-
-	// 创建 Cmd 命令
-	cmd := exec.CommandContext(timeoutCtx, exe, args...)
-
-	// 获取 stdout 和 stderr 的管道
-	stdoutPipe, err := cmd.StdoutPipe()
-	if err != nil {
-		return fmt.Sprintf("Error: Failed to start execution process (%T).", err)
+	result := util.RunProcess(ctx, exe, args, "", int64(timeoutSec), int64(a.config.MaxOutputBytes), 8192)
+	if result.Error != "" {
+		return result.Error
 	}
-	stderrPipe, err := cmd.StderrPipe()
-	if err != nil {
-		return fmt.Sprintf("Error: Failed to start execution process (%T).", err)
-	}
-
-	// 启动进程
-	if err := cmd.Start(); err != nil {
-		return fmt.Sprintf("Error: Failed to start execution process (%T).", err)
-	}
-
-	// 并发读取 stdout 和 stderr (对应 C# 中的 Task.WhenAll)
-	type readResult struct {
-		text string
-		err  error
-	}
-
-	stdoutChan := make(chan readResult, 1)
-	stderrChan := make(chan readResult, 1)
-
-	go func() {
-		out, err := readLimited(stdoutPipe, int64(a.config.MaxOutputBytes))
-		stdoutChan <- readResult{out, err}
-	}()
-
-	go func() {
-		errOut, err := readLimited(stderrPipe, 8192)
-		stderrChan <- readResult{errOut, err}
-	}()
-
-	// 等待读取完成
-	stdoutRes := <-stdoutChan
-	stderrRes := <-stderrChan
-
-	// 等待进程结束
-	err = cmd.Wait()
-
-	// 检查是否因为超时导致 context 被取消
-	if timeoutCtx.Err() == context.DeadlineExceeded {
-		return "Error: Execution timed out."
-	}
-
 	// 拼接输出结果
 	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("Exit code: %d\n", cmd.ProcessState.ExitCode()))
+	sb.WriteString(fmt.Sprintf("Exit code: %d\n", result.ExitCode))
 
-	stdout := strings.TrimSpace(stdoutRes.text)
+	stdout := strings.TrimSpace(result.StdoutText)
 	if stdout != "" {
 		sb.WriteString("--- stdout ---\n")
-		sb.WriteString(stdoutRes.text)
+		sb.WriteString(result.StdoutText)
 		sb.WriteString("\n")
 	}
 
-	stderr := strings.TrimSpace(stderrRes.text)
+	stderr := strings.TrimSpace(result.StderrText)
 	if stderr != "" {
 		if sb.Len() > 0 && !strings.HasSuffix(sb.String(), "\n") {
 			sb.WriteString("\n")
 		}
 		sb.WriteString("--- stderr ---\n")
-		sb.WriteString(stderrRes.text)
+		sb.WriteString(result.StderrText)
 	}
 
 	return sb.String()

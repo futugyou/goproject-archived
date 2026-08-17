@@ -189,23 +189,20 @@ func (e *EmailTool) listEmails(ctx context.Context, args emailArgs) string {
 			return "No messages in folder.", nil
 		}
 
-		startMsg := total - count + 1
-		if startMsg < 1 {
-			startMsg = 1
-		}
+		startMsg := max(total-count+1, 1)
 
 		showing := total - startMsg + 1
 		var sb strings.Builder
-		sb.WriteString(fmt.Sprintf("Folder: %s (%d messages, showing %d most recent)\n\n", folder, total, showing))
+		fmt.Fprintf(&sb, "Folder: %s (%d messages, showing %d most recent)\n\n", folder, total, showing)
 
 		for i := total; i >= startMsg; i-- {
 			headers, err := imapFetchHeaders(conn, reader, i)
 			if err != nil {
 				return "", err
 			}
-			sb.WriteString(fmt.Sprintf("[%d] %s\n", i, headers.Subject))
-			sb.WriteString(fmt.Sprintf("    From: %s\n", headers.From))
-			sb.WriteString(fmt.Sprintf("    Date: %s\n\n", headers.Date))
+			fmt.Fprintf(&sb, "[%d] %s\n", i, headers.Subject)
+			fmt.Fprintf(&sb, "    From: %s\n", headers.From)
+			fmt.Fprintf(&sb, "    Date: %s\n\n", headers.Date)
 		}
 
 		return sb.String(), nil
@@ -299,21 +296,18 @@ func (e *EmailTool) searchEmails(ctx context.Context, args emailArgs) string {
 		}
 
 		var sb strings.Builder
-		sb.WriteString(fmt.Sprintf("Search results for: %s\n\n", query))
+		fmt.Fprintf(&sb, "Search results for: %s\n\n", query)
 
-		showCount := len(ids)
-		if showCount > e.config.MaxResults {
-			showCount = e.config.MaxResults
-		}
+		showCount := min(len(ids), e.config.MaxResults)
 
 		for i := len(ids) - 1; i >= len(ids)-showCount; i-- {
 			headers, err := imapFetchHeaders(conn, reader, ids[i])
 			if err != nil {
 				return "", err
 			}
-			sb.WriteString(fmt.Sprintf("[%d] %s\n", ids[i], headers.Subject))
-			sb.WriteString(fmt.Sprintf("    From: %s\n", headers.From))
-			sb.WriteString(fmt.Sprintf("    Date: %s\n\n", headers.Date))
+			fmt.Fprintf(&sb, "[%d] %s\n", ids[i], headers.Subject)
+			fmt.Fprintf(&sb, "    From: %s\n", headers.From)
+			fmt.Fprintf(&sb, "    Date: %s\n\n", headers.Date)
 		}
 
 		return sb.String(), nil
