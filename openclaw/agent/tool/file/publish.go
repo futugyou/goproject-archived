@@ -1,4 +1,4 @@
-package publishfile
+package file
 
 import (
 	"context"
@@ -17,7 +17,7 @@ type PublishFileTool struct {
 	config *core.ToolingConfig
 }
 
-func New(config *core.ToolingConfig) *PublishFileTool {
+func NewPublishFileTool(config *core.ToolingConfig) *PublishFileTool {
 	if config == nil {
 		config = &core.ToolingConfig{}
 	}

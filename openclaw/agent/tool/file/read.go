@@ -1,4 +1,4 @@
-package fileread
+package file
 
 import (
 	"bufio"
@@ -17,7 +17,7 @@ type FileReadTool struct {
 	config *core.ToolingConfig
 }
 
-func New(config *core.ToolingConfig) *FileReadTool {
+func NewFileReadTool(config *core.ToolingConfig) *FileReadTool {
 	if config == nil {
 		config = &core.ToolingConfig{}
 	}

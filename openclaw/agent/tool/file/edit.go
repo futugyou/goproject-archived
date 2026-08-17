@@ -1,4 +1,4 @@
-package editfiletool
+package file
 
 import (
 	"context"
@@ -16,7 +16,7 @@ type EditFileTool struct {
 	config core.ToolingConfig
 }
 
-func New(config core.ToolingConfig) *EditFileTool {
+func NewEditFileTool(config core.ToolingConfig) *EditFileTool {
 	return &EditFileTool{config: config}
 }
 

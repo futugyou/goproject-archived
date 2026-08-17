@@ -1,4 +1,4 @@
-package filewrite
+package file
 
 import (
 	"context"
@@ -16,7 +16,7 @@ type FileWriteTool struct {
 	config *core.ToolingConfig
 }
 
-func New(config *core.ToolingConfig) *FileWriteTool {
+func NewFileWriteTool(config *core.ToolingConfig) *FileWriteTool {
 	if config == nil {
 		config = &core.ToolingConfig{}
 	}
