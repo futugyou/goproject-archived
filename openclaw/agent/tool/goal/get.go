@@ -1,4 +1,4 @@
-package getgoal
+package goal
 
 import (
 	"context"
@@ -12,7 +12,7 @@ type GetGoalTool struct {
 	goalService core.IGoalService
 }
 
-func New(goalService core.IGoalService) *GetGoalTool {
+func NewGetGoalTool(goalService core.IGoalService) *GetGoalTool {
 	return &GetGoalTool{goalService: goalService}
 }
 

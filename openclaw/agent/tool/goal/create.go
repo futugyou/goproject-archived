@@ -1,4 +1,4 @@
-package creategoal
+package goal
 
 import (
 	"context"
@@ -13,7 +13,7 @@ type CreateGoalTool struct {
 	goalService core.IGoalService
 }
 
-func New(goalService core.IGoalService) *CreateGoalTool {
+func NewCreateGoalTool(goalService core.IGoalService) *CreateGoalTool {
 	return &CreateGoalTool{goalService: goalService}
 }
 
@@ -27,15 +27,27 @@ func (a *CreateGoalTool) Description() string {
 
 func (a *CreateGoalTool) ParameterSchema() string {
 	return `
-	{"type":"object","properties":{"objective":{"type":"string","description":"The goal objective — what to achieve."},"token_budget":{"type":"integer","description":"Optional token budget (e.g., 500000 for 500k). 0 or omitted means unlimited."}},"required":["objective"]}
-    `
+	{
+	"type": "object",
+	"properties": {
+		"objective": {
+			"type": "string",
+			"description": "The goal objective — what to achieve."
+		},
+		"token_budget": {
+			"type": "integer",
+			"description": "Optional token budget (e.g., 500000 for 500k). 0 or omitted means unlimited."
+		}
+	},
+	"required": ["objective"]
+}`
 }
 
 func (a *CreateGoalTool) Execute(ctx context.Context, argumentsJson string) string {
 	return "Error: create_goal requires session context"
 }
 
-type Token struct {
+type CreateGoal struct {
 	Objective   *string `json:"objective,omitempty"`
 	TokenBudget int64   `json:"token_budget,omitempty"`
 }
@@ -49,7 +61,7 @@ func (a *CreateGoalTool) ExecuteContext(ctx context.Context, argumentsJson strin
 		return "Error: ToolExecutionContext Session is empty."
 	}
 
-	var data Token
+	var data CreateGoal
 	if err := json.Unmarshal([]byte(argumentsJson), &data); err != nil {
 		return "Error: arguments must be valid JSON."
 	}
