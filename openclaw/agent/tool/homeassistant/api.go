@@ -124,6 +124,10 @@ type HomeAssistantWsApi struct {
 	config core.HomeAssistantConfig
 }
 
+func NewHomeAssistantWsApi(config core.HomeAssistantConfig) *HomeAssistantWsApi {
+	return &HomeAssistantWsApi{config: config}
+}
+
 func (b *HomeAssistantWsApi) buildWebSocketUrl() (string, error) {
 	baseURL, err := url.Parse(b.config.BaseURL)
 	if err != nil || (baseURL != nil && (!baseURL.IsAbs() || (baseURL.Scheme != "http" && baseURL.Scheme != "https"))) {
