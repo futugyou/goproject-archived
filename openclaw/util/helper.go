@@ -341,3 +341,12 @@ func SlicesInsertRange[T any](s []T, index int, values []T) []T {
 	copy(s[index:], values)
 	return s
 }
+
+func SliceToMap[T any, K comparable, Y any](slice []T, keySelector func(T) K, valueSelector func(T) Y) map[K]Y {
+	result := make(map[K]Y)
+	for _, v := range slice {
+		key := keySelector(v)
+		result[key] = valueSelector(v)
+	}
+	return result
+}

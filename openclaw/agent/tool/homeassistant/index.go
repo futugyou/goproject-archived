@@ -227,3 +227,62 @@ func (h *HomeAssistantIndex) EnsureWarm(ctx context.Context, rest HomeAssistantR
 	h.refreshStatesFromJson(raw)
 	return nil
 }
+
+func (h *HomeAssistantIndex) RefreshRegistries(ctx context.Context) error {
+	var shouldRefresh = false
+	h.mu.Lock()
+	if time.Now().UTC().Sub(h.lastRegistryRefresh) > time.Duration(RegistryRefreshMinutes)*(time.Minute) {
+		h.lastRegistryRefresh = time.Now().UTC()
+		shouldRefresh = true
+	}
+	h.mu.Unlock()
+
+	if !shouldRefresh {
+		return nil
+	}
+
+	var areas = h.wsapi.ListAreas(ctx)
+	var devices = h.wsapi.ListDevices(ctx)
+	var entities = h.wsapi.ListEntityRegistry(ctx)
+
+	h.mu.Lock()
+	defer h.mu.Unlock()
+
+	areaById := util.SliceToMap(areas, func(a AreaEntry) string { return a.AreaId }, func(a AreaEntry) string { return a.Name })
+	deviceById := util.SliceToMap(devices, func(a DeviceEntry) string { return a.DeviceId }, func(a DeviceEntry) DeviceEntry { return a })
+
+	for _, er := range entities {
+		entry, ok := h.byEntityId[er.EntityId]
+		if !ok {
+			entry = &Entry{EntityId: er.EntityId}
+		}
+
+		entry.Platform = er.Platform
+
+		var areaId = er.AreaId
+		if areaId == "" && er.DeviceId != "" {
+			if dev, ok := deviceById[er.DeviceId]; ok {
+				areaId = dev.AreaId
+			}
+		}
+
+		if areaId != "" {
+			if dev, ok := areaById[areaId]; ok {
+				entry.AreaName = dev
+			}
+		}
+		if er.DeviceId != "" {
+			if dev, ok := deviceById[er.DeviceId]; ok {
+				entry.DeviceName = dev.Name
+			}
+		}
+
+		if er.Name != "" {
+			entry.FriendlyName = er.Name
+		}
+
+		h.byEntityId[er.EntityId] = entry
+	}
+
+	return nil
+}
