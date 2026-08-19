@@ -350,3 +350,10 @@ func SliceToMap[T any, K comparable, Y any](slice []T, keySelector func(T) K, va
 	}
 	return result
 }
+
+func TrimEnd(text string) string {
+	checkIfSpace := func(r rune) bool {
+		return r == ' '
+	}
+	return strings.TrimRightFunc(text, checkIfSpace)
+}

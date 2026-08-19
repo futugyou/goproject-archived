@@ -37,7 +37,16 @@ func (a *PublishFileTool) Description() string {
 }
 
 func (a *PublishFileTool) ParameterSchema() string {
-	return `{"type":"object","properties":{"path":{"type":"string","description":"Absolute path of the file to publish for download"}},"required":["path"]}`
+	return `{
+	"type": "object",
+	"properties": {
+		"path": {
+			"type": "string",
+			"description": "Absolute path of the file to publish for download"
+		}
+	},
+	"required": ["path"]
+}`
 }
 
 func (a *PublishFileTool) Execute(ctx context.Context, argumentsJson string) string {

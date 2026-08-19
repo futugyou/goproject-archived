@@ -33,7 +33,20 @@ func (a *ApplyPatchTool) Description() string {
 }
 
 func (a *ApplyPatchTool) ParameterSchema() string {
-	return `{"type":"object","properties":{"path":{"type":"string","description":"File path to patch"},"patch":{"type":"string","description":"Unified diff patch content (lines starting with +/- and @@ hunk headers)"}},"required":["path","patch"]}`
+	return `{
+	"type": "object",
+	"properties": {
+		"path": {
+			"type": "string",
+			"description": "File path to patch"
+		},
+		"patch": {
+			"type": "string",
+			"description": "Unified diff patch content (lines starting with +/- and @@ hunk headers)"
+		}
+	},
+	"required": ["path", "patch"]
+}`
 }
 
 func (a *ApplyPatchTool) Execute(ctx context.Context, argumentsJson string) string {
