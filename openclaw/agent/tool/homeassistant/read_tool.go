@@ -18,7 +18,7 @@ type HomeAssistantTool struct {
 	index  *HomeAssistantIndex
 }
 
-func New(config core.HomeAssistantConfig, httpClient *http.Client) *HomeAssistantTool {
+func NewHomeAssistantTool(config core.HomeAssistantConfig, httpClient *http.Client) *HomeAssistantTool {
 	return &HomeAssistantTool{
 		config: config,
 		rest:   NewHomeAssistantRestClient(config, httpClient),
@@ -95,7 +95,6 @@ func (a *HomeAssistantTool) Execute(ctx context.Context, argumentsJson string) s
 	default:
 		return fmt.Sprintf("Error: Unknown op '%s'.", model.Op)
 	}
-
 }
 
 func (a *HomeAssistantTool) describeEntity(ctx context.Context, model ReadAssistantModel) string {

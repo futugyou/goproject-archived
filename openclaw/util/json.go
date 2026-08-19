@@ -196,3 +196,18 @@ func TryGetProperty(root map[string]any, name string) (any, bool) {
 
 	return nil, false
 }
+
+func TryGetValueFromRawMessage[T any](root map[string]json.RawMessage, name string) (T, bool) {
+	var data T
+
+	d, ok := root[name]
+	if !ok {
+		return data, false
+	}
+
+	if err := json.Unmarshal(d, &data); err != nil {
+		return data, false
+	}
+
+	return data, true
+}
