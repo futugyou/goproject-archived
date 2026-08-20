@@ -329,6 +329,16 @@ func DirectoryExists(path string) bool {
 	return info.IsDir()
 }
 
+// 判断路径是否是符号链接/重定向点
+func IsReparsePoint(path string) (bool, error) {
+	info, err := os.Lstat(path)
+	if err != nil {
+		return false, err
+	}
+
+	return info.Mode()&os.ModeSymlink != 0, nil
+}
+
 func FindDirectoriesCantainsFileName(candidatePath string, filename string) ([]string, error) {
 	uniquePaths := make(map[string]bool)
 
