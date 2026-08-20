@@ -64,9 +64,9 @@ type Session struct {
 	Id                           string                          `json:"id"`
 	ChannelId                    string                          `json:"channel_id"`
 	SenderId                     string                          `json:"sender_id"`
+	AuthenticatedUserId          string                          `json:"authenticated_user_id"`
 	StableSessionBinding         *StableSessionBindingInfo       `json:"stable_session_binding,omitempty"`
 	CreatedAt                    time.Time                       `json:"created_at"`
-	UpdatedAt                    time.Time                       `json:"updated_at"`
 	LastActiveAt                 time.Time                       `json:"last_active_at"`
 	History                      []ChatTurn                      `json:"history"`
 	State                        SessionState                    `json:"state"`
@@ -80,6 +80,9 @@ type Session struct {
 	SystemPromptOverride         string                          `json:"system_prompt_override,omitempty"`
 	RoutePresetId                string                          `json:"route_preset_id,omitempty"`
 	RouteAllowedTools            []string                        `json:"route_allowed_tools" gorm:"type:text[];not null;default:'{}'"`
+	RouteToolsDisabled           bool                            `json:"route_tools_disabled"`
+	RouteModelTier               string                          `json:"route_model_tier"`
+	RouteReason                  string                          `json:"route_reason"`
 	ReasoningEffort              string                          `json:"reasoning_effort,omitempty"`
 	VerboseMode                  bool                            `json:"verbose_mode"`
 	ResponseMode                 string                          `json:"response_mode"`
@@ -92,6 +95,8 @@ type Session struct {
 	ContractBaselineToolCalls    int                             `json:"contract_baseline_tool_calls"`
 	ContractAccumulatedCostUsd   float64                         `json:"contract_accumulated_cost_usd"`
 	ExecutionCheckpoint          *SessionExecutionCheckpoint     `json:"execution_checkpoint,omitempty"`
+	MetaExecutionCheckpoint      *SessionMetaExecutionCheckpoint `json:"meta_execution_checkpoint"`
+	MetaRunHistory               []SessionMetaRunRecord          `json:"meta_run_history"`
 }
 
 func DefaultSession() *Session {
