@@ -227,6 +227,7 @@ type GatewayConfig struct {
 	UsageFooter                          string                         `json:"usage_footer"`
 	MaxConcurrentSessions                int                            `json:"max_concurrent_sessions"`
 	SessionTimeoutMinutes                int                            `json:"session_timeout_minutes"`
+	BackgroundExecution                  *BackgroundExecutionConfig     `json:"background_execution"`
 	SessionTokenBudget                   int64                          `json:"session_token_budget"`
 	EnableEstimatedTokenAdmissionControl bool                           `json:"enable_estimated_token_admission_control"`
 	SessionRateLimitPerMinute            int                            `json:"session_rate_limit_per_minute"`
@@ -235,8 +236,8 @@ type GatewayConfig struct {
 	TokenCostRateDetails                 map[string]TokenCostRateConfig `json:"token_cost_rate_details"`
 }
 
-func DefaultGatewayConfig() GatewayConfig {
-	return GatewayConfig{
+func DefaultGatewayConfig() *GatewayConfig {
+	return &GatewayConfig{
 		BindAddress:             "127.0.0.1",
 		Port:                    18789,
 		Llm:                     DefaultLlmProviderConfig(),
@@ -249,6 +250,43 @@ func DefaultGatewayConfig() GatewayConfig {
 		GracefulShutdownSeconds: 15,
 		TokenCostRates:          make(map[string]float64),
 		TokenCostRateDetails:    make(map[string]TokenCostRateConfig),
+		BackgroundExecution:     DefaultBackgroundExecutionConfig(),
+	}
+}
+
+type BackgroundExecutionConfig struct {
+	Enabled                       bool
+	AutoResumeOnStartup           bool
+	AutoResumeStaggerSeconds      int
+	AutoResumeMaxConcurrent       int
+	MaxConcurrentBackgroundTurns  int
+	MaxIterationsPerBatch         int
+	DefaultTokenBudget            int64
+	MaxWallClockMinutes           int
+	MaxToolCalls                  int
+	MaxContinuationTurns          int
+	ProgressNotifyIntervalMinutes int
+	NotifyOnStart                 bool
+	NotifyOnCompletion            bool
+	NotifyOnBlocked               bool
+	NotifyOnBudgetLimited         bool
+}
+
+func DefaultBackgroundExecutionConfig() *BackgroundExecutionConfig {
+	return &BackgroundExecutionConfig{
+		AutoResumeStaggerSeconds:      5,
+		AutoResumeMaxConcurrent:       3,
+		MaxConcurrentBackgroundTurns:  3,
+		MaxIterationsPerBatch:         20,
+		DefaultTokenBudget:            128_000,
+		MaxWallClockMinutes:           360,
+		MaxToolCalls:                  1_000,
+		MaxContinuationTurns:          200,
+		ProgressNotifyIntervalMinutes: 10,
+		NotifyOnStart:                 true,
+		NotifyOnCompletion:            true,
+		NotifyOnBlocked:               true,
+		NotifyOnBudgetLimited:         true,
 	}
 }
 
