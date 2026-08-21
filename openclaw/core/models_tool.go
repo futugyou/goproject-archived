@@ -209,7 +209,7 @@ type ToolGovernanceContext struct {
 	CallId           string                   `json:"call_id,omitempty"`
 	ToolName         string                   `json:"tool_name"`
 	ArgumentsJson    string                   `json:"arguments_json"`
-	ActionDescriptor ToolActionDescriptor     `json:"action_descriptor"`
+	ActionDescriptor *ToolActionDescriptor    `json:"action_descriptor"`
 	Descriptor       ToolGovernanceDescriptor `json:"descriptor"`
 	IsStreaming      bool                     `json:"is_streaming"`
 }
@@ -236,7 +236,7 @@ type ToolGovernanceSidecarRequest struct {
 	ToolCategory     string                   `json:"tool_category"`
 	RiskLevel        string                   `json:"risk_level"`
 	ArgumentsJson    string                   `json:"arguments_json"`
-	ActionDescriptor ToolActionDescriptor     `json:"action_descriptor"`
+	ActionDescriptor *ToolActionDescriptor    `json:"action_descriptor"`
 	Descriptor       ToolGovernanceDescriptor `json:"descriptor"`
 }
 

@@ -271,7 +271,7 @@ type IToolLocalExecutionPolicy interface {
 }
 
 type IToolPresetResolver interface {
-	Resolve(session Session, availableToolNames []string) ResolvedToolPreset
+	Resolve(session Session, availableToolNames []string) *ResolvedToolPreset
 	ListPresets(availableToolNames []string) []ResolvedToolPreset
 }
 

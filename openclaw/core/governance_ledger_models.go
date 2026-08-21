@@ -303,7 +303,7 @@ func (c *ToolGovernanceDescriptorCatalog) Contains(toolName string) bool {
 	return exists
 }
 
-func (c *ToolGovernanceDescriptorCatalog) Resolve(toolName string, description string, actionDescriptor ToolActionDescriptor) ToolGovernanceDescriptor {
+func (c *ToolGovernanceDescriptorCatalog) Resolve(toolName string, description string, actionDescriptor *ToolActionDescriptor) ToolGovernanceDescriptor {
 	var descriptor ToolGovernanceDescriptor
 	known, exists := c.descriptors[toolName]
 
@@ -316,14 +316,13 @@ func (c *ToolGovernanceDescriptorCatalog) Resolve(toolName string, description s
 		descriptor = c.createFallback(toolName, description)
 	}
 
-	if actionDescriptor.RequiresApproval || actionDescriptor.IsMutation {
+	if actionDescriptor != nil && (actionDescriptor.RequiresApproval || actionDescriptor.IsMutation) {
 		parsedRisk := c.parseRisk(actionDescriptor.RiskLevel)
 		riskToCompare := ToolGovernanceRiskLevelMedium
 		if parsedRisk != nil {
 			riskToCompare = *parsedRisk
 		}
 
-		// 模拟 C# 的 with 表达式
 		descriptor.RequiresApproval = descriptor.RequiresApproval || actionDescriptor.RequiresApproval
 		descriptor.ReadOnly = !actionDescriptor.IsMutation && descriptor.ReadOnly
 		descriptor.RiskLevel = c.maxRisk(descriptor.RiskLevel, riskToCompare)

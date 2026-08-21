@@ -10,7 +10,7 @@ type PlanExecuteVerifyToolContext struct {
 	CallID                   string                   `json:"call_id,omitempty"`
 	ToolName                 string                   `json:"tool_name"`
 	ArgumentsJSON            string                   `json:"arguments_json"`
-	ActionDescriptor         ToolActionDescriptor     `json:"action_descriptor"`
+	ActionDescriptor         *ToolActionDescriptor    `json:"action_descriptor"`
 	GovernanceDescriptor     ToolGovernanceDescriptor `json:"governance_descriptor"`
 	ExistingApprovalRequired bool                     `json:"existing_approval_required"`
 	IsStreaming              bool                     `json:"is_streaming"`

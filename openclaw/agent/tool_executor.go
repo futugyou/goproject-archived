@@ -6,10 +6,12 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"maps"
 	"os"
 	"path/filepath"
 	"runtime"
 	"slices"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -18,6 +20,7 @@ import (
 	"github.com/futugyou/openclaw/core"
 	"github.com/futugyou/openclaw/util"
 	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/metric"
 	"go.opentelemetry.io/otel/trace"
 )
 
@@ -170,8 +173,7 @@ func (e *OpenClawToolExecutor) GetToolDeclarations(session core.Session) []abstr
 
 	var preset *core.ResolvedToolPreset
 	if e.toolPresetResolver != nil {
-		preset = new(core.ResolvedToolPreset)
-		*preset = e.toolPresetResolver.Resolve(session, toolNames)
+		preset = e.toolPresetResolver.Resolve(session, toolNames)
 	}
 
 	var filtered []abstractions.AITool
@@ -807,29 +809,34 @@ func (o *OpenClawToolExecutor) RecordImmediateGovernanceAudit(
 	turnCtx *core.TurnContext,
 	argumentsJson,
 	result string,
-	decision core.GovernanceDecision) {
+	decision *core.GovernanceDecision) {
 	if o.auditLog == nil {
 		return
 	}
-	o.auditLog.Record(&core.ToolAuditEntry{
-		TimestampUtc:           time.Now().UTC(),
-		ToolName:               tool.Name(),
-		SessionId:              session.Id,
-		ChannelId:              session.ChannelId,
-		SenderId:               session.SenderId,
-		CorrelationId:          turnCtx.CorrelationId,
-		Failed:                 true,
-		ArgumentsBytes:         len(argumentsJson),
-		ResultBytes:            len(result),
-		GovernanceAllowed:      decision.Allowed,
-		GovernanceAction:       decision.Action.String(),
-		GovernanceReason:       decision.Reason,
-		GovernancePolicyId:     decision.PolicyId,
-		GovernanceRuleId:       decision.RuleId,
-		GovernanceTrustScore:   util.Deref(decision.TrustScore),
-		GovernanceEvaluationMs: util.Deref(decision.EvaluationMs),
-		GovernanceUnavailable:  decision.IsUnavailable,
-	})
+
+	entry := &core.ToolAuditEntry{
+		TimestampUtc:   time.Now().UTC(),
+		ToolName:       tool.Name(),
+		SessionId:      session.Id,
+		ChannelId:      session.ChannelId,
+		SenderId:       session.SenderId,
+		CorrelationId:  turnCtx.CorrelationId,
+		Failed:         true,
+		ArgumentsBytes: len(argumentsJson),
+		ResultBytes:    len(result),
+	}
+
+	if decision != nil {
+		entry.GovernanceAllowed = decision.Allowed
+		entry.GovernanceAction = decision.Action.String()
+		entry.GovernanceReason = decision.Reason
+		entry.GovernancePolicyId = decision.PolicyId
+		entry.GovernanceRuleId = decision.RuleId
+		entry.GovernanceTrustScore = util.Deref(decision.TrustScore)
+		entry.GovernanceEvaluationMs = util.Deref(decision.EvaluationMs)
+		entry.GovernanceUnavailable = decision.IsUnavailable
+	}
+	o.auditLog.Record(entry)
 }
 
 func (o *OpenClawToolExecutor) RecordGovernanceResult(
@@ -892,8 +899,10 @@ func TryGetMetaInvokeArguments(argsJson string) (skill string, input string, ok 
 	return
 }
 
-func ApplyGovernanceActivityTags(span trace.Span, decision core.GovernanceDecision) {
-
+func ApplyGovernanceActivityTags(span trace.Span, decision *core.GovernanceDecision) {
+	if span == nil || decision == nil {
+		return
+	}
 	tags := []attribute.KeyValue{
 		attribute.Bool("tool.governance.allowed", decision.Allowed),
 		attribute.String("tool.governance.action", decision.Action.String()),
@@ -914,4 +923,597 @@ func ApplyGovernanceActivityTags(span trace.Span, decision core.GovernanceDecisi
 	span.SetAttributes(
 		tags...,
 	)
+}
+
+func (o *OpenClawToolExecutor) Execute(
+	ctx context.Context,
+	toolName,
+	argsJson,
+	callId string,
+	session core.Session,
+	turnCtx *core.TurnContext,
+	isStreaming bool,
+	approvalCallback ToolApprovalCallback,
+	onDelta func(string) error,
+	toolCallCount int) (*ToolExecutionResult, error) {
+	var span trace.Span
+	ctx, span = core.Tracer.Start(ctx, "Agent.ExecuteTool", trace.WithAttributes(
+		attribute.String("tool.name", toolName),
+	))
+	defer span.End()
+
+	var persistedArgsJson = o.redaction.Redact(argsJson)
+
+	var tool core.ITool
+	o.toolsMutationLock.Lock()
+	if t, ok := o.toolsByName[toolName]; ok {
+		tool = t
+	}
+	o.toolsMutationLock.Unlock()
+
+	if tool == nil {
+		return CreateImmediateResult(
+			toolName,
+			persistedArgsJson,
+			"Error: Unknown tool",
+			callId,
+			core.ToolResultStatusesFailed,
+			core.ToolFailureCodesToolFailed,
+			"Unknown tool.",
+			"Use one of the tools declared for this session.", nil), nil
+	}
+
+	if session.RouteToolsDisabled {
+		var disabledMessage = fmt.Sprintf("Tool '%s' is disabled for this routed turn.", tool.Name())
+		return CreateImmediateResult(
+			toolName,
+			persistedArgsJson,
+			disabledMessage,
+			callId,
+			core.ToolResultStatusesBlocked,
+			core.ToolFailureCodesPresetBlocked,
+			disabledMessage,
+			"Continue without tools for this routed turn.", nil), nil
+	}
+
+	var preset *core.ResolvedToolPreset
+	if o.toolPresetResolver != nil {
+		preset = o.toolPresetResolver.Resolve(session, slices.Collect(maps.Keys(o.toolsByName)))
+	}
+
+	if !IsToolAllowedForSession(session, tool.Name(), preset) {
+		deniedByPreset := fmt.Sprintf("Tool '%s' is not allowed for this session.", tool.Name())
+		if preset != nil {
+			deniedByPreset = fmt.Sprintf("Tool '%s' is not allowed for preset '%s'.", tool.Name(), preset.PresetId)
+		}
+
+		return CreateImmediateResult(
+			toolName,
+			persistedArgsJson,
+			deniedByPreset,
+			callId,
+			core.ToolResultStatusesBlocked,
+			core.ToolFailureCodesPresetBlocked,
+			deniedByPreset,
+			"Use a broader preset on this surface, or change the session preset if that access is intentional.", nil), nil
+	}
+
+	toolGovernanceDescriptorCatalog := core.NewToolGovernanceDescriptorCatalog()
+	var approvalDescriptor = ResolveToolActionDescriptor(tool, persistedArgsJson)
+	var governanceDescriptor = toolGovernanceDescriptorCatalog.Resolve(tool.Name(), tool.Description(), approvalDescriptor)
+	var governanceContext = core.ToolGovernanceContext{
+		AgentId:          session.Id,
+		SessionId:        session.Id,
+		ChannelId:        session.ChannelId,
+		SenderId:         session.SenderId,
+		CorrelationId:    turnCtx.CorrelationId,
+		CallId:           callId,
+		ToolName:         tool.Name(),
+		ArgumentsJson:    persistedArgsJson,
+		ActionDescriptor: approvalDescriptor,
+		Descriptor:       governanceDescriptor,
+		IsStreaming:      isStreaming,
+	}
+	governanceDecision, err := o.toolGovernance.Authorize(ctx, governanceContext)
+	if err != nil {
+		return nil, err
+	}
+	ApplyGovernanceActivityTags(span, governanceDecision)
+
+	if governanceDecision.RedactedArgumentsJson != "" {
+		if util.IsValidJson(governanceDecision.RedactedArgumentsJson) {
+			persistedArgsJson = o.redaction.Redact(governanceDecision.RedactedArgumentsJson)
+		} else {
+			o.logger.Warn(
+				"Governance returned invalid redacted tool arguments. Keeping existing redacted arguments.",
+				"CorrelationId", turnCtx.CorrelationId,
+				"Tool", tool.Name(),
+			)
+		}
+	}
+
+	if governanceDecision.Action == core.GovernanceActionRedact && governanceDecision.ReplacementArgumentsJson != "" {
+		if !util.IsValidJson(governanceDecision.ReplacementArgumentsJson) {
+			var invalidReplacementMessage = "Governance returned invalid replacement tool arguments."
+			o.RecordImmediateGovernanceAudit(
+				tool,
+				session,
+				turnCtx,
+				persistedArgsJson,
+				invalidReplacementMessage,
+				governanceDecision)
+			return CreateImmediateResult(
+				toolName,
+				persistedArgsJson,
+				invalidReplacementMessage,
+				callId,
+				core.ToolResultStatusesBlocked,
+				core.ToolFailureCodesGovernanceDenied,
+				invalidReplacementMessage,
+				"Review the governance sidecar redaction response.",
+				governanceDecision), nil
+		}
+
+		argsJson = governanceDecision.ReplacementArgumentsJson
+		persistedArgsJson = o.redaction.Redact(governanceDecision.ReplacementArgumentsJson)
+		approvalDescriptor = ResolveToolActionDescriptor(tool, persistedArgsJson)
+		governanceDescriptor = toolGovernanceDescriptorCatalog.Resolve(tool.Name(), tool.Description(), approvalDescriptor)
+	}
+
+	governanceContext.ArgumentsJson = persistedArgsJson
+	governanceContext.ActionDescriptor = approvalDescriptor
+	governanceContext.Descriptor = governanceDescriptor
+
+	if governanceDecision.Action != core.GovernanceActionRequireApproval && !governanceDecision.Allowed {
+		var deniedByGovernance = governanceDecision.Reason
+		if deniedByGovernance == "" {
+			deniedByGovernance = "Tool invocation denied by governance policy."
+		}
+		governanceFailureCode := core.ToolFailureCodesGovernanceDenied
+		if governanceDecision.IsUnavailable {
+			governanceFailureCode = core.ToolFailureCodesGovernanceUnavailable
+		}
+
+		o.logger.Warn(
+			"Tool invocation denied by governance.",
+			"CorrelationId", turnCtx.CorrelationId,
+			"Tool", tool.Name,
+			"Reason", deniedByGovernance)
+		o.RecordImmediateGovernanceAudit(
+			tool,
+			session,
+			turnCtx,
+			persistedArgsJson,
+			deniedByGovernance,
+			governanceDecision)
+
+		nextStep := "Adjust the request or governance policy before retrying."
+		if governanceFailureCode == core.ToolFailureCodesGovernanceUnavailable {
+			nextStep = "Check governance sidecar availability or adjust fail-open/fail-closed policy before retrying."
+		}
+		return CreateImmediateResult(
+			toolName,
+			persistedArgsJson,
+			deniedByGovernance,
+			callId,
+			core.ToolResultStatusesBlocked,
+			governanceFailureCode,
+			deniedByGovernance,
+			nextStep,
+			governanceDecision), nil
+	}
+
+	var hookCtx = core.ToolHookContext{
+		SessionId:     session.Id,
+		ChannelId:     session.ChannelId,
+		SenderId:      session.SenderId,
+		CorrelationId: turnCtx.CorrelationId,
+		ToolName:      tool.Name(),
+		ArgumentsJson: persistedArgsJson,
+		IsStreaming:   isStreaming,
+	}
+
+	for _, hook := range o.hooks {
+		allowed := false
+		if ctxHook, ok := hook.(core.IToolHookWithContext); ok {
+			allowed = ctxHook.BeforeExecuteContext(ctx, hookCtx)
+		} else {
+			allowed = hook.BeforeExecute(ctx, tool.Name(), persistedArgsJson)
+		}
+
+		if !allowed {
+			var deniedByHook = fmt.Sprintf("Tool execution denied by hook: %s", hook.Name())
+			return CreateImmediateResult(
+				toolName,
+				persistedArgsJson,
+				deniedByHook,
+				callId,
+				core.ToolResultStatusesBlocked,
+				core.ToolFailureCodesToolFailed,
+				deniedByHook,
+				"",
+				governanceDecision), nil
+		}
+	}
+
+	var normalizedToolName = NormalizeApprovalToolName(tool.Name())
+	explicitlyConfiguredApproval := false
+	for _, item := range o.config.Tooling.ApprovalRequiredTools {
+		if NormalizeApprovalToolName(item) == normalizedToolName {
+			explicitlyConfiguredApproval = true
+			break
+		}
+	}
+
+	presetRequiresApproval := false
+	if preset != nil {
+		presetRequiresApproval = preset.ApprovalRequiredTools.Contains(tool.Name())
+	}
+
+	var defaultActionAwareApproval = o.requireToolApproval &&
+		core.ToolActionPolicyResolverInstance.SupportsActionAwareApproval(tool.Name()) &&
+		(approvalDescriptor.IsMutation || approvalDescriptor.RequiresApproval)
+	var listedApproval = o.requireToolApproval && (slices.Contains(slices.Collect(maps.Keys(o.approvalRequiredTools)), normalizedToolName) || presetRequiresApproval)
+	var governanceRequiresApproval = governanceDecision.Action == core.GovernanceActionRequireApproval
+
+	var innerApproval = defaultActionAwareApproval
+	if core.ToolActionPolicyResolverInstance.SupportsActionAwareApproval(tool.Name()) && !explicitlyConfiguredApproval && !presetRequiresApproval {
+		innerApproval = listedApproval || defaultActionAwareApproval
+	}
+	var requiresApproval = governanceRequiresApproval || approvalDescriptor.RequiresApproval || innerApproval
+	pevDecision, err := o.planExecuteVerify.EvaluateTool(ctx, &core.PlanExecuteVerifyToolContext{
+		Session:                  session,
+		CorrelationID:            turnCtx.CorrelationId,
+		CallID:                   callId,
+		ToolName:                 tool.Name(),
+		ArgumentsJSON:            persistedArgsJson,
+		ActionDescriptor:         approvalDescriptor,
+		GovernanceDescriptor:     governanceDescriptor,
+		ExistingApprovalRequired: requiresApproval,
+		IsStreaming:              isStreaming,
+		ToolCallCount:            toolCallCount,
+	})
+	if err != nil {
+		return nil, err
+	}
+	if BlocksPlanExecuteVerifyDecision(pevDecision.Decision) {
+		var blocked = fmt.Sprintf("Plan-Execute-Verify decision '%s' blocked tool execution: %s", pevDecision.Decision, pevDecision.Summary)
+		return CreateImmediateResult(
+			toolName,
+			persistedArgsJson,
+			o.redaction.Redact(blocked),
+			callId,
+			core.ToolResultStatusesBlocked,
+			core.ToolFailureCodesApprovalRequired,
+			blocked,
+			"Review the linked Plan-Execute-Verify run before retrying.",
+			governanceDecision), nil
+	}
+	requiresApproval = requiresApproval || pevDecision.RequiresApproval
+
+	if requiresApproval {
+		if approvalCallback != nil {
+			var approved = approvalCallback(ctx, tool.Name(), persistedArgsJson)
+			o.planExecuteVerify.RecordApprovalDecision(ctx, pevDecision.Run, approved)
+			if !approved {
+				var deniedResult = CreateImmediateResult(
+					toolName,
+					persistedArgsJson,
+					"Tool execution denied by user.",
+					callId,
+					core.ToolResultStatusesBlocked,
+					core.ToolFailureCodesApprovalRequired,
+					"Tool execution was denied by the reviewer.",
+					"Approve the tool request to allow this action.",
+					governanceDecision)
+				return deniedResult, nil
+			}
+		} else {
+			o.logger.Warn(
+				"Tool requires approval but no approval channel is available — denied",
+				"CorrelationId", turnCtx.CorrelationId,
+				"Tool", tool.Name())
+			var approvalMessage = fmt.Sprintf("Tool '%s' requires approval but this session has no approval channel — auto-denied. "+
+				"To enable this tool: connect through the browser chat at /chat (it supports interactive approvals) "+
+				"or set OpenClaw:Tooling:RequireToolApproval=false for trusted local sessions.", tool.Name())
+			var deniedResult = CreateImmediateResult(
+				toolName,
+				persistedArgsJson,
+				o.redaction.Redact(approvalMessage),
+				callId,
+				core.ToolResultStatusesBlocked,
+				core.ToolFailureCodesApprovalRequired,
+				approvalMessage,
+				"Use an approval-capable surface such as /chat, or disable approval requirements for trusted local sessions.",
+				governanceDecision)
+			o.planExecuteVerify.RecordApprovalDecision(ctx, pevDecision.Run, false)
+			return deniedResult, nil
+		}
+	}
+
+	if requiresApproval && approvalDescriptor.ApprovalFingerprint != "" {
+		var currentDescriptor = ResolveToolActionDescriptor(tool, persistedArgsJson)
+		if currentDescriptor.ApprovalFingerprint != approvalDescriptor.ApprovalFingerprint {
+			var message = fmt.Sprintf("Tool '%s' changed after approval was requested; execution blocked.", tool.Name())
+			return CreateImmediateResult(
+				toolName,
+				persistedArgsJson,
+				message,
+				callId,
+				core.ToolResultStatusesBlocked,
+				core.ToolFailureCodesApprovalRequired,
+				message,
+				"Preview the command again and request approval for the updated fingerprint.",
+				governanceDecision), nil
+		}
+	}
+
+	start := time.Now()
+
+	var (
+		result         string
+		resultStatus   = core.ToolResultStatusesCompleted
+		failureCode    string
+		failureMessage string
+		nextStep       string
+		toolFailed     = false
+		toolTimedOut   = false
+		persistedArgs  string
+		afterHookCtx   = hookCtx
+	)
+
+	// 1. Tool Execution Block
+	sub, err := o.sentinelSubstitution.Substitute(ctx, &core.SentinelSubstitutionContext{
+		ToolName:      tool.Name(),
+		ArgumentsJson: argsJson,
+		SessionId:     session.Id,
+		ChannelId:     session.ChannelId,
+		SenderId:      session.SenderId,
+		CorrelationId: turnCtx.ChannelId,
+	})
+
+	if err != nil {
+		toolFailed = true
+		fCode := ClassifyToolFailureCode(tool, err.Error())
+		failureCode = fCode
+		fMsg := err.Error()
+		failureMessage = fMsg
+		result = "Error: Tool execution failed."
+		resultStatus = core.ToolResultStatusesFailed
+	} else {
+		executionArgsJson := sub.ExecutionArgumentsJson
+		persistedArgs = o.redaction.Redact(sub.PersistedArgumentsJson)
+		afterHookCtx.ArgumentsJson = persistedArgs
+
+		// Handle cancellation / timeout / errors during execution
+		streamingTool, ok := tool.(core.IStreamingTool)
+		requestedSkill, requestedInput, ook := TryGetMetaInvokeArguments(executionArgsJson)
+		if onDelta != nil && ok {
+			result, err = o.ExecuteStreamingToolCollect(ctx, streamingTool, executionArgsJson, onDelta)
+		} else if o.metaInvokeExecutor != nil && tool.Name() == "meta_invoke" && ook {
+			result, err = o.metaInvokeExecutor(ctx, session, requestedSkill, &requestedInput)
+			if strings.Contains(result, "disabled by runtime policy") {
+				toolFailed = true
+				resultStatus = core.ToolResultStatusesBlocked
+				failureCode = core.ToolFailureCodesRuntimeCapabilityUnavailable
+				failureMessage = result
+				nextStep = "Use a non-meta skill or enable meta invocation in runtime policy."
+			}
+		} else {
+			result, err = o.ExecuteToolWithRouting(ctx, tool, executionArgsJson, session, turnCtx)
+		}
+
+		if err != nil {
+			// Check if caller/parent context was canceled
+			if errors.Is(ctx.Err(), context.Canceled) {
+				return nil, ctx.Err()
+			}
+
+			toolFailed = true
+			fMsg := err.Error()
+			failureMessage = fMsg
+
+			if errors.Is(err, context.DeadlineExceeded) { // Timeouts
+				result = "Error: Tool execution timed out."
+				toolTimedOut = true
+				resultStatus = core.ToolResultStatusesFailed
+				fCode := core.ToolFailureCodesTimeout
+				failureCode = fCode
+				step := "Retry the tool call or increase Tooling.ToolTimeoutSeconds."
+				nextStep = step
+
+				if o.metrics != nil {
+					o.metrics.IncrementToolTimeouts()
+				}
+			} else { // General Exceptions
+				fCode := ClassifyToolFailureCode(tool, err.Error())
+				failureCode = fCode
+
+				if fCode == core.ToolFailureCodesOperatorAuthRequired ||
+					fCode == core.ToolFailureCodesBrowserBackendMissing ||
+					fCode == core.ToolFailureCodesRuntimeCapabilityUnavailable {
+
+					if strings.HasPrefix(strings.ToLower(err.Error()), "error:") {
+						result = err.Error()
+					} else {
+						result = "Error: " + err.Error()
+					}
+					resultStatus = core.ToolResultStatusesBlocked
+					step := BuildFailureNextStep(tool.Name(), fCode)
+					nextStep = step
+				} else {
+					result = "Error: Tool execution failed."
+					resultStatus = core.ToolResultStatusesFailed
+				}
+
+				if o.metrics != nil {
+					o.metrics.IncrementToolFailures()
+				}
+			}
+		} else {
+			if o.metaInvokeExecutor != nil &&
+				tool.Name() == "meta_invoke" &&
+				strings.Contains(strings.ToLower(result), "disabled by runtime policy") {
+
+				toolFailed = true
+				resultStatus = core.ToolResultStatusesBlocked
+				fCode := core.ToolFailureCodesRuntimeCapabilityUnavailable
+				failureCode = fCode
+				fMsg := result
+				failureMessage = fMsg
+				step := "Use a non-meta skill or enable meta invocation in runtime policy."
+				nextStep = step
+			}
+		}
+	}
+
+	elapsed := time.Since(start)
+
+	// 2. Redaction
+	result = o.redaction.Redact(result)
+	if failureMessage != "" {
+		redactedMsg := o.redaction.Redact(failureMessage)
+		failureMessage = redactedMsg
+	}
+	if nextStep != "" {
+		redactedStep := o.redaction.Redact(nextStep)
+		nextStep = redactedStep
+	}
+
+	// 3. Interceptors Execution
+	if len(o.interceptors) > 0 {
+		// Sort interceptors by order
+		sortedInterceptors := make([]core.IToolResultInterceptor, len(o.interceptors))
+		copy(sortedInterceptors, o.interceptors)
+		sort.Slice(sortedInterceptors, func(i, j int) bool {
+			return sortedInterceptors[i].GetOrder() < sortedInterceptors[j].GetOrder()
+		})
+
+		exitCode := 0
+		if toolFailed {
+			exitCode = 1
+		}
+
+		for _, interceptor := range sortedInterceptors {
+			interceptedRes, err := interceptor.Intercept(ctx, core.ReductionContext{
+				ToolName:      tool.Name(),
+				ArgumentsJSON: persistedArgs,
+				RawOutput:     result,
+				IsError:       toolFailed,
+				ExitCode:      exitCode,
+			})
+			if err == nil {
+				result = interceptedRes
+			}
+		}
+	}
+
+	// 4. Metrics & Telemetry Record
+	if o.metrics != nil {
+		o.metrics.IncrementToolCalls()
+	}
+	core.ToolExecutionDuration.Record(ctx, float64(elapsed.Milliseconds()), metric.WithAttributes([]attribute.KeyValue{
+		attribute.String("tool.name", tool.Name()),
+		attribute.Bool("tool.success", !toolFailed),
+	}...))
+
+	turnCtx.RecordToolCall(elapsed, toolFailed, toolTimedOut)
+
+	if o.toolUsageTracker != nil {
+		o.toolUsageTracker.RecordToolCall(tool.Name(), elapsed, toolFailed, toolTimedOut)
+	}
+
+	argsBytes := len([]byte(persistedArgs))
+	resultBytes := len([]byte(result))
+
+	if governanceDecision != nil {
+		o.RecordGovernanceResult(
+			ctx,
+			governanceContext,
+			*governanceDecision,
+			resultStatus,
+			failureCode,
+			failureMessage,
+			toolFailed,
+			toolTimedOut,
+			elapsed,
+			resultBytes,
+		)
+	}
+
+	// 5. Audit Logging
+	if o.auditLog != nil {
+		o.auditLog.Record(&core.ToolAuditEntry{
+			TimestampUtc:           time.Now().UTC(),
+			ToolName:               tool.Name(),
+			SessionId:              session.Id,
+			ChannelId:              session.ChannelId,
+			SenderId:               session.SenderId,
+			CorrelationId:          turnCtx.CorrelationId,
+			DurationMs:             float64(elapsed.Milliseconds()),
+			Failed:                 toolFailed,
+			TimedOut:               toolTimedOut,
+			ArgumentsBytes:         argsBytes,
+			ResultBytes:            resultBytes,
+			GovernanceAllowed:      governanceDecision.Allowed,
+			GovernanceAction:       governanceDecision.Action.String(),
+			GovernanceReason:       governanceDecision.Reason,
+			GovernancePolicyId:     governanceDecision.PolicyId,
+			GovernanceRuleId:       governanceDecision.RuleId,
+			GovernanceTrustScore:   util.Deref(governanceDecision.TrustScore),
+			GovernanceEvaluationMs: util.Deref(governanceDecision.EvaluationMs),
+			GovernanceUnavailable:  governanceDecision.IsUnavailable,
+		})
+	}
+
+	// 6. Post Hooks Execution
+	for _, hook := range o.hooks {
+		var hookErr error
+		if ctxHook, ok := hook.(core.IToolHookWithContext); ok {
+			hookErr = ctxHook.AfterExecuteContext(ctx, afterHookCtx, result, elapsed, toolFailed)
+		} else {
+			hookErr = hook.AfterExecute(ctx, tool.Name(), persistedArgs, result, elapsed, toolFailed)
+		}
+
+		if hookErr != nil && o.logger != nil {
+			o.logger.Warn(fmt.Sprintf("[%s] Hook %s AfterExecute threw: %v", turnCtx.CorrelationId, hook.Name(), hookErr))
+		}
+	}
+
+	// 7. Complete Invocation & Build Return Payload
+	invocation := core.ToolInvocation{
+		CallId:                 callId,
+		ToolName:               toolName,
+		Arguments:              persistedArgs,
+		Result:                 result,
+		Duration:               elapsed,
+		ResultStatus:           resultStatus,
+		FailureCode:            failureCode,
+		FailureMessage:         failureMessage,
+		NextStep:               nextStep,
+		GovernanceAllowed:      &governanceDecision.Allowed,
+		GovernanceAction:       governanceDecision.Action.String(),
+		GovernanceReason:       governanceDecision.Reason,
+		GovernancePolicyId:     governanceDecision.PolicyId,
+		GovernanceRuleId:       governanceDecision.RuleId,
+		GovernanceTrustScore:   governanceDecision.TrustScore,
+		GovernanceEvaluationMs: governanceDecision.EvaluationMs,
+		GovernanceUnavailable:  &governanceDecision.IsUnavailable,
+	}
+
+	_, err = o.planExecuteVerify.CompleteTool(ctx, pevDecision.Run, invocation)
+	if err != nil {
+		if o.logger != nil {
+			o.logger.Warn(fmt.Sprintf("[%s] CompleteTool failed: %v", turnCtx.CorrelationId, err))
+		}
+	}
+
+	return &ToolExecutionResult{
+		Invocation:     invocation,
+		ResultText:     result,
+		ResultStatus:   resultStatus,
+		FailureCode:    failureCode,
+		FailureMessage: failureMessage,
+		NextStep:       nextStep,
+	}, nil
 }
