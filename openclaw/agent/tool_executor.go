@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/futugyou/extensions_ai/abstractions"
+	"github.com/futugyou/extensions_ai/abstractions/contents"
 	"github.com/futugyou/openclaw/core"
 	"github.com/futugyou/openclaw/util"
 	"go.opentelemetry.io/otel/attribute"
@@ -1516,4 +1517,50 @@ func (o *OpenClawToolExecutor) Execute(
 		FailureMessage: failureMessage,
 		NextStep:       nextStep,
 	}, nil
+}
+
+func (o *OpenClawToolExecutor) ExecuteWithFunctionCallContent(
+	ctx context.Context,
+	call contents.FunctionCallContent,
+	session core.Session,
+	turnCtx *core.TurnContext,
+	isStreaming bool,
+	approvalCallback ToolApprovalCallback,
+	onDelta func(string) error,
+	toolCallCount int) (*ToolExecutionResult, error) {
+	var argsJson = "{}"
+	if call.Arguments != nil {
+		if data, err := json.Marshal(call.Arguments); err == nil {
+			argsJson = string(data)
+		}
+	}
+	return o.Execute(ctx, call.Name, argsJson, call.CallId, session, turnCtx, isStreaming, approvalCallback, onDelta, toolCallCount)
+}
+
+func (o *OpenClawToolExecutor) ReplaceMcpTools(toAdd []core.ITool, toRemove []string) error {
+	if len(toAdd) == 0 || len(toRemove) == 0 {
+		return errors.New("toAdd and toRemove are required")
+	}
+
+	o.toolsMutationLock.Lock()
+	defer o.toolsMutationLock.Unlock()
+
+	nextTools := maps.Clone(o.toolsByName)
+	for _, name := range toRemove {
+		if name != "" {
+			delete(nextTools, name)
+		}
+
+		for _, tool := range toAdd {
+			nextTools[tool.Name()] = tool
+		}
+		o.toolsByName = nextTools
+
+	}
+	o.toolDeclarations = []abstractions.AITool{}
+	for _, tl := range nextTools {
+		o.toolDeclarations = append(o.toolDeclarations, CreateDeclaration(tl))
+	}
+
+	return nil
 }
