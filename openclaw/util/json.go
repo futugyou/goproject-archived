@@ -211,3 +211,12 @@ func TryGetValueFromRawMessage[T any](root map[string]json.RawMessage, name stri
 
 	return data, true
 }
+
+func IsValidJson(value string) bool {
+	var doc map[string]any
+	if err := json.Unmarshal([]byte(value), &doc); err != nil {
+		return false
+	}
+
+	return true
+}

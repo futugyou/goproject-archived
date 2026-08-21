@@ -276,7 +276,7 @@ type IToolPresetResolver interface {
 }
 
 type IToolSandbox interface {
-	Execute(ctx context.Context, request SandboxExecutionRequest) (SandboxResult, error)
+	Execute(ctx context.Context, request SandboxExecutionRequest) (*SandboxResult, error)
 }
 
 type IToolWithContext interface {

@@ -17,6 +17,8 @@ import (
 	"github.com/futugyou/extensions_ai/abstractions"
 	"github.com/futugyou/openclaw/core"
 	"github.com/futugyou/openclaw/util"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
 )
 
 type OpenClawToolExecutor struct {
@@ -715,4 +717,201 @@ func handleToolExecutorError(ctx context.Context, legacySandboxRoute bool, route
 		return o.ExecuteToolWithTimeout(ctx, tool, argsJson, session, turnCtx), nil
 	}
 	return "", err
+}
+
+func (o *OpenClawToolExecutor) ExecuteSandboxWithTimeout(ctx context.Context, request core.SandboxExecutionRequest) (*core.SandboxResult, error) {
+	if o.toolSandbox == nil {
+		return nil, fmt.Errorf("Error: Tool requires sandboxing but no sandbox provider is configured.")
+	}
+
+	if o.toolTimeout <= 0 {
+		return o.toolSandbox.Execute(ctx, request)
+	}
+
+	timeoutCtx, cancel := context.WithTimeout(ctx, o.toolTimeout)
+	defer cancel()
+
+	return o.toolSandbox.Execute(timeoutCtx, request)
+}
+
+func ResolveToolActionDescriptor(tool core.ITool, argsJson string) *core.ToolActionDescriptor {
+	descriptorProvider, ok := tool.(core.IToolActionDescriptorProvider)
+	if ok {
+		r, _ := descriptorProvider.ResolveActionDescriptor(argsJson)
+		return r
+	}
+	return core.ToolActionPolicyResolverInstance.Resolve(tool.Name(), argsJson)
+}
+
+func (o *OpenClawToolExecutor) ExecuteStreamingToolCollect(
+	ctx context.Context,
+	tool core.IStreamingTool,
+	argsJson string,
+	onDelta func(string) error,
+) (string, error) {
+	if o.toolTimeout > 0 {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, o.toolTimeout)
+		defer cancel()
+	}
+	MaxChars := 1_000_000
+	var sb = strings.Builder{}
+	chunks := []string{}
+
+	stm, err := tool.ExecuteStreaming(ctx, argsJson)
+	if err != nil {
+		return "", err
+	}
+
+Loop:
+	for {
+		select {
+		case chunk, ok := <-stm:
+			if !ok {
+				break Loop
+			}
+			chunks = append(chunks, chunk)
+			if sb.Len() < MaxChars {
+				var remaining = MaxChars - sb.Len()
+				if len(chunk) <= remaining {
+					sb.WriteString(chunk)
+				} else {
+					sb.WriteString(chunk[:remaining])
+				}
+			}
+		case <-ctx.Done():
+			return "", ctx.Err()
+		}
+	}
+
+	if sb.Len() >= MaxChars {
+		sb.WriteString("…")
+	}
+
+	var result = sb.String()
+	var redactedResult = o.redaction.Redact(result)
+	if redactedResult == result {
+		for _, chunk := range chunks {
+			onDelta(chunk)
+		}
+	} else if redactedResult != "" {
+		onDelta(redactedResult)
+	}
+
+	return result, nil
+}
+
+func (o *OpenClawToolExecutor) RecordImmediateGovernanceAudit(
+	tool core.ITool,
+	session core.Session,
+	turnCtx *core.TurnContext,
+	argumentsJson,
+	result string,
+	decision core.GovernanceDecision) {
+	if o.auditLog == nil {
+		return
+	}
+	o.auditLog.Record(&core.ToolAuditEntry{
+		TimestampUtc:           time.Now().UTC(),
+		ToolName:               tool.Name(),
+		SessionId:              session.Id,
+		ChannelId:              session.ChannelId,
+		SenderId:               session.SenderId,
+		CorrelationId:          turnCtx.CorrelationId,
+		Failed:                 true,
+		ArgumentsBytes:         len(argumentsJson),
+		ResultBytes:            len(result),
+		GovernanceAllowed:      decision.Allowed,
+		GovernanceAction:       decision.Action.String(),
+		GovernanceReason:       decision.Reason,
+		GovernancePolicyId:     decision.PolicyId,
+		GovernanceRuleId:       decision.RuleId,
+		GovernanceTrustScore:   util.Deref(decision.TrustScore),
+		GovernanceEvaluationMs: util.Deref(decision.EvaluationMs),
+		GovernanceUnavailable:  decision.IsUnavailable,
+	})
+}
+
+func (o *OpenClawToolExecutor) RecordGovernanceResult(
+	ctx context.Context,
+	toolContext core.ToolGovernanceContext,
+	decision core.GovernanceDecision,
+	resultStatus,
+	failureCode,
+	failureMessage string,
+	failed,
+	timedOut bool,
+	duration time.Duration,
+	resultBytes int,
+) error {
+	err := o.toolGovernance.RecordResult(
+		ctx,
+		toolContext,
+		decision,
+		core.ToolGovernanceExecutionResult{
+			ResultStatus:   resultStatus,
+			FailureCode:    failureCode,
+			FailureMessage: failureMessage,
+			Failed:         failed,
+			TimedOut:       timedOut,
+			DurationMs:     float64(duration.Milliseconds()),
+			ResultBytes:    resultBytes,
+		})
+
+	if err != nil {
+		o.logger.Warn("Governance result audit failed for tool",
+			"CorrelationId", toolContext.CorrelationId,
+			"Tool", toolContext.ToolName,
+		)
+	}
+
+	return err
+}
+
+func TryGetMetaInvokeArguments(argsJson string) (skill string, input string, ok bool) {
+	if argsJson == "" {
+		return
+	}
+
+	var doc map[string]any
+	if err := json.Unmarshal([]byte(argsJson), &doc); err != nil {
+		return
+	}
+
+	skill, ok = doc["skill"].(string)
+	if !ok || skill == "" {
+		return
+	}
+
+	input, ok = doc["input"].(string)
+	if !ok || input == "" {
+		return
+	}
+
+	ok = true
+	return
+}
+
+func ApplyGovernanceActivityTags(span trace.Span, decision core.GovernanceDecision) {
+
+	tags := []attribute.KeyValue{
+		attribute.Bool("tool.governance.allowed", decision.Allowed),
+		attribute.String("tool.governance.action", decision.Action.String()),
+		attribute.Bool("tool.governance.unavailable", decision.IsUnavailable),
+	}
+	if decision.PolicyId != "" {
+		tags = append(tags, attribute.String("tool.governance.policy_id", decision.PolicyId))
+	}
+	if decision.RuleId != "" {
+		tags = append(tags, attribute.String("tool.governance.rule_id", decision.RuleId))
+	}
+	if decision.TrustScore != nil {
+		tags = append(tags, attribute.Float64("tool.governance.trust_score", *decision.TrustScore))
+	}
+	if decision.EvaluationMs != nil {
+		tags = append(tags, attribute.Float64("tool.governance.evaluation_ms", *decision.EvaluationMs))
+	}
+	span.SetAttributes(
+		tags...,
+	)
 }
