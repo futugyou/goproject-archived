@@ -9,6 +9,14 @@ import (
 
 type GovernanceAction int
 
+func (g *GovernanceAction) String() string {
+	if gov, ok := governanceActionToString[*g]; ok {
+		return gov
+	}
+
+	return ""
+}
+
 const (
 	GovernanceActionAllow GovernanceAction = iota
 	GovernanceActionDeny

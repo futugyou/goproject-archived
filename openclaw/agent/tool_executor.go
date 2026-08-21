@@ -423,3 +423,296 @@ func (o *OpenClawToolExecutor) ExecuteToolWithTimeout(ctx context.Context, tool 
 
 	return InvokeTool(timeoutCtx, tool, argsJson, execContext)
 }
+
+func GetLocalExecutionUnavailableFailureCode(tool core.ITool) string {
+	if policy, ok := tool.(core.IToolLocalExecutionPolicy); ok && !policy.LocalExecutionSupported() {
+		return policy.LocalExecutionUnavailableFailureCode()
+	}
+
+	return core.ToolFailureCodesRuntimeCapabilityUnavailable
+}
+
+func GetLocalExecutionUnavailableMessage(tool core.ITool) string {
+	if policy, ok := tool.(core.IToolLocalExecutionPolicy); ok && !policy.LocalExecutionSupported() {
+		return policy.LocalExecutionUnavailableMessage()
+	}
+
+	return fmt.Sprintf("Error: Tool '%s' requires a configured execution backend or sandbox in this runtime. Local execution is unavailable.", tool.Name())
+}
+
+func CreateLocalExecutionUnavailableException(tool core.ITool) []string {
+	return []string{
+		GetLocalExecutionUnavailableMessage(tool),
+		GetLocalExecutionUnavailableFailureCode(tool),
+	}
+}
+
+func CreateImmediateResult(
+	toolName string,
+	argsJson string,
+	result string,
+	callId string,
+	resultStatus string,
+	failureCode string,
+	failureMessage string,
+	nextStep string,
+	governanceDecision *core.GovernanceDecision) *ToolExecutionResult {
+	var invocation = core.ToolInvocation{
+		CallId:         callId,
+		ToolName:       toolName,
+		Arguments:      argsJson,
+		Result:         result,
+		ResultStatus:   resultStatus,
+		FailureCode:    failureCode,
+		FailureMessage: failureMessage,
+		NextStep:       nextStep,
+	}
+
+	if governanceDecision != nil {
+		invocation.GovernanceAllowed = &governanceDecision.Allowed
+		invocation.GovernanceAction = governanceDecision.Action.String()
+		invocation.GovernanceReason = governanceDecision.Reason
+		invocation.GovernancePolicyId = governanceDecision.PolicyId
+		invocation.GovernanceRuleId = governanceDecision.RuleId
+		invocation.GovernanceTrustScore = governanceDecision.TrustScore
+		invocation.GovernanceEvaluationMs = governanceDecision.EvaluationMs
+		invocation.GovernanceUnavailable = &governanceDecision.IsUnavailable
+	}
+
+	return &ToolExecutionResult{
+		Invocation:     invocation,
+		ResultText:     result,
+		ResultStatus:   resultStatus,
+		FailureCode:    failureCode,
+		FailureMessage: failureMessage,
+		NextStep:       nextStep,
+	}
+}
+
+func (o *OpenClawToolExecutor) ExecuteSkillEntrypoint(
+	ctx context.Context,
+	skill core.SkillDefinition,
+	entrypoint string,
+	arguments []string,
+	workingDirectory string,
+	parseMode string,
+	stdin string) *ToolExecutionResult {
+	var script = ResolveSkillScript(skill, entrypoint)
+	if script == nil {
+		return CreateImmediateResult(
+			"skill_exec",
+			"{}",
+			fmt.Sprintf("Meta step skill_exec entrypoint '%s' was not found in skill '%s'.", entrypoint, skill.Name),
+			"",
+			core.ToolResultStatusesFailed,
+			"skill_exec_entrypoint_not_found",
+			fmt.Sprintf("Entrypoint '%s' was not found.", entrypoint), "", nil)
+	}
+
+	if !IsPathWithinSkillRoot(script.AbsolutePath, skill) || ResourcePathContainsReparsePoint(skill.Location, script.AbsolutePath) {
+		return CreateImmediateResult(
+			"skill_exec",
+			"{}",
+			fmt.Sprintf("Meta step skill_exec entrypoint '%s' was rejected because it resolves outside the skill root or through a reparse point.", entrypoint),
+			"",
+			core.ToolResultStatusesBlocked,
+			"skill_exec_entrypoint_denied",
+			fmt.Sprintf("Entrypoint '%s' failed skill root validation.", entrypoint),
+			"", nil)
+	}
+
+	command, commandArguments := ResolveScriptCommand(script.AbsolutePath)
+	allArguments := append(commandArguments, command)
+	resolvedWorkingDirectory, err := ResolveSkillWorkingDirectory(skill, workingDirectory)
+	if err != nil {
+		return CreateImmediateResult(
+			"skill_exec",
+			"{}",
+			fmt.Sprintf("Meta step skill_exec failed: %s", err.Error()),
+			"",
+			core.ToolResultStatusesFailed,
+			"skill_exec_failed",
+			err.Error(), "", nil)
+	}
+
+	executionResult, err := o.executionRouter.Execute(ctx, &core.ExecutionRequest{
+		ToolName:           "skill_exec",
+		BackendName:        o.config.Execution.DefaultBackend,
+		Command:            command,
+		Arguments:          allArguments,
+		StandardInput:      stdin,
+		WorkingDirectory:   resolvedWorkingDirectory,
+		Environment:        map[string]string{},
+		AllowLocalFallback: true,
+	}, "")
+	if err != nil {
+		return CreateImmediateResult(
+			"skill_exec",
+			"{}",
+			fmt.Sprintf("Meta step skill_exec failed: %s", err.Error()),
+			"",
+			core.ToolResultStatusesFailed,
+			"skill_exec_failed",
+			err.Error(), "", nil)
+	}
+
+	output, err := NormalizeSkillExecOutput(parseMode, executionResult.Stdout, executionResult.Stderr)
+	if err != nil {
+		return CreateImmediateResult(
+			"skill_exec",
+			"{}",
+			fmt.Sprintf("Meta step skill_exec failed: %s", err.Error()),
+			"",
+			core.ToolResultStatusesFailed,
+			"skill_exec_failed",
+			err.Error(), "", nil)
+	}
+	if executionResult.TimedOut {
+		return CreateImmediateResult(
+			"skill_exec",
+			"{}",
+			output,
+			"",
+			core.ToolResultStatusesFailed,
+			"step_timeout",
+			"skill_exec timed out.", "", nil)
+	}
+
+	if executionResult.ExitCode != 0 {
+		return CreateImmediateResult(
+			"skill_exec",
+			"{}",
+			output,
+			"",
+			core.ToolResultStatusesFailed,
+			"skill_exec_failed",
+			fmt.Sprintf("skill_exec exited with code %d.", executionResult.ExitCode),
+			"", nil)
+	}
+
+	return CreateImmediateResult("skill_exec", "{}", output, "", "", "", "", "", nil)
+}
+
+func IsLocalExecutionDisabled(tool core.ITool) bool {
+	if policy, ok := tool.(core.IToolLocalExecutionPolicy); ok && !policy.LocalExecutionSupported() {
+		return true
+	}
+	return false
+}
+
+func (o *OpenClawToolExecutor) ExecuteToolWithRouting(
+	ctx context.Context,
+	tool core.ITool,
+	argsJson string,
+	session core.Session,
+	turnCtx *core.TurnContext,
+) (string, error) {
+	route, template, legacySandboxRoute, sandboxMode, ok := o.executionRouter.TryResolveRoute(tool)
+	if !ok {
+		if IsLocalExecutionDisabled(tool) {
+			return "", errors.New(strings.Join(CreateLocalExecutionUnavailableException(tool), "\n"))
+		}
+
+		return o.ExecuteToolWithTimeout(ctx, tool, argsJson, session, turnCtx), nil
+	}
+
+	sandboxCapableTool, ok := tool.(core.ISandboxCapableTool)
+	if !ok {
+		return o.ExecuteToolWithTimeout(ctx, tool, argsJson, session, turnCtx), nil
+	}
+
+	backendName := o.config.Execution.DefaultBackend
+	fallbackBackend := ""
+	requireWorkspace := false
+	if route != nil {
+		requireWorkspace = route.RequireWorkspace
+		if route.Backend != "" {
+			backendName = route.Backend
+		}
+		if route.FallbackBackend != "" {
+			fallbackBackend = route.FallbackBackend
+		}
+	}
+
+	if sandboxMode == core.ToolSandboxMode_Require && !legacySandboxRoute && route == nil {
+		return "", fmt.Errorf("Error: Tool '%s' requires sandboxing but no sandbox provider is configured.", tool.Name())
+	}
+
+	if backendName == "local" && IsLocalExecutionDisabled(tool) {
+		return "", errors.New(strings.Join(CreateLocalExecutionUnavailableException(tool), "\n"))
+	}
+
+	if backendName == "local" && !legacySandboxRoute {
+		return o.ExecuteToolWithTimeout(ctx, tool, argsJson, session, turnCtx), nil
+	}
+
+	if o.executionRouter.RequiresWorkspace(backendName) && o.config.Tooling.WorkspaceRoot != "" {
+		return "", fmt.Errorf("Error: Tool '%s' is configured to use execution backend '%s' but Tooling.WorkspaceRoot is not set.", tool.Name(), backendName)
+	}
+
+	if legacySandboxRoute && template != nil && *template != "" && fallbackBackend != "" {
+		return "", fmt.Errorf("Error: Tool '%s' requires sandboxing but no sandbox template is configured.", tool.Name())
+	}
+
+	if legacySandboxRoute && o.toolSandbox == nil {
+		return "", fmt.Errorf("Error: Tool '%s' requires sandboxing but no sandbox provider is configured.", tool.Name())
+	}
+
+	sandboxRequest, err := sandboxCapableTool.CreateSandboxRequest(argsJson)
+	if err != nil {
+		return handleToolExecutorError(ctx, legacySandboxRoute, route, tool, backendName, sandboxMode, o, argsJson, session, turnCtx, err)
+	}
+	if sandboxRequest.LeaseKey == "" {
+		sandboxRequest.LeaseKey = fmt.Sprintf("%s:%s", session.Id, tool.Name())
+	}
+
+	if sandboxRequest.Template == "" && template != nil {
+		sandboxRequest.Template = *template
+	}
+
+	sandboxRequest.TimeToLiveSeconds = core.ResolveTimeToLiveSeconds(
+		o.config,
+		tool.Name(),
+		&sandboxRequest.TimeToLiveSeconds)
+
+	executionResult, err := o.executionRouter.Execute(ctx, &core.ExecutionRequest{
+		ToolName:           tool.Name(),
+		BackendName:        backendName,
+		Command:            sandboxRequest.Command,
+		Arguments:          sandboxRequest.Arguments,
+		LeaseKey:           sandboxRequest.LeaseKey,
+		Environment:        map[string]string{},
+		WorkingDirectory:   sandboxRequest.WorkingDirectory,
+		Template:           sandboxRequest.Template,
+		TimeToLiveSeconds:  &sandboxRequest.TimeToLiveSeconds,
+		RequireWorkspace:   requireWorkspace,
+		AllowLocalFallback: !IsLocalExecutionDisabled(tool),
+	}, fallbackBackend)
+	if err != nil {
+		return handleToolExecutorError(ctx, legacySandboxRoute, route, tool, backendName, sandboxMode, o, argsJson, session, turnCtx, err)
+	}
+
+	var sandboxResult = core.SandboxResult{
+		ExitCode: executionResult.ExitCode,
+		Stdout:   executionResult.Stdout,
+		Stderr:   executionResult.Stderr,
+	}
+	return sandboxCapableTool.FormatSandboxResult(argsJson, sandboxResult), nil
+}
+
+func handleToolExecutorError(ctx context.Context, legacySandboxRoute bool, route *core.ExecutionToolRouteConfig, tool core.ITool, backendName string, sandboxMode core.ToolSandboxMode, o *OpenClawToolExecutor, argsJson string, session core.Session, turnCtx *core.TurnContext, err error) (string, error) {
+	if legacySandboxRoute || (route != nil && route.FallbackBackend != "") {
+		if IsLocalExecutionDisabled(tool) {
+			if legacySandboxRoute {
+				return "", fmt.Errorf("Error: Tool '%s' requires sandboxing but the sandbox provider is unavailable.", tool.Name())
+			} else {
+				return "", fmt.Errorf("Error: Tool '%s' requires execution backend '%s' but the provider is unavailable.", tool.Name(), backendName)
+			}
+		}
+		if sandboxMode == core.ToolSandboxMode_Require {
+			return "", fmt.Errorf("Error: Tool '%s' requires sandboxing but the sandbox provider is unavailable.", tool.Name())
+		}
+		return o.ExecuteToolWithTimeout(ctx, tool, argsJson, session, turnCtx), nil
+	}
+	return "", err
+}
