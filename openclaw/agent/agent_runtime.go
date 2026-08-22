@@ -2,16 +2,22 @@ package agent
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"math"
+	"net/url"
 	"os"
+	"regexp"
+	"slices"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/futugyou/extensions_ai/abstractions/chatcompletion"
+	"github.com/futugyou/extensions_ai/abstractions/contents"
 	"github.com/futugyou/openclaw/circuitbreaker"
 	"github.com/futugyou/openclaw/core"
+	"github.com/futugyou/openclaw/util"
 )
 
 type AgentRuntime struct {
@@ -350,5 +356,218 @@ func (a *AgentRuntime) ExecuteMetaSkill(ctx context.Context, session core.Sessio
 func (a *AgentRuntime) ApplySkills(skills []core.SkillDefinition) {
 	a.skillGate.Lock()
 	defer a.skillGate.Unlock()
-	// Skill application logic placeholder
+
+	promptVisibleSkills := skills
+
+	if !a.metaSkillsEnabled {
+		promptVisibleSkills = []core.SkillDefinition{}
+		for _, skill := range skills {
+			if skill.Kind != core.SkillKind_Meta {
+				promptVisibleSkills = append(promptVisibleSkills, skill)
+			}
+		}
+	}
+
+	// Progressive disclosure: only the metadata index lives in the system prompt.
+	// The full SKILL.md body for any single skill is fetched on demand via the
+	// `load_skill` tool, which reads from LoadedSkills (this same snapshot).
+	instructionPrompt := ""
+	if a.skillsConfig != nil {
+		instructionPrompt = a.skillsConfig.InstructionPrompt
+	}
+	var skillSection = core.SkillPromptBuilderInstance.BuildIndex(promptVisibleSkills, instructionPrompt)
+	var basePrompt = BuildBaseSystemPrompt(a.requireToolApproval)
+	a.skillPromptLength = len(skillSection)
+	if len(skillSection) == 0 {
+		a.systemPrompt = basePrompt
+	} else {
+		a.systemPrompt = basePrompt + "\n" + skillSection
+	}
+
+	a.loadedSkills = skills
+	names := []string{}
+	for _, skill := range skills {
+		names = append(names, skill.Name)
+	}
+
+	slices.Sort(names)
+	a.loadedSkillNames = names
+}
+
+func (a *AgentRuntime) AppendContractSnapshot(session core.Session, status string) {
+	if session.ContractPolicy == nil {
+		return
+	}
+
+	if a.appendContractSnapshot != nil {
+		a.appendContractSnapshot(session, status)
+	}
+}
+
+func (a *AgentRuntime) TryRejectContractBudget(session core.Session) (message string, ok bool) {
+	if session.ContractPolicy == nil {
+		return
+	}
+
+	if a.isContractRuntimeBudgetExceeded != nil && a.isContractRuntimeBudgetExceeded(session) {
+		message = "This contract has expired and can no longer execute new work."
+		ok = true
+		return
+	}
+
+	if a.isContractTokenBudgetExceeded != nil && a.isContractTokenBudgetExceeded(session) {
+		message = "This contract has reached its token budget and cannot continue."
+		ok = true
+		return
+	}
+
+	return
+}
+
+func (a *AgentRuntime) CircuitBreakerState() circuitbreaker.CircuitState {
+	var state circuitbreaker.CircuitState = 0
+	if a.llmExecutionService != nil {
+		state = a.llmExecutionService.DefaultCircuitState()
+	}
+	if state == 0 {
+		return a.circuitBreaker.State()
+	}
+
+	return state
+}
+
+func (a *AgentRuntime) LogTurnComplete(turnCtx *core.TurnContext) {
+	if a.metrics != nil {
+		a.metrics.SetCircuitBreakerState(int32(a.CircuitBreakerState()))
+	}
+
+	a.logger.Info("Turn complete", "CorrelationId", turnCtx.CorrelationId, "Summary", turnCtx.String())
+}
+
+func (a *AgentRuntime) TryRejectEstimatedBudget(session core.Session, estimate LlmExecutionEstimate) (message string, ok bool) {
+	if !a.estimateTokenBudgetAdmission || a.sessionTokenBudget <= 0 {
+		return
+	}
+
+	var remaining = a.sessionTokenBudget - session.GetTotalTokens()
+	if remaining <= 0 || estimate.EstimatedInputTokens < remaining {
+		return
+	}
+
+	message =
+		fmt.Sprintf("This session is close to its token budget. Estimated prompt tokens (%d) ", estimate.EstimatedInputTokens) +
+			fmt.Sprintf("meet or exceed the remaining budget (%d). Please start a new conversation.", remaining)
+	if a.metrics != nil {
+		a.metrics.IncrementEstimatedTokenAdmissionRejects()
+	}
+	a.logger.Info(
+		"Estimated token admission control rejected session",
+		"SessionId", session.Id,
+		"EstimatedInputTokens", estimate.EstimatedInputTokens,
+		"RemainingBudget", remaining)
+
+	ok = true
+	return
+}
+
+func (a *AgentRuntime) TrimHistory(session *core.Session) {
+	if len(session.History) < a.maxHistoryTurns {
+		return
+	}
+
+	var toRemove = len(session.History) - a.maxHistoryTurns
+	session.History = session.History[toRemove:]
+}
+
+func BuildTurnContents(content string) []contents.IAIContent {
+	markers, remainingText := core.MediaMarkerExtract(content)
+	aicontents := []contents.IAIContent{}
+	if remainingText != "" {
+		aicontents = append(aicontents, contents.NewTextContent(remainingText))
+	}
+
+	for _, marker := range markers {
+		mediaType := "application/octet-stream"
+
+		switch marker.Kind {
+		case core.MediaMarkerImageUrl, core.MediaMarkerImagePath, core.MediaMarkerTelegramImageFileId:
+			mediaType = "image/*"
+		case core.MediaMarkerAudioUrl, core.MediaMarkerTelegramAudioFileId:
+			mediaType = "audio/*"
+		case core.MediaMarkerVideoUrl, core.MediaMarkerTelegramVideoFileId:
+			mediaType = "video/*"
+		}
+
+		switch marker.Kind {
+		case core.MediaMarkerImagePath, core.MediaMarkerFilePath:
+			aicontents = append(aicontents, contents.NewUriContent(marker.Value, mediaType))
+		default:
+
+			baseURL, err := url.Parse(marker.Value)
+			if err == nil && (baseURL != nil && (baseURL.IsAbs())) {
+				aicontents = append(aicontents, contents.NewUriContent(marker.Value, mediaType))
+			} else {
+				aicontents = append(aicontents, contents.NewTextContent(marker.Value))
+			}
+		}
+
+	}
+
+	if len(aicontents) == 0 {
+		aicontents = append(aicontents, contents.NewTextContent(content))
+	}
+	return aicontents
+}
+
+func CombineSystemPromptSuffixes(first, second string) string {
+	if first == "" {
+		return second
+	}
+	if second == "" {
+		return first
+	}
+
+	return strings.TrimSpace(first) + "\n" + strings.TrimSpace(second)
+}
+
+func RewriteMetaTemplateJson(withJson, rootInput string, outputs map[string]string) string {
+	var resolved = ResolveMetaTemplate(withJson, &rootInput, outputs)
+	if util.IsValidJson(resolved) {
+		return resolved
+	}
+	return withJson
+}
+
+var metaTemplateRegex = regexp.MustCompile(`{{\s*([^{}]+?)\s*}}`)
+
+func ResolveMetaTemplate(template string, rootInput *string, outputs map[string]string) string {
+	return metaTemplateRegex.ReplaceAllStringFunc(template, func(match string) string {
+		// 提取分组捕获的内容（即 token）
+		submatches := metaTemplateRegex.FindStringSubmatch(match)
+		if len(submatches) < 2 {
+			return ""
+		}
+		token := strings.TrimSpace(submatches[1])
+
+		// 判断 input 匹配（忽略大小写）
+		if strings.EqualFold(token, "input") || strings.EqualFold(token, "inputs.user_message") {
+			if rootInput != nil {
+				return *rootInput
+			}
+			return ""
+		}
+
+		// 判断 outputs. 前缀匹配（忽略大小写）
+		outputPrefix := "outputs."
+		if len(token) >= len(outputPrefix) && strings.EqualFold(token[:len(outputPrefix)], outputPrefix) {
+			key := token[len(outputPrefix):]
+			if strings.TrimSpace(key) != "" {
+				if val, ok := outputs[key]; ok {
+					return val
+				}
+			}
+		}
+
+		return ""
+	})
 }

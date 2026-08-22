@@ -136,3 +136,11 @@ func ApplyResponseMode(prompt string, responseMode string) string {
 
 	return prompt + "\n\n" + conciseOperationalInstructions
 }
+
+type EstimatedBudgetAdmissionException struct {
+	Message string
+}
+
+func (e *EstimatedBudgetAdmissionException) Error() string {
+	return e.Message
+}
