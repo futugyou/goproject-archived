@@ -14,6 +14,27 @@ type ToolExecutionResult struct {
 	NextStep       string
 }
 
+func CreateMetaStepFailedToolResult(
+	toolName,
+	arguments,
+	failureCode,
+	failureMessage string) *ToolExecutionResult {
+	return &ToolExecutionResult{
+		Invocation: core.ToolInvocation{
+			ToolName:       toolName,
+			Arguments:      arguments,
+			Result:         failureMessage,
+			ResultStatus:   "failed",
+			FailureCode:    failureCode,
+			FailureMessage: failureMessage,
+		},
+		ResultText:     failureMessage,
+		ResultStatus:   "failed",
+		FailureCode:    failureCode,
+		FailureMessage: failureMessage,
+	}
+}
+
 func (t *ToolExecutionResult) ToFunctionResultContent(callId string) *contents.FunctionResultContent {
 	return contents.NewFunctionResultContent(callId, t.ResultText)
 }

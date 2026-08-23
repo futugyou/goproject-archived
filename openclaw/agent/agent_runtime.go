@@ -2,6 +2,7 @@ package agent
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -883,4 +884,195 @@ func SanitizeJsonOutput(output string) string {
 	}
 
 	return trimmed
+}
+
+func TryValidateMetaStepOutput(
+	step core.MetaSkillStepDefinition,
+	output string) (failureCode string, ok bool) {
+	if len(step.OutputChoices) > 0 {
+		var candidate = strings.TrimSpace(output)
+		if !slices.Contains(step.OutputChoices, candidate) {
+			failureCode = "invalid_output_choice"
+			return
+		}
+	}
+
+	var contract = step.OutputContract
+	if contract == nil || strings.TrimSpace(contract.Format) == "" || contract.Format == "text" {
+		ok = true
+		return
+	}
+
+	if contract.Format != "json" {
+		failureCode = "output_contract_failed"
+		return
+	}
+
+	var sanitized = SanitizeJsonOutput(output)
+	var doc map[string]any
+
+	if err := json.Unmarshal([]byte(sanitized), &doc); err != nil {
+		failureCode = "output_contract_failed"
+		return
+	}
+
+	for _, requiredProperty := range contract.RequiredProperties {
+		requiredProperty = strings.TrimSpace(requiredProperty)
+		if requiredProperty == "" {
+			continue
+		}
+
+		if _, has := doc[requiredProperty]; !has {
+			failureCode = "output_contract_failed"
+			return
+		}
+	}
+
+	ok = true
+	return
+}
+
+func TryActivateFailureBranch(
+	step core.MetaSkillStepDefinition,
+	stepById map[string]core.MetaSkillStepDefinition,
+	pending map[string]struct{},
+	blocked map[string]struct{},
+	failureAliases map[string]string) bool {
+	var fallbackStepId = strings.TrimSpace(step.OnFailure)
+	if fallbackStepId == "" {
+		return false
+	}
+
+	if _, ok := stepById[fallbackStepId]; !ok {
+		return false
+	}
+
+	delete(pending, step.Id)
+	delete(blocked, fallbackStepId)
+
+	pending[fallbackStepId] = struct{}{}
+	failureAliases[fallbackStepId] = step.Id
+	return true
+}
+
+func CompleteMetaStepOutput(
+	step core.MetaSkillStepDefinition,
+	output string,
+	pending map[string]struct{},
+	outputs map[string]string,
+	failureAliases map[string]string) {
+	outputs[step.Id] = output
+	if primaryStepId, ok := failureAliases[step.Id]; ok {
+		outputs[primaryStepId] = output
+	}
+
+	delete(pending, step.Id)
+}
+
+func CreateMetaStepTimeout(ctx context.Context, step core.MetaSkillStepDefinition) (context.Context, context.CancelFunc) {
+	if step.TimeoutSeconds != nil && *step.TimeoutSeconds <= 0 {
+		return ctx, nil
+	}
+
+	return context.WithTimeout(ctx, time.Second*time.Duration(*step.TimeoutSeconds))
+}
+
+func ExecuteMetaLlmStepWithPolicy(
+	ctx context.Context,
+	step core.MetaSkillStepDefinition,
+	executor func(context.Context) (*LlmExecutionResult, error),
+) (*MetaLlmStepExecutionResult, error) {
+	var maxAttempts = max(1, step.Retry.MaxAttempts)
+	lastFailureCode := ""
+	lastFailureMessage := ""
+
+	for attempt := range maxAttempts {
+
+		timeoutCtx, cancel := CreateMetaStepTimeout(ctx, step)
+		if cancel != nil {
+			defer cancel()
+		}
+
+		result, err := executor(timeoutCtx)
+		if result != nil {
+			return SucceededMetaLlmStepExecutionResult(*result), nil
+		}
+
+		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+			return nil, err
+		}
+
+		if err != nil {
+			lastFailureCode = "step_timeout"
+			lastFailureMessage = fmt.Sprintf("Meta step '%s' failed: %s", step.Id, err.Error())
+		}
+
+		if attempt == maxAttempts {
+			if lastFailureCode == "" {
+				lastFailureCode = "llm_failed"
+			}
+			if lastFailureMessage == "" {
+				lastFailureMessage = fmt.Sprintf("Meta step '%s' failed before producing a response.", step.Id)
+			}
+
+			return FaileddMetaLlmStepExecutionResult(lastFailureCode, lastFailureMessage), nil
+		}
+
+		if attempt < maxAttempts && step.Retry.BackoffMs > 0 {
+			select {
+			case <-time.After(time.Duration(step.Retry.BackoffMs) * time.Millisecond):
+			case <-timeoutCtx.Done():
+			}
+		}
+	}
+
+	return FaileddMetaLlmStepExecutionResult("llm_failed", fmt.Sprintf("Meta step '%s' failed before producing a response.", step.Id)), nil
+}
+
+func (a *AgentRuntime) ExecuteMetaSkillExecStepWithPolicy(
+	ctx context.Context,
+	delegatedSkill core.SkillDefinition,
+	step core.MetaSkillStepDefinition,
+	arguments []string,
+	workingDirectory,
+	stdin string) (*ToolExecutionResult, error) {
+	var maxAttempts = max(1, step.Retry.MaxAttempts)
+	var lastResult *ToolExecutionResult
+
+	for attempt := range maxAttempts {
+		effectiveCtx, cancel := CreateMetaStepTimeout(ctx, step)
+		if cancel != nil {
+			defer cancel()
+		}
+
+		mode := "text"
+		if step.SkillExecParseMode != "" {
+			mode = step.SkillExecParseMode
+		}
+		lastResult = a.toolExecutor.ExecuteSkillEntrypoint(
+			effectiveCtx,
+			delegatedSkill,
+			step.SkillExecEntrypoint,
+			arguments,
+			workingDirectory,
+			mode,
+			stdin,
+		)
+		if (lastResult != nil && lastResult.ResultStatus == "completed") || attempt == maxAttempts {
+			return lastResult, nil
+		}
+
+		if step.Retry.BackoffMs > 0 {
+			select {
+			case <-time.After(time.Duration(step.Retry.BackoffMs) * time.Millisecond):
+			case <-effectiveCtx.Done():
+			}
+		}
+	}
+
+	if lastResult != nil {
+		return lastResult, nil
+	}
+
+	return CreateMetaStepFailedToolResult("skill_exec", "{}", "step_failed", fmt.Sprintf("Meta step '%s' failed before producing a result.", step.Id)), nil
 }
