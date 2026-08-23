@@ -59,6 +59,33 @@ func ParseStringArray(root map[string]any, propertyName string) []string {
 	return result
 }
 
+func TryGetStringArray(args map[string]any, key string) []string {
+	values := []string{}
+	value, ok := args[key]
+	if !ok {
+		return values
+	}
+
+	arr, ok := value.([]any)
+	if !ok {
+		return []string{}
+	}
+
+	result := make([]string, 0, len(arr))
+	for _, item := range arr {
+		var strVal string
+		switch v := item.(type) {
+		case string:
+			strVal = strings.TrimSpace(v)
+		}
+
+		if strVal != "" {
+			result = append(result, strVal)
+		}
+	}
+	return result
+}
+
 func TryGetObject(element any) (map[string]any, bool) {
 	if element == nil {
 		return nil, false
@@ -219,4 +246,18 @@ func IsValidJson(value string) bool {
 	}
 
 	return true
+}
+
+func DeserializeMap(withJson string) map[string]any {
+	withJson = strings.TrimSpace(withJson)
+	if withJson == "" {
+		return map[string]any{}
+	}
+
+	var parsed map[string]any
+	if err := json.Unmarshal([]byte(withJson), &parsed); err != nil {
+		return map[string]any{}
+	}
+
+	return parsed
 }

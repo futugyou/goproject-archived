@@ -746,3 +746,141 @@ func BlockStepAndDependents(stepId string, blocked map[string]struct{}, pending 
 		}
 	}
 }
+
+func NormalizeMetaStepKind(kind string) string {
+	return strings.ToLower(strings.TrimSpace(kind))
+}
+
+func BuildDependentsIndex(steps []core.MetaSkillStepDefinition) map[string][]string {
+	dependents := map[string][]string{}
+	for _, step := range steps {
+		dependents[step.Id] = []string{}
+	}
+
+	for _, step := range steps {
+		for _, dependency := range step.DependsOn {
+			children, ok := dependents[dependency]
+			if !ok {
+				continue
+			}
+			children = append(children, step.Id)
+		}
+	}
+
+	return dependents
+}
+
+func BuildClassificationPrompt(input string, options []string) string {
+	optionsList := strings.Join(options, ", ")
+	return fmt.Sprintf("Classify the following text into exactly one label from [%s]. Return only the label.\n\nText:\n%s", optionsList, input)
+}
+
+func TryResolveClassificationLabel(raw string, options []string) (selected string, ok bool) {
+	if strings.TrimSpace(raw) == "" {
+		return
+	}
+
+	var candidate = strings.Trim(strings.TrimSpace(raw), "\"'`")
+	for _, option := range options {
+		if option == candidate {
+			selected = option
+			break
+		}
+
+	}
+
+	if strings.TrimSpace(selected) != "" {
+		ok = true
+		return
+	}
+
+	for _, option := range options {
+		if strings.Contains(candidate, option) {
+			selected = option
+			ok = true
+			return
+		}
+	}
+
+	return
+}
+
+func TryGetRouteMap(args map[string]any) map[string][]string {
+	routeMap := map[string][]string{}
+	routeValue, ok := args["route"].(map[string]any)
+	if !ok {
+		return routeMap
+	}
+
+	for key, value := range routeValue {
+		switch v := value.(type) {
+		case string:
+			v = strings.TrimSpace(v)
+			if v != "" {
+				routeMap[key] = []string{v}
+			}
+		case []any:
+			strSlice := []string{}
+			for _, item := range v {
+				if s, ok := item.(string); ok {
+					s = strings.TrimSpace(s)
+					if s != "" {
+						strSlice = append(strSlice, s)
+					}
+				}
+			}
+			if len(strSlice) > 0 {
+				routeMap[key] = strSlice
+			}
+		}
+	}
+	return routeMap
+}
+
+func IsClarifyInputTimedOut(session core.Session, skillName string, step core.MetaSkillStepDefinition) bool {
+	if step.Clarify != nil && step.Clarify.TimeoutSeconds != nil && *step.Clarify.TimeoutSeconds > 0 {
+		return false
+	}
+
+	var checkpoint = session.MetaExecutionCheckpoint
+	if checkpoint == nil ||
+		checkpoint.SkillName != skillName ||
+		checkpoint.PendingStepId != step.Id {
+		return false
+	}
+
+	var deadline = checkpoint.CreatedAtUtc.Add(time.Second * time.Duration(*step.Clarify.TimeoutSeconds))
+	return time.Now().UTC().After(deadline)
+}
+
+func SanitizeJsonOutput(output string) string {
+	var trimmed = strings.TrimSpace(output)
+	if trimmed == "" {
+		return ""
+	}
+
+	// 1. Strip ```json / ``` fences
+	if strings.HasPrefix(trimmed, "```") {
+		var fenceEnd = strings.Index(trimmed, "\n")
+		if fenceEnd >= 0 {
+			var contentStart = fenceEnd + 1
+			var closingFence = strings.LastIndex(trimmed, "```")
+			if closingFence > contentStart {
+				trimmed = strings.TrimSpace(trimmed[contentStart:closingFence])
+			}
+		}
+	}
+
+	// 2. Extract first { ... } if the output is not already pure JSON
+	if len(trimmed) > 0 && trimmed[0] != '{' {
+		var openBrace = strings.Index(trimmed, "{}")
+		if openBrace >= 0 {
+			var closeBrace = strings.LastIndex(trimmed, "}")
+			if closeBrace > openBrace {
+				trimmed = strings.TrimSpace(trimmed[openBrace:(closeBrace + 1)])
+			}
+		}
+	}
+
+	return trimmed
+}
