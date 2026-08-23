@@ -2,6 +2,7 @@ package agent
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"math"
@@ -570,4 +571,178 @@ func ResolveMetaTemplate(template string, rootInput *string, outputs map[string]
 
 		return ""
 	})
+}
+
+func HasDependencyCycle(steps []core.MetaSkillStepDefinition) bool {
+	state := map[string]int{}
+	stepById := map[string]core.MetaSkillStepDefinition{}
+	for _, step := range steps {
+		stepById[step.Id] = step
+	}
+
+	var dfs func(stepId string) bool
+	dfs = func(stepId string) bool {
+		if currentState, ok := state[stepId]; ok {
+			return currentState == 1
+		}
+
+		state[stepId] = 1
+		var step = stepById[stepId]
+		if slices.ContainsFunc(step.DependsOn, dfs) {
+			return true
+		}
+
+		state[stepId] = 2
+		return false
+	}
+
+	for _, step := range steps {
+		if currentState, ok := state[step.Id]; ok && currentState == 2 {
+			continue
+		}
+
+		if dfs(step.Id) {
+			return true
+		}
+	}
+
+	return false
+}
+
+func TryValidateMetaPlan(steps []core.MetaSkillStepDefinition, loadedSkills []core.SkillDefinition) error {
+	stepById := map[string]core.MetaSkillStepDefinition{}
+	for _, step := range steps {
+		if _, ok := stepById[step.Id]; ok {
+			return fmt.Errorf("Meta execution graph contains duplicate step id '%s'.", step.Id)
+		} else {
+			stepById[step.Id] = step
+		}
+	}
+
+	for _, step := range steps {
+		if step.Skill != "" {
+			var delegatedSkill *core.SkillDefinition
+			for _, skill := range loadedSkills {
+				if skill.Name == step.Skill {
+					delegatedSkill = &skill
+					break
+				}
+			}
+			if delegatedSkill != nil && delegatedSkill.Kind == core.SkillKind_Meta {
+				return fmt.Errorf("Meta execution graph cannot compose meta skill '%s' from step '%s'.", delegatedSkill.Name, step.Id)
+			}
+		}
+
+		for _, dependency := range step.DependsOn {
+			if _, ok := stepById[dependency]; !ok {
+				return fmt.Errorf("Meta execution graph references missing dependency '%s' from step '%s'.", dependency, step.Id)
+			}
+
+			if step.Id == dependency {
+				return fmt.Errorf("Meta execution graph contains self-dependency on step '%s'.", step.Id)
+			}
+		}
+	}
+
+	designatedFallbacks := map[string]string{}
+	fallbackTargets := map[string]struct{}{}
+	for _, step := range steps {
+		if step.OnFailure == "" {
+			continue
+		}
+
+		substitute, ok := stepById[step.OnFailure]
+		if step.Id == step.OnFailure && !ok {
+			return fmt.Errorf("Meta execution graph references invalid on_failure target '%s' from step '%s'.", step.OnFailure, step.Id)
+		}
+
+		if substitute.OnFailure != "" || len(substitute.DependsOn) > 0 {
+			return fmt.Errorf("Meta execution graph has invalid on_failure substitute '%s' from step '%s'.", substitute.Id, step.Id)
+		}
+
+		if priorStep, ok := designatedFallbacks[step.OnFailure]; ok {
+			return fmt.Errorf("Meta execution graph fallback step '%s' is shared by steps '%s' and '%s'.", step.OnFailure, priorStep, step.Id)
+		}
+
+		designatedFallbacks[step.OnFailure] = step.Id
+		fallbackTargets[step.OnFailure] = struct{}{}
+	}
+
+	for _, step := range steps {
+		for _, dependency := range step.DependsOn {
+			if _, ok := fallbackTargets[dependency]; !ok {
+				continue
+			}
+
+			return fmt.Errorf("Meta execution graph step '%s' depends directly on fallback-only step '%s'.", step.Id, dependency)
+		}
+	}
+
+	if HasDependencyCycle(steps) {
+		return errors.New("Meta execution graph contains a dependency cycle.")
+	}
+
+	return nil
+}
+
+func ApplyClassificationRouting(
+	selectedLabel string,
+	routeMap map[string][]string,
+	blocked map[string]struct{},
+	pending map[string]struct{},
+	dependentsByStep map[string][]string,
+	stepById map[string]core.MetaSkillStepDefinition) {
+	matchedTargets, ok := routeMap[selectedLabel]
+	if !ok {
+		matchedTargets = []string{}
+	}
+
+	for label, targets := range routeMap {
+		if label == selectedLabel {
+			continue
+		}
+
+		for _, target := range targets {
+			if _, ok := stepById[target]; !ok {
+				continue
+			}
+
+			BlockStepAndDependents(target, blocked, pending, dependentsByStep)
+		}
+	}
+
+	for _, target := range matchedTargets {
+		delete(blocked, target)
+	}
+}
+
+func BlockStepAndDependents(stepId string, blocked map[string]struct{}, pending map[string]struct{}, dependentsByStep map[string][]string) {
+	stack := []string{stepId}
+
+	for len(stack) > 0 {
+		// Pop 出栈
+		n := len(stack) - 1
+		current := stack[n]
+		stack = stack[:n]
+
+		// 检查并记录到 blocked 集合（如果已存在则跳过，避免重复处理和死循环）
+		if _, exists := blocked[current]; exists {
+			continue
+		}
+		blocked[current] = struct{}{}
+
+		// 从 pending 集合中移除
+		delete(pending, current)
+
+		// 检索依赖列表，若不存在则继续
+		dependents, ok := dependentsByStep[current]
+		if !ok {
+			continue
+		}
+
+		// 将关联的依赖项入栈 Push
+		for _, dependent := range dependents {
+			stack = append(stack, dependent)
+		}
+	}
 }
