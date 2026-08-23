@@ -18,6 +18,36 @@ func (t *ToolExecutionResult) ToFunctionResultContent(callId string) *contents.F
 	return contents.NewFunctionResultContent(callId, t.ResultText)
 }
 
+type MetaParallelToolStepExecution struct {
+	Step       core.MetaSkillStepDefinition
+	ToolResult ToolExecutionResult
+	DurationMs int64
+}
+
+type MetaParallelToolStepCandidate struct {
+	Step         core.MetaSkillStepDefinition
+	ToolName     string
+	ToolArgsJson string
+}
+
+type MetaLlmStepExecutionResult struct {
+	ExecutionResult *LlmExecutionResult
+	FailureCode     string
+	FailureMessage  string
+}
+
+func (m *MetaLlmStepExecutionResult) IsMetaLlmStepExecutionResultCompleted() bool {
+	return m.ExecutionResult != nil
+}
+
+func SucceededMetaLlmStepExecutionResult(executionResult LlmExecutionResult) *MetaLlmStepExecutionResult {
+	return &MetaLlmStepExecutionResult{ExecutionResult: &executionResult}
+}
+
+func FaileddMetaLlmStepExecutionResult(failureCode, failureMessage string) *MetaLlmStepExecutionResult {
+	return &MetaLlmStepExecutionResult{FailureCode: failureCode, FailureMessage: failureMessage}
+}
+
 type TurnRoutingSnapshot struct {
 	ModelProfileId          string
 	PreferredModelTags      []string
