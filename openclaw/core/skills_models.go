@@ -72,7 +72,7 @@ type SkillDefinition struct {
 	Instructions           string                       `json:"instructions"`
 	Location               string                       `json:"location"`
 	Source                 SkillSource                  `json:"source"`
-	Metadata               *SkillMetadata               `json:"metadata,omitempty"`
+	Metadata               SkillMetadata                `json:"metadata,omitempty"`
 	Kind                   SkillKind                    `json:"kind"`
 	Triggers               []string                     `json:"triggers"`
 	MetaPriority           int                          `json:"meta_priority"`
@@ -121,8 +121,8 @@ type SkillMetadata struct {
 }
 
 // DefaultSkillMetadata 返回带默认值的 SkillMetadata 实例
-func DefaultSkillMetadata() *SkillMetadata {
-	return &SkillMetadata{
+func DefaultSkillMetadata() SkillMetadata {
+	return SkillMetadata{
 		Os:             []string{},
 		RequireBins:    []string{},
 		RequireAnyBins: []string{},

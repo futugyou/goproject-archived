@@ -1076,3 +1076,231 @@ func (a *AgentRuntime) ExecuteMetaSkillExecStepWithPolicy(
 
 	return CreateMetaStepFailedToolResult("skill_exec", "{}", "step_failed", fmt.Sprintf("Meta step '%s' failed before producing a result.", step.Id)), nil
 }
+
+func (a *AgentRuntime) ExecuteMetaToolStepWithPolicy(
+	ctx context.Context,
+	metaSkill core.SkillDefinition,
+	step core.MetaSkillStepDefinition,
+	toolName,
+	toolArgsJson string,
+	session core.Session,
+	turnCtx *core.TurnContext,
+) (*ToolExecutionResult, error) {
+	var maxAttempts = max(1, step.Retry.MaxAttempts)
+	var lastResult *ToolExecutionResult
+	var err error
+	for attempt := range maxAttempts {
+		effectiveCtx, cancel := CreateMetaStepTimeout(ctx, step)
+		if cancel != nil {
+			defer cancel()
+		}
+
+		metaSkillName := metaSkill.Name
+		if metaSkillName == "" {
+			metaSkillName = "fan_out"
+		}
+
+		lastResult, err = a.toolExecutor.Execute(
+			effectiveCtx,
+			toolName,
+			toolArgsJson,
+			fmt.Sprintf("meta:%s:%s:attempt:%d", metaSkillName, step.Id, attempt),
+			session,
+			turnCtx,
+			false,
+			nil,
+			nil,
+			attempt)
+
+		if lastResult != nil {
+			if lastResult.ResultStatus == "completed" || attempt == maxAttempts {
+				return lastResult, nil
+			}
+		}
+		if step.Retry.BackoffMs > 0 {
+			select {
+			case <-time.After(time.Duration(step.Retry.BackoffMs) * time.Millisecond):
+			case <-effectiveCtx.Done():
+			}
+		}
+
+		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+			return nil, err
+		}
+
+		lastResult = CreateMetaStepFailedToolResult(
+			toolName,
+			toolArgsJson,
+			"step_timeout",
+			fmt.Sprintf("Meta step '%s' timed out after %d second(s).", step.Id, step.TimeoutSeconds))
+
+	}
+
+	if lastResult != nil {
+		return lastResult, nil
+	}
+
+	return CreateMetaStepFailedToolResult(toolName, toolArgsJson, "step_failed", fmt.Sprintf("Meta step '%s' failed before producing a result.", step.Id)), nil
+}
+
+func IsToolAllowedByMetaCapabilities(metaSkill core.SkillDefinition, toolName string) bool {
+	var capabilities = metaSkill.Metadata.Capabilities
+	if len(capabilities) == 0 {
+		return true
+	}
+
+	var normalizedTool = strings.TrimSpace(toolName)
+	for _, rawCapability := range capabilities {
+		var capability = strings.TrimSpace(rawCapability)
+		if capability == "" {
+			continue
+		}
+
+		if capability == "*" ||
+			capability == "all-tools" ||
+			capability == "tools:*" ||
+			capability == "tool:*" {
+			return true
+		}
+
+		if capability == normalizedTool ||
+			capability == fmt.Sprintf("tool:%s", normalizedTool) {
+			return true
+		}
+	}
+
+	return false
+}
+
+func DeriveMetaErrorCode(errorstr string, stepResults []core.MetaStepExecutionResult) string {
+	for i := len(stepResults) - 1; i >= 0; i-- {
+		var step = stepResults[i]
+		if step.FailureCode != "" {
+			return step.FailureCode
+		}
+	}
+
+	if strings.Contains(errorstr, "depends on") {
+		return "dependency_not_completed"
+	}
+	if strings.Contains(errorstr, "does not declare a tool") {
+		return "invalid_tool_step"
+	}
+	if strings.Contains(errorstr, "unsupported kind") {
+		return "unsupported_step_kind"
+	}
+	if strings.Contains(errorstr, "failed with status") {
+		return "step_failed"
+	}
+	if strings.Contains(errorstr, "missing dependency") {
+		return "invalid_dag"
+	}
+	if strings.Contains(errorstr, "dependency cycle") {
+		return "invalid_dag"
+	}
+	if strings.Contains(errorstr, "execution graph stalled") {
+		return "invalid_dag"
+	}
+	if strings.Contains(errorstr, "requires user input") {
+		return "user_input_required"
+	}
+	if strings.Contains(errorstr, "classify") {
+		return "invalid_classification"
+	}
+	if strings.Contains(errorstr, "metadata capabilities") {
+		return "metadata_capability_denied"
+	}
+
+	return "meta_step_error"
+}
+
+func BuildStructuredMetaExecutionJson(
+	skill,
+	finalText string,
+	stepResults []core.MetaStepExecutionResult,
+	errorstr string) string {
+
+	doc := map[string]any{}
+	doc["skill"] = skill
+	doc["final_text"] = finalText
+	if errorstr != "" {
+		doc["error"] = errorstr
+		errcode := DeriveMetaErrorCode(errorstr, stepResults)
+		if errcode != "" {
+			doc["error_code"] = errcode
+		}
+	}
+
+	steps := []map[string]any{}
+	for _, step := range stepResults {
+		stepdoc := map[string]any{}
+		stepdoc["id"] = step.Id
+		stepdoc["kind"] = step.Kind
+		stepdoc["status"] = step.Status
+		stepdoc["duration_ms"] = step.DurationMs
+		stepdoc["continued"] = step.Continued
+		if step.FailureCode != "" {
+			stepdoc["failure_code"] = step.FailureCode
+		}
+
+		steps = append(steps, stepdoc)
+	}
+
+	if len(steps) > 0 {
+		doc["steps"] = steps
+	}
+
+	data, _ := json.Marshal(doc)
+	return string(data)
+}
+
+func ClearMetaExecutionCheckpoint(session *core.Session, skillName string) {
+	if session.MetaExecutionCheckpoint == nil {
+		return
+	}
+
+	if session.MetaExecutionCheckpoint.SkillName != skillName {
+		return
+	}
+
+	session.MetaExecutionCheckpoint = nil
+}
+
+func BuildSkillExecExecutionEvidence(
+	entrypoint string,
+	renderedArgs []string,
+	renderedStdin,
+	parseMode string) *core.SessionMetaStepExecutionEvidence {
+	entrypoint = strings.TrimSpace(entrypoint)
+	var hasEntrypoint = entrypoint != ""
+	if !hasEntrypoint && len(renderedArgs) == 0 {
+		return nil
+	}
+
+	commandParts := []string{}
+	if hasEntrypoint {
+		commandParts = append(commandParts, entrypoint)
+	}
+
+	for i := 0; i < min(4, len(renderedArgs)); i++ {
+		commandParts = append(commandParts, renderedArgs[i])
+	}
+
+	commandPreview := strings.Join(commandParts, " ")
+	renderedStdin = strings.TrimSpace(renderedStdin)
+	var hasStdin = renderedStdin != ""
+	inputMode := "args"
+	if hasStdin {
+		inputMode = "stdin"
+	}
+
+	if parseMode == "" {
+		parseMode = "text"
+	}
+	return &core.SessionMetaStepExecutionEvidence{
+		CommandPreview: commandPreview,
+		InputMode:      inputMode,
+		StdinBytes:     len(renderedStdin),
+		ParseMode:      parseMode,
+	}
+}
