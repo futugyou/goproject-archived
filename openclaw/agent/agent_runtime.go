@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"maps"
 	"math"
 	"net/url"
 	"os"
@@ -1303,4 +1304,131 @@ func BuildSkillExecExecutionEvidence(
 		StdinBytes:     len(renderedStdin),
 		ParseMode:      parseMode,
 	}
+}
+
+func SaveMetaExecutionCheckpoint(
+	session *core.Session,
+	skillName,
+	pendingStepId,
+	prompt string,
+	pending map[string]struct{},
+	blocked map[string]struct{},
+	outputs map[string]string,
+	failureAliases map[string]string,
+	stepResults []core.MetaStepExecutionResult) {
+	ss := []core.SessionMetaStepResult{}
+	for _, result := range stepResults {
+		ss = append(ss, core.SessionMetaStepResult{
+			Id:                result.Id,
+			Kind:              result.Kind,
+			Status:            result.Status,
+			FailureCode:       result.FailureCode,
+			DurationMs:        result.DurationMs,
+			Continued:         result.Continued,
+			ExecutionEvidence: result.ExecutionEvidence,
+		})
+	}
+	session.MetaExecutionCheckpoint = &core.SessionMetaExecutionCheckpoint{
+		SkillName:        skillName,
+		PendingStepId:    pendingStepId,
+		Prompt:           prompt,
+		LastUpdatedAtUtc: time.Now().UTC(),
+		PendingStepIds:   slices.Collect(maps.Keys(pending)),
+		BlockedStepIds:   slices.Collect(maps.Keys(blocked)),
+		Outputs:          maps.Clone(outputs),
+		FailureAliases:   maps.Clone(failureAliases),
+		StepResults:      ss,
+	}
+}
+
+func TryRestoreMetaExecutionCheckpoint(
+	session *core.Session,
+	skillName string,
+	stepIds []string,
+	rawPending map[string]struct{},
+) (waitingPrompt string, pending map[string]struct{},
+	blocked map[string]struct{},
+	outputs,
+	failureAliases map[string]string,
+	stepResults []core.MetaStepExecutionResult, flag bool) {
+	pending = maps.Clone(rawPending)
+	blocked = map[string]struct{}{}
+	outputs = map[string]string{}
+	failureAliases = map[string]string{}
+	stepResults = []core.MetaStepExecutionResult{}
+	var checkpoint = session.MetaExecutionCheckpoint
+	if checkpoint == nil || checkpoint.SkillName != skillName {
+		return
+	}
+	validStepIds := map[string]struct{}{}
+	for _, id := range stepIds {
+		validStepIds[id] = struct{}{}
+	}
+
+	for _, pendingStep := range checkpoint.PendingStepIds {
+		if _, ok := validStepIds[pendingStep]; !ok {
+			session.MetaExecutionCheckpoint = nil
+			return
+		}
+	}
+
+	for _, blockedStep := range checkpoint.BlockedStepIds {
+		if _, ok := validStepIds[blockedStep]; !ok {
+			session.MetaExecutionCheckpoint = nil
+			return
+		}
+	}
+
+	for stepId := range checkpoint.Outputs {
+		if _, ok := validStepIds[stepId]; !ok {
+			session.MetaExecutionCheckpoint = nil
+			return
+		}
+	}
+	for stepId := range checkpoint.FailureAliases {
+		if _, ok := validStepIds[stepId]; !ok {
+			session.MetaExecutionCheckpoint = nil
+			return
+		}
+	}
+	for _, aliasTarget := range checkpoint.FailureAliases {
+		if _, ok := validStepIds[aliasTarget]; !ok {
+			session.MetaExecutionCheckpoint = nil
+			return
+		}
+	}
+	for _, result := range checkpoint.StepResults {
+		if _, ok := validStepIds[result.Id]; !ok {
+			session.MetaExecutionCheckpoint = nil
+			return
+		}
+	}
+
+	pending = map[string]struct{}{}
+	for _, pendingStep := range checkpoint.PendingStepIds {
+		pending[pendingStep] = struct{}{}
+	}
+
+	for _, blockedStep := range checkpoint.BlockedStepIds {
+		blocked[blockedStep] = struct{}{}
+	}
+
+	outputs = maps.Clone(checkpoint.Outputs)
+	failureAliases = maps.Clone(checkpoint.FailureAliases)
+
+	for _, result := range checkpoint.StepResults {
+		stepResults = append(stepResults, core.MetaStepExecutionResult{
+			Id:          result.Id,
+			Kind:        result.Kind,
+			Status:      result.Status,
+			FailureCode: result.FailureCode,
+			DurationMs:  result.DurationMs,
+			Continued:   result.Continued,
+		})
+	}
+
+	checkpoint.LastUpdatedAtUtc = time.Now().UTC()
+	waitingPrompt = checkpoint.Prompt
+	flag = true
+	return
 }

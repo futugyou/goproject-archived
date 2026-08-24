@@ -195,7 +195,7 @@ func (s *SkillLoader) ParseSkillContent(content, skillDir string, source SkillSo
 		Instructions:           body,
 		Location:               skillDir,
 		Source:                 source,
-		Metadata:               &metadata,
+		Metadata:               metadata,
 		Kind:                   kind,
 		Triggers:               triggers,
 		MetaPriority:           metaPriority,

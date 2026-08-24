@@ -502,7 +502,7 @@ func (r *ReadSkillResourceTool) findSkill(skills []SkillDefinition, requested st
 	}
 
 	for _, skill := range skills {
-		if skill.Metadata != nil && skill.Metadata.SkillKey == requested {
+		if skill.Metadata.SkillKey == requested {
 			return &skill
 		}
 	}
