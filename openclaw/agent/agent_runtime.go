@@ -1590,7 +1590,7 @@ func (a *AgentRuntime) CallLlmWithResilience(
 			case <-ctx.Done():
 			}
 		}
-		response, err := circuitbreaker.Execute[*chatcompletion.ChatResponse](a.circuitBreaker, ctx, func(innerCtx context.Context) (*chatcompletion.ChatResponse, error) {
+		response, err := circuitbreaker.Execute(a.circuitBreaker, ctx, func(innerCtx context.Context) (*chatcompletion.ChatResponse, error) {
 			if a.llmTimeoutSeconds > 0 {
 				timeoutCtx, cancel := context.WithTimeout(innerCtx, time.Second*time.Duration(a.llmTimeoutSeconds))
 				defer cancel()
@@ -1760,4 +1760,185 @@ func (a *AgentRuntime) ExecuteFanOutChild(
 		failureCode = "unsupported_child_kind"
 	}
 	return
+}
+
+func (a *AgentRuntime) TryExecuteParallelToolWave(
+	ctx context.Context,
+	session core.Session,
+	metaSkill core.SkillDefinition,
+	steps []core.MetaSkillStepDefinition,
+	stepById map[string]core.MetaSkillStepDefinition,
+	dependentsByStep map[string][]string,
+	pending map[string]struct{},
+	blocked map[string]struct{},
+	outputs,
+	failureAliases map[string]string,
+	stepResults []core.MetaStepExecutionResult,
+	input string,
+	turnCtx *core.TurnContext,
+	templateRenderer core.MetaTemplateRenderer,
+	conditionEvaluator core.MetaConditionEvaluator,
+	toolArgumentResolver core.MetaToolArgumentResolver,
+	routePlanner core.MetaRoutePlanner,
+) bool {
+	if len(pending) < 2 {
+		return false
+	}
+
+	candidates := []MetaParallelToolStepCandidate{}
+	for _, step := range steps {
+		_, pendingok := pending[step.Id]
+		_, blockedok := blocked[step.Id]
+		if !pendingok || !blockedok {
+			continue
+		}
+
+		var blockedByDependency = false
+		var waitingForDependency = false
+		for _, dependency := range step.DependsOn {
+			if _, ok := blocked[dependency]; ok {
+				blockedByDependency = true
+				break
+			}
+
+			if _, ok := outputs[dependency]; !ok {
+				waitingForDependency = true
+				break
+			}
+		}
+
+		if blockedByDependency || waitingForDependency {
+			continue
+		}
+
+		if NormalizeMetaStepKind(step.Kind) != "tool_call" {
+			continue
+		}
+
+		if step.OnFailure != "" || len(step.Routes) > 0 {
+			continue
+		}
+
+		var stepArgs = util.DeserializeMap(step.WithJSON)
+		var continueOnError = util.GetBool(stepArgs, "continue_on_error")
+		if continueOnError == nil || *continueOnError == false {
+			continue
+		}
+
+		var metaContext = core.NewMetaExecutionContext(input, outputs, nil, nil, nil)
+		if step.When != "" && !conditionEvaluator.Evaluate(step.When, metaContext) {
+			continue
+		}
+
+		var toolName = step.Tool
+		if toolName == "" {
+			continue
+		}
+
+		if len(step.ToolAllowlist) > 0 && !slices.Contains(step.ToolAllowlist, toolName) {
+			continue
+		}
+
+		if !IsToolAllowedByMetaCapabilities(metaSkill, toolName) {
+			continue
+		}
+
+		templateStr := input
+		js := util.GetString(stepArgs, "input")
+		if js != nil && *js != "" {
+			templateStr = *js
+		}
+		templateRenderer.Render(
+			templateStr,
+			metaContext)
+
+		compositionToolArgsJSON := ""
+		if metaSkill.Composition != nil {
+			compositionToolArgsJSON = metaSkill.Composition.ToolArgsJson
+		}
+		toolArgsJson, err := toolArgumentResolver.Resolve(
+			compositionToolArgsJSON,
+			step.WithJSON,
+			step.ToolArgsJSON,
+			metaContext)
+		if err != nil {
+			continue
+		}
+
+		candidates = append(candidates, MetaParallelToolStepCandidate{Step: step, ToolName: toolName, ToolArgsJson: toolArgsJson})
+	}
+
+	if len(candidates) < 2 {
+		return false
+	}
+
+	execChan := make(chan MetaParallelToolStepExecution, len(candidates))
+	var wg sync.WaitGroup
+
+	for _, candidate := range candidates {
+		wg.Add(1)
+		go func(c MetaParallelToolStepCandidate) {
+			defer wg.Done()
+
+			start := time.Now()
+			toolResult, err := a.ExecuteMetaToolStepWithPolicy(
+				ctx,
+				metaSkill,
+				c.Step,
+				c.ToolName,
+				c.ToolArgsJson,
+				session,
+				turnCtx,
+			)
+			if err != nil {
+				return
+			}
+			durationMs := float64(time.Since(start).Nanoseconds()) / 1e6
+
+			execChan <- MetaParallelToolStepExecution{
+				Step:       c.Step,
+				ToolResult: *toolResult,
+				DurationMs: int64(durationMs),
+			}
+		}(candidate)
+	}
+
+	go func() {
+		wg.Wait()
+		close(execChan)
+	}()
+
+	var executions []MetaParallelToolStepExecution
+	for exec := range execChan {
+		executions = append(executions, exec)
+	}
+
+	for _, execution := range executions {
+		completed := execution.ToolResult.ResultStatus == "completed"
+		resultStatus := execution.ToolResult.ResultStatus
+		failureCode := execution.ToolResult.FailureCode
+
+		if completed {
+			newFailureCode, ok := TryValidateMetaStepOutput(execution.Step, execution.ToolResult.ResultText)
+			if !ok {
+				completed = false
+				resultStatus = "failed"
+				failureCode = newFailureCode
+			}
+		}
+
+		stepResults = append(stepResults, core.MetaStepExecutionResult{
+			Id:          execution.Step.Id,
+			Kind:        execution.Step.Kind,
+			Status:      resultStatus,
+			FailureCode: failureCode,
+			DurationMs:  float64(execution.DurationMs),
+			Continued:   !completed,
+		})
+
+		CompleteMetaStepOutput(execution.Step, execution.ToolResult.ResultText, pending, outputs, failureAliases)
+		routePlanner.ApplyCompletionRouting(&execution.Step, core.NewMetaExecutionContext(input, outputs, nil, nil, nil), stepById, blocked, pending, dependentsByStep)
+	}
+
+	return true
 }
