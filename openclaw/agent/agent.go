@@ -574,8 +574,8 @@ type LlmStreamingExecutionResult struct {
 
 type ILlmExecutionService interface {
 	DefaultCircuitState() circuitbreaker.CircuitState
-	GetResponse(ctx context.Context, session core.Session, messages []chatcompletion.ChatMessage, options chatcompletion.ChatOptions, turnContext core.TurnContext, estimate LlmExecutionEstimate) (*LlmExecutionResult, error)
-	StartStreaming(ctx context.Context, session core.Session, messages []chatcompletion.ChatMessage, options chatcompletion.ChatOptions, turnContext core.TurnContext, estimate LlmExecutionEstimate) (*LlmStreamingExecutionResult, error)
+	GetResponse(ctx context.Context, session core.Session, messages []chatcompletion.ChatMessage, options chatcompletion.ChatOptions, turnContext *core.TurnContext, estimate LlmExecutionEstimate) (*LlmExecutionResult, error)
+	StartStreaming(ctx context.Context, session core.Session, messages []chatcompletion.ChatMessage, options chatcompletion.ChatOptions, turnContext *core.TurnContext, estimate LlmExecutionEstimate) (*LlmStreamingExecutionResult, error)
 }
 
 type AgentRuntimeFactoryContext struct {

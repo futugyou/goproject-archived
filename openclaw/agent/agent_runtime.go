@@ -21,6 +21,8 @@ import (
 	"github.com/futugyou/openclaw/circuitbreaker"
 	"github.com/futugyou/openclaw/core"
 	"github.com/futugyou/openclaw/util"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
 )
 
 type AgentRuntime struct {
@@ -1431,4 +1433,195 @@ func TryRestoreMetaExecutionCheckpoint(
 	waitingPrompt = checkpoint.Prompt
 	flag = true
 	return
+}
+
+func ResolveMetaFinalText(
+	metaSkill core.SkillDefinition,
+	steps []core.MetaSkillStepDefinition,
+	outputs map[string]string,
+	executedStepIds []string) string {
+	var mode = strings.TrimSpace(metaSkill.FinalTextMode)
+	if mode != "" || mode == "auto" || mode == "raw" {
+		if len(executedStepIds) == 0 {
+			return ""
+		}
+
+		return outputs[executedStepIds[len(executedStepIds)-1]]
+	}
+
+	if strings.HasPrefix(mode, "step:") {
+		var finalStepId = strings.TrimSpace(mode[5:])
+		finalStepOutput, ok := outputs[finalStepId]
+		if ok {
+			return finalStepOutput
+		}
+	}
+	if len(executedStepIds) == 0 {
+		return ""
+	}
+
+	return outputs[executedStepIds[len(executedStepIds)-1]]
+}
+
+func BuildMetaExecutionOutput(
+	metaSkill core.SkillDefinition,
+	finalText string,
+	stepResults []core.MetaStepExecutionResult,
+	errorstr string) string {
+	if metaSkill.FinalTextMode != "structured" {
+		if errorstr == "" {
+			return finalText
+		} else {
+			return fmt.Sprintf("error: %s", errorstr)
+		}
+	}
+
+	return BuildStructuredMetaExecutionJson(metaSkill.Name, finalText, stepResults, errorstr)
+}
+
+func AppendMetaRunHistory(
+	session *core.Session,
+	skillName,
+	finalText string,
+	stepResults []core.MetaStepExecutionResult,
+	errorstr string,
+	preserveCheckpoint bool) {
+	status := "paused"
+	if !preserveCheckpoint {
+		if errorstr == "" {
+			status = "completed"
+		} else {
+			status = "failed"
+		}
+	}
+	errorCode := ""
+	if errorstr != "" {
+		errorCode = DeriveMetaErrorCode(errorstr, stepResults)
+	}
+	ss := []core.SessionMetaStepResult{}
+	for _, result := range stepResults {
+		ss = append(ss, core.SessionMetaStepResult{
+			Id:                result.Id,
+			Kind:              result.Kind,
+			Status:            result.Status,
+			FailureCode:       result.FailureCode,
+			DurationMs:        result.DurationMs,
+			Continued:         result.Continued,
+			ExecutionEvidence: result.ExecutionEvidence,
+		})
+	}
+	session.MetaRunHistory = append(session.MetaRunHistory, core.SessionMetaRunRecord{
+		RunId:          fmt.Sprintf("meta_%s", util.CleanUUID()),
+		SkillName:      skillName,
+		Status:         status,
+		FinalText:      finalText,
+		Error:          errorstr,
+		ErrorCode:      errorCode,
+		StartedAtUtc:   time.Now().UTC(),
+		CompletedAtUtc: time.Now().UTC(),
+		StepResults:    ss,
+	})
+}
+
+func ReturnMetaExecutionOutput(
+	session *core.Session,
+	metaSkill core.SkillDefinition,
+	finalText string,
+	stepResults []core.MetaStepExecutionResult,
+	errorstr string,
+	preserveCheckpoint bool) string {
+	AppendMetaRunHistory(session, metaSkill.Name, finalText, stepResults, errorstr, preserveCheckpoint)
+
+	if !preserveCheckpoint {
+		ClearMetaExecutionCheckpoint(session, metaSkill.Name)
+	}
+
+	return BuildMetaExecutionOutput(metaSkill, finalText, stepResults, errorstr)
+}
+
+func (a *AgentRuntime) CallLlmWithResilience(
+	ctx context.Context,
+	session core.Session, messages []chatcompletion.ChatMessage, options chatcompletion.ChatOptions, turnCtx *core.TurnContext) (*LlmExecutionResult, error) {
+	var span trace.Span
+	ctx, span = core.Tracer.Start(ctx, "Agent.CallLlm", trace.WithAttributes(
+		attribute.Int("llm.messages_count", len(messages)),
+	))
+	defer span.End()
+
+	var estimate = LlmExecutionEstimateCreate(messages, a.skillPromptLength, 0)
+	admissionMessage, ok := a.TryRejectEstimatedBudget(session, estimate)
+	if ok {
+		return nil, &EstimatedBudgetAdmissionException{Message: admissionMessage}
+	}
+
+	if a.llmExecutionService != nil {
+		return a.llmExecutionService.GetResponse(ctx,
+			session,
+			messages,
+			options,
+			turnCtx,
+			estimate,
+		)
+	}
+
+	var lastException error
+	for attempt := 0; attempt <= a.retryCount; attempt++ {
+		var providerId = a.config.Provider
+		modelId := a.config.Model
+		if options.ModelId != nil && *options.ModelId != "" {
+			modelId = *options.ModelId
+		}
+
+		if a.providerUsage != nil {
+			a.providerUsage.RecordRequest(providerId, modelId)
+		}
+
+		if attempt > 0 {
+			var delayMs = math.Pow(2, float64(attempt-1)) * 1000
+			turnCtx.RecordRetry()
+			if a.metrics != nil {
+				a.metrics.IncrementLlmRetries()
+			}
+			if a.providerUsage != nil {
+				a.providerUsage.RecordRetry(providerId, modelId)
+			}
+			select {
+			case <-time.After(time.Millisecond * time.Duration(delayMs)):
+			case <-ctx.Done():
+			}
+		}
+		response, err := circuitbreaker.Execute[*chatcompletion.ChatResponse](a.circuitBreaker, ctx, func(innerCtx context.Context) (*chatcompletion.ChatResponse, error) {
+			if a.llmTimeoutSeconds > 0 {
+				timeoutCtx, cancel := context.WithTimeout(innerCtx, time.Second*time.Duration(a.llmTimeoutSeconds))
+				defer cancel()
+				return a.chatClient.GetResponse(timeoutCtx, messages, &options)
+			}
+
+			return a.chatClient.GetResponse(innerCtx, messages, &options)
+		})
+
+		if err != nil {
+			lastException = err
+			if a.providerUsage != nil {
+				a.providerUsage.RecordError(providerId, modelId)
+			}
+			if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+				return nil, err
+			}
+		}
+
+		if response != nil {
+			return &LlmExecutionResult{
+				ProviderId: providerId,
+				ModelId:    modelId,
+				Response:   response,
+			}, nil
+		}
+	}
+
+	if lastException == nil {
+		lastException = errors.New("LLM call failed with no captured exception.")
+	}
+
+	return nil, lastException
 }
