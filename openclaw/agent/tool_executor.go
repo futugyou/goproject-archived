@@ -46,7 +46,7 @@ type OpenClawToolExecutor struct {
 	sentinelSubstitution  core.ISentinelSubstitutionService
 	toolGovernance        core.IToolGovernanceService
 	planExecuteVerify     core.IPlanExecuteVerifyOrchestrator
-	metaInvokeExecutor    func(ctx context.Context, session core.Session, toolName string, payload *string) (string, error)
+	metaInvokeExecutor    func(ctx context.Context, session *core.Session, toolName string, payload *string) string
 }
 
 func NewOpenClawToolExecutor(
@@ -67,7 +67,7 @@ func NewOpenClawToolExecutor(
 	sentinelSubstitution core.ISentinelSubstitutionService,
 	toolGovernance core.IToolGovernanceService,
 	planExecuteVerify core.IPlanExecuteVerifyOrchestrator,
-	metaInvokeExecutor func(ctx context.Context, session core.Session, toolName string, payload *string) (string, error),
+	metaInvokeExecutor func(ctx context.Context, session *core.Session, toolName string, payload *string) string,
 	interceptors []core.IToolResultInterceptor,
 ) *OpenClawToolExecutor {
 	toolsMap := make(map[string]core.ITool, len(tools))
@@ -161,7 +161,7 @@ func (e *OpenClawToolExecutor) ToolDeclarations() []abstractions.AITool {
 	return res
 }
 
-func (e *OpenClawToolExecutor) GetToolDeclarations(session core.Session) []abstractions.AITool {
+func (e *OpenClawToolExecutor) GetToolDeclarations(session *core.Session) []abstractions.AITool {
 	e.toolsMutationLock.RLock()
 	declarations := make([]abstractions.AITool, len(e.toolDeclarations))
 	copy(declarations, e.toolDeclarations)
@@ -186,7 +186,7 @@ func (e *OpenClawToolExecutor) GetToolDeclarations(session core.Session) []abstr
 	return filtered
 }
 
-func IsToolAllowedForSession(session core.Session, toolName string, preset *core.ResolvedToolPreset) bool {
+func IsToolAllowedForSession(session *core.Session, toolName string, preset *core.ResolvedToolPreset) bool {
 	// DisableTools routing decisions intentionally expose no tools to the model.
 	if session.RouteToolsDisabled {
 		return false
@@ -283,7 +283,7 @@ func ResourcePathContainsReparsePoint(skillLocation, resourceAbsolutePath string
 	return false
 }
 
-func IsPathWithinSkillRoot(resourceAbsolutePath string, skill core.SkillDefinition) bool {
+func IsPathWithinSkillRoot(resourceAbsolutePath string, skill *core.SkillDefinition) bool {
 	if skill.Location == "" {
 		return true
 	}
@@ -339,7 +339,7 @@ func ResolveScriptCommand(scriptAbsolutePath string) (string, []string) {
 	return scriptAbsolutePath, prefixArguments
 }
 
-func ResolveSkillWorkingDirectory(skill core.SkillDefinition, workingDirectory string) (string, error) {
+func ResolveSkillWorkingDirectory(skill *core.SkillDefinition, workingDirectory string) (string, error) {
 	skillRoot, err := filepath.Abs(skill.Location)
 	if err != nil {
 		return "", err
@@ -361,7 +361,7 @@ func ResolveSkillWorkingDirectory(skill core.SkillDefinition, workingDirectory s
 	return candidate, nil
 }
 
-func ResolveSkillScript(skill core.SkillDefinition, entrypoint string) *core.SkillResource {
+func ResolveSkillScript(skill *core.SkillDefinition, entrypoint string) *core.SkillResource {
 	for _, resource := range skill.Resources {
 		if resource.Kind == core.SkillResourceKind_Script &&
 			(resource.Name == entrypoint ||
@@ -413,9 +413,9 @@ func InvokeTool(ctx context.Context, tool core.ITool, argsJson string, toolConte
 	return tool.Execute(ctx, argsJson)
 }
 
-func (o *OpenClawToolExecutor) ExecuteToolWithTimeout(ctx context.Context, tool core.ITool, argsJson string, session core.Session, turnCtx *core.TurnContext) string {
+func (o *OpenClawToolExecutor) ExecuteToolWithTimeout(ctx context.Context, tool core.ITool, argsJson string, session *core.Session, turnCtx *core.TurnContext) string {
 	var execContext = &core.ToolExecutionContext{
-		Session:     &session,
+		Session:     session,
 		TurnContext: turnCtx,
 	}
 
@@ -496,7 +496,7 @@ func CreateImmediateResult(
 
 func (o *OpenClawToolExecutor) ExecuteSkillEntrypoint(
 	ctx context.Context,
-	skill core.SkillDefinition,
+	skill *core.SkillDefinition,
 	entrypoint string,
 	arguments []string,
 	workingDirectory string,
@@ -609,7 +609,7 @@ func (o *OpenClawToolExecutor) ExecuteToolWithRouting(
 	ctx context.Context,
 	tool core.ITool,
 	argsJson string,
-	session core.Session,
+	session *core.Session,
 	turnCtx *core.TurnContext,
 ) (string, error) {
 	route, template, legacySandboxRoute, sandboxMode, ok := o.executionRouter.TryResolveRoute(tool)
@@ -705,7 +705,19 @@ func (o *OpenClawToolExecutor) ExecuteToolWithRouting(
 	return sandboxCapableTool.FormatSandboxResult(argsJson, sandboxResult), nil
 }
 
-func handleToolExecutorError(ctx context.Context, legacySandboxRoute bool, route *core.ExecutionToolRouteConfig, tool core.ITool, backendName string, sandboxMode core.ToolSandboxMode, o *OpenClawToolExecutor, argsJson string, session core.Session, turnCtx *core.TurnContext, err error) (string, error) {
+func handleToolExecutorError(
+	ctx context.Context,
+	legacySandboxRoute bool,
+	route *core.ExecutionToolRouteConfig,
+	tool core.ITool,
+	backendName string,
+	sandboxMode core.ToolSandboxMode,
+	o *OpenClawToolExecutor,
+	argsJson string,
+	session *core.Session,
+	turnCtx *core.TurnContext,
+	err error) (string, error) {
+
 	if legacySandboxRoute || (route != nil && route.FallbackBackend != "") {
 		if IsLocalExecutionDisabled(tool) {
 			if legacySandboxRoute {
@@ -806,7 +818,7 @@ Loop:
 
 func (o *OpenClawToolExecutor) RecordImmediateGovernanceAudit(
 	tool core.ITool,
-	session core.Session,
+	session *core.Session,
 	turnCtx *core.TurnContext,
 	argumentsJson,
 	result string,
@@ -931,7 +943,7 @@ func (o *OpenClawToolExecutor) Execute(
 	toolName,
 	argsJson,
 	callId string,
-	session core.Session,
+	session *core.Session,
 	turnCtx *core.TurnContext,
 	isStreaming bool,
 	approvalCallback ToolApprovalCallback,
@@ -1169,7 +1181,7 @@ func (o *OpenClawToolExecutor) Execute(
 		ToolName:                 tool.Name(),
 		ArgumentsJSON:            persistedArgsJson,
 		ActionDescriptor:         approvalDescriptor,
-		GovernanceDescriptor:     governanceDescriptor,
+		GovernanceDescriptor:     &governanceDescriptor,
 		ExistingApprovalRequired: requiresApproval,
 		IsStreaming:              isStreaming,
 		ToolCallCount:            toolCallCount,
@@ -1292,7 +1304,7 @@ func (o *OpenClawToolExecutor) Execute(
 		if onDelta != nil && ok {
 			result, err = o.ExecuteStreamingToolCollect(ctx, streamingTool, executionArgsJson, onDelta)
 		} else if o.metaInvokeExecutor != nil && tool.Name() == "meta_invoke" && ook {
-			result, err = o.metaInvokeExecutor(ctx, session, requestedSkill, &requestedInput)
+			result = o.metaInvokeExecutor(ctx, session, requestedSkill, &requestedInput)
 			if strings.Contains(result, "disabled by runtime policy") {
 				toolFailed = true
 				resultStatus = core.ToolResultStatusesBlocked
@@ -1522,7 +1534,7 @@ func (o *OpenClawToolExecutor) Execute(
 func (o *OpenClawToolExecutor) ExecuteWithFunctionCallContent(
 	ctx context.Context,
 	call contents.FunctionCallContent,
-	session core.Session,
+	session *core.Session,
 	turnCtx *core.TurnContext,
 	isStreaming bool,
 	approvalCallback ToolApprovalCallback,

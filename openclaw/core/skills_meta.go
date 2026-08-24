@@ -57,6 +57,24 @@ func NewMetaExecutionContext(input string, outputs map[string]string, inputs map
 	return ctx
 }
 
+func SampleMetaExecutionContext(input string, outputs map[string]string) *MetaExecutionContext {
+	ctx := &MetaExecutionContext{
+		inputs: map[string]any{},
+		steps:  map[string]any{},
+		tools:  []ToolDescriptor{},
+	}
+
+	ctx.input = input
+
+	ctx.outputs = make(map[string]string)
+	for k, v := range outputs {
+		ctx.outputs[strings.ToLower(k)] = v
+	}
+	ctx.inputs["user_message"] = ctx.input
+
+	return ctx
+}
+
 func (m *MetaExecutionContext) Input() string {
 	return m.input
 }
@@ -658,7 +676,7 @@ func (m *MetaRoutePlanner) SelectNextStep(step *MetaSkillStepDefinition, context
 
 // ApplyInitialRoutingBlocks 应用初始路由阻断
 func (m *MetaRoutePlanner) ApplyInitialRoutingBlocks(
-	steps []*MetaSkillStepDefinition,
+	steps []MetaSkillStepDefinition,
 	blocked map[string]struct{},
 	pending map[string]struct{},
 ) {
@@ -667,9 +685,6 @@ func (m *MetaRoutePlanner) ApplyInitialRoutingBlocks(
 	}
 
 	for _, step := range steps {
-		if step == nil {
-			continue
-		}
 		for _, route := range step.Routes {
 			blocked[route.To] = struct{}{}
 			delete(pending, route.To)
@@ -956,6 +971,17 @@ type MetaStepExecutionResult struct {
 	ExecutionEvidence *SessionMetaStepExecutionEvidence `json:"execution_evidence"`
 }
 
+func NewMetaStepExecutionResult(id, kind, status, failureCode string, durationMs float64, continued bool) MetaStepExecutionResult {
+	return MetaStepExecutionResult{
+		Id:          id,
+		Kind:        kind,
+		Status:      status,
+		FailureCode: failureCode,
+		DurationMs:  durationMs,
+		Continued:   continued,
+	}
+}
+
 type MetaFanOutExecutor struct{}
 
 type FanOutChildExecutor func(
@@ -997,7 +1023,7 @@ func (m *MetaFanOutExecutor) TryExecuteFanOutStep(
 	routePlanner *MetaRoutePlanner,
 	childExecutor FanOutChildExecutor,
 	logger func(string, error),
-) (bool, error) {
+) bool {
 
 	// 查找第一个就绪的 fan_out 步骤
 	var fanOutStep *MetaSkillStepDefinition
@@ -1029,7 +1055,7 @@ func (m *MetaFanOutExecutor) TryExecuteFanOutStep(
 	}
 
 	if fanOutStep == nil {
-		return false, nil
+		return false
 	}
 
 	metaContext := NewMetaExecutionContext(input, outputs, nil, nil, nil)
@@ -1047,7 +1073,7 @@ func (m *MetaFanOutExecutor) TryExecuteFanOutStep(
 			DurationMs:  0,
 			Continued:   false,
 		})
-		return true, nil
+		return true
 	}
 
 	// 1. 评估可迭代 (iterable) 表达式
@@ -1062,7 +1088,7 @@ func (m *MetaFanOutExecutor) TryExecuteFanOutStep(
 		}
 		m.appendFailedResult(stepResults, fanOutStep, "iterable_eval_failed", 0)
 		delete(pending, fanOutStep.Id)
-		return true, nil
+		return true
 	}
 
 	if len(items) == 0 {
@@ -1079,7 +1105,7 @@ func (m *MetaFanOutExecutor) TryExecuteFanOutStep(
 			DurationMs: 0,
 			Continued:  false,
 		})
-		return true, nil
+		return true
 	}
 
 	// 2. 为每个 item 启动并发任务
@@ -1093,10 +1119,7 @@ func (m *MetaFanOutExecutor) TryExecuteFanOutStep(
 
 	// 分批并发控制
 	for batch := 0; batch < len(items); batch += maxConcurrency {
-		batchEnd := batch + maxConcurrency
-		if batchEnd > len(items) {
-			batchEnd = len(items)
-		}
+		batchEnd := min(batch+maxConcurrency, len(items))
 		batchSize := batchEnd - batch
 
 		resChan := make(chan batchResult, batchSize)
@@ -1199,11 +1222,11 @@ func (m *MetaFanOutExecutor) TryExecuteFanOutStep(
 		})
 
 		if m.tryActivateFailureBranch(fanOutStep, stepById, pending, blocked, failureAliases) {
-			return true, nil
+			return true
 		}
 
 		m.blockStepAndDependents(fanOutStep.Id, blocked, pending, dependentsByStep)
-		return true, nil
+		return true
 	}
 
 	// 4. 合并输出
@@ -1242,7 +1265,7 @@ func (m *MetaFanOutExecutor) TryExecuteFanOutStep(
 		Continued:  false,
 	})
 
-	return true, nil
+	return true
 }
 
 // ── Helpers (内部辅助方法，声明为实例方法) ──

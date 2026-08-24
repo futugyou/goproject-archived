@@ -5,16 +5,16 @@ import "context"
 type PlanExecuteVerifyDecisionKinds string
 type HarnessContractRiskLevels string
 type PlanExecuteVerifyToolContext struct {
-	Session                  Session                  `json:"session"`
-	CorrelationID            string                   `json:"correlation_id"`
-	CallID                   string                   `json:"call_id,omitempty"`
-	ToolName                 string                   `json:"tool_name"`
-	ArgumentsJSON            string                   `json:"arguments_json"`
-	ActionDescriptor         *ToolActionDescriptor    `json:"action_descriptor"`
-	GovernanceDescriptor     ToolGovernanceDescriptor `json:"governance_descriptor"`
-	ExistingApprovalRequired bool                     `json:"existing_approval_required"`
-	IsStreaming              bool                     `json:"is_streaming"`
-	ToolCallCount            int                      `json:"tool_call_count"`
+	Session                  *Session                  `json:"session"`
+	CorrelationID            string                    `json:"correlation_id"`
+	CallID                   string                    `json:"call_id,omitempty"`
+	ToolName                 string                    `json:"tool_name"`
+	ArgumentsJSON            string                    `json:"arguments_json"`
+	ActionDescriptor         *ToolActionDescriptor     `json:"action_descriptor"`
+	GovernanceDescriptor     *ToolGovernanceDescriptor `json:"governance_descriptor"`
+	ExistingApprovalRequired bool                      `json:"existing_approval_required"`
+	IsStreaming              bool                      `json:"is_streaming"`
+	ToolCallCount            int                       `json:"tool_call_count"`
 }
 
 func NewPlanExecuteVerifyToolContext() *PlanExecuteVerifyToolContext {

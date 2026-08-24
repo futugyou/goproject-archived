@@ -285,8 +285,8 @@ func NewAgentRuntime(
 	}
 
 	// Closure for openClawToolExecutor meta invoke handler
-	metaExecutor := func(ctx context.Context, session core.Session, skillName string, input *string) (string, error) {
-		return r.ExecuteMetaSkill(ctx, session, skillName, input)
+	metaExecutor := func(ctx context.Context, session *core.Session, skillName string, input *string) string {
+		return r.ExecuteMetaSkill(ctx, session, skillName, util.Deref(input))
 	}
 
 	r.toolExecutor = NewOpenClawToolExecutor(
@@ -351,11 +351,6 @@ func mapKeysToSlice(m map[string]struct{}) []string {
 		keys = append(keys, k)
 	}
 	return keys
-}
-
-func (a *AgentRuntime) ExecuteMetaSkill(ctx context.Context, session core.Session, skillName string, input *string) (string, error) {
-	// Implementation placeholder
-	return "", nil
 }
 
 func (a *AgentRuntime) ApplySkills(skills []core.SkillDefinition) {
@@ -449,7 +444,7 @@ func (a *AgentRuntime) LogTurnComplete(turnCtx *core.TurnContext) {
 	a.logger.Info("Turn complete", "CorrelationId", turnCtx.CorrelationId, "Summary", turnCtx.String())
 }
 
-func (a *AgentRuntime) TryRejectEstimatedBudget(session core.Session, estimate LlmExecutionEstimate) (message string, ok bool) {
+func (a *AgentRuntime) TryRejectEstimatedBudget(session *core.Session, estimate LlmExecutionEstimate) (message string, ok bool) {
 	if !a.estimateTokenBudgetAdmission || a.sessionTokenBudget <= 0 {
 		return
 	}
@@ -841,7 +836,7 @@ func TryGetRouteMap(args map[string]any) map[string][]string {
 	return routeMap
 }
 
-func IsClarifyInputTimedOut(session core.Session, skillName string, step core.MetaSkillStepDefinition) bool {
+func IsClarifyInputTimedOut(session *core.Session, skillName string, step *core.MetaSkillStepDefinition) bool {
 	if step.Clarify != nil && step.Clarify.TimeoutSeconds != nil && *step.Clarify.TimeoutSeconds > 0 {
 		return false
 	}
@@ -890,7 +885,7 @@ func SanitizeJsonOutput(output string) string {
 }
 
 func TryValidateMetaStepOutput(
-	step core.MetaSkillStepDefinition,
+	step *core.MetaSkillStepDefinition,
 	output string) (failureCode string, ok bool) {
 	if len(step.OutputChoices) > 0 {
 		var candidate = strings.TrimSpace(output)
@@ -936,7 +931,7 @@ func TryValidateMetaStepOutput(
 }
 
 func TryActivateFailureBranch(
-	step core.MetaSkillStepDefinition,
+	step *core.MetaSkillStepDefinition,
 	stepById map[string]core.MetaSkillStepDefinition,
 	pending map[string]struct{},
 	blocked map[string]struct{},
@@ -972,7 +967,7 @@ func CompleteMetaStepOutput(
 	delete(pending, step.Id)
 }
 
-func CreateMetaStepTimeout(ctx context.Context, step core.MetaSkillStepDefinition) (context.Context, context.CancelFunc) {
+func CreateMetaStepTimeout(ctx context.Context, step *core.MetaSkillStepDefinition) (context.Context, context.CancelFunc) {
 	if step.TimeoutSeconds != nil && *step.TimeoutSeconds <= 0 {
 		return ctx, nil
 	}
@@ -982,7 +977,7 @@ func CreateMetaStepTimeout(ctx context.Context, step core.MetaSkillStepDefinitio
 
 func ExecuteMetaLlmStepWithPolicy(
 	ctx context.Context,
-	step core.MetaSkillStepDefinition,
+	step *core.MetaSkillStepDefinition,
 	executor func(context.Context) (*LlmExecutionResult, error),
 ) (*MetaLlmStepExecutionResult, error) {
 	var maxAttempts = max(1, step.Retry.MaxAttempts)
@@ -1034,8 +1029,8 @@ func ExecuteMetaLlmStepWithPolicy(
 
 func (a *AgentRuntime) ExecuteMetaSkillExecStepWithPolicy(
 	ctx context.Context,
-	delegatedSkill core.SkillDefinition,
-	step core.MetaSkillStepDefinition,
+	delegatedSkill *core.SkillDefinition,
+	step *core.MetaSkillStepDefinition,
 	arguments []string,
 	workingDirectory,
 	stdin string) (*ToolExecutionResult, error) {
@@ -1082,11 +1077,11 @@ func (a *AgentRuntime) ExecuteMetaSkillExecStepWithPolicy(
 
 func (a *AgentRuntime) ExecuteMetaToolStepWithPolicy(
 	ctx context.Context,
-	metaSkill core.SkillDefinition,
-	step core.MetaSkillStepDefinition,
+	metaSkill *core.SkillDefinition,
+	step *core.MetaSkillStepDefinition,
 	toolName,
 	toolArgsJson string,
-	session core.Session,
+	session *core.Session,
 	turnCtx *core.TurnContext,
 ) (*ToolExecutionResult, error) {
 	var maxAttempts = max(1, step.Retry.MaxAttempts)
@@ -1146,7 +1141,7 @@ func (a *AgentRuntime) ExecuteMetaToolStepWithPolicy(
 	return CreateMetaStepFailedToolResult(toolName, toolArgsJson, "step_failed", fmt.Sprintf("Meta step '%s' failed before producing a result.", step.Id)), nil
 }
 
-func IsToolAllowedByMetaCapabilities(metaSkill core.SkillDefinition, toolName string) bool {
+func IsToolAllowedByMetaCapabilities(metaSkill *core.SkillDefinition, toolName string) bool {
 	var capabilities = metaSkill.Metadata.Capabilities
 	if len(capabilities) == 0 {
 		return true
@@ -1436,7 +1431,7 @@ func TryRestoreMetaExecutionCheckpoint(
 }
 
 func ResolveMetaFinalText(
-	metaSkill core.SkillDefinition,
+	metaSkill *core.SkillDefinition,
 	steps []core.MetaSkillStepDefinition,
 	outputs map[string]string,
 	executedStepIds []string) string {
@@ -1464,7 +1459,7 @@ func ResolveMetaFinalText(
 }
 
 func BuildMetaExecutionOutput(
-	metaSkill core.SkillDefinition,
+	metaSkill *core.SkillDefinition,
 	finalText string,
 	stepResults []core.MetaStepExecutionResult,
 	errorstr string) string {
@@ -1525,7 +1520,7 @@ func AppendMetaRunHistory(
 
 func ReturnMetaExecutionOutput(
 	session *core.Session,
-	metaSkill core.SkillDefinition,
+	metaSkill *core.SkillDefinition,
 	finalText string,
 	stepResults []core.MetaStepExecutionResult,
 	errorstr string,
@@ -1541,7 +1536,10 @@ func ReturnMetaExecutionOutput(
 
 func (a *AgentRuntime) CallLlmWithResilience(
 	ctx context.Context,
-	session core.Session, messages []chatcompletion.ChatMessage, options chatcompletion.ChatOptions, turnCtx *core.TurnContext) (*LlmExecutionResult, error) {
+	session *core.Session,
+	messages []chatcompletion.ChatMessage,
+	options chatcompletion.ChatOptions,
+	turnCtx *core.TurnContext) (*LlmExecutionResult, error) {
 	var span trace.Span
 	ctx, span = core.Tracer.Start(ctx, "Agent.CallLlm", trace.WithAttributes(
 		attribute.Int("llm.messages_count", len(messages)),
@@ -1628,14 +1626,14 @@ func (a *AgentRuntime) CallLlmWithResilience(
 
 func (a *AgentRuntime) ExecuteFanOutChild(
 	ctx context.Context,
-	metaSkill core.SkillDefinition,
-	template core.MetaSkillStepDefinition,
+	metaSkill *core.SkillDefinition,
+	template *core.MetaSkillStepDefinition,
 	childId,
 	childInput string,
-	childContext core.MetaExecutionContext,
-	session core.Session,
+	childContext *core.MetaExecutionContext,
+	session *core.Session,
 	turnCtx *core.TurnContext,
-) (output string, failureCode string) {
+) (output string, failureCode string, errresult error) {
 	switch NormalizeMetaStepKind(template.Kind) {
 	case "tool_call":
 		var toolName = template.Tool
@@ -1654,7 +1652,7 @@ func (a *AgentRuntime) ExecuteFanOutChild(
 			failureCode = "metadata_capability_denied"
 			return
 		}
-		toolArgsJson, err := core.NewMetaToolArgumentResolver(&core.MetaTemplateRenderer{}).Resolve("", template.WithJSON, template.ToolArgsJSON, &childContext)
+		toolArgsJson, err := core.NewMetaToolArgumentResolver(&core.MetaTemplateRenderer{}).Resolve("", template.WithJSON, template.ToolArgsJSON, childContext)
 		if err != nil {
 			output = fmt.Sprintf("Error: invalid tool arguments for child step '%s'.", childId)
 			failureCode = "invalid_tool_args"
@@ -1664,7 +1662,7 @@ func (a *AgentRuntime) ExecuteFanOutChild(
 		result, err := a.ExecuteMetaToolStepWithPolicy(
 			ctx,
 			metaSkill,
-			core.MetaSkillStepDefinition{Id: childId, Kind: template.Kind, Retry: template.Retry, TimeoutSeconds: template.TimeoutSeconds},
+			&core.MetaSkillStepDefinition{Id: childId, Kind: template.Kind, Retry: template.Retry, TimeoutSeconds: template.TimeoutSeconds},
 			toolName,
 			toolArgsJson,
 			session,
@@ -1674,6 +1672,7 @@ func (a *AgentRuntime) ExecuteFanOutChild(
 		if err != nil {
 			output = fmt.Sprintf("Error: invalid tool arguments for child step '%s'.", childId)
 			failureCode = "exec_tool_error"
+			errresult = err
 			return
 		}
 
@@ -1726,13 +1725,14 @@ func (a *AgentRuntime) ExecuteFanOutChild(
 
 		llmResult, err := ExecuteMetaLlmStepWithPolicy(
 			ctx,
-			core.MetaSkillStepDefinition{Id: childId, Kind: template.Kind, Retry: template.Retry, TimeoutSeconds: template.TimeoutSeconds},
+			&core.MetaSkillStepDefinition{Id: childId, Kind: template.Kind, Retry: template.Retry, TimeoutSeconds: template.TimeoutSeconds},
 			func(ctx context.Context) (*LlmExecutionResult, error) {
 				return a.CallLlmWithResilience(ctx, session, messages, *chatOptions, turnCtx)
 			},
 		)
 
 		if err != nil {
+			errresult = err
 			output = fmt.Sprintf("Error: llm_chat error for child step '%s'.", childId)
 			failureCode = "llm_chat_error"
 			return
@@ -1764,8 +1764,8 @@ func (a *AgentRuntime) ExecuteFanOutChild(
 
 func (a *AgentRuntime) TryExecuteParallelToolWave(
 	ctx context.Context,
-	session core.Session,
-	metaSkill core.SkillDefinition,
+	session *core.Session,
+	metaSkill *core.SkillDefinition,
 	steps []core.MetaSkillStepDefinition,
 	stepById map[string]core.MetaSkillStepDefinition,
 	dependentsByStep map[string][]string,
@@ -1776,10 +1776,10 @@ func (a *AgentRuntime) TryExecuteParallelToolWave(
 	stepResults []core.MetaStepExecutionResult,
 	input string,
 	turnCtx *core.TurnContext,
-	templateRenderer core.MetaTemplateRenderer,
-	conditionEvaluator core.MetaConditionEvaluator,
-	toolArgumentResolver core.MetaToolArgumentResolver,
-	routePlanner core.MetaRoutePlanner,
+	templateRenderer *core.MetaTemplateRenderer,
+	conditionEvaluator *core.MetaConditionEvaluator,
+	toolArgumentResolver *core.MetaToolArgumentResolver,
+	routePlanner *core.MetaRoutePlanner,
 ) bool {
 	if len(pending) < 2 {
 		return false
@@ -1825,7 +1825,7 @@ func (a *AgentRuntime) TryExecuteParallelToolWave(
 			continue
 		}
 
-		var metaContext = core.NewMetaExecutionContext(input, outputs, nil, nil, nil)
+		var metaContext = core.SampleMetaExecutionContext(input, outputs)
 		if step.When != "" && !conditionEvaluator.Evaluate(step.When, metaContext) {
 			continue
 		}
@@ -1884,7 +1884,7 @@ func (a *AgentRuntime) TryExecuteParallelToolWave(
 			toolResult, err := a.ExecuteMetaToolStepWithPolicy(
 				ctx,
 				metaSkill,
-				c.Step,
+				&c.Step,
 				c.ToolName,
 				c.ToolArgsJson,
 				session,
@@ -1919,7 +1919,7 @@ func (a *AgentRuntime) TryExecuteParallelToolWave(
 		failureCode := execution.ToolResult.FailureCode
 
 		if completed {
-			newFailureCode, ok := TryValidateMetaStepOutput(execution.Step, execution.ToolResult.ResultText)
+			newFailureCode, ok := TryValidateMetaStepOutput(&execution.Step, execution.ToolResult.ResultText)
 			if !ok {
 				completed = false
 				resultStatus = "failed"
@@ -1937,8 +1937,961 @@ func (a *AgentRuntime) TryExecuteParallelToolWave(
 		})
 
 		CompleteMetaStepOutput(execution.Step, execution.ToolResult.ResultText, pending, outputs, failureAliases)
-		routePlanner.ApplyCompletionRouting(&execution.Step, core.NewMetaExecutionContext(input, outputs, nil, nil, nil), stepById, blocked, pending, dependentsByStep)
+		routePlanner.ApplyCompletionRouting(&execution.Step, core.SampleMetaExecutionContext(input, outputs), stepById, blocked, pending, dependentsByStep)
 	}
 
 	return true
+}
+
+func ResolveCorrelationId(ctx context.Context, correlationId string) string {
+	if correlationId != "" {
+		return correlationId
+	}
+
+	spanId := trace.SpanContextFromContext(ctx).SpanID()
+	if spanId.IsValid() {
+		return spanId.String()
+	}
+
+	return util.CleanUUID()[:16]
+}
+
+func (a *AgentRuntime) ExecuteMetaSkill(ctx context.Context, session *core.Session, skillName, input string) string {
+	if !a.metaSkillsEnabled {
+		return "Error: Meta skill invocation is disabled by runtime policy."
+	}
+
+	var metaSkill *core.SkillDefinition
+	for _, skill := range a.LoadedSkills() {
+		if skill.Kind == core.SkillKind_Meta &&
+			!skill.DisableModelInvocation && skill.Name == skillName {
+			metaSkill = &skill
+			break
+		}
+	}
+	if metaSkill == nil {
+		return fmt.Sprintf("Error: Meta skill '%s' was not found.", skillName)
+	}
+
+	steps := []core.MetaSkillStepDefinition{}
+	if metaSkill.Composition != nil {
+		steps = metaSkill.Composition.Steps
+	}
+
+	if len(steps) == 0 {
+		return fmt.Sprintf("Error: Meta skill '%s' has no executable composition steps.", metaSkill.Name)
+	}
+
+	if err := TryValidateMetaPlan(steps, a.LoadedSkills()); err != nil {
+		return ReturnMetaExecutionOutput(session, metaSkill, "", []core.MetaStepExecutionResult{}, err.Error(), false)
+	}
+
+	stepById := map[string]core.MetaSkillStepDefinition{}
+	for _, step := range steps {
+		stepById[step.Id] = step
+	}
+
+	failureBranchTargets := []string{}
+	for _, step := range steps {
+		if step.OnFailure != "" && !slices.Contains(failureBranchTargets, step.OnFailure) {
+			failureBranchTargets = append(failureBranchTargets, step.OnFailure)
+		}
+	}
+
+	rawPending := map[string]struct{}{}
+	for stepId := range stepById {
+		if !slices.Contains(failureBranchTargets, stepId) {
+			rawPending[stepId] = struct{}{}
+		}
+	}
+
+	var dependentsByStep = BuildDependentsIndex(steps)
+
+	var templateRenderer = &core.MetaTemplateRenderer{}
+	var conditionEvaluator = core.NewMetaConditionEvaluator(templateRenderer)
+	var toolArgumentResolver = core.NewMetaToolArgumentResolver(templateRenderer)
+	var clarifyValidator = &core.MetaClarifyValidator{}
+	var routePlanner = core.NewMetaRoutePlanner(conditionEvaluator)
+	waitingPrompt, pending, blocked, outputs, failureAliases, stepResults, resumedFromCheckpoint := TryRestoreMetaExecutionCheckpoint(
+		session,
+		metaSkill.Name,
+		slices.Collect(maps.Keys(stepById)),
+		rawPending)
+	if resumedFromCheckpoint {
+		var timeoutHandledByFailureBranch = false
+		resumedStepId := ""
+		if session.MetaExecutionCheckpoint != nil {
+			resumedStepId = session.MetaExecutionCheckpoint.PendingStepId
+		}
+		var resumedStep *core.MetaSkillStepDefinition
+		if resumedStepId != "" {
+			for _, step := range steps {
+				if step.Id == resumedStepId {
+					resumedStep = &step
+					break
+				}
+			}
+		}
+
+		resumedSkipClarify := false
+		if resumedStep != nil && resumedStep.Clarify != nil {
+			resumedSkipClarify = resumedStep.Clarify.SkipIf != ""
+		} else {
+			resumedSkipClarify = conditionEvaluator.Evaluate(resumedStep.Clarify.SkipIf, core.SampleMetaExecutionContext(input, outputs))
+		}
+
+		if input == "" && resumedStep != nil && IsClarifyInputTimedOut(session, metaSkill.Name, resumedStep) {
+			stepResults = append(stepResults, core.MetaStepExecutionResult{
+				Id:          resumedStep.Id,
+				Kind:        resumedStep.Kind,
+				Status:      "failed",
+				FailureCode: "user_input_timeout",
+			})
+
+			if TryActivateFailureBranch(resumedStep, stepById, pending, blocked, failureAliases) {
+				ClearMetaExecutionCheckpoint(session, metaSkill.Name)
+				timeoutHandledByFailureBranch = true
+			} else {
+				return ReturnMetaExecutionOutput(session, metaSkill, "", stepResults, fmt.Sprintf("Meta step '%s' clarify input timed out.", resumedStep.Id), false)
+			}
+		}
+
+		if input != "" && resumedSkipClarify {
+			timeoutHandledByFailureBranch = true
+			ClearMetaExecutionCheckpoint(session, metaSkill.Name)
+		}
+
+		if input != "" && !timeoutHandledByFailureBranch && !resumedSkipClarify {
+			if waitingPrompt == "" {
+				waitingPrompt = "Meta execution is waiting for user input to continue."
+			}
+			return ReturnMetaExecutionOutput(
+				session,
+				metaSkill,
+				"",
+				stepResults,
+				waitingPrompt,
+				true)
+		}
+	}
+	var turnCtx = &core.TurnContext{
+		CorrelationId: ResolveCorrelationId(ctx, ""),
+		SessionId:     session.Id,
+		ChannelId:     session.ChannelId,
+	}
+
+	session_history, _ := json.Marshal(session.History)
+	session_meta_runs, _ := json.Marshal(session.MetaRunHistory)
+	sessionInputs := map[string]any{
+		"session_id":        session.Id,
+		"session_history":   string(session_history),
+		"session_meta_runs": string(session_meta_runs),
+	}
+
+	if !resumedFromCheckpoint {
+		routePlanner.ApplyInitialRoutingBlocks(steps, blocked, pending)
+	}
+
+	for {
+		if len(pending) <= 0 {
+			break
+		}
+		var progress = false
+
+		if a.TryExecuteParallelToolWave(
+			ctx,
+			session,
+			metaSkill,
+			steps,
+			stepById,
+			dependentsByStep,
+			pending,
+			blocked,
+			outputs,
+			failureAliases,
+			stepResults,
+			input,
+			turnCtx,
+			templateRenderer,
+			conditionEvaluator,
+			toolArgumentResolver,
+			routePlanner) {
+			continue
+		}
+
+		metaFanOutExecutor := core.MetaFanOutExecutor{}
+		if metaFanOutExecutor.TryExecuteFanOutStep(
+			ctx,
+			session,
+			metaSkill,
+			steps,
+			stepById,
+			dependentsByStep,
+			pending,
+			blocked,
+			outputs,
+			failureAliases,
+			&stepResults,
+			input,
+			turnCtx,
+			templateRenderer,
+			conditionEvaluator,
+			toolArgumentResolver,
+			routePlanner,
+			a.ExecuteFanOutChild,
+			func(msg string, err error) {
+				a.logger.Warn("TryExecuteFanOutStep error", "FanOutMessage", msg, "error", err.Error())
+			},
+		) {
+			continue
+		}
+
+		for _, step := range steps {
+			if _, ok := pending[step.Id]; !ok {
+				continue
+			}
+			if _, ok := blocked[step.Id]; ok {
+				delete(pending, step.Id)
+				progress = true
+				continue
+			}
+
+			var blockedByDependency = false
+			var waitingForDependency = false
+			for _, dependency := range step.DependsOn {
+				if _, ok := blocked[dependency]; ok {
+					blockedByDependency = true
+					break
+				}
+
+				if _, ok := outputs[dependency]; !ok {
+					waitingForDependency = true
+					break
+				}
+			}
+
+			if blockedByDependency {
+				BlockStepAndDependents(step.Id, blocked, pending, dependentsByStep)
+				progress = true
+				continue
+			}
+
+			if waitingForDependency {
+				continue
+			}
+
+			var stepArgs = util.DeserializeMap(step.WithJSON)
+			var metaContext = core.NewMetaExecutionContext(input, outputs, sessionInputs, nil, nil)
+
+			continueOnError := false
+			continue_on_error := util.GetBool(stepArgs, "continue_on_error")
+			if continue_on_error != nil {
+				continueOnError = *continue_on_error
+			}
+
+			if step.When != "" && !conditionEvaluator.Evaluate(step.When, metaContext) {
+				BlockStepAndDependents(step.Id, blocked, pending, dependentsByStep)
+				stepResults = append(stepResults, core.MetaStepExecutionResult{
+					Id:          step.Id,
+					Kind:        step.Kind,
+					Status:      "blocked",
+					FailureCode: "condition_false",
+				})
+				progress = true
+				continue
+			}
+
+			templateStr := ""
+			templateStrPtr := util.GetString(stepArgs, "input")
+			if templateStrPtr != nil {
+				templateStr = *templateStrPtr
+			}
+			stepInput := templateRenderer.Render(templateStr, metaContext)
+
+			switch NormalizeMetaStepKind(step.Kind) {
+			case "tool_call":
+				var toolName = step.Tool
+				if toolName != "" {
+					return ReturnMetaExecutionOutput(session, metaSkill, "", stepResults, fmt.Sprintf("Meta step '%s' is 'tool_call' but does not declare a tool.", step.Id), false)
+				}
+
+				if len(step.ToolAllowlist) > 0 && !slices.Contains(step.ToolAllowlist, toolName) {
+					stepResults = append(stepResults, core.NewMetaStepExecutionResult(step.Id, step.Kind, "blocked", "tool_not_allowlisted", 0, false))
+					return ReturnMetaExecutionOutput(session, metaSkill, "", stepResults, fmt.Sprintf("Meta step '%s' tool '%s' is not allowlisted.", step.Id, toolName), false)
+				}
+
+				if !IsToolAllowedByMetaCapabilities(metaSkill, toolName) {
+					delete(pending, step.Id)
+					progress = true
+					stepResults = append(stepResults, core.NewMetaStepExecutionResult(step.Id, step.Kind, "blocked", "metadata_capability_denied", 0, false))
+					return ReturnMetaExecutionOutput(session, metaSkill, "", stepResults, fmt.Sprintf("Meta step '%s' tool '%s' is not permitted by metadata capabilities.", step.Id, toolName), false)
+				}
+
+				compositionToolArgsJSON := ""
+				if metaSkill.Composition != nil {
+					compositionToolArgsJSON = metaSkill.Composition.ToolArgsJson
+				}
+				toolArgsJson, err := toolArgumentResolver.Resolve(
+					compositionToolArgsJSON,
+					step.WithJSON,
+					step.ToolArgsJSON,
+					metaContext)
+
+				if err != nil {
+					return ReturnMetaExecutionOutput(session, metaSkill, "", stepResults, fmt.Sprintf("Meta step '%s' declared invalid tool arguments.", step.Id), false)
+				}
+
+				start := time.Now()
+				toolResult, err := a.ExecuteMetaToolStepWithPolicy(
+					ctx,
+					metaSkill,
+					&step,
+					toolName,
+					toolArgsJson,
+					session,
+					turnCtx)
+
+				if err != nil {
+					return ReturnMetaExecutionOutput(session, metaSkill, "", stepResults, fmt.Sprintf("Meta step '%s' exec error.", step.Id), false)
+				}
+
+				durationMs := float64(time.Since(start).Nanoseconds()) / 1e6
+
+				var completed = toolResult.ResultStatus == "completed"
+				var resultStatus = toolResult.ResultStatus
+				failureCode, ok := TryValidateMetaStepOutput(&step, toolResult.ResultText)
+				if completed && !ok {
+					completed = false
+					resultStatus = "failed"
+				}
+
+				stepResults = append(stepResults, core.NewMetaStepExecutionResult(
+					step.Id,
+					step.Kind,
+					resultStatus,
+					failureCode,
+					durationMs,
+					!completed && continueOnError))
+
+				if completed {
+					CompleteMetaStepOutput(step, toolResult.ResultText, pending, outputs, failureAliases)
+					routePlanner.ApplyCompletionRouting(&step, core.SampleMetaExecutionContext(input, outputs),
+						stepById, blocked, pending, dependentsByStep)
+					progress = true
+					break
+				}
+
+				if TryActivateFailureBranch(&step, stepById, pending, blocked, failureAliases) {
+					progress = true
+					break
+				}
+
+				if !continueOnError {
+					return ReturnMetaExecutionOutput(session, metaSkill, "", stepResults, fmt.Sprintf("Meta step '%s' failed with status '%s'.", step.Id, toolResult.ResultStatus), false)
+				}
+
+				CompleteMetaStepOutput(step, toolResult.ResultText, pending, outputs, failureAliases)
+				routePlanner.ApplyCompletionRouting(&step, core.SampleMetaExecutionContext(input, outputs),
+					stepById, blocked, pending, dependentsByStep)
+				progress = true
+
+			case "skill_exec":
+				var delegatedSkill *core.SkillDefinition
+				if step.Skill != "" {
+					for _, skill := range a.LoadedSkills() {
+						if skill.Name == step.Skill {
+							delegatedSkill = &skill
+							break
+						}
+					}
+				}
+
+				if delegatedSkill == nil {
+					stepResults = append(stepResults, core.NewMetaStepExecutionResult(step.Id, step.Kind, "failed", "skill_not_found", 0, continueOnError))
+
+					if TryActivateFailureBranch(&step, stepById, pending, blocked, failureAliases) {
+						progress = true
+						break
+					}
+
+					if !continueOnError {
+						return ReturnMetaExecutionOutput(session, metaSkill, "", stepResults, fmt.Sprintf("Meta step '%s' references missing skill '%s'.", step.Id, step.Skill), false)
+					}
+
+					CompleteMetaStepOutput(step, "", pending, outputs, failureAliases)
+					routePlanner.ApplyCompletionRouting(&step, core.SampleMetaExecutionContext(input, outputs),
+						stepById, blocked, pending, dependentsByStep)
+					progress = true
+					break
+				}
+
+				renderedArgs := []string{}
+				var argumentContext = core.SampleMetaExecutionContext(input, outputs)
+				for _, argument := range step.SkillExecArgs {
+					renderedArgs = append(renderedArgs, templateRenderer.Render(argument, argumentContext))
+				}
+
+				var renderedCwd = step.SkillExecCwd
+				if renderedCwd != "" {
+					renderedCwd = templateRenderer.Render(renderedCwd, core.SampleMetaExecutionContext(input, outputs))
+				}
+
+				var renderedStdin = step.SkillExecStdin
+				if renderedStdin != "" {
+					renderedCwd = templateRenderer.Render(renderedStdin, core.SampleMetaExecutionContext(input, outputs))
+				}
+
+				start := time.Now()
+				skillExecResult, err := a.ExecuteMetaSkillExecStepWithPolicy(
+					ctx,
+					delegatedSkill,
+					&step,
+					renderedArgs,
+					renderedCwd,
+					renderedStdin)
+				if err != nil {
+					return ReturnMetaExecutionOutput(session, metaSkill, "", stepResults, fmt.Sprintf("Meta step '%s' exec error.", step.Id), false)
+				}
+				durationMs := float64(time.Since(start).Nanoseconds()) / 1e6
+
+				var completed = skillExecResult.ResultStatus == "completed"
+				var resultStatus = skillExecResult.ResultStatus
+				failureCode, ok := TryValidateMetaStepOutput(&step, skillExecResult.ResultText)
+				if completed && !ok {
+					completed = false
+					resultStatus = "failed"
+				}
+
+				metaStepExecutionResult := core.NewMetaStepExecutionResult(
+					step.Id,
+					step.Kind,
+					resultStatus,
+					failureCode,
+					durationMs,
+					!completed && continueOnError)
+				metaStepExecutionResult.ExecutionEvidence = BuildSkillExecExecutionEvidence(step.SkillExecEntrypoint, renderedArgs, renderedStdin, step.SkillExecParseMode)
+				stepResults = append(stepResults, metaStepExecutionResult)
+
+				if completed {
+					CompleteMetaStepOutput(step, skillExecResult.ResultText, pending, outputs, failureAliases)
+					routePlanner.ApplyCompletionRouting(&step, core.SampleMetaExecutionContext(input, outputs), stepById, blocked, pending, dependentsByStep)
+					progress = true
+					break
+				}
+
+				if TryActivateFailureBranch(&step, stepById, pending, blocked, failureAliases) {
+					progress = true
+					break
+				}
+
+				if !continueOnError {
+					errorstr := fmt.Sprintf("Meta step '%s' failed with status '%s'.", step.Id, skillExecResult.ResultStatus)
+					if skillExecResult.FailureMessage != "" {
+						errorstr = skillExecResult.FailureMessage
+					}
+					return ReturnMetaExecutionOutput(session, metaSkill, "", stepResults, errorstr, false)
+				}
+
+				CompleteMetaStepOutput(step, skillExecResult.ResultText, pending, outputs, failureAliases)
+				routePlanner.ApplyCompletionRouting(&step, core.SampleMetaExecutionContext(input, outputs), stepById, blocked, pending, dependentsByStep)
+				progress = true
+
+			case "agent":
+				var delegatedSkill *core.SkillDefinition
+				if step.Skill != "" {
+					for _, skill := range a.LoadedSkills() {
+						if !skill.DisableModelInvocation && skill.Name == step.Skill {
+							delegatedSkill = &skill
+							break
+						}
+					}
+				}
+
+				delegatedInstructions := ""
+				if delegatedSkill != nil {
+					delegatedInstructions = core.SkillPromptBuilderInstance.BuildSkillBody(delegatedSkill)
+				}
+
+				syscontent := "You are executing a meta-skill delegated step. Return only the final useful result for this step."
+				if delegatedInstructions != "" {
+					syscontent = "You are executing a meta-skill delegated step. Follow the delegated skill instructions. Return only the final useful result for this step.\n\n" + delegatedInstructions
+				}
+				sysmsg := chatcompletion.NewChatMessageWithText(chatcompletion.RoleSystem, syscontent)
+				usetcontent := stepInput
+				if stepInput == "" {
+					usetcontent = input
+				}
+				usermsg := chatcompletion.NewChatMessageWithText(chatcompletion.RoleUser, usetcontent)
+				messages := []chatcompletion.ChatMessage{*sysmsg, *usermsg}
+				modelId := session.ModelOverride
+				if session.ModelOverride == "" {
+					modelId = a.config.Model
+				}
+				maxTokens := int64(a.maxTokens)
+				temperature := float64(a.temperature)
+				var options = chatcompletion.ChatOptions{
+					ModelId:         &modelId,
+					MaxOutputTokens: &maxTokens,
+					Temperature:     &temperature,
+				}
+
+				start := time.Now()
+				llmResult, err := ExecuteMetaLlmStepWithPolicy(
+					ctx,
+					&step,
+					func(token context.Context) (*LlmExecutionResult, error) {
+						return a.CallLlmWithResilience(token, session, messages, options, turnCtx)
+					})
+				if err != nil {
+					return ReturnMetaExecutionOutput(session, metaSkill, "", stepResults, fmt.Sprintf("Meta step '%s' exec error.", step.Id), false)
+				}
+				durationMs := float64(time.Since(start).Nanoseconds()) / 1e6
+
+				if !llmResult.Completed() {
+					failureMessage := llmResult.FailureMessage
+					if failureMessage == "" {
+						failureMessage = fmt.Sprintf("Meta step '%s' failed before producing a response.", step.Id)
+					}
+
+					stepResults = append(stepResults, core.NewMetaStepExecutionResult(step.Id, step.Kind, "failed", llmResult.FailureCode, durationMs, continueOnError))
+
+					if TryActivateFailureBranch(&step, stepById, pending, blocked, failureAliases) {
+						progress = true
+						break
+					}
+
+					if !continueOnError {
+						return ReturnMetaExecutionOutput(session, metaSkill, "", stepResults, failureMessage, false)
+					}
+
+					CompleteMetaStepOutput(step, failureMessage, pending, outputs, failureAliases)
+					routePlanner.ApplyCompletionRouting(&step, core.SampleMetaExecutionContext(input, outputs), stepById, blocked, pending, dependentsByStep)
+					progress = true
+					break
+				}
+
+				stepOutput := ""
+				if llmResult.ExecutionResult != nil && llmResult.ExecutionResult.Response != nil {
+					stepOutput = llmResult.ExecutionResult.Response.Text()
+				}
+				failureCode, ok := TryValidateMetaStepOutput(&step, stepOutput)
+				if !ok {
+					stepResults = append(stepResults, core.NewMetaStepExecutionResult(step.Id, step.Kind, "failed", failureCode, durationMs, continueOnError))
+
+					if TryActivateFailureBranch(&step, stepById, pending, blocked, failureAliases) {
+						progress = true
+						break
+					}
+
+					if !continueOnError {
+						return ReturnMetaExecutionOutput(session, metaSkill, "", stepResults, fmt.Sprintf("Meta step '%s' failed output contract validation.", step.Id), false)
+					}
+
+					CompleteMetaStepOutput(step, stepOutput, pending, outputs, failureAliases)
+					routePlanner.ApplyCompletionRouting(&step, core.SampleMetaExecutionContext(input, outputs), stepById, blocked, pending, dependentsByStep)
+					progress = true
+					break
+				}
+
+				CompleteMetaStepOutput(step, stepOutput, pending, outputs, failureAliases)
+				routePlanner.ApplyCompletionRouting(&step, core.SampleMetaExecutionContext(input, outputs), stepById, blocked, pending, dependentsByStep)
+				progress = true
+				stepResults = append(stepResults, core.NewMetaStepExecutionResult(step.Id, step.Kind, "completed", "", durationMs, false))
+
+			case "llm_chat":
+
+				var systemPrompt = util.GetString(stepArgs, "system_prompt")
+				if systemPrompt == nil {
+					t := "You are executing a meta-skill llm_chat step. Return only the final useful result for this step."
+					systemPrompt = &t
+				}
+				modelId := a.config.Model
+				if session.ModelOverride != "" {
+					modelId = session.ModelOverride
+				}
+				maxTokens := int64(a.maxTokens)
+				temperature := float64(a.temperature)
+				tokens := util.GetInt(stepArgs, "max_tokens")
+				if tokens != nil {
+					maxTokens = int64(*tokens)
+				}
+
+				temp := util.GetFloat64(stepArgs, "temperature")
+				if temp != nil {
+					temperature = float64(*temp)
+				}
+
+				var chatOptions = chatcompletion.ChatOptions{
+					ModelId:         &modelId,
+					MaxOutputTokens: &maxTokens,
+					Temperature:     &temperature,
+				}
+
+				sysmasg := chatcompletion.NewChatMessageWithText(chatcompletion.RoleSystem, *systemPrompt)
+				usermsg := chatcompletion.NewChatMessageWithText(chatcompletion.RoleUser, stepInput)
+				var messages = []chatcompletion.ChatMessage{
+					*sysmasg,
+					*usermsg,
+				}
+
+				start := time.Now()
+				llmResult, err := ExecuteMetaLlmStepWithPolicy(
+					ctx,
+					&step,
+					func(token context.Context) (*LlmExecutionResult, error) {
+						return a.CallLlmWithResilience(token, session, messages, chatOptions, turnCtx)
+					},
+				)
+				durationMs := float64(time.Since(start).Nanoseconds()) / 1e6
+				if err != nil {
+					return ReturnMetaExecutionOutput(session, metaSkill, "", stepResults, fmt.Sprintf("Meta step '%s' exec error.", step.Id), false)
+				}
+				if !llmResult.Completed() {
+					var failureMessage = llmResult.FailureMessage
+					if failureMessage == "" {
+						failureMessage = fmt.Sprintf("Meta step '%s' failed before producing a response.", step.Id)
+					}
+
+					stepResults = append(stepResults, core.NewMetaStepExecutionResult(step.Id, step.Kind, "failed", llmResult.FailureCode, durationMs, continueOnError))
+
+					if TryActivateFailureBranch(&step, stepById, pending, blocked, failureAliases) {
+						progress = true
+						break
+					}
+
+					if !continueOnError {
+						return ReturnMetaExecutionOutput(session, metaSkill, "", stepResults, failureMessage, false)
+					}
+
+					CompleteMetaStepOutput(step, failureMessage, pending, outputs, failureAliases)
+					routePlanner.ApplyCompletionRouting(&step, core.SampleMetaExecutionContext(input, outputs), stepById, blocked, pending, dependentsByStep)
+					progress = true
+					break
+				}
+
+				stepOutput := ""
+				if llmResult.ExecutionResult != nil && llmResult.ExecutionResult.Response != nil {
+					stepOutput = llmResult.ExecutionResult.Response.Text()
+				}
+				failureCode, ok := TryValidateMetaStepOutput(&step, stepOutput)
+				if !ok {
+					stepResults = append(stepResults, core.NewMetaStepExecutionResult(step.Id, step.Kind, "failed", failureCode, durationMs, continueOnError))
+
+					if TryActivateFailureBranch(&step, stepById, pending, blocked, failureAliases) {
+						progress = true
+						break
+					}
+
+					if !continueOnError {
+						return ReturnMetaExecutionOutput(session, metaSkill, "", stepResults, fmt.Sprintf("Meta step '%s' failed output contract validation.", step.Id), false)
+					}
+
+					CompleteMetaStepOutput(step, stepOutput, pending, outputs, failureAliases)
+					routePlanner.ApplyCompletionRouting(&step, core.SampleMetaExecutionContext(input, outputs), stepById, blocked, pending, dependentsByStep)
+					progress = true
+					break
+				}
+
+				CompleteMetaStepOutput(step, stepOutput, pending, outputs, failureAliases)
+				routePlanner.ApplyCompletionRouting(&step, core.SampleMetaExecutionContext(input, outputs), stepById, blocked, pending, dependentsByStep)
+				progress = true
+				stepResults = append(stepResults, core.NewMetaStepExecutionResult(step.Id, step.Kind, "completed", "", durationMs, false))
+
+			case "llm_classify":
+				optionsValues := util.ParseStringArray(stepArgs, "options")
+				if len(optionsValues) == 0 {
+					return ReturnMetaExecutionOutput(session, metaSkill, "", stepResults, fmt.Sprintf("Meta step '%s' is 'llm_classify' but does not declare non-empty options.", step.Id), false)
+				}
+
+				var classifyPrompt = BuildClassificationPrompt(stepInput, optionsValues)
+
+				sysmasg := chatcompletion.NewChatMessageWithText(chatcompletion.RoleSystem, "You are a strict classifier. Return exactly one label from the provided options.")
+				usermsg := chatcompletion.NewChatMessageWithText(chatcompletion.RoleUser, classifyPrompt)
+				var messages = []chatcompletion.ChatMessage{
+					*sysmasg,
+					*usermsg,
+				}
+
+				var maxTokens int64 = 32
+				var temperature float64 = 0
+				tokens := util.GetInt(stepArgs, "max_tokens")
+				if tokens != nil && *tokens != 0 {
+					maxTokens = int64(*tokens)
+				}
+
+				temp := util.GetFloat64(stepArgs, "temperature")
+				if temp != nil && *temp != 0 {
+					temperature = float64(*temp)
+				}
+				modelId := a.config.Model
+				if session.ModelOverride != "" {
+					modelId = session.ModelOverride
+				}
+				var chatOptions = chatcompletion.ChatOptions{
+					ModelId:         &modelId,
+					MaxOutputTokens: &maxTokens,
+					Temperature:     &temperature,
+				}
+
+				start := time.Now()
+				llmResult, err := ExecuteMetaLlmStepWithPolicy(
+					ctx,
+					&step,
+					func(token context.Context) (*LlmExecutionResult, error) {
+						return a.CallLlmWithResilience(token, session, messages, chatOptions, turnCtx)
+					},
+				)
+				durationMs := float64(time.Since(start).Nanoseconds()) / 1e6
+				if err != nil {
+					return ReturnMetaExecutionOutput(session, metaSkill, "", stepResults, fmt.Sprintf("Meta step '%s' exec error.", step.Id), false)
+				}
+				if !llmResult.Completed() {
+					failureMessage := llmResult.FailureMessage
+					if failureMessage == "" {
+						failureMessage = fmt.Sprintf("Meta step '%s' failed before producing a response.", step.Id)
+					}
+					stepResults = append(stepResults, core.NewMetaStepExecutionResult(step.Id, step.Kind, "failed", llmResult.FailureCode, durationMs, continueOnError))
+
+					if TryActivateFailureBranch(&step, stepById, pending, blocked, failureAliases) {
+						progress = true
+						break
+					}
+
+					if !continueOnError {
+						return ReturnMetaExecutionOutput(session, metaSkill, "", stepResults, failureMessage, false)
+					}
+
+					CompleteMetaStepOutput(step, failureMessage, pending, outputs, failureAliases)
+					routePlanner.ApplyCompletionRouting(&step, core.SampleMetaExecutionContext(input, outputs), stepById, blocked, pending, dependentsByStep)
+					progress = true
+					break
+				}
+
+				rawLabel := ""
+				if llmResult.ExecutionResult != nil && llmResult.ExecutionResult.Response != nil {
+					rawLabel = llmResult.ExecutionResult.Response.Text()
+				}
+				selectedLabel, ok := TryResolveClassificationLabel(rawLabel, optionsValues)
+				if !ok {
+					stepResults = append(stepResults, core.NewMetaStepExecutionResult(step.Id, step.Kind, "failed", "invalid_classification", durationMs, continueOnError))
+
+					if TryActivateFailureBranch(&step, stepById, pending, blocked, failureAliases) {
+						progress = true
+						break
+					}
+
+					if !continueOnError {
+						return ReturnMetaExecutionOutput(session, metaSkill, "", stepResults, fmt.Sprintf("Meta step '%s' returned classification '{rawLabel}' outside declared options.", step.Id), false)
+					}
+
+					CompleteMetaStepOutput(step, rawLabel, pending, outputs, failureAliases)
+					routePlanner.ApplyCompletionRouting(&step, core.SampleMetaExecutionContext(input, outputs), stepById, blocked, pending, dependentsByStep)
+					progress = true
+					break
+				}
+
+				outputFailureCode, ok := TryValidateMetaStepOutput(&step, selectedLabel)
+				if !ok {
+					stepResults = append(stepResults, core.NewMetaStepExecutionResult(step.Id, step.Kind, "failed", outputFailureCode, durationMs, continueOnError))
+
+					if TryActivateFailureBranch(&step, stepById, pending, blocked, failureAliases) {
+						progress = true
+						break
+					}
+
+					if !continueOnError {
+						return ReturnMetaExecutionOutput(session, metaSkill, "", stepResults, fmt.Sprintf("Meta step '%s' failed output contract validation.", step.Id), false)
+					}
+
+					CompleteMetaStepOutput(step, selectedLabel, pending, outputs, failureAliases)
+					routePlanner.ApplyCompletionRouting(&step, core.SampleMetaExecutionContext(input, outputs), stepById, blocked, pending, dependentsByStep)
+					progress = true
+					break
+				}
+
+				CompleteMetaStepOutput(step, selectedLabel, pending, outputs, failureAliases)
+				progress = true
+				stepResults = append(stepResults, core.NewMetaStepExecutionResult(step.Id, step.Kind, "completed", "", durationMs, false))
+
+				routePlanner.ApplyCompletionRouting(&step, core.SampleMetaExecutionContext(input, outputs), stepById, blocked, pending, dependentsByStep)
+
+				routeMap := TryGetRouteMap(stepArgs)
+				if len(routeMap) > 0 {
+					ApplyClassificationRouting(
+						selectedLabel,
+						routeMap,
+						blocked,
+						pending,
+						dependentsByStep,
+						stepById)
+				}
+
+			case "user_input":
+				userValue := util.Deref(util.GetString(stepArgs, "value"))
+				if userValue == "" {
+					userValue = util.Deref(util.GetString(stepArgs, "default"))
+				}
+				if userValue == "" {
+					userValue = util.Deref(util.GetString(stepArgs, "default_input"))
+				}
+				if userValue == "" {
+					userValue = stepInput
+				}
+				skipClarify := step.Clarify != nil && step.Clarify.SkipIf != "" && conditionEvaluator.Evaluate(step.Clarify.SkipIf, core.SampleMetaExecutionContext(input, outputs))
+
+				if userValue != "" {
+					if skipClarify {
+						CompleteMetaStepOutput(step, "", pending, outputs, failureAliases)
+						routePlanner.ApplyCompletionRouting(&step, core.SampleMetaExecutionContext(input, outputs), stepById, blocked, pending, dependentsByStep)
+						progress = true
+						stepResults = append(stepResults, core.NewMetaStepExecutionResult(step.Id, step.Kind, "completed", "", 0, false))
+						break
+					}
+
+					prompt := util.Deref(util.GetString(stepArgs, "prompt"))
+					if prompt == "" {
+						prompt = fmt.Sprintf("Please provide input for step '%s'.", step.Id)
+					}
+					stepResults = append(stepResults, core.NewMetaStepExecutionResult(step.Id, step.Kind, "failed", "user_input_required", 0, continueOnError))
+
+					SaveMetaExecutionCheckpoint(
+						session,
+						metaSkill.Name,
+						step.Id,
+						prompt,
+						pending,
+						blocked,
+						outputs,
+						failureAliases,
+						stepResults)
+
+					if TryActivateFailureBranch(&step, stepById, pending, blocked, failureAliases) {
+						progress = true
+						break
+					}
+
+					if !continueOnError {
+						return ReturnMetaExecutionOutput(session, metaSkill, "", stepResults, fmt.Sprintf("Meta step '%s' requires user input but no value/default is available in the current execution context. Prompt: %s", step.Id, prompt), true)
+					}
+
+					CompleteMetaStepOutput(step, "", pending, outputs, failureAliases)
+					progress = true
+					break
+				}
+
+				var normalizedUserValue = userValue
+				if IsClarifyInputTimedOut(session, metaSkill.Name, &step) {
+					stepResults = append(stepResults, core.NewMetaStepExecutionResult(step.Id, step.Kind, "failed", "user_input_timeout", 0, continueOnError))
+
+					if TryActivateFailureBranch(&step, stepById, pending, blocked, failureAliases) {
+						progress = true
+						break
+					}
+
+					if !continueOnError {
+						return ReturnMetaExecutionOutput(session, metaSkill, "", stepResults, fmt.Sprintf("Meta step '%s' clarify input timed out.", step.Id), false)
+					}
+
+					CompleteMetaStepOutput(step, "", pending, outputs, failureAliases)
+					routePlanner.ApplyCompletionRouting(&step, core.SampleMetaExecutionContext(input, outputs), stepById, blocked, pending, dependentsByStep)
+					progress = true
+					break
+				}
+
+				if step.Clarify != nil {
+					var clarifyResult = clarifyValidator.ValidateAndNormalize(userValue, step.Clarify)
+					if clarifyResult != nil && !clarifyResult.IsValid {
+						stepResults = append(stepResults, core.NewMetaStepExecutionResult(step.Id, step.Kind, "failed", clarifyResult.FailureCode, 0, continueOnError))
+
+						if TryActivateFailureBranch(&step, stepById, pending, blocked, failureAliases) {
+							progress = true
+							break
+						}
+
+						if !continueOnError {
+							clarifyFailure := fmt.Sprintf("Meta step '%s' failed clarify validation.", step.Id)
+							switch clarifyResult.FailureCode {
+							case "user_input_cancelled":
+								clarifyFailure = fmt.Sprintf("Meta step '%s' clarify input was cancelled.", step.Id)
+							case "user_input_timeout":
+								clarifyFailure = fmt.Sprintf("Meta step '%s' clarify input timed out.", step.Id)
+							}
+							return ReturnMetaExecutionOutput(session, metaSkill, "", stepResults, clarifyFailure, false)
+						}
+
+						CompleteMetaStepOutput(step, userValue, pending, outputs, failureAliases)
+						routePlanner.ApplyCompletionRouting(&step, core.SampleMetaExecutionContext(input, outputs), stepById, blocked, pending, dependentsByStep)
+						progress = true
+						break
+					}
+
+					normalizedUserValue = clarifyResult.NormalizedOutput
+					if normalizedUserValue == "" {
+						normalizedUserValue = userValue
+					}
+				}
+
+				failureCode, ok := TryValidateMetaStepOutput(&step, normalizedUserValue)
+				if !ok {
+					stepResults = append(stepResults, core.NewMetaStepExecutionResult(step.Id, step.Kind, "failed", failureCode, 0, continueOnError))
+
+					if TryActivateFailureBranch(&step, stepById, pending, blocked, failureAliases) {
+						progress = true
+						break
+					}
+
+					if !continueOnError {
+						return ReturnMetaExecutionOutput(session, metaSkill, "", stepResults, fmt.Sprintf("Meta step '%s' failed output contract validation.", step.Id), false)
+					}
+
+					CompleteMetaStepOutput(step, userValue, pending, outputs, failureAliases)
+					routePlanner.ApplyCompletionRouting(&step, core.SampleMetaExecutionContext(input, outputs), stepById, blocked, pending, dependentsByStep)
+					progress = true
+					break
+				}
+
+				CompleteMetaStepOutput(step, normalizedUserValue, pending, outputs, failureAliases)
+				routePlanner.ApplyCompletionRouting(&step, core.SampleMetaExecutionContext(input, outputs), stepById, blocked, pending, dependentsByStep)
+				progress = true
+				stepResults = append(stepResults, core.NewMetaStepExecutionResult(step.Id, step.Kind, "completed", "", 0, false))
+
+			case "fan_out":
+				// Managed primarily by TryExecuteFanOutStepAsync (called above the loop).
+				// If a step reaches here its dependencies are still unsatisfied —
+				// skip and retry next iteration.
+
+			default:
+				return ReturnMetaExecutionOutput(session, metaSkill, "", stepResults, fmt.Sprintf("Meta step '%s' has unsupported kind '%s'.", step.Id, step.Kind), false)
+			}
+		}
+
+		if progress {
+			continue
+		}
+
+		remaining := []string{}
+		for _, step := range steps {
+			_, pendingok := pending[step.Id]
+			_, blockedok := blocked[step.Id]
+			if pendingok && !blockedok {
+				remaining = append(remaining, step.Id)
+			}
+		}
+
+		if len(remaining) == 0 {
+			break
+		}
+
+		return ReturnMetaExecutionOutput(session, metaSkill, "", stepResults, fmt.Sprintf("Meta execution graph stalled. Remaining unresolved steps: %s.", strings.Join(remaining, ", ")), false)
+	}
+
+	executedStepIds := []string{}
+	for _, step := range steps {
+		if _, ok := outputs[step.Id]; ok {
+			executedStepIds = append(executedStepIds, step.Id)
+		}
+	}
+	var finalText = ResolveMetaFinalText(metaSkill, steps, outputs, executedStepIds)
+
+	return ReturnMetaExecutionOutput(session, metaSkill, finalText, stepResults, "", false)
 }
