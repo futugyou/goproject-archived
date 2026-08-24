@@ -57,7 +57,7 @@ type MetaLlmStepExecutionResult struct {
 	FailureMessage  string
 }
 
-func (m *MetaLlmStepExecutionResult) IsMetaLlmStepExecutionResultCompleted() bool {
+func (m *MetaLlmStepExecutionResult) Completed() bool {
 	return m.ExecutionResult != nil
 }
 

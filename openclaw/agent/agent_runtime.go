@@ -1625,3 +1625,139 @@ func (a *AgentRuntime) CallLlmWithResilience(
 
 	return nil, lastException
 }
+
+func (a *AgentRuntime) ExecuteFanOutChild(
+	ctx context.Context,
+	metaSkill core.SkillDefinition,
+	template core.MetaSkillStepDefinition,
+	childId,
+	childInput string,
+	childContext core.MetaExecutionContext,
+	session core.Session,
+	turnCtx *core.TurnContext,
+) (output string, failureCode string) {
+	switch NormalizeMetaStepKind(template.Kind) {
+	case "tool_call":
+		var toolName = template.Tool
+		if toolName == "" {
+			output = fmt.Sprintf("Error: fan-out child step '%s' is 'tool_call' but does not declare a tool.", childId)
+			failureCode = "missing_tool"
+			return
+		}
+		if len(template.ToolAllowlist) > 0 && !slices.Contains(template.ToolAllowlist, toolName) {
+			output = fmt.Sprintf("Error: tool '%s' is not allowlisted for fan-out child step '%s'.", toolName, childId)
+			failureCode = "tool_not_allowlisted"
+			return
+		}
+		if !IsToolAllowedByMetaCapabilities(metaSkill, toolName) {
+			output = fmt.Sprintf("Error: tool '%s' is not permitted by metadata capabilities for fan-out child step '%s'.", toolName, childId)
+			failureCode = "metadata_capability_denied"
+			return
+		}
+		toolArgsJson, err := core.NewMetaToolArgumentResolver(&core.MetaTemplateRenderer{}).Resolve("", template.WithJSON, template.ToolArgsJSON, &childContext)
+		if err != nil {
+			output = fmt.Sprintf("Error: invalid tool arguments for child step '%s'.", childId)
+			failureCode = "invalid_tool_args"
+			return
+		}
+
+		result, err := a.ExecuteMetaToolStepWithPolicy(
+			ctx,
+			metaSkill,
+			core.MetaSkillStepDefinition{Id: childId, Kind: template.Kind, Retry: template.Retry, TimeoutSeconds: template.TimeoutSeconds},
+			toolName,
+			toolArgsJson,
+			session,
+			turnCtx,
+		)
+
+		if err != nil {
+			output = fmt.Sprintf("Error: invalid tool arguments for child step '%s'.", childId)
+			failureCode = "exec_tool_error"
+			return
+		}
+
+		var completed = result.ResultStatus == "completed"
+		fc, ok := TryValidateMetaStepOutput(template, result.ResultText)
+		if completed && !ok {
+			completed = false
+		}
+		if completed {
+			output = result.ResultText
+		} else {
+			output = result.ResultText
+			failureCode = fc
+		}
+	case "llm_chat":
+		var stepArgs = util.DeserializeMap(template.WithJSON)
+		var systemPrompt = util.GetString(stepArgs, "system_prompt")
+		if systemPrompt == nil {
+			t := "Return the result for this step."
+			systemPrompt = &t
+		}
+		modelId := a.config.Model
+		if session.ModelOverride != "" {
+			modelId = session.ModelOverride
+		}
+		maxTokens := int64(a.maxTokens)
+		temperature := float64(a.temperature)
+		tokens := util.GetInt(stepArgs, "max_tokens")
+		if tokens != nil {
+			maxTokens = int64(*tokens)
+		}
+
+		temp := util.GetFloat64(stepArgs, "temperature")
+		if temp != nil {
+			temperature = float64(*temp)
+		}
+
+		var chatOptions = &chatcompletion.ChatOptions{
+			ModelId:         &modelId,
+			MaxOutputTokens: &maxTokens,
+			Temperature:     &temperature,
+		}
+
+		sysmasg := chatcompletion.NewChatMessageWithText(chatcompletion.RoleSystem, *systemPrompt)
+		usermsg := chatcompletion.NewChatMessageWithText(chatcompletion.RoleUser, childInput)
+		var messages = []chatcompletion.ChatMessage{
+			*sysmasg,
+			*usermsg,
+		}
+
+		llmResult, err := ExecuteMetaLlmStepWithPolicy(
+			ctx,
+			core.MetaSkillStepDefinition{Id: childId, Kind: template.Kind, Retry: template.Retry, TimeoutSeconds: template.TimeoutSeconds},
+			func(ctx context.Context) (*LlmExecutionResult, error) {
+				return a.CallLlmWithResilience(ctx, session, messages, *chatOptions, turnCtx)
+			},
+		)
+
+		if err != nil {
+			output = fmt.Sprintf("Error: llm_chat error for child step '%s'.", childId)
+			failureCode = "llm_chat_error"
+			return
+		}
+
+		if !llmResult.Completed() {
+			output = llmResult.FailureMessage
+			failureCode = llmResult.FailureCode
+			return
+		}
+
+		op := ""
+		if llmResult.ExecutionResult != nil && llmResult.ExecutionResult.Response != nil {
+			op = llmResult.ExecutionResult.Response.Text()
+		}
+
+		fc, ok := TryValidateMetaStepOutput(template, op)
+
+		if !ok {
+			output = op
+			failureCode = fc
+		}
+	default:
+		output = fmt.Sprintf("Error: unsupported fan_out child kind '%s'.", template.Kind)
+		failureCode = "unsupported_child_kind"
+	}
+	return
+}
