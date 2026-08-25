@@ -3,13 +3,15 @@ package agent
 import (
 	"context"
 
+	"github.com/futugyou/extensions_ai/abstractions/chatcompletion"
 	"github.com/futugyou/openclaw/core"
 )
 
 type TurnRoutingRequest struct {
-	Session     core.Session
+	Session     *core.Session
 	UserMessage string
-	Messages    []string
+	Messages    []chatcompletion.ChatMessage
+	BaseOptions chatcompletion.ChatOptions
 }
 
 type TurnRoutingDecision struct {

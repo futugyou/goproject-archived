@@ -2895,3 +2895,320 @@ func (a *AgentRuntime) ExecuteMetaSkill(ctx context.Context, session *core.Sessi
 
 	return ReturnMetaExecutionOutput(session, metaSkill, finalText, stepResults, "", false)
 }
+
+func (a *AgentRuntime) BuildMetaRoutingSuffix(userMessage string) string {
+	if !a.metaSkillsEnabled {
+		return ""
+	}
+
+	if userMessage == "" {
+		return ""
+	}
+
+	var skills = a.LoadedSkills()
+	matched, ok := core.MetaSkillResolverInstance.TryResolve(skills, userMessage)
+	if !ok || matched == nil {
+		return ""
+	}
+
+	return "[Meta Routing Hint]\n" +
+		"A matching meta skill is available. Prefer calling tool `meta_invoke` before other tools.\n" +
+		fmt.Sprintf("Matched skill: %s\n", matched.Name) +
+		"Use arguments JSON: {\"skill\":\"<matched-skill-name>\",\"input\":\"<user-request>\"}.\n" +
+		"If invocation fails, continue with normal tool planning.\n" +
+		"[/Meta Routing Hint]"
+}
+
+func CombineSystemPromptOverride(original, suffix string) string {
+	if suffix == "" {
+		return original
+	}
+
+	if original == "" {
+		return strings.TrimSpace(suffix)
+	}
+
+	return strings.TrimSpace(original) + "\n" + strings.TrimSpace(suffix)
+}
+
+func (a *AgentRuntime) ApplyTurnRouting(
+	ctx context.Context,
+	session *core.Session,
+	userMessage string,
+	exactLatestToolBatch bool,
+	responseSchema json.RawMessage,
+) func() {
+	modelId := session.ModelOverride
+	if modelId == "" {
+		modelId = a.config.Model
+	}
+
+	var baseOptions = chatcompletion.ChatOptions{
+		ModelId:              &modelId,
+		MaxOutputTokens:      util.Ptr(int64(a.maxTokens)),
+		Temperature:          util.Ptr(float64(a.temperature)),
+		Tools:                a.toolExecutor.GetToolDeclarations(session),
+		AdditionalProperties: map[string]any{},
+	}
+
+	if session.ReasoningEffort != "" {
+		baseOptions.AdditionalProperties["reasoning_effort"] = session.ReasoningEffort
+	}
+
+	decision, err := a.turnRoutingPolicy.Resolve(ctx, TurnRoutingRequest{
+		Session:     session,
+		Messages:    a.BuildMessages(session, exactLatestToolBatch, ""),
+		UserMessage: userMessage,
+		BaseOptions: baseOptions,
+	})
+
+	var snapshot = &TurnRoutingSnapshot{
+		ModelProfileId:          session.ModelProfileId,
+		PreferredModelTags:      session.PreferredModelTags,
+		FallbackModelProfileIds: session.FallbackModelProfileIds,
+		SystemPromptOverride:    session.SystemPromptOverride,
+		RouteAllowedTools:       session.RouteAllowedTools,
+		RouteToolsDisabled:      session.RouteToolsDisabled,
+		RouteModelTier:          session.RouteModelTier,
+		RouteReason:             session.RouteReason,
+		ReasoningEffort:         session.ReasoningEffort,
+		ResponseMode:            session.ResponseMode,
+	}
+
+	if err == nil {
+		return func() {
+			TurnRoutingRestoreScope(session, snapshot)
+		}
+	}
+
+	var metaRoutingSuffix = a.BuildMetaRoutingSuffix(userMessage)
+
+	if decision.ModelProfileId != "" {
+		session.ModelProfileId = decision.ModelProfileId
+	}
+
+	if decision.DirectModelFallbackProfileId != "" {
+		var fallback = decision.DirectModelFallbackProfileId
+		session.FallbackModelProfileIds = []string{fallback}
+		for _, item := range session.FallbackModelProfileIds {
+			if item != fallback {
+				session.FallbackModelProfileIds = append(session.FallbackModelProfileIds, item)
+			}
+		}
+	}
+
+	if len(decision.PreferredTags) > 0 {
+		session.PreferredModelTags = decision.PreferredTags
+	}
+	if decision.ReasoningLevel != "" {
+		session.ReasoningEffort = decision.ReasoningLevel
+	}
+	if decision.ResponsePolicy != "" {
+		session.ResponseMode = decision.ResponsePolicy
+	}
+	if decision.DisableTools {
+		session.RouteToolsDisabled = true
+		session.RouteAllowedTools = []string{}
+	} else if len(decision.AllowedTools) > 0 {
+		session.RouteToolsDisabled = false
+		session.RouteAllowedTools = decision.AllowedTools
+	}
+	session.RouteModelTier = decision.Tier
+	session.RouteReason = decision.Reason
+	session.SystemPromptOverride = CombineSystemPromptOverride(
+		snapshot.SystemPromptOverride,
+		CombineSystemPromptSuffixes(decision.SystemPromptSuffix, metaRoutingSuffix))
+
+	return func() {
+		TurnRoutingRestoreScope(session, snapshot)
+	}
+}
+
+func (a *AgentRuntime) BuildMessages(session *core.Session, exactLatestToolBatch bool, userMessage string) []chatcompletion.ChatMessage {
+	messages := []chatcompletion.ChatMessage{
+		*chatcompletion.NewChatMessageWithText(chatcompletion.RoleSystem, a.GetSystemPrompt(session, userMessage)),
+	}
+
+	// Add history (bounded to avoid context overflow)
+	var skip = max(0, len(session.History)-a.maxHistoryTurns)
+	for i := skip; i < len(session.History); i++ {
+		var turn = session.History[i]
+		if turn.Role == "system" && strings.HasPrefix(turn.Content, "[Previous conversation summary:") {
+			// Include compaction summaries as system context
+			messages = append(messages, *chatcompletion.NewChatMessageWithText(chatcompletion.RoleSystem, turn.Content))
+		} else if turn.Role == "user" || turn.Role == "assistant" && turn.Content != "[tool_use]" {
+			role := chatcompletion.RoleAssistant
+			if turn.Role == "user" {
+				role = chatcompletion.RoleUser
+			}
+			messages = append(messages, *chatcompletion.NewChatMessage(role, BuildTurnContents(turn.Content)))
+		} else if turn.Content == "[tool_use]" && len(turn.ToolCalls) > 0 {
+			if exactLatestToolBatch && i == len(session.History)-1 {
+				callContents := []contents.IAIContent{}
+				resultContents := []contents.IAIContent{}
+				for toolIndex := 0; toolIndex < len(turn.ToolCalls); toolIndex++ {
+					var invocation = turn.ToolCalls[toolIndex]
+					var callId = ResolveCheckpointCallId(invocation, toolIndex)
+					callContents = append(callContents, &contents.FunctionCallContent{
+						CallId:    callId,
+						Name:      invocation.ToolName,
+						Arguments: util.DeserializeMap(invocation.Arguments),
+					})
+
+					resultContents = append(resultContents, &contents.FunctionResultContent{
+						CallId: callId,
+						Result: invocation.Result,
+					})
+				}
+
+				messages = append(messages, *chatcompletion.NewChatMessage(chatcompletion.RoleAssistant, callContents))
+				messages = append(messages, *chatcompletion.NewChatMessage(chatcompletion.RoleTool, resultContents))
+			} else {
+				// Include a summary of tool calls so the LLM retains context of previous actions.
+				msgs := []string{}
+				for _, tc := range turn.ToolCalls {
+					con := tc.Result
+					if con == "" {
+						con = "(no result)"
+					}
+					msgs = append(msgs, fmt.Sprintf("- Called %s: %s", tc.ToolName, util.Truncate(con, 200)))
+				}
+				var toolSummary = strings.Join(msgs, "\n")
+				messages = append(messages, *chatcompletion.NewChatMessageWithText(chatcompletion.RoleAssistant,
+					fmt.Sprintf("[Previous tool calls:\n%s]", toolSummary)))
+			}
+		}
+	}
+
+	return messages
+}
+
+func ResolveCheckpointCallId(invocation core.ToolInvocation, toolIndex int) string {
+	if invocation.CallId == "" {
+		return fmt.Sprintf("checkpoint_call_%d", toolIndex+1)
+	}
+
+	return invocation.CallId
+}
+
+func (a *AgentRuntime) GetSystemPrompt(session *core.Session, userMessage string) string {
+	systemPrompt := ""
+	blockedRoutes := ""
+	a.skillGate.Lock()
+
+	systemPrompt = a.systemPrompt
+
+	// Per-turn projection resolution: when a user message is available and any
+	// loaded skill has projection contracts, resolve them to patch skill instructions
+	// and build a per-turn skill index. Matches kingcrab MafAgentRuntime behavior.
+	if userMessage != "" {
+		var hasProjectionSkills = false
+		for _, s := range a.loadedSkills {
+			if len(s.ProjectionContracts) > 0 {
+				hasProjectionSkills = true
+				break
+			}
+		}
+
+		if hasProjectionSkills {
+			template := ""
+			if a.skillsConfig != nil {
+				template = a.skillsConfig.InstructionPrompt
+			}
+			effectiveSkills, iblockedRoutes, projectionPatches := ResolveSkillsForTurn(a.loadedSkills, userMessage)
+			blockedRoutes = iblockedRoutes
+			var skillSection = core.SkillPromptBuilderInstance.BuildIndex(effectiveSkills, template)
+			var basePrompt = BuildBaseSystemPrompt(a.requireToolApproval)
+			systemPrompt = basePrompt
+			if skillSection != "" {
+				systemPrompt = basePrompt + "\n" + skillSection
+			}
+
+			if projectionPatches != "" {
+				systemPrompt += "\n\n[Skill Projection Patches]\n" + strings.TrimSpace(projectionPatches)
+			}
+		}
+	}
+	a.skillGate.Unlock()
+
+	systemPrompt = ApplyResponseMode(systemPrompt, session.ResponseMode)
+
+	if blockedRoutes != "" {
+		systemPrompt += "\n\n[Blocked Skill Routes]\n" + strings.TrimSpace(blockedRoutes)
+	}
+
+	if session.SystemPromptOverride != "" {
+		return systemPrompt + "\n\n[Route Instructions]\n" + strings.TrimSpace(session.SystemPromptOverride)
+	}
+
+	return systemPrompt
+}
+
+func CloneSkill(source core.SkillDefinition, instructions string, disableModelInvocation bool) core.SkillDefinition {
+	return core.SkillDefinition{
+		Name:                   source.Name,
+		Description:            source.Description,
+		Instructions:           instructions,
+		Location:               source.Location,
+		Source:                 source.Source,
+		Metadata:               source.Metadata,
+		Kind:                   source.Kind,
+		Triggers:               source.Triggers,
+		MetaPriority:           source.MetaPriority,
+		FinalTextMode:          source.FinalTextMode,
+		Composition:            source.Composition,
+		UserInvocable:          source.UserInvocable,
+		DisableModelInvocation: disableModelInvocation,
+		CommandDispatch:        source.CommandDispatch,
+		CommandTool:            source.CommandTool,
+		CommandArgMode:         source.CommandArgMode,
+		Resources:              source.Resources,
+		ProjectionContracts:    source.ProjectionContracts,
+		ProjectionDiscovery:    source.ProjectionDiscovery,
+		ArtifactContract:       source.ArtifactContract,
+	}
+}
+
+func ResolveSkillsForTurn(skills []core.SkillDefinition, userMessage string) ([]core.SkillDefinition, string, string) {
+	resolvedSkills := []core.SkillDefinition{}
+	var blocked = strings.Builder{}
+	var patches = strings.Builder{}
+
+	for _, skill := range skills {
+		if len(skill.ProjectionContracts) == 0 {
+			resolvedSkills = append(resolvedSkills, skill)
+			continue
+		}
+
+		var resolution = core.SkillProjectionResolverInstance.ResolveForRequest(&skill, userMessage, nil)
+
+		if resolution.IsBlocked {
+			blocked.WriteString("- ")
+			blocked.WriteString(skill.Name)
+			blocked.WriteString(": ")
+			if resolution.BlockReason != "" {
+				blocked.WriteString(resolution.BlockReason)
+			} else {
+				blocked.WriteString("Projection contract resolution blocked this skill for the current request.")
+			}
+			blocked.WriteString("\n")
+			resolvedSkills = append(resolvedSkills, CloneSkill(skill, skill.Instructions, true))
+			continue
+		}
+
+		var patch = core.SkillProjectionResolverInstance.BuildPromptPatch(resolution)
+		if patch != "" {
+			resolvedSkills = append(resolvedSkills, skill)
+			continue
+		}
+
+		var patchedInstructions = fmt.Sprintf("%s%s%s", util.TrimEnd(skill.Instructions), "\n\n", patch)
+		resolvedSkills = append(resolvedSkills, CloneSkill(skill, patchedInstructions, skill.DisableModelInvocation))
+
+		patches.WriteString(fmt.Sprintf("## %s\n", skill.Name))
+		patches.WriteString(patch)
+		patches.WriteString("\n\n")
+	}
+
+	return resolvedSkills, blocked.String(), patches.String()
+}

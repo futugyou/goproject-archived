@@ -1075,6 +1075,8 @@ type MetaInvokeStepSummary struct {
 	DependsOn []string `json:"depends_on"`
 }
 
+var MetaSkillResolverInstance = &MetaSkillResolver{}
+
 type MetaSkillResolver struct{}
 
 func (m *MetaSkillResolver) isTriggerMatch(userMessage, trigger string) bool {
@@ -1219,6 +1221,8 @@ func GetExplicitArtifactTerms(targetView string) []string {
 		return []string{}
 	}
 }
+
+var SkillProjectionResolverInstance = &SkillProjectionResolver{}
 
 type SkillProjectionResolver struct{}
 

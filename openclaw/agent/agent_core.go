@@ -82,9 +82,16 @@ type TurnRoutingSnapshot struct {
 	ResponseMode            string
 }
 
-type TurnRoutingRestoreScope struct {
-	Session  core.Session
-	Snapshot TurnRoutingSnapshot
+func TurnRoutingRestoreScope(session *core.Session, snapshot *TurnRoutingSnapshot) {
+	session.ModelProfileId = snapshot.ModelProfileId
+	session.PreferredModelTags = snapshot.PreferredModelTags
+	session.FallbackModelProfileIds = snapshot.FallbackModelProfileIds
+	session.SystemPromptOverride = snapshot.SystemPromptOverride
+	session.RouteAllowedTools = snapshot.RouteAllowedTools
+	session.RouteToolsDisabled = snapshot.RouteToolsDisabled
+	session.RouteReason = snapshot.RouteReason
+	session.ReasoningEffort = snapshot.ReasoningEffort
+	session.ResponseMode = snapshot.ResponseMode
 }
 
 type StreamCollectResult struct {
