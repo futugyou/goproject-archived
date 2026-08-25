@@ -59,10 +59,10 @@ type AgentRuntime struct {
 	recall                          *core.MemoryRecallConfig
 	profileStore                    core.IUserProfileStore
 	profilesConfig                  *core.ProfilesConfig
-	isContractTokenBudgetExceeded   func(session core.Session) bool
-	isContractRuntimeBudgetExceeded func(session core.Session) bool
-	recordContractTurnUsage         func(session core.Session, arg1, arg2 string, arg3, arg4 int64)
-	appendContractSnapshot          func(session core.Session, arg string)
+	isContractTokenBudgetExceeded   func(session *core.Session) bool
+	isContractRuntimeBudgetExceeded func(session *core.Session) bool
+	recordContractTurnUsage         func(session *core.Session, arg1, arg2 string, arg3, arg4 int64)
+	appendContractSnapshot          func(session *core.Session, arg string)
 	skillsConfig                    *core.SkillsConfig
 	metaSkillsEnabled               bool
 	skillWorkspacePath              *string
@@ -109,10 +109,10 @@ type AgentRuntimeOptions struct {
 	ToolUsageTracker                *core.ToolUsageTracker
 	ExecutionRouter                 *ToolExecutionRouter
 	ToolPresetResolver              core.IToolPresetResolver
-	IsContractTokenBudgetExceeded   func(session core.Session) bool
-	IsContractRuntimeBudgetExceeded func(session core.Session) bool
-	RecordContractTurnUsage         func(session core.Session, arg1, arg2 string, arg3, arg4 int64)
-	AppendContractSnapshot          func(session core.Session, arg string)
+	IsContractTokenBudgetExceeded   func(session *core.Session) bool
+	IsContractRuntimeBudgetExceeded func(session *core.Session) bool
+	RecordContractTurnUsage         func(session *core.Session, arg1, arg2 string, arg3, arg4 int64)
+	AppendContractSnapshot          func(session *core.Session, arg string)
 	ToolAuditLog                    *core.ToolAuditLog
 	Redaction                       core.IRedactionPipeline
 	SentinelSubstitution            core.ISentinelSubstitutionService
@@ -394,7 +394,7 @@ func (a *AgentRuntime) ApplySkills(skills []core.SkillDefinition) {
 	a.loadedSkillNames = names
 }
 
-func (a *AgentRuntime) AppendContractSnapshot(session core.Session, status string) {
+func (a *AgentRuntime) AppendContractSnapshot(session *core.Session, status string) {
 	if session.ContractPolicy == nil {
 		return
 	}
@@ -404,7 +404,7 @@ func (a *AgentRuntime) AppendContractSnapshot(session core.Session, status strin
 	}
 }
 
-func (a *AgentRuntime) TryRejectContractBudget(session core.Session) (message string, ok bool) {
+func (a *AgentRuntime) TryRejectContractBudget(session *core.Session) (message string, ok bool) {
 	if session.ContractPolicy == nil {
 		return
 	}
@@ -3427,4 +3427,56 @@ func (a *AgentRuntime) TryInjectRecall(ctx context.Context, messages []chatcompl
 	messages = util.SlicesInsert(messages, min(1, len(messages)), *chatcompletion.NewChatMessageWithText(chatcompletion.RoleUser, text))
 
 	return messages, true, nil
+}
+
+func CreateToolCompletedEvent(invocation core.ToolInvocation) core.AgentStreamEvent {
+	resultStatus := invocation.ResultStatus
+	if resultStatus == "" {
+		resultStatus = "completed"
+	}
+	return core.NewToolCompleted(invocation.ToolName, invocation.Result, resultStatus, invocation.FailureCode, invocation.FailureMessage, invocation.NextStep)
+}
+
+func (a *AgentRuntime) RecordTurnUsage(
+	session *core.Session,
+	providerId,
+	modelId string,
+	inputTokens,
+	outputTokens,
+	cacheReadTokens,
+	cacheWriteTokens int64,
+	estimatedInputTokensByComponent *core.InputTokenComponentEstimate,
+	isEstimated bool,
+	correlationId string) {
+	var record = core.TurnTokenUsageRecord{
+		CorrelationId:                   correlationId,
+		SessionId:                       session.Id,
+		ChannelId:                       session.ChannelId,
+		ProviderId:                      providerId,
+		ModelId:                         modelId,
+		InputTokens:                     inputTokens,
+		OutputTokens:                    outputTokens,
+		CacheReadTokens:                 cacheReadTokens,
+		CacheWriteTokens:                cacheWriteTokens,
+		EstimatedInputTokensByComponent: estimatedInputTokensByComponent,
+		IsEstimated:                     isEstimated,
+	}
+
+	if a.turnTokenUsageObserver != nil {
+		a.turnTokenUsageObserver.RecordTurn(record)
+		return
+	}
+
+	if a.providerUsage != nil {
+		a.providerUsage.RecordTurn(
+			record.SessionId,
+			record.ChannelId,
+			record.ProviderId,
+			record.ModelId,
+			record.InputTokens,
+			record.OutputTokens,
+			record.CacheReadTokens,
+			record.CacheWriteTokens,
+			record.EstimatedInputTokensByComponent)
+	}
 }

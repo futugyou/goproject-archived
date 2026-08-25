@@ -29,7 +29,7 @@ type ProviderUsageTurnTokenUsageObserver struct {
 
 // RecordTurn implements [ITurnTokenUsageObserver].
 func (p *ProviderUsageTurnTokenUsageObserver) RecordTurn(record TurnTokenUsageRecord) {
-	p.providerUsage.RecordTurn(record.SessionId, record.ChannelId, record.ProviderId, record.ModelId, record.InputTokens, record.OutputTokens, record.CacheReadTokens, record.CacheWriteTokens, &record.EstimatedInputTokensByComponent)
+	p.providerUsage.RecordTurn(record.SessionId, record.ChannelId, record.ProviderId, record.ModelId, record.InputTokens, record.OutputTokens, record.CacheReadTokens, record.CacheWriteTokens, record.EstimatedInputTokensByComponent)
 }
 
 func NewProviderUsageTurnTokenUsageObserver(providerUsage *ProviderUsageTracker) *ProviderUsageTurnTokenUsageObserver {

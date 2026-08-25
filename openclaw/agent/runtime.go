@@ -161,7 +161,7 @@ func ManagerMarkCheckpointCompleted(session *core.Session, state, reason string)
 	checkpoint.CompletionReason = reason
 }
 
-func ManagerTryGetResumableCheckpoint(session core.Session) *core.SessionExecutionCheckpoint {
+func ManagerTryGetResumableCheckpoint(session *core.Session) *core.SessionExecutionCheckpoint {
 	var checkpoint = session.ExecutionCheckpoint
 	if checkpoint == nil || !strings.EqualFold(checkpoint.Kind, "tool_batch") || !strings.EqualFold(checkpoint.State, "ready_to_resume") || checkpoint.PersistedAtUtc == nil {
 		return nil
