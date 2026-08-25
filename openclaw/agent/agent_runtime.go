@@ -3278,3 +3278,51 @@ func (a *AgentRuntime) TryInjectProfileRecall(ctx context.Context, messages []ch
 
 	return messages, nil
 }
+
+func (a *AgentRuntime) TryInjectStructuredMemoryContext(
+	ctx context.Context, messages []chatcompletion.ChatMessage, session *core.Session,
+	userMessage string,
+	memoryRecallInjected bool,
+) ([]chatcompletion.ChatMessage, error) {
+	if a.contextBudgetPlanner == nil ||
+		a.fractalMemory == nil ||
+		!a.fractalMemory.Enabled ||
+		a.fractalMemory.AutoContextMode != "auto" {
+		return messages, nil
+	}
+
+	if userMessage == "" {
+		return messages, nil
+	}
+
+	result, err := a.contextBudgetPlanner.BuildContext(ctx, &core.StructuredMemoryContextRequest{
+		Query:     userMessage,
+		SessionId: session.Id,
+		Mode:      "auto",
+		MaxChars:  &a.fractalMemory.MaxContextChars,
+		MaxTokens: &a.fractalMemory.MaxContextTokens,
+	})
+
+	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		return messages, err
+	}
+
+	if err != nil {
+		a.logger.Warn("Fractal Memory context injection failed; continuing without structured memory context.", "error", err.Error())
+		return messages, nil
+	}
+
+	if !result.Success || result.Context == "" {
+		return messages, nil
+	}
+
+	// Fractal Memory is reference data, not instruction authority.
+	insertionIndex := 1
+	if memoryRecallInjected {
+		insertionIndex = 2
+	}
+
+	messages = util.SlicesInsert(messages, min(insertionIndex, len(messages)), *chatcompletion.NewChatMessageWithText(chatcompletion.RoleUser, result.Context))
+
+	return messages, nil
+}
