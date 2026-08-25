@@ -357,3 +357,16 @@ func TrimEnd(text string) string {
 	}
 	return strings.TrimRightFunc(text, checkIfSpace)
 }
+
+func Indent(value, prefix string) string {
+	if value == "" {
+		return prefix
+	}
+
+	var lines = strings.Split(value, "\n")
+	for i := range lines {
+		lines[i] = prefix + lines[i]
+	}
+
+	return strings.Join(lines, "\n")
+}

@@ -188,19 +188,6 @@ type AgentPreparedTurn struct {
 	ResumeCheckpoint *core.SessionExecutionCheckpoint
 }
 
-func assemblerIndent(value, prefix string) string {
-	if value == "" {
-		return prefix
-	}
-
-	var lines = strings.Split(value, "\n")
-	for i := 0; i < len(lines); i++ {
-		lines[i] = prefix + lines[i]
-	}
-
-	return strings.Join(lines, "\n")
-}
-
 func assemblerBuildTurnContents(content string) []contents.IAIContent {
 	markers, remainingText := core.MediaMarkerExtract(content)
 	conts := []contents.IAIContent{}
@@ -473,7 +460,7 @@ func (a *AgentPromptContextAssembler) TryInjectRecall(ctx context.Context, messa
 		content = util.Truncate(strings.ReplaceAll(content, "\r\n", "\n"), 2000)
 
 		sb.WriteString("  ---\n")
-		sb.WriteString(assemblerIndent(content, "  "))
+		sb.WriteString(util.Indent(content, "  "))
 		sb.WriteString("\n")
 		sb.WriteString("  ---\n")
 	}
