@@ -3480,3 +3480,189 @@ func (a *AgentRuntime) RecordTurnUsage(
 			record.EstimatedInputTokensByComponent)
 	}
 }
+
+func (a *AgentRuntime) getToolCalls(invocations []core.ToolInvocation) []core.SessionCheckpointToolCall {
+	result := []core.SessionCheckpointToolCall{}
+	for _, invocation := range invocations {
+		call := core.SessionCheckpointToolCall{
+			CallId:         invocation.CallId,
+			ToolName:       invocation.ToolName,
+			FailureCode:    invocation.FailureCode,
+			DurationMs:     invocation.Duration.Milliseconds(),
+			ArgumentsBytes: len(invocation.Arguments),
+			ResultBytes:    len(invocation.Result),
+			ResultStatus:   invocation.ResultStatus,
+		}
+
+		if call.ResultStatus == "" {
+			call.ResultStatus = "completed"
+		}
+		result = append(result, call)
+	}
+	return result
+}
+
+func (a *AgentRuntime) PersistToolBatchCheckpoint(ctx context.Context, session core.Session, turnCtx *core.TurnContext, iteration int, invocations []core.ToolInvocation) error {
+	if len(invocations) == 0 {
+		return nil
+	}
+	sequence := 1
+	if session.ExecutionCheckpoint != nil {
+		sequence += session.ExecutionCheckpoint.Sequence
+	}
+
+	var checkpoint = core.SessionExecutionCheckpoint{
+		CheckpointId:  fmt.Sprintf("chk_%s", util.CleanUUID())[:20],
+		Kind:          "tool_batch",
+		State:         "ready_to_resume",
+		Sequence:      sequence,
+		Iteration:     iteration,
+		HistoryCount:  len(session.History),
+		CorrelationId: turnCtx.CorrelationId,
+		CreatedAtUtc:  time.Now().UTC(),
+		ToolCalls:     a.getToolCalls(invocations),
+	}
+
+	session.ExecutionCheckpoint = &checkpoint
+
+	maxRetries := 3
+	var delay = time.Millisecond * 100
+
+	recordRetry := func(attempt int, err error) error {
+		checkpoint.PersistedAtUtc = nil
+		a.logger.Warn("checkpoint persistence failed", "CorrelationId", turnCtx.CorrelationId, "Attempt", attempt, "MaxRetries", maxRetries, "SessionId", session.Id, "Error", err.Error())
+		select {
+		case <-time.After(delay):
+			delay *= 2
+			return nil
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+	}
+
+	recordFinalFailure := func(err error) {
+		checkpoint.PersistedAtUtc = nil
+		a.logger.Warn("failed to persist checkpoint after 3 attempts", "CorrelationId", turnCtx.CorrelationId, "SessionId", session.Id, "Error", err.Error())
+	}
+
+	var err error
+
+	for attempt := 1; attempt <= maxRetries; attempt++ {
+		checkpoint.PersistedAtUtc = new(time.Now().UTC())
+		err = a.memory.SaveSession(ctx, session)
+		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+			return err
+		}
+
+		if err != nil && attempt < maxRetries {
+			recordRetry(attempt, err)
+		}
+	}
+
+	if err != nil {
+		recordFinalFailure(err)
+	}
+	return err
+}
+
+func (a *AgentRuntime) CompactHistory(ctx context.Context, session *core.Session, correlationId string) error {
+	if len(session.History) <= a.compactionThreshold {
+		// Below threshold — just apply simple trim as fallback
+		a.TrimHistory(session)
+		return nil
+	}
+
+	var keepCount = min(a.compactionKeepRecent, len(session.History)-2)
+	var toSummarizeCount = len(session.History) - keepCount
+
+	if toSummarizeCount < 4 {
+		a.TrimHistory(session)
+		return nil
+	}
+
+	// Check if we already have a compaction summary as the first turn
+	if len(session.History) > 0 &&
+		session.History[0].Role == "system" &&
+		strings.HasPrefix(session.History[0].Content, "[Previous conversation summary:") {
+		// Previous summary will be included in what gets re-summarized
+	}
+
+	var turnsToSummarize = session.History[0:toSummarizeCount]
+	var conversationText = strings.Builder{}
+	for _, turn := range turnsToSummarize {
+		if turn.Content == "[tool_use]" && len(turn.ToolCalls) > 0 {
+			for _, tc := range turn.ToolCalls {
+				conversationText.WriteString(fmt.Sprintf("assistant: [called %s] → %s\n", tc.ToolName, util.Truncate(tc.Result, 200)))
+			}
+		} else {
+			conversationText.WriteString(fmt.Sprintf("%s: %s\n", turn.Role, util.Truncate(turn.Content, 500)))
+		}
+	}
+
+	summaryMessages := []chatcompletion.ChatMessage{
+		*chatcompletion.NewChatMessageWithText(chatcompletion.RoleSystem, "Summarize the following conversation turns into a concise context summary (2-3 sentences). "+
+			"Focus on key decisions, facts established, and pending tasks. Output ONLY the summary."),
+		*chatcompletion.NewChatMessageWithText(chatcompletion.RoleUser, conversationText.String()),
+	}
+
+	summaryOptions := chatcompletion.ChatOptions{
+		MaxOutputTokens: util.Ptr(int64(256)),
+		Temperature:     util.Ptr(float64(0.3)),
+	}
+
+	var compactionTurnCtx = &core.TurnContext{
+		CorrelationId: ResolveCorrelationId(ctx, correlationId),
+		SessionId:     session.Id,
+		ChannelId:     session.ChannelId,
+	}
+	start := time.Now()
+	response, err := a.CallLlmWithResilience(ctx, session, summaryMessages, summaryOptions, compactionTurnCtx)
+
+	if errors.Is(err, context.Canceled) {
+		return err
+	}
+
+	if err != nil {
+		a.logger.Warn("History compaction failed — falling back to simple trim", "error", err.Error())
+		a.TrimHistory(session)
+		return nil
+	}
+
+	var summaryInputTokens int64 = 0
+	var summaryOutputTokens int64 = 0
+	summary := ""
+	if response.Response != nil {
+		summary = response.Response.Text()
+		if response.Response.Usage != nil {
+			summaryInputTokens = util.Deref(response.Response.Usage.InputTokenCount)
+			summaryOutputTokens = util.Deref(response.Response.Usage.OutputTokenCount)
+		}
+	}
+
+	session.AddTokenUsage(summaryInputTokens, summaryOutputTokens)
+	if a.recordContractTurnUsage != nil {
+		a.recordContractTurnUsage(session, response.ProviderId, response.ModelId, summaryInputTokens, summaryOutputTokens)
+	}
+
+	compactionTurnCtx.RecordLlmCall(time.Since(start), summaryInputTokens, summaryOutputTokens)
+	if a.metrics != nil {
+		a.metrics.IncrementLlmCalls()
+		a.metrics.AddInputTokens(summaryInputTokens)
+		a.metrics.AddOutputTokens(summaryOutputTokens)
+		if summary != "" {
+			a.metrics.IncrementMemoryCompactions()
+		}
+	}
+
+	if summary != "" {
+		session.History = util.SlicesRemoveRange(session.History, 0, toSummarizeCount)
+		session.History = util.SlicesInsert(session.History, 0, core.ChatTurn{
+			Role:    "systeem",
+			Content: fmt.Sprintf("[Previous conversation summary: %s]", summary),
+		})
+	} else {
+		a.TrimHistory(session)
+	}
+
+	return nil
+}

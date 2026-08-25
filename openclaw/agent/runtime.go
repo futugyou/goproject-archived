@@ -76,8 +76,13 @@ func (a *AgentCheckpointManager) PersistToolBatchCheckpoint(ctx context.Context,
 	var err error
 
 	for attempt := 1; attempt <= maxRetries; attempt++ {
-		checkpoint.PersistedAtUtc = util.Ptr(time.Now().UTC())
+		checkpoint.PersistedAtUtc = new(time.Now().UTC())
 		err = a.memory.SaveSession(ctx, session)
+
+		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+			return err
+		}
+
 		if err != nil && attempt < maxRetries {
 			recordRetry(attempt, err)
 		}
@@ -157,7 +162,7 @@ func ManagerMarkCheckpointCompleted(session *core.Session, state, reason string)
 	}
 
 	checkpoint.State = state
-	checkpoint.CompletedAtUtc = util.Ptr(time.Now().UTC())
+	checkpoint.CompletedAtUtc = new(time.Now().UTC())
 	checkpoint.CompletionReason = reason
 }
 
@@ -523,7 +528,6 @@ func (a *AgentPromptContextAssembler) BuildMessages(session core.Session, maxHis
 						sm = append(sm, fmt.Sprintf("- Called %s: (no result)", v.ToolName))
 					} else {
 						sm = append(sm, fmt.Sprintf("- Called %s: %s", v.ToolName, util.Truncate(v.Result, 200)))
-
 					}
 				}
 				var toolSummary = strings.Join(sm, "\n")
