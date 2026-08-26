@@ -3703,3 +3703,133 @@ func (a *AgentRuntime) ExecuteSingleToolCall(
 
 	return result.Invocation, result.ToFunctionResultContent(call.CallId), nil
 }
+
+type ExecuteSingleToolCallResult struct {
+	ToolInvocation        *core.ToolInvocation
+	FunctionResultContent *contents.FunctionResultContent
+}
+
+func (a *AgentRuntime) ExecuteToolCallsParallel(
+	ctx context.Context,
+	toolCalls []contents.FunctionCallContent,
+	session *core.Session,
+	turnCtx *core.TurnContext,
+	isStreaming bool,
+	approvalCallback ToolApprovalCallback) ([]core.ToolInvocation, []contents.FunctionResultContent, error) {
+	if len(toolCalls) == 0 {
+		return nil, nil, nil
+	}
+
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel() // Ensure context cleanup on exit
+
+	type result struct {
+		inv *core.ToolInvocation
+		res *contents.FunctionResultContent
+		err error
+	}
+
+	// Pre-allocate slice to preserve exact order of tool calls
+	results := make([]result, len(toolCalls))
+	var wg sync.WaitGroup
+
+	for i, call := range toolCalls {
+		wg.Add(1)
+		go func(idx int, call contents.FunctionCallContent) {
+			defer wg.Done()
+
+			select {
+			case <-ctx.Done():
+				results[idx] = result{err: ctx.Err()}
+				return
+			default:
+			}
+
+			toolInvocation, functionResultContent, err := a.ExecuteSingleToolCall(
+				ctx, call, session, turnCtx, isStreaming, approvalCallback, nil, len(toolCalls),
+			)
+			if err != nil {
+				cancel() // Signal sibling goroutines to abort
+				results[idx] = result{err: err}
+				return
+			}
+
+			results[idx] = result{
+				inv: toolInvocation,
+				res: functionResultContent,
+			}
+		}(i, call)
+	}
+
+	wg.Wait()
+
+	// Aggregate results while preserving order and checking for errors
+	invocations := make([]core.ToolInvocation, 0, len(toolCalls))
+	toolResults := make([]contents.FunctionResultContent, 0, len(toolCalls))
+
+	for _, res := range results {
+		if res.err != nil {
+			return nil, nil, res.err
+		}
+		if res.inv != nil {
+			invocations = append(invocations, *res.inv)
+		}
+		if res.res != nil {
+			toolResults = append(toolResults, *res.res)
+		}
+	}
+
+	return invocations, toolResults, nil
+}
+
+func (a *AgentRuntime) ExecuteToolCallsSequential(
+	ctx context.Context,
+	toolCalls []contents.FunctionCallContent,
+	session *core.Session,
+	turnCtx *core.TurnContext,
+	isStreaming bool,
+	approvalCallback ToolApprovalCallback) ([]core.ToolInvocation, []contents.FunctionResultContent, error) {
+	if len(toolCalls) == 0 {
+		return nil, nil, nil
+	}
+
+	invocations := make([]core.ToolInvocation, 0, len(toolCalls))
+	toolResults := make([]contents.FunctionResultContent, 0, len(toolCalls))
+
+	for _, call := range toolCalls {
+		toolInvocation, functionResultContent, err := a.ExecuteSingleToolCall(
+			ctx, call, session, turnCtx, isStreaming, approvalCallback, nil, len(toolCalls),
+		)
+		if err != nil {
+			return nil, nil, err
+		}
+		if toolInvocation != nil {
+			invocations = append(invocations, *toolInvocation)
+		}
+		if functionResultContent != nil {
+			toolResults = append(toolResults, *functionResultContent)
+		}
+	}
+
+	return invocations, toolResults, nil
+}
+
+func (a *AgentRuntime) ExecuteToolCalls(
+	ctx context.Context,
+	toolCalls []contents.FunctionCallContent,
+	session *core.Session,
+	turnCtx *core.TurnContext,
+	isStreaming bool,
+	approvalCallback ToolApprovalCallback,
+	onToolStart func(string),
+	onToolComplete func(string)) ([]core.ToolInvocation, []contents.FunctionResultContent, error) {
+	if len(toolCalls) == 0 {
+		return nil, nil, nil
+	}
+
+	if a.parallelToolExecution && len(toolCalls) > 1 {
+		return a.ExecuteToolCallsParallel(ctx, toolCalls, session, turnCtx, isStreaming, approvalCallback)
+	}
+
+	return a.ExecuteToolCallsSequential(ctx, toolCalls, session, turnCtx, isStreaming, approvalCallback)
+}
