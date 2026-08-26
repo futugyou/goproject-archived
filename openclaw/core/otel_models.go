@@ -189,6 +189,8 @@ var promptCacheCacheWriteKeys = []string{
 	"cacheCreationInputTokens",
 }
 
+var PromptCacheUsageExtractorInstance = &PromptCacheUsageExtractor{}
+
 type PromptCacheUsageExtractor struct {
 }
 

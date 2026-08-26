@@ -1562,7 +1562,7 @@ func (a *AgentRuntime) CallLlmWithResilience(
 		)
 	}
 
-	var lastException error
+	var lastError error
 	for attempt := 0; attempt <= a.retryCount; attempt++ {
 		var providerId = a.config.Provider
 		modelId := a.config.Model
@@ -1599,7 +1599,7 @@ func (a *AgentRuntime) CallLlmWithResilience(
 		})
 
 		if err != nil {
-			lastException = err
+			lastError = err
 			if a.providerUsage != nil {
 				a.providerUsage.RecordError(providerId, modelId)
 			}
@@ -1617,11 +1617,11 @@ func (a *AgentRuntime) CallLlmWithResilience(
 		}
 	}
 
-	if lastException == nil {
-		lastException = errors.New("LLM call failed with no captured exception.")
+	if lastError == nil {
+		lastError = errors.New("LLM call failed with no captured exception.")
 	}
 
-	return nil, lastException
+	return nil, lastError
 }
 
 func (a *AgentRuntime) ExecuteFanOutChild(
@@ -3832,4 +3832,274 @@ func (a *AgentRuntime) ExecuteToolCalls(
 	}
 
 	return a.ExecuteToolCallsSequential(ctx, toolCalls, session, turnCtx, isStreaming, approvalCallback)
+}
+
+func (a *AgentRuntime) StreamLlmCollect(
+	ctx context.Context,
+	session *core.Session,
+	messages []chatcompletion.ChatMessage,
+	options chatcompletion.ChatOptions,
+	turnCtx *core.TurnContext,
+) (*StreamCollectResult, error) {
+
+	result := &StreamCollectResult{}
+	llmSw := time.Now()
+
+	// 1. Budget Admission Control
+	estimate := LlmExecutionEstimateCreate(messages, a.skillPromptLength, 0)
+	if admissionMessage, ok := a.TryRejectEstimatedBudget(session, estimate); ok {
+		result.Error = admissionMessage
+		a.LogTurnComplete(turnCtx)
+		return result, nil
+	}
+
+	// 2. Execution Path: Primary LLM Execution Service
+	if a.llmExecutionService != nil {
+		return a.executePrimaryService(ctx, session, messages, options, turnCtx, estimate, llmSw)
+	}
+
+	// 3. Execution Path: Fallback Models Loop
+	return a.executeWithFallbacks(ctx, messages, options, turnCtx, llmSw)
+}
+
+// executePrimaryService handles streaming via the dedicated llmExecutionService
+func (a *AgentRuntime) executePrimaryService(
+	ctx context.Context,
+	session *core.Session,
+	messages []chatcompletion.ChatMessage,
+	options chatcompletion.ChatOptions,
+	turnCtx *core.TurnContext,
+	estimate LlmExecutionEstimate,
+	startTime time.Time,
+) (*StreamCollectResult, error) {
+
+	result := &StreamCollectResult{}
+
+	streamExecution, err := a.llmExecutionService.StartStreaming(ctx, session, messages, options, turnCtx, estimate)
+	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		return nil, err
+	}
+	if err != nil {
+		result.Error = err.Error()
+		a.LogTurnComplete(turnCtx)
+		return result, nil
+	}
+
+	result.ProviderId = streamExecution.ProviderId
+	result.ModelId = streamExecution.ModelId
+
+	for {
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case update, ok := <-streamExecution.Updates:
+			if !ok {
+				a.finalizeTokenCounts(result, messages)
+				a.recordMetricsAndUsage(turnCtx, result, options, startTime)
+				return result, nil
+			}
+			a.processStreamUpdate(result, update.Text, update.Contents)
+		}
+	}
+}
+
+// executeWithFallbacks attempts the primary configured model and rolls over to fallback models upon failure
+func (a *AgentRuntime) executeWithFallbacks(
+	ctx context.Context,
+	messages []chatcompletion.ChatMessage,
+	options chatcompletion.ChatOptions,
+	turnCtx *core.TurnContext,
+	startTime time.Time,
+) (*StreamCollectResult, error) {
+
+	result := &StreamCollectResult{}
+	currentModel := a.resolveModel(options.ModelId)
+	modelsToTry := a.buildModelFallbackList(currentModel)
+
+	var lastError error
+
+	for _, model := range modelsToTry {
+		if a.providerUsage != nil {
+			a.providerUsage.RecordRequest(a.config.Provider, model)
+		}
+
+		reqCtx := ctx
+		if a.llmTimeoutSeconds > 0 {
+			var cancel context.CancelFunc
+			reqCtx, cancel = context.WithTimeout(ctx, time.Duration(a.llmTimeoutSeconds)*time.Second)
+			defer cancel()
+		}
+
+		if model != currentModel {
+			options.ModelId = &model
+			if a.providerUsage != nil {
+				a.providerUsage.RecordRetry(a.config.Provider, model)
+			}
+			a.logger.Warn("Retrying streaming with fallback model", "CorrelationId", turnCtx.CorrelationId, "Fallback", model)
+		}
+
+		stream := a.StreamLlm(reqCtx, messages, &options)
+		streamErr := a.consumeStream(reqCtx, stream, result)
+
+		if streamErr == nil {
+			// Stream completed successfully
+			lastError = nil
+			break
+		}
+
+		if errors.Is(streamErr, context.Canceled) || errors.Is(streamErr, context.DeadlineExceeded) {
+			return nil, streamErr
+		}
+
+		if errors.Is(streamErr, circuitbreaker.ErrOpen) {
+			result.Error = streamErr.Error()
+			a.LogTurnComplete(turnCtx)
+			return result, nil
+		}
+
+		// Handle retryable failure
+		lastError = streamErr
+		if a.providerUsage != nil {
+			a.providerUsage.RecordError(a.config.Provider, model)
+		}
+
+		a.logger.Warn("Streaming LLM call failed for model", "CorrelationId", turnCtx.CorrelationId, "Model", model, "error", streamErr.Error())
+		result.ResetPartialResults()
+	}
+
+	if lastError != nil {
+		if a.metrics != nil {
+			a.metrics.IncrementLlmErrors()
+		}
+		a.logger.Error("Streaming LLM call failed after all retries and fallbacks", "CorrelationId", turnCtx.CorrelationId, "error", lastError.Error())
+		result.Error = "Sorry, I'm having trouble reaching my AI provider right now. Please try again shortly."
+		a.LogTurnComplete(turnCtx)
+		return result, nil
+	}
+
+	a.finalizeTokenCounts(result, messages)
+	a.recordMetricsAndUsage(turnCtx, result, options, startTime)
+
+	result.ProviderId = a.config.Provider
+	result.ModelId = a.resolveModel(options.ModelId)
+
+	return result, nil
+}
+
+// consumeStream reads updates from the streaming channel
+func (a *AgentRuntime) consumeStream(
+	ctx context.Context,
+	stream <-chan chatcompletion.ChatStreamingResponse,
+	result *StreamCollectResult,
+) error {
+	for {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case update, ok := <-stream:
+			if !ok {
+				return nil
+			}
+			if update.Err != nil {
+				return update.Err
+			}
+			if update.Update != nil {
+				a.processStreamUpdate(result, update.Update.Text, update.Update.Contents)
+			}
+		}
+	}
+}
+
+// processStreamUpdate parses deltas, function calls, and usage statistics
+func (a *AgentRuntime) processStreamUpdate(result *StreamCollectResult, text *string, aiContents []contents.IAIContent) {
+	if !util.IsBlankP(text) {
+		result.TextDeltas = append(result.TextDeltas, util.Deref(text))
+	}
+
+	for _, content := range aiContents {
+		switch v := content.(type) {
+		case *contents.FunctionCallContent:
+			result.ToolCalls = append(result.ToolCalls, *v)
+
+		case *contents.UsageContent:
+			if input := util.Deref(v.Details.InputTokenCount); input > 0 {
+				result.InputTokens = int(input)
+			}
+			if output := util.Deref(v.Details.OutputTokenCount); output > 0 {
+				result.OutputTokens = int(output)
+			}
+
+			cacheUsage := core.PromptCacheUsageExtractorInstance.FromUsage(&v.Details)
+			if cacheUsage.CacheReadTokens > 0 {
+				result.CacheReadTokens = int(cacheUsage.CacheReadTokens)
+			}
+			if cacheUsage.CacheWriteTokens > 0 {
+				result.CacheWriteTokens = int(cacheUsage.CacheWriteTokens)
+			}
+		}
+	}
+}
+
+// finalizeTokenCounts ensures fallback estimates are set if the provider returned 0 tokens
+func (a *AgentRuntime) finalizeTokenCounts(result *StreamCollectResult, messages []chatcompletion.ChatMessage) {
+	if result.InputTokens == 0 {
+		result.InputTokens = LlmExecutionEstimateInputTokens(messages, 0)
+		result.IsUsageEstimated = true
+	}
+
+	if result.OutputTokens == 0 {
+		result.OutputTokens = LlmExecutionEstimateTokenCount(len(result.FullText))
+		result.IsUsageEstimated = true
+	}
+}
+
+// recordMetricsAndUsage logs turn context execution time, cache metrics, and provider usage
+func (a *AgentRuntime) recordMetricsAndUsage(
+	turnCtx *core.TurnContext,
+	result *StreamCollectResult,
+	options chatcompletion.ChatOptions,
+	startTime time.Time,
+) {
+	turnCtx.RecordLlmCall(time.Since(startTime), int64(result.InputTokens), int64(result.OutputTokens))
+
+	if a.metrics != nil {
+		a.metrics.IncrementLlmCalls()
+		a.metrics.AddInputTokens(int64(result.InputTokens))
+		a.metrics.AddOutputTokens(int64(result.OutputTokens))
+		a.metrics.AddPromptCacheReads(int64(result.CacheReadTokens))
+		a.metrics.AddPromptCacheWrites(int64(result.CacheWriteTokens))
+	}
+
+	if a.providerUsage != nil {
+		providerID := result.ProviderId
+		if providerID == "" {
+			providerID = a.config.Provider
+		}
+
+		modelID := result.ModelId
+		if modelID == "" {
+			modelID = a.resolveModel(options.ModelId)
+		}
+
+		a.providerUsage.AddTokens(providerID, modelID, int64(result.InputTokens), int64(result.OutputTokens))
+		a.providerUsage.AddCacheTokens(providerID, modelID, int64(result.CacheReadTokens), int64(result.CacheWriteTokens))
+	}
+}
+
+// Helper utilities
+func (a *AgentRuntime) resolveModel(modelPtr *string) string {
+	if model := util.Deref(modelPtr); model != "" {
+		return model
+	}
+	return a.config.Model
+}
+
+func (a *AgentRuntime) buildModelFallbackList(primaryModel string) []string {
+	models := []string{primaryModel}
+	for _, fallback := range a.config.FallbackModels {
+		if fallback != primaryModel {
+			models = append(models, fallback)
+		}
+	}
+	return models
 }

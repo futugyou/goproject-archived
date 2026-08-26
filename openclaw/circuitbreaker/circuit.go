@@ -31,6 +31,8 @@ func (s CircuitState) String() string {
 	}
 }
 
+var ErrOpen = errors.New("circuit breaker is open")
+
 // 当熔断器处于 Open 状态或 HalfOpen 拒绝新探针时抛出
 type ErrCircuitOpen struct {
 	RetryAfter time.Duration
@@ -38,6 +40,10 @@ type ErrCircuitOpen struct {
 
 func (e *ErrCircuitOpen) Error() string {
 	return fmt.Sprintf("circuit breaker is open, please try again after %v", e.RetryAfter)
+}
+
+func (e *ErrCircuitOpen) Is(target error) bool {
+	return target == ErrOpen
 }
 
 type CircuitBreaker struct {

@@ -97,7 +97,7 @@ func TurnRoutingRestoreScope(session *core.Session, snapshot *TurnRoutingSnapsho
 type StreamCollectResult struct {
 	TextDeltas       []string
 	FullText         string
-	ToolCalls        contents.FunctionCallContent
+	ToolCalls        []contents.FunctionCallContent
 	InputTokens      int
 	OutputTokens     int
 	CacheReadTokens  int
@@ -106,4 +106,14 @@ type StreamCollectResult struct {
 	ModelId          string
 	IsUsageEstimated bool
 	Error            string
+}
+
+func (r *StreamCollectResult) ResetPartialResults() {
+	r.TextDeltas = nil
+	r.ToolCalls = nil
+	r.InputTokens = 0
+	r.OutputTokens = 0
+	r.CacheReadTokens = 0
+	r.CacheWriteTokens = 0
+	r.IsUsageEstimated = false
 }
