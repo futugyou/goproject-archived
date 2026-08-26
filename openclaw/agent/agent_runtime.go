@@ -1538,7 +1538,7 @@ func (a *AgentRuntime) CallLlmWithResilience(
 	ctx context.Context,
 	session *core.Session,
 	messages []chatcompletion.ChatMessage,
-	options chatcompletion.ChatOptions,
+	options *chatcompletion.ChatOptions,
 	turnCtx *core.TurnContext) (*LlmExecutionResult, error) {
 	var span trace.Span
 	ctx, span = core.Tracer.Start(ctx, "Agent.CallLlm", trace.WithAttributes(
@@ -1592,10 +1592,10 @@ func (a *AgentRuntime) CallLlmWithResilience(
 			if a.llmTimeoutSeconds > 0 {
 				timeoutCtx, cancel := context.WithTimeout(innerCtx, time.Second*time.Duration(a.llmTimeoutSeconds))
 				defer cancel()
-				return a.chatClient.GetResponse(timeoutCtx, messages, &options)
+				return a.chatClient.GetResponse(timeoutCtx, messages, options)
 			}
 
-			return a.chatClient.GetResponse(innerCtx, messages, &options)
+			return a.chatClient.GetResponse(innerCtx, messages, options)
 		})
 
 		if err != nil {
@@ -1727,7 +1727,7 @@ func (a *AgentRuntime) ExecuteFanOutChild(
 			ctx,
 			&core.MetaSkillStepDefinition{Id: childId, Kind: template.Kind, Retry: template.Retry, TimeoutSeconds: template.TimeoutSeconds},
 			func(ctx context.Context) (*LlmExecutionResult, error) {
-				return a.CallLlmWithResilience(ctx, session, messages, *chatOptions, turnCtx)
+				return a.CallLlmWithResilience(ctx, session, messages, chatOptions, turnCtx)
 			},
 		)
 
@@ -2429,7 +2429,7 @@ func (a *AgentRuntime) ExecuteMetaSkill(ctx context.Context, session *core.Sessi
 				}
 				maxTokens := int64(a.maxTokens)
 				temperature := float64(a.temperature)
-				var options = chatcompletion.ChatOptions{
+				var options = &chatcompletion.ChatOptions{
 					ModelId:         &modelId,
 					MaxOutputTokens: &maxTokens,
 					Temperature:     &temperature,
@@ -2521,7 +2521,7 @@ func (a *AgentRuntime) ExecuteMetaSkill(ctx context.Context, session *core.Sessi
 					temperature = float64(*temp)
 				}
 
-				var chatOptions = chatcompletion.ChatOptions{
+				var chatOptions = &chatcompletion.ChatOptions{
 					ModelId:         &modelId,
 					MaxOutputTokens: &maxTokens,
 					Temperature:     &temperature,
@@ -2627,7 +2627,7 @@ func (a *AgentRuntime) ExecuteMetaSkill(ctx context.Context, session *core.Sessi
 				if session.ModelOverride != "" {
 					modelId = session.ModelOverride
 				}
-				var chatOptions = chatcompletion.ChatOptions{
+				var chatOptions = &chatcompletion.ChatOptions{
 					ModelId:         &modelId,
 					MaxOutputTokens: &maxTokens,
 					Temperature:     &temperature,
@@ -3502,7 +3502,7 @@ func (a *AgentRuntime) getToolCalls(invocations []core.ToolInvocation) []core.Se
 	return result
 }
 
-func (a *AgentRuntime) PersistToolBatchCheckpoint(ctx context.Context, session core.Session, turnCtx *core.TurnContext, iteration int, invocations []core.ToolInvocation) error {
+func (a *AgentRuntime) PersistToolBatchCheckpoint(ctx context.Context, session *core.Session, turnCtx *core.TurnContext, iteration int, invocations []core.ToolInvocation) error {
 	if len(invocations) == 0 {
 		return nil
 	}
@@ -3549,7 +3549,7 @@ func (a *AgentRuntime) PersistToolBatchCheckpoint(ctx context.Context, session c
 
 	for attempt := 1; attempt <= maxRetries; attempt++ {
 		checkpoint.PersistedAtUtc = new(time.Now().UTC())
-		err = a.memory.SaveSession(ctx, session)
+		err = a.memory.SaveSession(ctx, *session)
 		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 			return err
 		}
@@ -3605,7 +3605,7 @@ func (a *AgentRuntime) CompactHistory(ctx context.Context, session *core.Session
 		*chatcompletion.NewChatMessageWithText(chatcompletion.RoleUser, conversationText.String()),
 	}
 
-	summaryOptions := chatcompletion.ChatOptions{
+	summaryOptions := &chatcompletion.ChatOptions{
 		MaxOutputTokens: new(int64(256)),
 		Temperature:     new(float64(0.3)),
 	}
@@ -3838,7 +3838,7 @@ func (a *AgentRuntime) StreamLlmCollect(
 	ctx context.Context,
 	session *core.Session,
 	messages []chatcompletion.ChatMessage,
-	options chatcompletion.ChatOptions,
+	options *chatcompletion.ChatOptions,
 	turnCtx *core.TurnContext,
 ) (*StreamCollectResult, error) {
 
@@ -3867,7 +3867,7 @@ func (a *AgentRuntime) executePrimaryService(
 	ctx context.Context,
 	session *core.Session,
 	messages []chatcompletion.ChatMessage,
-	options chatcompletion.ChatOptions,
+	options *chatcompletion.ChatOptions,
 	turnCtx *core.TurnContext,
 	estimate LlmExecutionEstimate,
 	startTime time.Time,
@@ -3907,7 +3907,7 @@ func (a *AgentRuntime) executePrimaryService(
 func (a *AgentRuntime) executeWithFallbacks(
 	ctx context.Context,
 	messages []chatcompletion.ChatMessage,
-	options chatcompletion.ChatOptions,
+	options *chatcompletion.ChatOptions,
 	turnCtx *core.TurnContext,
 	startTime time.Time,
 ) (*StreamCollectResult, error) {
@@ -3938,7 +3938,7 @@ func (a *AgentRuntime) executeWithFallbacks(
 			a.logger.Warn("Retrying streaming with fallback model", "CorrelationId", turnCtx.CorrelationId, "Fallback", model)
 		}
 
-		stream := a.StreamLlm(reqCtx, messages, &options)
+		stream := a.StreamLlm(reqCtx, messages, options)
 		streamErr := a.consumeStream(reqCtx, stream, result)
 
 		if streamErr == nil {
@@ -4057,7 +4057,7 @@ func (a *AgentRuntime) finalizeTokenCounts(result *StreamCollectResult, messages
 func (a *AgentRuntime) recordMetricsAndUsage(
 	turnCtx *core.TurnContext,
 	result *StreamCollectResult,
-	options chatcompletion.ChatOptions,
+	options *chatcompletion.ChatOptions,
 	startTime time.Time,
 ) {
 	turnCtx.RecordLlmCall(time.Since(startTime), int64(result.InputTokens), int64(result.OutputTokens))
@@ -4102,4 +4102,395 @@ func (a *AgentRuntime) buildModelFallbackList(primaryModel string) []string {
 		}
 	}
 	return models
+}
+
+func (a *AgentRuntime) getModelID(session *core.Session) string {
+	if session.ModelOverride != "" {
+		return session.ModelOverride
+	}
+
+	return a.config.Model
+}
+
+func (a *AgentRuntime) RunStreaming(
+	ctx context.Context,
+	session *core.Session,
+	userMessage string,
+	approvalCallback ToolApprovalCallback,
+	correlationId string,
+) (<-chan core.AgentStreamEvent, error) {
+
+	eventChan := make(chan core.AgentStreamEvent, 100)
+	errCh := make(chan error, 1)
+
+	go func() {
+		defer close(eventChan)
+
+		emit := func(evt core.AgentStreamEvent) bool {
+			select {
+			case <-ctx.Done():
+				return false
+			case eventChan <- evt:
+				return true
+			}
+		}
+
+		var span trace.Span
+		ctx, span = core.Tracer.Start(ctx, "Agent.RunStreaming", trace.WithAttributes(
+			attribute.String("session.id", session.Id),
+			attribute.String("channel.id", session.ChannelId),
+		))
+		defer span.End()
+
+		var resolvedCorrelationId = ResolveCorrelationId(ctx, correlationId)
+		var turnCtx = &core.TurnContext{
+			CorrelationId: resolvedCorrelationId,
+			SessionId:     session.Id,
+			ChannelId:     session.ChannelId,
+		}
+		userMessage = a.redaction.Redact(userMessage)
+
+		if a.metrics != nil {
+			a.metrics.IncrementRequests()
+		}
+
+		a.logger.Info("Streaming turn start",
+			"CorrelationId", turnCtx.CorrelationId,
+			"SessionId", session.Id,
+			"ChannelId", session.ChannelId)
+
+		if contractBudgetMessage, ok := a.TryRejectContractBudget(session); ok {
+			emit(core.NewErrorOccurred(contractBudgetMessage, "contract_budget_exceeded"))
+			emit(core.NewComplete())
+			a.AppendContractSnapshot(session, "budget_exceeded")
+			a.LogTurnComplete(turnCtx)
+			return
+		}
+
+		if a.requireToolApproval && approvalCallback == nil {
+			a.logger.Warn(
+				"Streaming session has RequireToolApproval=true but no approval callback is registered — protected tools will be auto-denied. "+
+					"Connect through /chat for interactive approvals, or set OpenClaw:Tooling:RequireToolApproval=false for trusted local sessions.",
+				"CorrelationId", turnCtx.CorrelationId)
+		}
+
+		var resumeCheckpoint = ManagerTryGetResumableCheckpoint(session)
+		if resumeCheckpoint == nil {
+			session.History = append(session.History, core.ChatTurn{Role: "user", Content: userMessage})
+			if a.enableCompaction {
+				if err := a.CompactHistory(ctx, session, resolvedCorrelationId); err != nil {
+					emit(core.NewErrorOccurred(err.Error(), "compaction_failure"))
+					return
+				}
+			} else {
+				a.TrimHistory(session)
+			}
+		} else {
+			resumeCheckpoint.LastResumeAttemptAtUtc = new(time.Now().UTC())
+			if a.logger != nil {
+				a.logger.Info(fmt.Sprintf(
+					"[%s] Resuming streaming session=%s from checkpoint %s",
+					turnCtx.CorrelationId, session.Id, resumeCheckpoint.CheckpointId,
+				))
+			}
+		}
+
+		//  Turn Routing
+		turnRoutingScope := a.ApplyTurnRouting(ctx, session, userMessage, resumeCheckpoint != nil, nil)
+		if turnRoutingScope != nil {
+			defer turnRoutingScope()
+		}
+
+		//  Messages
+		messages := a.BuildMessages(session, resumeCheckpoint != nil, userMessage)
+		if resumeCheckpoint != nil {
+			messages = util.SlicesInsert(messages, 1, *chatcompletion.NewChatMessageWithText(chatcompletion.RoleSystem, ManagerBuildCheckpointResumeInstruction(resumeCheckpoint)))
+			if !ManagerIsBareResumeRequest(userMessage) {
+				messages = append(messages, *chatcompletion.NewChatMessageWithText(chatcompletion.RoleUser, ManagerBuildCheckpointResumeUserNote(userMessage)))
+			}
+		} else {
+			messages, memoryRecallInjected, err := a.TryInjectRecall(ctx, messages, userMessage)
+			if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+				errCh <- err
+				return
+			}
+			messages, err = a.TryInjectStructuredMemoryContext(ctx, messages, session, userMessage, memoryRecallInjected)
+			if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+				errCh <- err
+				return
+			}
+			messages, err = a.TryInjectProfileRecall(ctx, messages, session)
+			if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+				errCh <- err
+				return
+			}
+		}
+
+		// Goal Prompt
+		if a.goalIntegration != nil {
+			if goalPrompt := a.goalIntegration.BuildGoalSystemPrompt(session.Id); goalPrompt != "" {
+				messages = util.SlicesInsert(messages, 1, *chatcompletion.NewChatMessageWithText(chatcompletion.RoleSystem, goalPrompt))
+			}
+		}
+
+		// ChatOptions
+		chatOptions := &chatcompletion.ChatOptions{
+			ModelId:         new(a.getModelID(session)),
+			MaxOutputTokens: new(int64(a.maxTokens)),
+			Temperature:     new(float64(a.temperature)),
+			Tools:           a.toolExecutor.GetToolDeclarations(session),
+		}
+
+		if session.ReasoningEffort != "" {
+			if chatOptions.AdditionalProperties == nil {
+				chatOptions.AdditionalProperties = make(map[string]any)
+			}
+			chatOptions.AdditionalProperties["reasoning_effort"] = session.ReasoningEffort
+		}
+
+		for i := 0; i < a.maxIterations; i++ {
+			select {
+			case <-ctx.Done():
+				return
+			default:
+			}
+
+			// Mid-turn budget check: stop if token budget is exceeded
+			if a.sessionTokenBudget > 0 && session.GetTotalTokens() >= a.sessionTokenBudget {
+				if a.logger != nil {
+					a.logger.Info(fmt.Sprintf("[%s] Streaming session token budget exceeded mid-turn (%d/%d)",
+						turnCtx.CorrelationId, session.GetTotalTokens(), a.sessionTokenBudget))
+				}
+				emit(core.NewErrorOccurred("You've reached the token limit for this session. Please start a new conversation.", "session_token_limit"))
+				emit(core.NewComplete())
+				a.LogTurnComplete(turnCtx)
+				return
+			}
+
+			if contractBudgetMessage, rejected := a.TryRejectContractBudget(session); rejected {
+				emit(core.NewErrorOccurred(contractBudgetMessage, "contract_budget_exceeded"))
+				emit(core.NewComplete())
+				a.AppendContractSnapshot(session, "budget_exceeded")
+				a.LogTurnComplete(turnCtx)
+				return
+			}
+
+			// Stream the LLM response, collecting chunks and tool calls.
+			streamResult, err := a.StreamLlmCollect(ctx, session, messages, chatOptions, turnCtx)
+			if err != nil || streamResult.Error != "" {
+				errMsg := streamResult.Error
+				if err != nil {
+					errMsg = err.Error()
+				}
+				emit(core.NewErrorOccurred(errMsg, "provider_failure"))
+				emit(core.NewComplete())
+				a.LogTurnComplete(turnCtx)
+				return
+			}
+
+			// Redact the complete buffered text so secrets split across provider chunks cannot leak.
+			fullText := streamResult.FullText
+			redactedText := a.redaction.Redact(fullText)
+			if redactedText == fullText {
+				for _, delta := range streamResult.TextDeltas {
+					emit(core.NewTextDelta(delta))
+				}
+			} else if redactedText != "" {
+				emit(core.NewTextDelta(redactedText))
+			}
+
+			// Token Usage
+			session.AddTokenUsage(int64(streamResult.InputTokens), int64(streamResult.OutputTokens))
+			session.AddCacheUsage(int64(streamResult.CacheReadTokens), int64(streamResult.CacheWriteTokens))
+
+			if streamResult.ProviderId != "" && streamResult.ModelId != "" {
+				if a.recordContractTurnUsage != nil {
+					a.recordContractTurnUsage(session, streamResult.ProviderId, streamResult.ModelId, int64(streamResult.InputTokens), int64(streamResult.OutputTokens))
+				}
+
+				var inputEstimate core.InputTokenComponentEstimate
+				if streamResult.IsUsageEstimated {
+					inputEstimate = BuildInputTokenEstimate(messages, streamResult.InputTokens, a.skillPromptLength, 0)
+				}
+
+				a.RecordTurnUsage(
+					session,
+					streamResult.ProviderId,
+					streamResult.ModelId,
+					int64(streamResult.InputTokens),
+					int64(streamResult.OutputTokens),
+					int64(streamResult.CacheReadTokens),
+					int64(streamResult.CacheWriteTokens),
+					&inputEstimate,
+					streamResult.IsUsageEstimated,
+					turnCtx.CorrelationId,
+				)
+			}
+
+			if contractBudgetMessage, rejected := a.TryRejectContractBudget(session); rejected {
+				emit(core.NewErrorOccurred(contractBudgetMessage, "contract_budget_exceeded"))
+				emit(core.NewComplete())
+				a.AppendContractSnapshot(session, "budget_exceeded")
+				a.LogTurnComplete(turnCtx)
+				return
+			}
+
+			toolCalls := streamResult.ToolCalls
+
+			// no Tool Calls
+			if len(toolCalls) == 0 {
+				finalText := a.redaction.Redact(streamResult.FullText)
+
+				// Goal continuation check (streaming path)
+				if a.goalIntegration != nil {
+					a.goalIntegration.UpdateGoalTokenUsage(session)
+					continuationPrompt := a.goalIntegration.EvaluateGoalContinuation(session, i, a.maxIterations, finalText)
+					if continuationPrompt != "" {
+						messages = append(messages, *chatcompletion.NewChatMessageWithText(chatcompletion.RoleSystem, continuationPrompt))
+						session.History = append(session.History, core.ChatTurn{
+							Role:    "system",
+							Content: fmt.Sprintf("[goal_check:%d] Continue working toward objective...", i),
+						})
+						continue // ← Don't yield Complete — continue the loop
+					}
+				}
+
+				session.History = append(session.History, core.ChatTurn{Role: "assistant", Content: finalText})
+				ManagerMarkCheckpointCompleted(session, "completed", "final_response")
+				emit(core.NewComplete())
+				a.AppendContractSnapshot(session, "active")
+				a.LogTurnComplete(turnCtx)
+				return
+			}
+
+			// exec Tool Call
+			hasStreamingTool := false
+			for _, call := range toolCalls {
+				if a.toolExecutor.SupportsStreaming(call.Name) {
+					hasStreamingTool = true
+					break
+				}
+			}
+
+			var invocations []core.ToolInvocation
+			var toolResults []contents.FunctionResultContent
+
+			if hasStreamingTool {
+				invocations = make([]core.ToolInvocation, 0, len(toolCalls))
+				toolResults = make([]contents.FunctionResultContent, 0, len(toolCalls))
+
+				for _, call := range toolCalls {
+					argsJSON := SerializeToolArgumentsForEvent(call.Arguments)
+					emit(core.NewToolStarted(call.Name, argsJSON))
+
+					chunkChan := make(chan string, 256)
+
+					type toolRunResult struct {
+						execution *ToolExecutionResult
+						res       *contents.FunctionResultContent
+						err       error
+					}
+
+					resChan := make(chan toolRunResult, 1)
+
+					go func(c contents.FunctionCallContent) {
+						defer close(chunkChan)
+						execution, execErr := a.toolExecutor.ExecuteWithFunctionCallContent(
+							ctx,
+							c,
+							session,
+							turnCtx,
+							true, // isStreaming
+							approvalCallback,
+							func(chunk string) error {
+								select {
+								case chunkChan <- chunk:
+									return nil
+								case <-ctx.Done():
+									return ctx.Err()
+								}
+							},
+							len(toolCalls),
+						)
+						resChan <- toolRunResult{
+							execution: execution,
+							res:       execution.ToFunctionResultContent(c.CallId),
+							err:       execErr,
+						}
+					}(call)
+
+					// Tool Delta
+					for chunk := range chunkChan {
+						emit(core.NewToolDelta(call.Name, chunk))
+					}
+
+					runRes := <-resChan
+					invocations = append(invocations, *runRes.execution.Invocation)
+					toolResults = append(toolResults, *runRes.res)
+
+					emit(core.NewToolCompleted(
+						runRes.execution.Invocation.ToolName,
+						runRes.execution.ResultText,
+						runRes.execution.ResultStatus,
+						runRes.execution.FailureCode,
+						runRes.execution.FailureMessage,
+						runRes.execution.NextStep,
+					))
+				}
+			} else {
+				if a.parallelToolExecution && len(toolCalls) > 1 {
+					for _, call := range toolCalls {
+						argsJSON := SerializeToolArgumentsForEvent(call.Arguments)
+						emit(core.NewToolStarted(call.Name, argsJSON))
+					}
+
+					var err error
+					invocations, toolResults, err = a.ExecuteToolCalls(ctx, toolCalls, session, turnCtx, true, approvalCallback, nil, nil)
+					if err != nil {
+						emit(core.NewErrorOccurred(err.Error(), "tool_execution_failure"))
+						return
+					}
+
+					for _, inv := range invocations {
+						emit(CreateToolCompletedEvent(inv))
+					}
+				} else {
+					invocations = make([]core.ToolInvocation, 0, len(toolCalls))
+					toolResults = make([]contents.FunctionResultContent, 0, len(toolCalls))
+
+					for _, call := range toolCalls {
+						argsJSON := SerializeToolArgumentsForEvent(call.Arguments)
+						emit(core.NewToolStarted(call.Name, argsJSON))
+
+						invocation, result, _ := a.ExecuteSingleToolCall(
+							ctx, call, session, turnCtx, true, approvalCallback, nil, len(toolCalls),
+						)
+						invocations = append(invocations, *invocation)
+						toolResults = append(toolResults, *result)
+
+						emit(CreateToolCompletedEvent(*invocation))
+					}
+				}
+			}
+
+			// updaate Messages and Session History
+			messages = append(messages, *chatcompletion.NewChatMessage(chatcompletion.RoleAssistant, util.TypeMapSlice(toolCalls, func(v contents.FunctionCallContent) contents.IAIContent {
+				return v
+			})))
+			messages = append(messages, *chatcompletion.NewChatMessage(chatcompletion.RoleTool, util.TypeMapSlice(toolResults, func(v contents.FunctionResultContent) contents.IAIContent {
+				return v
+			})))
+
+			session.History = append(session.History, core.ChatTurn{
+				Role:      "assistant",
+				Content:   "[tool_use]",
+				ToolCalls: invocations,
+			})
+
+			a.TrimHistory(session)
+			a.PersistToolBatchCheckpoint(ctx, session, turnCtx, i, invocations)
+		}
+	}()
+
+	return eventChan, nil
 }

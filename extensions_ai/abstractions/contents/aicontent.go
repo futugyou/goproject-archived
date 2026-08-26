@@ -10,18 +10,18 @@ import (
 var _ IAIContent = (*AIContent)(nil)
 
 type IAIContent interface {
-	GetRawRepresentation() interface{}
-	GetAdditionalProperties() map[string]interface{}
+	GetRawRepresentation() any
+	GetAdditionalProperties() map[string]any
 }
 
 type AIContent struct {
-	RawRepresentation    interface{}            // Raw representation of the content (for debugging or underlying object model).
-	AdditionalProperties map[string]interface{} `json:"additionalProperties,omitempty"` // Additional properties for the content.
+	RawRepresentation    any            // Raw representation of the content (for debugging or underlying object model).
+	AdditionalProperties map[string]any `json:"additionalProperties,omitempty"` // Additional properties for the content.
 }
 
-func NewAIContent(rawRepresentation interface{}, additionalProperties map[string]interface{}) *AIContent {
+func NewAIContent(rawRepresentation any, additionalProperties map[string]any) *AIContent {
 	if additionalProperties == nil {
-		additionalProperties = make(map[string]interface{})
+		additionalProperties = make(map[string]any)
 	}
 	return &AIContent{
 		RawRepresentation:    rawRepresentation,
@@ -30,26 +30,26 @@ func NewAIContent(rawRepresentation interface{}, additionalProperties map[string
 }
 
 // GetAdditionalProperties implements IAIContent.
-func (ac *AIContent) GetAdditionalProperties() map[string]interface{} {
+func (ac *AIContent) GetAdditionalProperties() map[string]any {
 	return ac.AdditionalProperties
 }
 
 // GetRawRepresentation implements IAIContent.
-func (ac *AIContent) GetRawRepresentation() interface{} {
+func (ac *AIContent) GetRawRepresentation() any {
 	return ac.RawRepresentation
 }
 
 // AddAdditionalProperty allows adding properties to the content.
-func (ac *AIContent) AddAdditionalProperty(key string, value interface{}) {
+func (ac *AIContent) AddAdditionalProperty(key string, value any) {
 	if ac.AdditionalProperties == nil {
-		ac.AdditionalProperties = make(map[string]interface{})
+		ac.AdditionalProperties = make(map[string]any)
 	}
 	ac.AdditionalProperties[key] = value
 }
 
 // PrintContentInfo prints out the details of the content type.
 func PrintContentInfo(content AIContent) {
-	contentType := reflect.TypeOf(content)
+	contentType := reflect.TypeFor[AIContent]()
 	fmt.Printf("Content Type: %s\n", contentType.Name())
 	if len(content.AdditionalProperties) > 0 {
 		fmt.Println("Additional Properties:")

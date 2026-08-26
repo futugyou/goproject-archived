@@ -145,7 +145,7 @@ func ManagerBuildCheckpointResumeUserNote(userMessage string) string {
 	return "[Checkpoint resume user note]\n" + strings.TrimSpace(userMessage) + "\n[/Checkpoint resume user note]"
 }
 
-func ManagerBuildCheckpointResumeInstruction(checkpoint core.SessionExecutionCheckpoint) string {
+func ManagerBuildCheckpointResumeInstruction(checkpoint *core.SessionExecutionCheckpoint) string {
 	var sb = strings.Builder{}
 	sb.WriteString("[Checkpoint resume]\n")
 	fmt.Fprintf(&sb, "Resume from checkpoint %s.\n", checkpoint.CheckpointId)

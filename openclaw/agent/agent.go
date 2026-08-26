@@ -542,10 +542,10 @@ type IAgentRuntime interface {
 	LoadedSkillNames() []string
 	LoadedSkills() []core.SkillDefinition
 	LoadedTools() []abstractions.AITool
-	Run(ctx context.Context, session core.Session, userMessage string, approvalCallback ToolApprovalCallback, responseSchema any, correlationId string) string
-	RunTurn(ctx context.Context, session core.Session, userMessage string, approvalCallback ToolApprovalCallback, responseSchema any, correlationId string) (*AgentTurnResult, error)
+	Run(ctx context.Context, session *core.Session, userMessage string, approvalCallback ToolApprovalCallback, responseSchema any, correlationId string) string
+	RunTurn(ctx context.Context, session *core.Session, userMessage string, approvalCallback ToolApprovalCallback, responseSchema any, correlationId string) (*AgentTurnResult, error)
 	ReloadSkills(ctx context.Context) []string
-	RunStreaming(ctx context.Context, session core.Session, userMessage string, approvalCallback ToolApprovalCallback, correlationId string) chan core.AgentStreamEvent
+	RunStreaming(ctx context.Context, session *core.Session, userMessage string, approvalCallback ToolApprovalCallback, correlationId string) (<-chan core.AgentStreamEvent, error)
 	ApplyMcpToolChanges(ctx context.Context, toAdd []core.ITool, toRemove []string) error
 }
 
@@ -574,8 +574,8 @@ type LlmStreamingExecutionResult struct {
 
 type ILlmExecutionService interface {
 	DefaultCircuitState() circuitbreaker.CircuitState
-	GetResponse(ctx context.Context, session *core.Session, messages []chatcompletion.ChatMessage, options chatcompletion.ChatOptions, turnContext *core.TurnContext, estimate LlmExecutionEstimate) (*LlmExecutionResult, error)
-	StartStreaming(ctx context.Context, session *core.Session, messages []chatcompletion.ChatMessage, options chatcompletion.ChatOptions, turnContext *core.TurnContext, estimate LlmExecutionEstimate) (*LlmStreamingExecutionResult, error)
+	GetResponse(ctx context.Context, session *core.Session, messages []chatcompletion.ChatMessage, options *chatcompletion.ChatOptions, turnContext *core.TurnContext, estimate LlmExecutionEstimate) (*LlmExecutionResult, error)
+	StartStreaming(ctx context.Context, session *core.Session, messages []chatcompletion.ChatMessage, options *chatcompletion.ChatOptions, turnContext *core.TurnContext, estimate LlmExecutionEstimate) (*LlmStreamingExecutionResult, error)
 }
 
 type AgentRuntimeFactoryContext struct {
