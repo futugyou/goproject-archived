@@ -6,7 +6,7 @@ import (
 )
 
 type ToolExecutionResult struct {
-	Invocation     core.ToolInvocation
+	Invocation     *core.ToolInvocation
 	ResultText     string
 	ResultStatus   string
 	FailureCode    string
@@ -20,7 +20,7 @@ func CreateMetaStepFailedToolResult(
 	failureCode,
 	failureMessage string) *ToolExecutionResult {
 	return &ToolExecutionResult{
-		Invocation: core.ToolInvocation{
+		Invocation: &core.ToolInvocation{
 			ToolName:       toolName,
 			Arguments:      arguments,
 			Result:         failureMessage,

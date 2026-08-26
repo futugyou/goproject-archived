@@ -43,7 +43,7 @@ func (n *NoopPlanExecuteVerifyOrchestrator) RecordApprovalDecision(ctx context.C
 	return nil
 }
 
-func (n *NoopPlanExecuteVerifyOrchestrator) CompleteTool(ctx context.Context, run *PlanExecuteVerifyRun, invocation ToolInvocation) (*PlanExecuteVerifyRun, error) {
+func (n *NoopPlanExecuteVerifyOrchestrator) CompleteTool(ctx context.Context, run *PlanExecuteVerifyRun, invocation *ToolInvocation) (*PlanExecuteVerifyRun, error) {
 	return run, nil
 }
 

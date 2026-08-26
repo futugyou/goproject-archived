@@ -462,7 +462,7 @@ func CreateImmediateResult(
 	failureMessage string,
 	nextStep string,
 	governanceDecision *core.GovernanceDecision) *ToolExecutionResult {
-	var invocation = core.ToolInvocation{
+	var invocation = &core.ToolInvocation{
 		CallId:         callId,
 		ToolName:       toolName,
 		Arguments:      argsJson,
@@ -1494,7 +1494,7 @@ func (o *OpenClawToolExecutor) Execute(
 	}
 
 	// 7. Complete Invocation & Build Return Payload
-	invocation := core.ToolInvocation{
+	invocation := &core.ToolInvocation{
 		CallId:                 callId,
 		ToolName:               toolName,
 		Arguments:              persistedArgs,

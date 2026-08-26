@@ -2856,7 +2856,7 @@ func (a *AgentRuntime) ExecuteMetaSkill(ctx context.Context, session *core.Sessi
 				stepResults = append(stepResults, core.NewMetaStepExecutionResult(step.Id, step.Kind, "completed", "", 0, false))
 
 			case "fan_out":
-				// Managed primarily by TryExecuteFanOutStepAsync (called above the loop).
+				// Managed primarily by TryExecuteFanOutStep (called above the loop).
 				// If a step reaches here its dependencies are still unsatisfied —
 				// skip and retry next iteration.
 
@@ -3592,10 +3592,10 @@ func (a *AgentRuntime) CompactHistory(ctx context.Context, session *core.Session
 	for _, turn := range turnsToSummarize {
 		if turn.Content == "[tool_use]" && len(turn.ToolCalls) > 0 {
 			for _, tc := range turn.ToolCalls {
-				conversationText.WriteString(fmt.Sprintf("assistant: [called %s] → %s\n", tc.ToolName, util.Truncate(tc.Result, 200)))
+				fmt.Fprintf(&conversationText, "assistant: [called %s] → %s\n", tc.ToolName, util.Truncate(tc.Result, 200))
 			}
 		} else {
-			conversationText.WriteString(fmt.Sprintf("%s: %s\n", turn.Role, util.Truncate(turn.Content, 500)))
+			fmt.Fprintf(&conversationText, "%s: %s\n", turn.Role, util.Truncate(turn.Content, 500))
 		}
 	}
 
@@ -3606,8 +3606,8 @@ func (a *AgentRuntime) CompactHistory(ctx context.Context, session *core.Session
 	}
 
 	summaryOptions := chatcompletion.ChatOptions{
-		MaxOutputTokens: util.Ptr(int64(256)),
-		Temperature:     util.Ptr(float64(0.3)),
+		MaxOutputTokens: new(int64(256)),
+		Temperature:     new(float64(0.3)),
 	}
 
 	var compactionTurnCtx = &core.TurnContext{
@@ -3665,4 +3665,41 @@ func (a *AgentRuntime) CompactHistory(ctx context.Context, session *core.Session
 	}
 
 	return nil
+}
+func (a *AgentRuntime) StreamLlm(ctx context.Context, messages []chatcompletion.ChatMessage, options *chatcompletion.ChatOptions) <-chan chatcompletion.ChatStreamingResponse {
+	// Record the circuit breaker check synchronously
+	if err := a.circuitBreaker.ThrowIfOpen(); err != nil {
+		result := make(chan chatcompletion.ChatStreamingResponse, 1)
+		result <- chatcompletion.ChatStreamingResponse{Err: err}
+		close(result)
+		return result
+	}
+
+	return a.chatClient.GetStreamingResponse(ctx, messages, options)
+}
+
+func (a *AgentRuntime) ExecuteSingleToolCall(
+	ctx context.Context,
+	call contents.FunctionCallContent,
+	session *core.Session,
+	turnCtx *core.TurnContext,
+	isStreaming bool,
+	approvalCallback ToolApprovalCallback,
+	onDelta func(string) error,
+	toolCallCount int,
+) (*core.ToolInvocation, *contents.FunctionResultContent, error) {
+	result, err := a.toolExecutor.ExecuteWithFunctionCallContent(
+		ctx,
+		call,
+		session,
+		turnCtx,
+		isStreaming,
+		approvalCallback,
+		onDelta,
+		toolCallCount)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	return result.Invocation, result.ToFunctionResultContent(call.CallId), nil
 }
