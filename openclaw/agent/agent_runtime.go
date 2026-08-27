@@ -4882,3 +4882,121 @@ func (a *AgentRuntime) ReloadSkills(ctx context.Context) []string {
 
 	return a.LoadedSkillNames()
 }
+
+func createNativeAgentRuntime(
+	chatClient chatcompletion.IChatClient,
+	tools []core.ITool,
+	runtimeContext *AgentRuntimeFactoryContext,
+	toolUsageTracker *core.ToolUsageTracker,
+	profileStore core.IUserProfileStore,
+	executionRouter ToolExecutionRouter,
+	toolPresetResolver core.IToolPresetResolver,
+	redaction core.IRedactionPipeline,
+	sentinelSubstitution core.ISentinelSubstitutionService,
+	contextBudgetPlanner core.ContextBudgetPlanner,
+	turnRoutingPolicy ITurnRoutingPolicy,
+	goalService core.IGoalService,
+) *AgentRuntime {
+
+	return NewAgentRuntime(
+		chatClient,
+		tools,
+		runtimeContext.MemoryStore,
+		runtimeContext.Config.Llm,
+		runtimeContext.Config.Memory.MaxHistoryTurns,
+		&AgentRuntimeOptions{
+			Skills:                          runtimeContext.Skills,
+			SkillsConfig:                    &runtimeContext.SkillsConfig,
+			SkillWorkspacePath:              runtimeContext.WorkspacePath,
+			PluginSkillDirs:                 runtimeContext.PluginSkillDirs,
+			Logger:                          runtimeContext.Logger,
+			ToolTimeoutSeconds:              runtimeContext.Config.Tooling.ToolTimeoutSeconds,
+			Metrics:                         runtimeContext.RuntimeMetrics,
+			ProviderUsage:                   &runtimeContext.ProviderUsage,
+			TurnTokenUsageObserver:          runtimeContext.TurnTokenUsageObserver,
+			LlmExecutionService:             runtimeContext.LlmExecutionService,
+			ParallelToolExecution:           runtimeContext.Config.Tooling.ParallelToolExecution,
+			EnableCompaction:                runtimeContext.Config.Memory.EnableCompaction,
+			CompactionThreshold:             runtimeContext.Config.Memory.CompactionThreshold,
+			CompactionKeepRecent:            runtimeContext.Config.Memory.CompactionKeepRecent,
+			RequireToolApproval:             runtimeContext.RequireToolApproval,
+			ApprovalRequiredTools:           runtimeContext.ApprovalRequiredTools,
+			MaxIterations:                   10,
+			Hooks:                           runtimeContext.Hooks,
+			SessionTokenBudget:              runtimeContext.Config.SessionTokenBudget,
+			Recall:                          runtimeContext.Config.Memory.Recall,
+			ProfileStore:                    profileStore,
+			ProfilesConfig:                  &runtimeContext.Config.Profiles,
+			ToolSandbox:                     runtimeContext.ToolSandbox,
+			GatewayConfig:                   &runtimeContext.Config,
+			ToolUsageTracker:                toolUsageTracker,
+			ExecutionRouter:                 &executionRouter,
+			ToolPresetResolver:              toolPresetResolver,
+			IsContractTokenBudgetExceeded:   runtimeContext.IsContractTokenBudgetExceeded,
+			IsContractRuntimeBudgetExceeded: runtimeContext.IsContractRuntimeBudgetExceeded,
+			RecordContractTurnUsage:         runtimeContext.RecordContractTurnUsage,
+			AppendContractSnapshot:          runtimeContext.AppendContractSnapshot,
+			ToolAuditLog:                    runtimeContext.ToolAuditLog,
+			Redaction:                       redaction,
+			SentinelSubstitution:            sentinelSubstitution,
+			ToolGovernance:                  runtimeContext.ToolGovernance,
+			PlanExecuteVerify:               runtimeContext.PlanExecuteVerify,
+			ContextBudgetPlanner:            &contextBudgetPlanner,
+			TurnRoutingPolicy:               turnRoutingPolicy,
+			GoalService:                     goalService,
+			Interceptors:                    runtimeContext.Interceptors,
+		},
+	)
+}
+
+func CreateNativeAgentRuntime(
+	runtimeContext *AgentRuntimeFactoryContext,
+	profileStore core.IUserProfileStore,
+	executionRouter ToolExecutionRouter,
+	toolPresetResolver core.IToolPresetResolver,
+	redaction core.IRedactionPipeline,
+	sentinelSubstitution core.ISentinelSubstitutionService,
+	contextBudgetPlanner core.ContextBudgetPlanner,
+	turnRoutingPolicy ITurnRoutingPolicy,
+	goalService core.IGoalService,
+) IAgentRuntime {
+
+	var toolUsageTracker = runtimeContext.ToolUsageTracker
+	agentRuntime := createNativeAgentRuntime(runtimeContext.ChatClient, runtimeContext.Tools, runtimeContext, toolUsageTracker,
+		profileStore,
+		executionRouter,
+		toolPresetResolver,
+		redaction,
+		sentinelSubstitution,
+		contextBudgetPlanner,
+		turnRoutingPolicy,
+		goalService,
+	)
+
+	if !runtimeContext.Config.Delegation.Enabled || len(runtimeContext.Config.Delegation.Profiles) == 0 {
+		return agentRuntime
+	}
+
+	var delegateTool = NewDelegateTool(
+		runtimeContext.ChatClient,
+		runtimeContext.Tools,
+		runtimeContext.MemoryStore,
+		runtimeContext.Config.Llm,
+		runtimeContext.Config.Delegation,
+		0,
+		runtimeContext.RuntimeMetrics,
+		runtimeContext.Logger,
+		runtimeContext.Config.Memory.Recall, nil)
+
+	tools := append(runtimeContext.Tools, delegateTool)
+	return createNativeAgentRuntime(runtimeContext.ChatClient, tools, runtimeContext, toolUsageTracker,
+		profileStore,
+		executionRouter,
+		toolPresetResolver,
+		redaction,
+		sentinelSubstitution,
+		contextBudgetPlanner,
+		turnRoutingPolicy,
+		goalService,
+	)
+}
