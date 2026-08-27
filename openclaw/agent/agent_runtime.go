@@ -16,6 +16,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/futugyou/extensions_ai/abstractions"
 	"github.com/futugyou/extensions_ai/abstractions/chatcompletion"
 	"github.com/futugyou/extensions_ai/abstractions/contents"
 	"github.com/futugyou/openclaw/circuitbreaker"
@@ -4493,4 +4494,391 @@ func (a *AgentRuntime) RunStreaming(
 	}()
 
 	return eventChan, nil
+}
+
+func (a *AgentRuntime) RunTurn(
+	ctx context.Context,
+	session *core.Session,
+	userMessage string,
+	approvalCallback ToolApprovalCallback,
+	responseSchema any, correlationId string) (*AgentTurnResult, error) {
+
+	var span trace.Span
+	ctx, span = core.Tracer.Start(ctx, "Agent.Run", trace.WithAttributes(
+		attribute.String("session.id", session.Id),
+		attribute.String("channel.id", session.ChannelId),
+	))
+	defer span.End()
+
+	var resolvedCorrelationId = ResolveCorrelationId(ctx, correlationId)
+	var turnCtx = &core.TurnContext{
+		CorrelationId: resolvedCorrelationId,
+		SessionId:     session.Id,
+		ChannelId:     session.ChannelId,
+	}
+	userMessage = a.redaction.Redact(userMessage)
+
+	if a.metrics != nil {
+		a.metrics.IncrementRequests()
+	}
+
+	a.logger.Info(fmt.Sprintf("[%s] Turn start session=%s channel=%s}", turnCtx.CorrelationId, session.Id, session.ChannelId))
+
+	if contractBudgetMessage, ok := a.TryRejectContractBudget(session); ok {
+		a.AppendContractSnapshot(session, "budget_exceeded")
+		a.LogTurnComplete(turnCtx)
+		return CompletedAgentTurnResult(contractBudgetMessage), nil
+	}
+
+	var resumeCheckpoint = ManagerTryGetResumableCheckpoint(session)
+	if resumeCheckpoint == nil {
+		// Record user turn
+		session.History = append(session.History, core.ChatTurn{Role: "user", Content: userMessage})
+
+		// Compaction or simple trim
+		if a.enableCompaction {
+			if err := a.CompactHistory(ctx, session, resolvedCorrelationId); errors.Is(err, context.Canceled) {
+				return nil, err
+			}
+		} else {
+			a.TrimHistory(session)
+		}
+	} else {
+		resumeCheckpoint.LastResumeAttemptAtUtc = new(time.Now().UTC())
+		a.logger.Info(
+			fmt.Sprintf("[%s] Resuming session=%s from checkpoint %s",
+				turnCtx.CorrelationId,
+				session.Id,
+				resumeCheckpoint.CheckpointId))
+	}
+
+	turnRoutingScope := a.ApplyTurnRouting(ctx, session, userMessage, resumeCheckpoint != nil, nil)
+	if turnRoutingScope != nil {
+		defer turnRoutingScope()
+	}
+
+	var messages = a.BuildMessages(session, resumeCheckpoint != nil, userMessage)
+	if resumeCheckpoint != nil {
+		messages = util.SlicesInsert(messages, 1, *chatcompletion.NewChatMessageWithText(chatcompletion.RoleSystem, ManagerBuildCheckpointResumeInstruction(resumeCheckpoint)))
+		if !ManagerIsBareResumeRequest(userMessage) {
+			messages = append(messages, *chatcompletion.NewChatMessageWithText(chatcompletion.RoleUser, ManagerBuildCheckpointResumeUserNote(userMessage)))
+		}
+	} else {
+		// Order matters: memory recall first, then profile recall (inserted near conversation start).
+		messages, memoryRecallInjected, err := a.TryInjectRecall(ctx, messages, userMessage)
+		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+			return nil, err
+		}
+		messages, err = a.TryInjectStructuredMemoryContext(ctx, messages, session, userMessage, memoryRecallInjected)
+		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+			return nil, err
+		}
+		messages, err = a.TryInjectProfileRecall(ctx, messages, session)
+		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+			return nil, err
+		}
+	}
+
+	// Inject Goal activation prompt if a goal is active
+	if a.goalIntegration != nil {
+		var goalPrompt = a.goalIntegration.BuildGoalSystemPrompt(session.Id)
+		if goalPrompt != "" {
+			// Insert after system prompt but before user message
+			messages = util.SlicesInsert(messages, 1, *chatcompletion.NewChatMessageWithText(chatcompletion.RoleSystem, goalPrompt))
+			a.logger.Info(fmt.Sprintf("[%s] Goal activation prompt injected", turnCtx.CorrelationId))
+		}
+	}
+
+	// Build tool definitions for the LLM (use pre-cached declarations)
+	var chatOptions = &chatcompletion.ChatOptions{
+		ModelId:         new(a.getModelID(session)),
+		Temperature:     new(float64(a.temperature)),
+		MaxOutputTokens: new(int64(a.maxTokens)),
+		Tools:           a.toolExecutor.GetToolDeclarations(session),
+	}
+
+	if session.ReasoningEffort != "" {
+		if chatOptions.AdditionalProperties == nil {
+			chatOptions.AdditionalProperties = make(map[string]any)
+		}
+		chatOptions.AdditionalProperties["reasoning_effort"] = session.ReasoningEffort
+	}
+
+	for i := 0; i < a.maxIterations; i++ {
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		default:
+		}
+		// Mid-turn budget check: stop if token budget is exceeded
+		if a.sessionTokenBudget > 0 && session.GetTotalTokens() >= a.sessionTokenBudget {
+			a.logger.Info(fmt.Sprintf("[%s] Streaming session token budget exceeded mid-turn (%d/%d)",
+				turnCtx.CorrelationId, session.GetTotalTokens(), a.sessionTokenBudget))
+			a.LogTurnComplete(turnCtx)
+			return &AgentTurnResult{
+				Text:       "You've reached the token limit for this session. Please start a new conversation.",
+				StopReason: AgentTurnBudgetLimited,
+			}, nil
+		}
+
+		if contractBudgetMessage, rejected := a.TryRejectContractBudget(session); rejected {
+			a.AppendContractSnapshot(session, "budget_exceeded")
+			a.LogTurnComplete(turnCtx)
+			return CompletedAgentTurnResult(contractBudgetMessage), nil
+		}
+
+		llmSw := time.Now()
+
+		executionResult, err := a.CallLlmWithResilience(ctx, session, messages, chatOptions, turnCtx)
+
+		if err != nil {
+			if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+				return nil, err
+			}
+			if cierr, ok := err.(*circuitbreaker.ErrCircuitOpen); ok {
+				a.logger.Info(fmt.Sprintf("[%s] Circuit breaker open — retry after %d",
+					turnCtx.CorrelationId, cierr.RetryAfter))
+				a.LogTurnComplete(turnCtx)
+				return CompletedAgentTurnResult("Sorry, I'm having trouble reaching my AI provider right now. Please try again shortly."), nil
+			}
+
+			if a.metrics != nil {
+				a.metrics.IncrementLlmErrors()
+			}
+
+			a.logger.Error(fmt.Sprintf("[%s] LLM call failed after all retries and fallbacks", turnCtx.CorrelationId))
+			a.LogTurnComplete(turnCtx)
+			return CompletedAgentTurnResult("Sorry, I'm having trouble reaching my AI provider right now. Please try again shortly."), nil
+		}
+
+		if executionResult == nil {
+			a.LogTurnComplete(turnCtx)
+			return CompletedAgentTurnResult("Sorry, I'm having trouble reaching my AI provider right now. Please try again shortly."), nil
+		}
+
+		var response = executionResult.Response
+
+		// Extract token usage from response
+		var inputTokens int64
+		var outputTokens int64
+		var cacheUsage *core.PromptCacheUsage
+
+		if response.Usage != nil {
+			inputTokens = util.Deref(response.Usage.InputTokenCount)
+			outputTokens = util.Deref(response.Usage.OutputTokenCount)
+		}
+
+		cacheUsage = core.PromptCacheUsageExtractorInstance.FromUsage(response.Usage)
+		turnCtx.RecordLlmCall(time.Since(llmSw), inputTokens, outputTokens)
+
+		if a.metrics != nil {
+			a.metrics.IncrementLlmCalls()
+			a.metrics.AddInputTokens(inputTokens)
+			a.metrics.AddOutputTokens(outputTokens)
+			a.metrics.AddPromptCacheReads(cacheUsage.CacheReadTokens)
+			a.metrics.AddPromptCacheWrites(cacheUsage.CacheWriteTokens)
+		}
+
+		if a.providerUsage != nil {
+			a.providerUsage.AddTokens(executionResult.ProviderId, executionResult.ModelId, inputTokens, outputTokens)
+			a.providerUsage.AddCacheTokens(executionResult.ProviderId, executionResult.ModelId, cacheUsage.CacheReadTokens, cacheUsage.CacheWriteTokens)
+		}
+
+		// Track token usage on the session
+		session.AddTokenUsage(inputTokens, outputTokens)
+		session.AddCacheUsage(cacheUsage.CacheReadTokens, cacheUsage.CacheWriteTokens)
+
+		if a.recordContractTurnUsage != nil {
+			a.recordContractTurnUsage(session, executionResult.ProviderId, executionResult.ModelId, inputTokens, outputTokens)
+		}
+
+		var estimated core.InputTokenComponentEstimate = core.InputTokenComponentEstimate{}
+
+		if response.Usage == nil {
+			estimated = BuildInputTokenEstimate(messages, int(inputTokens), a.skillPromptLength, 0)
+		}
+
+		a.RecordTurnUsage(
+			session,
+			executionResult.ProviderId,
+			executionResult.ModelId,
+			inputTokens,
+			outputTokens,
+			cacheUsage.CacheReadTokens,
+			cacheUsage.CacheWriteTokens,
+			&estimated,
+			response.Usage == nil,
+			turnCtx.CorrelationId)
+
+		if contractBudgetMessage, ok := a.TryRejectContractBudget(session); ok {
+			a.AppendContractSnapshot(session, "budget_exceeded")
+			a.LogTurnComplete(turnCtx)
+			return CompletedAgentTurnResult(contractBudgetMessage), nil
+		}
+
+		// Check for tool calls
+		toolCalls := []contents.FunctionCallContent{}
+		for _, msg := range response.Messages {
+			for _, co := range msg.Contents {
+				if call, ok := co.(*contents.FunctionCallContent); ok {
+					toolCalls = append(toolCalls, *call)
+				}
+			}
+		}
+
+		if len(toolCalls) == 0 {
+			// Final text response
+			var text = a.redaction.Redact(response.Text())
+
+			// ── Goal continuation check ──
+			if a.goalIntegration != nil {
+				a.goalIntegration.UpdateGoalTokenUsage(session)
+				var continuationPrompt = a.goalIntegration.EvaluateGoalContinuation(session, i, a.maxIterations, text)
+				if continuationPrompt != "" {
+					messages = append(messages, *chatcompletion.NewChatMessageWithText(chatcompletion.RoleSystem, continuationPrompt))
+					session.History = append(session.History, core.ChatTurn{
+						Role:    "system",
+						Content: fmt.Sprintf("[goal_check:%d] Continue working toward objective...", i),
+					})
+
+					a.logger.Info(
+						fmt.Sprintf("[%s] Goal auto-continue iteration %d/%d",
+							turnCtx.CorrelationId, i+1, a.maxIterations))
+					continue // ← Don't return — continue the loop
+				}
+			}
+			// ── End Goal continuation check ──
+
+			session.History = append(session.History, core.ChatTurn{
+				Role:    "assistant",
+				Content: text,
+			})
+
+			ManagerMarkCheckpointCompleted(session, "completed", "final_response")
+			a.AppendContractSnapshot(session, "active")
+			a.LogTurnComplete(turnCtx)
+			return CompletedAgentTurnResult(text), nil
+		}
+
+		// Execute tool calls (parallel or sequential based on config)
+		invocations, toolResults, err := a.ExecuteToolCalls(ctx, toolCalls, session, turnCtx, false, approvalCallback, nil, nil)
+		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+			return nil, err
+		}
+		if err != nil {
+			return CompletedAgentTurnResult("Sorry, I'm having trouble reaching my AI provider right now. Please try again shortly."), nil
+		}
+
+		// Feed all tool calls as a single assistant message, then all results as a single tool message
+		messages = append(messages, *chatcompletion.NewChatMessage(chatcompletion.RoleAssistant, util.TypeMapSlice(toolCalls, func(v contents.FunctionCallContent) contents.IAIContent {
+			return v
+		})))
+		messages = append(messages, *chatcompletion.NewChatMessage(chatcompletion.RoleTool, util.TypeMapSlice(toolResults, func(v contents.FunctionResultContent) contents.IAIContent {
+			return v
+		})))
+		session.History = append(session.History, core.ChatTurn{
+			Role:      "assistant",
+			Content:   "[tool_use]",
+			ToolCalls: invocations,
+		})
+
+		// Compaction is NOT run inside the iteration loop to avoid cascading LLM calls.
+		// It runs once at the start of the turn (before the loop).
+		a.TrimHistory(session)
+		err = a.PersistToolBatchCheckpoint(ctx, session, turnCtx, i, invocations)
+		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+			return nil, err
+		}
+		if err != nil {
+			return CompletedAgentTurnResult("Sorry, I'm having trouble reaching my AI provider right now. Please try again shortly."), nil
+		}
+	}
+
+	ManagerMarkCheckpointCompleted(session, "failed", "max_iterations")
+	a.AppendContractSnapshot(session, "active")
+	a.LogTurnComplete(turnCtx)
+
+	hasActiveGoal := false
+	if a.goalIntegration != nil {
+		hasActiveGoal = a.goalIntegration.BuildGoalSystemPrompt(session.Id) != ""
+	}
+
+	var canContinue = a.backgroundExecutionEnabled
+	text := "I've reached the maximum number of tool iterations. Task requires more work."
+	if canContinue {
+		text = "I've reached the maximum number of tool iterations. Continuing in the background."
+	}
+	continuePrompt := ""
+	if canContinue {
+		if hasActiveGoal {
+			continuePrompt = "Continue working toward the active goal."
+		} else {
+			continuePrompt = "Continue working on the task."
+		}
+	}
+
+	return &AgentTurnResult{
+		Text:           text,
+		ShouldContinue: canContinue,
+		StopReason:     AgentTurnBatchLimitReached,
+		ContinuePrompt: continuePrompt,
+	}, nil
+}
+
+func (a *AgentRuntime) Run(ctx context.Context, session *core.Session, userMessage string, approvalCallback ToolApprovalCallback, responseSchema any, correlationId string) (string, error) {
+	result, err := a.RunTurn(ctx, session, userMessage, approvalCallback, responseSchema, correlationId)
+	if err != nil {
+		return "", err
+	}
+
+	return result.Text, nil
+}
+
+var _ IAgentRuntime = (*AgentRuntime)(nil)
+
+func (a *AgentRuntime) ApplyMcpToolChanges(ctx context.Context, toAdd []core.ITool, toRemove []string) error {
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	default:
+	}
+
+	return a.toolExecutor.ReplaceMcpTools(toAdd, toRemove)
+}
+
+func (a *AgentRuntime) LoadedTools() []abstractions.AITool {
+	return nil
+}
+
+func (a *AgentRuntime) ReloadSkills(ctx context.Context) []string {
+	select {
+	case <-ctx.Done():
+		return []string{}
+	default:
+	}
+
+	if a.skillsConfig == nil {
+		return a.LoadedSkillNames()
+	}
+
+	workspacePath := "."
+	if path := util.Deref(a.skillWorkspacePath); path != "" {
+		workspacePath = path
+	}
+	var rawskills = core.SkillLoaderInstance.LoadAll(a.skillsConfig, workspacePath, a.pluginSkillDirs)
+
+	skills := make([]core.SkillDefinition, len(rawskills))
+	for i := 0; i < len(rawskills); i++ {
+		skills[i] = *rawskills[i]
+	}
+	a.ApplySkills(skills)
+
+	if len(skills) > 0 {
+		a.logger.Info(core.SkillPromptBuilderInstance.BuildSummary(skills))
+	} else {
+
+		a.logger.Info("No skills loaded.")
+	}
+
+	return a.LoadedSkillNames()
 }

@@ -542,7 +542,7 @@ type IAgentRuntime interface {
 	LoadedSkillNames() []string
 	LoadedSkills() []core.SkillDefinition
 	LoadedTools() []abstractions.AITool
-	Run(ctx context.Context, session *core.Session, userMessage string, approvalCallback ToolApprovalCallback, responseSchema any, correlationId string) string
+	Run(ctx context.Context, session *core.Session, userMessage string, approvalCallback ToolApprovalCallback, responseSchema any, correlationId string) (string, error)
 	RunTurn(ctx context.Context, session *core.Session, userMessage string, approvalCallback ToolApprovalCallback, responseSchema any, correlationId string) (*AgentTurnResult, error)
 	ReloadSkills(ctx context.Context) []string
 	RunStreaming(ctx context.Context, session *core.Session, userMessage string, approvalCallback ToolApprovalCallback, correlationId string) (<-chan core.AgentStreamEvent, error)

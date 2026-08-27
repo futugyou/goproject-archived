@@ -18,6 +18,8 @@ import (
 	"github.com/futugyou/openclaw/util"
 )
 
+var SkillLoaderInstance = &SkillLoader{}
+
 type SkillLoader struct{}
 
 func (s *SkillLoader) ParseSkillFile(filePath, skillDir string, source SkillSource) (*SkillDefinition, error) {
