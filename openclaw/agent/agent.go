@@ -581,7 +581,7 @@ type ILlmExecutionService interface {
 type AgentRuntimeFactoryContext struct {
 	Config                core.GatewayConfig
 	ChatClient            chatcompletion.IChatClient
-	Tools                 []abstractions.AITool
+	Tools                 []core.ITool
 	MemoryStore           core.IMemoryStore
 	RuntimeMetrics        *core.RuntimeMetrics
 	ProviderUsage         core.ProviderUsageTracker
