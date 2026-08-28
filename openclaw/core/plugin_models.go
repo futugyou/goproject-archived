@@ -508,13 +508,18 @@ func DefaultCodeExecConfig() *CodeExecConfig {
 }
 
 type ImageGenConfig struct {
-	Enabled  bool   `json:"enabled"`
-	Provider string `json:"provider"`           // Provider: "openai" (DALL-E)
-	ApiKey   string `json:"api_key,omitempty"`  // API key (or env: / raw: secret ref)
-	Endpoint string `json:"endpoint,omitempty"` // API endpoint (optional, for compatible APIs)
-	Model    string `json:"model"`              // Model name (e.g. "dall-e-3")
-	Size     string `json:"size"`               // Default image size
-	Quality  string `json:"quality"`            // Default quality ("standard" or "hd" for DALL-E 3)
+	Enabled        bool   `json:"enabled"`
+	ModelProfileId string `json:"model_profile_id"`
+	Provider       string `json:"provider"`           // Provider: "openai" (DALL-E)
+	ApiKey         string `json:"api_key,omitempty"`  // API key (or env: / raw: secret ref)
+	Endpoint       string `json:"endpoint,omitempty"` // API endpoint (optional, for compatible APIs)
+	Model          string `json:"model"`              // Model name (e.g. "dall-e-3")
+	Size           string `json:"size"`               // Default image size
+	Quality        string `json:"quality"`            // Default quality ("standard" or "hd" for DALL-E 3)
+	TimeoutSeconds int    `json:"timeout_seconds"`
+	NegativePrompt string `json:"negative_prompt"`
+	PromptExtend   bool   `json:"prompt_extend"`
+	Watermark      bool   `json:"Watermark"`
 }
 
 func DefaultImageGenConfig() ImageGenConfig {
