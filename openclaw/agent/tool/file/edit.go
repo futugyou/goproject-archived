@@ -66,7 +66,7 @@ type EditFileParams struct {
 	ReplaceAll bool   `json:"replace_all"`
 }
 
-func (a *EditFileTool) ExecuteExecute(ctx context.Context, argumentsJson string) string {
+func (a *EditFileTool) Execute(ctx context.Context, argumentsJson string) string {
 	if a.config.ReadOnlyMode {
 		return "Error: edit_file is disabled because Tooling.ReadOnlyMode is enabled."
 	}

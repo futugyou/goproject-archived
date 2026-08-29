@@ -89,7 +89,7 @@ type InboxZeroParams struct {
 	Count  int    `json:"count"`
 }
 
-func (a *InboxZeroTool) ExecuteExecute(ctx context.Context, argumentsJson string) string {
+func (a *InboxZeroTool) Execute(ctx context.Context, argumentsJson string) string {
 
 	var args InboxZeroParams
 	if err := json.Unmarshal([]byte(argumentsJson), &args); err != nil {
@@ -100,10 +100,139 @@ func (a *InboxZeroTool) ExecuteExecute(ctx context.Context, argumentsJson string
 	switch action {
 	case "analyze":
 		return a.analyze(ctx, args)
+	case "cleanup":
+		return a.cleanup(ctx, args)
 	default:
 		return fmt.Sprintf("Error: Unknown action '%s'. Use: analyze, cleanup, trash-sender, spam-rescue, categorize.", action)
 
 	}
+}
+
+func (e *InboxZeroTool) cleanup(ctx context.Context, args InboxZeroParams) string {
+	var folder = args.Folder
+	if folder == "" {
+		folder = "INBOX"
+	}
+	count := min(args.Count, e.config.MaxBatchSize)
+	folder = core.Sanitizer.StripCrlf(folder)
+	var folderError = core.Sanitizer.CheckImapFolderName(folder)
+	if folderError != nil {
+		return folderError.Error()
+	}
+
+	return e.executeImap(ctx, func(ctx context.Context, reader *bufio.Reader, writer *bufio.Writer) (string, error) {
+
+		e.imapSelect(ctx, reader, writer, folder)
+		total, err := e.imapGetMessageCount(ctx, reader, writer, folder)
+		if err != nil {
+			return err.Error(), nil
+		}
+		if total == 0 {
+			return fmt.Sprintf("Folder '%s' is empty. Nothing to clean up.", folder), nil
+		}
+
+		type Archive struct {
+			MsgNum   int
+			Category string
+			Desc     string
+		}
+		var startMsg = max(1, total-count+1)
+		var toArchive = []Archive{}
+		var kept = []Archive{}
+		for i := total; i >= startMsg; i-- {
+			email, err := e.imapFetchHeadersExtended(ctx, reader, writer, i)
+			if err != nil {
+				return err.Error(), nil
+			}
+			var category = e.categorizeEmail(email)
+
+			if category == "Newsletter" || category == "Promotional" || category == "Automated" {
+				toArchive = append(toArchive, Archive{
+					MsgNum:   i,
+					Category: category,
+					Desc:     fmt.Sprintf("%s: %s", email.From, email.Subject),
+				})
+			} else {
+				kept = append(kept, Archive{
+					MsgNum:   i,
+					Category: category,
+					Desc:     fmt.Sprintf("%s: %s", email.From, email.Subject),
+				})
+
+			}
+		}
+
+		var sb = strings.Builder{}
+		fmt.Fprintf(&sb, "## Cleanup Report: %s\n", folder)
+		fmt.Fprintf(&sb, "Scanned: %d emails\n", min(count, total))
+		fmt.Fprintf(&sb, "To archive: %d | Kept: %d\n", len(toArchive), len(kept))
+		sb.WriteString("\n")
+
+		if len(toArchive) == 0 {
+			sb.WriteString("✅ Nothing to clean up — your inbox is already tidy!\n")
+			return sb.String(), nil
+		}
+
+		if e.config.DryRun {
+			sb.WriteString("### 🔍 DRY RUN — No changes made\n")
+			sb.WriteString("The following emails **would** be archived:\n")
+			sb.WriteString("\n")
+			for _, to := range toArchive {
+				fmt.Fprintf(&sb, "  [%d] (%s) %s\n", to.MsgNum, to.Category, to.Desc)
+			}
+
+			sb.WriteString("\n")
+			sb.WriteString("Set `InboxZero.DryRun=false` in config to apply changes.\n")
+		} else {
+			// Actually archive by adding \\Seen flag and moving to archive
+			for _, to := range toArchive {
+				e.imapStoreFlag(ctx, writer, reader, to.MsgNum, "\\Seen")
+				e.imapMoveToArchive(ctx, writer, reader, to.MsgNum)
+			}
+
+			fmt.Fprintf(&sb, "### ✅ Archived %d emails\n", len(toArchive))
+			for i := 0; i < min(20, len(toArchive)); i++ {
+				to := toArchive[i]
+				fmt.Fprintf(&sb, "  [%d] (%s) %s\n", to.MsgNum, to.Category, to.Desc)
+			}
+
+			if len(toArchive) > 20 {
+				fmt.Fprintf(&sb, "  ... and %d more\n", len(toArchive)-20)
+			}
+		}
+
+		return sb.String(), nil
+	})
+}
+
+func (e *InboxZeroTool) imapMoveToArchive(ctx context.Context, writer *bufio.Writer, reader *bufio.Reader, num int) {
+	// Try MOVE command first (RFC 6851), fall back to COPY+DELETE
+	var tag = fmt.Sprintf("AM%d", num)
+	// Most providers support "[Gmail]/All Mail" or "Archive"
+	fmt.Fprintf(writer, "%s COPY %d %s", tag, num, imapQuote("Archive"))
+	writer.Flush()
+	resp, err := e.readUntilTag(ctx, reader, tag)
+	if err != nil {
+		return
+	}
+
+	if strings.Contains(resp, "NO") {
+		// Try Gmail-style archive
+		var tag2 = fmt.Sprintf("AM2%d", num)
+		fmt.Fprintf(writer, "%s COPY %d %s", tag2, num, imapQuote("[Gmail]/All Mail"))
+		writer.Flush()
+		e.readUntilTag(ctx, reader, tag2)
+	}
+
+	// Mark as deleted from current folder
+	e.imapStoreFlag(ctx, writer, reader, num, "\\Deleted")
+}
+
+func (e *InboxZeroTool) imapStoreFlag(ctx context.Context, writer *bufio.Writer, reader *bufio.Reader, num int, flag string) {
+	var tag = fmt.Sprintf("AS%d", num)
+	fmt.Fprintf(writer, "%s  STORE %d +FLAGS (%s)\r\n", tag, num, flag)
+	writer.Flush()
+	e.readUntilTag(ctx, reader, tag)
 }
 
 func (e *InboxZeroTool) imapSelect(ctx context.Context, reader *bufio.Reader, writer *bufio.Writer, folder string) error {
@@ -229,8 +358,8 @@ func (e *InboxZeroTool) analyze(ctx context.Context, args InboxZeroParams) strin
 		categories := make(map[string][]string)
 
 		var summary strings.Builder
-		summary.WriteString(fmt.Sprintf("## Inbox Analysis: %s\n", folder))
-		summary.WriteString(fmt.Sprintf("Total messages: %d | Analyzing: %d most recent\n\n", total, int(math.Min(float64(count), float64(total)))))
+		fmt.Fprintf(&summary, "## Inbox Analysis: %s\n", folder)
+		fmt.Fprintf(&summary, "Total messages: %d | Analyzing: %d most recent\n\n", total, int(math.Min(float64(count), float64(total))))
 
 		for i := total; i >= startMsg; i-- {
 			email, err := e.imapFetchHeadersExtended(ctx, reader, writer, i)
@@ -253,7 +382,7 @@ func (e *InboxZeroTool) analyze(ctx context.Context, args InboxZeroParams) strin
 		summary.WriteString("### Category Breakdown\n")
 		for _, cat := range sortedCats {
 			emails := categories[cat]
-			summary.WriteString(fmt.Sprintf("- **%s**: %d email(s)\n", cat, len(emails)))
+			fmt.Fprintf(&summary, "- **%s**: %d email(s)\n", cat, len(emails))
 		}
 		summary.WriteString("\n")
 
@@ -261,7 +390,7 @@ func (e *InboxZeroTool) analyze(ctx context.Context, args InboxZeroParams) strin
 		archivable := len(categories["Newsletter"]) + len(categories["Promotional"]) + len(categories["Automated"])
 		if archivable > 0 {
 			summary.WriteString("### Recommendation\n")
-			summary.WriteString(fmt.Sprintf("**%d emails** can be safely archived/cleaned up (Newsletters, Promotions, Automated).\n", archivable))
+			fmt.Fprintf(&summary, "**%d emails** can be safely archived/cleaned up (Newsletters, Promotions, Automated).\n", archivable)
 			if e.config.DryRun {
 				summary.WriteString("Run `cleanup` action to see what would be archived. DryRun is currently **ON** (safe mode).\n")
 			} else {
@@ -273,17 +402,14 @@ func (e *InboxZeroTool) analyze(ctx context.Context, args InboxZeroParams) strin
 		summary.WriteString("\n### Details\n")
 		for _, cat := range sortedCats {
 			emails := categories[cat]
-			summary.WriteString(fmt.Sprintf("\n**%s** (%d):\n", cat, len(emails)))
+			fmt.Fprintf(&summary, "\n**%s** (%d):\n", cat, len(emails))
 
-			limit := 10
-			if len(emails) < limit {
-				limit = len(emails)
-			}
+			limit := min(len(emails), 10)
 			for _, e := range emails[:limit] {
-				summary.WriteString(fmt.Sprintf("  %s\n", e))
+				fmt.Fprintf(&summary, "  %s\n", e)
 			}
 			if len(emails) > 10 {
-				summary.WriteString(fmt.Sprintf("  ... and %d more\n", len(emails)-10))
+				fmt.Fprintf(&summary, "  ... and %d more\n", len(emails)-10)
 			}
 		}
 
