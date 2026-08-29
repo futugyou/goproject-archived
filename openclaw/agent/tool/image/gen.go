@@ -1,6 +1,7 @@
 package image
 
 import (
+	"bytes"
 	"context"
 	"encoding/base64"
 	"encoding/json"
@@ -88,9 +89,173 @@ func (a *ImageGenTool) Execute(ctx context.Context, argumentsJson string) string
 	switch strings.ToLower(effective.Provider) {
 	case "openai":
 		return a.generateOpenAi(ctx, args.Prompt, args.Size, args.Quality, effective)
+	case "dashscope", "qwen":
+		return a.generateDashScope(ctx, args.Prompt, args.Size, effective)
 	default:
 		return fmt.Sprintf("Error: Unsupported image generation provider '%s'.", effective.Provider)
 	}
+}
+
+type DashScopeImage struct {
+	Code    string `json:"code"`
+	Message string `json:"message"`
+	Output  struct {
+		Choices []struct {
+			Message struct {
+				Content []struct {
+					Image string `json:"image"`
+				} `json:"content"`
+			} `json:"message"`
+		} `json:"choices"`
+	} `json:"output"`
+}
+
+func TryDecodeDataUri(value string) ([]byte, string, bool) {
+	defaultMime := "image/png"
+
+	if !strings.HasPrefix(strings.ToLower(value), "data:") {
+		return nil, "", false
+	}
+
+	comma := strings.Index(value, ",")
+	if comma < 0 {
+		return nil, "", false
+	}
+
+	header := value[5:comma] // e.g., "image/png;base64"
+	payload := value[comma+1:]
+
+	if !strings.Contains(strings.ToLower(header), "base64") {
+		return nil, "", false
+	}
+
+	mimeType := defaultMime
+	if semicolon := strings.Index(header, ";"); semicolon > 0 {
+		mimeType = header[:semicolon]
+	} else if strings.TrimSpace(header) != "" {
+		mimeType = header
+	}
+
+	bytes, err := base64.StdEncoding.DecodeString(payload)
+	if err != nil || len(bytes) == 0 {
+		return nil, "", false
+	}
+
+	return bytes, mimeType, true
+}
+
+func (a *ImageGenTool) generateDashScope(ctx context.Context, prompt string, size string, effective EffectiveImageGenConfig) string {
+	var apiKey = core.SecretResolverInstance.Resolve(effective.ApiKey)
+	if apiKey == "" {
+		return "Error: API key not configured. Set ImageGen.ApiKey or bind ImageGen.ModelProfileId to a profile with ApiKey."
+	}
+
+	if effective.Endpoint == "" {
+		return "Error: DashScope endpoint not configured. Set ImageGen.Endpoint to the full API path (e.g. https://dashscope.aliyuncs.com/api/v1/services/aigc/multimodal-generation/generation)."
+	}
+
+	var url = effective.Endpoint
+
+	a.httpClient = &http.Client{}
+	content := a.buildDashScopeRequestJson(prompt, size, effective.Model)
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewBuffer(content))
+	if err != nil {
+		return err.Error()
+	}
+
+	req.Header.Set("Authorization", "Bearer "+apiKey)
+
+	resp, err := a.httpClient.Do(req)
+	if err != nil {
+		return err.Error()
+	}
+
+	defer resp.Body.Close()
+
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return fmt.Sprintf("Error: Failed to search (HTTP %d)", resp.StatusCode)
+	}
+
+	var root DashScopeImage
+	if err := json.NewDecoder(resp.Body).Decode(&root); err != nil {
+		return err.Error()
+	}
+
+	imageValue := ""
+	for _, choice := range root.Output.Choices {
+		for _, content := range choice.Message.Content {
+			if img := strings.TrimSpace(content.Image); img != "" {
+				imageValue = img
+				break
+			}
+		}
+		if imageValue != "" {
+			break
+		}
+	}
+
+	if imageValue != "" {
+		dataBytes, dataMime, ok := TryDecodeDataUri(imageValue)
+		if ok {
+			var savedPath = a.saveImageBytes(ctx, dataBytes, dataMime)
+			if savedPath == "" {
+				return "Error: image data was returned but could not be saved. Ensure Tooling.WorkspaceRoot or an AllowedWriteRoot is configured."
+			}
+			return formatImagePathResult(savedPath)
+		}
+
+		return formatImageResult(imageValue, "")
+	}
+
+	// Surface DashScope's own error code/message when present.
+	if root.Code != "" || root.Message != "" {
+		return fmt.Sprintf("Error: Image generation failed — %s: %s", root.Code, root.Message)
+	}
+
+	return "Error: Unexpected response format from image API."
+}
+
+func (c *ImageGenTool) buildDashScopeRequestJson(prompt, size, model string) []byte {
+	params := map[string]any{
+		"size":          normalizeDashScopeSize(size),
+		"prompt_extend": c.config.PromptExtend,
+		"watermark":     c.config.Watermark,
+	}
+
+	if strings.TrimSpace(c.config.NegativePrompt) != "" {
+		params["negative_prompt"] = c.config.NegativePrompt
+	}
+
+	payload := map[string]any{
+		"model": model,
+		"input": map[string]any{
+			"messages": []any{
+				map[string]any{
+					"role": "user",
+					"content": []any{
+						map[string]any{
+							"text": prompt,
+						},
+					},
+				},
+			},
+		},
+		"parameters": params,
+	}
+
+	result, _ := json.Marshal(payload)
+	return result
+}
+
+func normalizeDashScopeSize(size string) string {
+	size = strings.TrimSpace(size)
+	if size == "" {
+		return "1024*1024"
+	}
+
+	size = strings.ReplaceAll(size, "x", "*")
+	size = strings.ReplaceAll(size, "X", "*")
+	return size
 }
 
 func ResolveOpenAiEndpoint(configuredEndpoint string) string {
