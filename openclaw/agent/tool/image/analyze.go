@@ -21,7 +21,7 @@ type ImageAnalyzeTool struct {
 	config *core.ImageAnalyzeConfig
 }
 
-func New(config *core.ImageAnalyzeConfig) *ImageAnalyzeTool {
+func NewImageAnalyzeTool(config *core.ImageAnalyzeConfig) *ImageAnalyzeTool {
 	if config == nil {
 		config = &core.ImageAnalyzeConfig{}
 	}
