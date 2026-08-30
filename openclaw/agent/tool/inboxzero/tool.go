@@ -104,10 +104,108 @@ func (a *InboxZeroTool) Execute(ctx context.Context, argumentsJson string) strin
 		return a.cleanup(ctx, args)
 	case "trash-sender":
 		return a.trashBySender(ctx, args)
+	case "spam-rescue":
+		return a.spamRescue(ctx, args)
 	default:
 		return fmt.Sprintf("Error: Unknown action '%s'. Use: analyze, cleanup, trash-sender, spam-rescue, categorize.", action)
 
 	}
+}
+
+func (e *InboxZeroTool) imapCopyToInbox(ctx context.Context, reader *bufio.Reader, writer *bufio.Writer, msgNum int) {
+	var tag = fmt.Sprintf("AC%d", msgNum)
+	fmt.Fprintf(writer, "%s COPY %d %s\n", tag, msgNum, imapQuote("INBOX"))
+	writer.Flush()
+	e.readUntilTag(ctx, reader, tag)
+}
+
+func (e *InboxZeroTool) spamRescue(ctx context.Context, args InboxZeroParams) string {
+	var count = args.Count
+	// Try common spam folder names
+	var spamFolders = []string{"[Gmail]/Spam", "Junk", "Spam", "Junk E-mail", "INBOX.Junk", "INBOX.Spam"}
+	return e.executeImap(ctx, func(ctx context.Context, reader *bufio.Reader, writer *bufio.Writer) (string, error) {
+		actualSpamFolder := ""
+		for _, candidate := range spamFolders {
+			writer.WriteString(fmt.Sprintf("A_LIST LIST \"\" %s\n", imapQuote(candidate)))
+			writer.Flush()
+			resp, err := e.readUntilTag(ctx, reader, "A_LIST")
+			if err != nil {
+				continue
+			}
+			if strings.Contains(resp, "* LIST") {
+				actualSpamFolder = candidate
+				break
+			}
+		}
+
+		if actualSpamFolder == "" {
+			return "Could not find a Spam/Junk folder on this IMAP server. Tried: " + strings.Join(spamFolders, ", "), nil
+		}
+
+		e.imapSelect(ctx, reader, writer, actualSpamFolder)
+		total, err := e.imapGetMessageCount(ctx, reader, writer, actualSpamFolder)
+		if err != nil {
+			return "", err
+		}
+		if total == 0 {
+			return fmt.Sprintf("Spam folder '%s' is empty. No false positives to rescue.", actualSpamFolder), nil
+		}
+
+		var startMsg = max(1, total-count+1)
+
+		type Rescued struct {
+			MsgNum int
+			Reason string
+			Desc   string
+		}
+		rescued := []Rescued{}
+		for i := total; i > -startMsg; i-- {
+			email, err := e.imapFetchHeadersExtended(ctx, reader, writer, i)
+			if err != nil {
+				return "", err
+			}
+			var category = e.categorizeEmail(email)
+
+			// If classified as VIP, Protected, Receipt, or Confirmation, it's likely a false positive
+			if category == "VIP" || category == "Protected" || category == "Protected Keyword" || category == "Receipt" || category == "Confirmation" {
+				rescued = append(rescued, Rescued{
+					MsgNum: i,
+					Reason: category,
+					Desc:   fmt.Sprintf("%s: %s", email.From, email.Subject),
+				})
+			}
+		}
+
+		sb := strings.Builder{}
+		fmt.Fprintf(&sb, "## Spam Rescue: %s\n", actualSpamFolder)
+		fmt.Fprintf(&sb, "Scanned: %d emails in spam\n", min(count, total))
+
+		if len(rescued) == 0 {
+			sb.WriteString("✅ No false positives detected. Your spam filter seems accurate.\n")
+			return sb.String(), nil
+		}
+
+		if e.config.DryRun {
+			fmt.Fprintf(&sb, "### 🔍 DRY RUN — %d potential false positive(s):\n", len(rescued))
+			for _, v := range rescued {
+				fmt.Fprintf(&sb, "  - (%s) %s\n", v.Reason, v.Desc)
+			}
+
+			sb.WriteString("\n")
+			sb.WriteString("Set `InboxZero.DryRun=false` to move these back to INBOX.\n")
+		} else {
+			for _, v := range rescued {
+				e.imapCopyToInbox(ctx, reader, writer, v.MsgNum)
+			}
+
+			fmt.Fprintf(&sb, "### ✅ Rescued %d email(s) back to INBOX:\n", len(rescued))
+			for _, v := range rescued {
+				fmt.Fprintf(&sb, "  - (%s) %s\n", v.Reason, v.Desc)
+			}
+		}
+
+		return sb.String(), nil
+	})
 }
 
 func (e *InboxZeroTool) trashBySender(ctx context.Context, args InboxZeroParams) string {
