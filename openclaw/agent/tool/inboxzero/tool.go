@@ -98,7 +98,7 @@ func (a *InboxZeroTool) Execute(ctx context.Context, argumentsJson string) strin
 
 	action := strings.ToLower(args.Action)
 	switch action {
-	case "analyze":
+	case "analyze", "categorize":
 		return a.analyze(ctx, args)
 	case "cleanup":
 		return a.cleanup(ctx, args)

@@ -271,16 +271,16 @@ func formatEventList(root CalendarResponse) string {
 			}
 		}
 
-		sb.WriteString(fmt.Sprintf("[%d] %s\n", count, summary))
-		sb.WriteString(fmt.Sprintf("    ID: %s\n", eventId))
+		fmt.Fprintf(&sb, "[%d] %s\n", count, summary)
+		fmt.Fprintf(&sb, "    ID: %s\n", eventId)
 		if startStr != "" {
-			sb.WriteString(fmt.Sprintf("    Start: %ss\n", startStr))
+			fmt.Fprintf(&sb, "    Start: %ss\n", startStr)
 		}
 		if endStr != "" {
-			sb.WriteString(fmt.Sprintf("    End: %ss\n", endStr))
+			fmt.Fprintf(&sb, "    End: %ss\n", endStr)
 		}
 		if location != "" {
-			sb.WriteString(fmt.Sprintf("    Location: %ss\n", location))
+			fmt.Fprintf(&sb, "    Location: %ss\n", location)
 		}
 		sb.WriteString("\n")
 	}
