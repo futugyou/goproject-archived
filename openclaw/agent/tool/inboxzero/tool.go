@@ -102,10 +102,94 @@ func (a *InboxZeroTool) Execute(ctx context.Context, argumentsJson string) strin
 		return a.analyze(ctx, args)
 	case "cleanup":
 		return a.cleanup(ctx, args)
+	case "trash-sender":
+		return a.trashBySender(ctx, args)
 	default:
 		return fmt.Sprintf("Error: Unknown action '%s'. Use: analyze, cleanup, trash-sender, spam-rescue, categorize.", action)
 
 	}
+}
+
+func (e *InboxZeroTool) trashBySender(ctx context.Context, args InboxZeroParams) string {
+	if args.Sender == "" {
+		return "Error: 'sender' is required for trash-sender action."
+	}
+
+	var folder = args.Folder
+	if folder == "" {
+		folder = "INBOX"
+	}
+	count := min(args.Count, e.config.MaxBatchSize)
+	folder = core.Sanitizer.StripCrlf(folder)
+	var folderError = core.Sanitizer.CheckImapFolderName(folder)
+	if folderError != nil {
+		return folderError.Error()
+	}
+
+	return e.executeImap(ctx, func(ctx context.Context, reader *bufio.Reader, writer *bufio.Writer) (string, error) {
+
+		e.imapSelect(ctx, reader, writer, folder)
+		total, err := e.imapGetMessageCount(ctx, reader, writer, folder)
+		if err != nil {
+			return "", err
+		}
+		if total == 0 {
+			return fmt.Sprintf("Folder '%s' is empty.", folder), nil
+
+		}
+		type Trash struct {
+			MsgNum  int
+			Subject string
+		}
+		var startMsg = max(1, total-count+1)
+		var toTrash = []Trash{}
+		for i := total; i >= startMsg; i-- {
+			email, err := e.imapFetchHeadersExtended(ctx, reader, writer, i)
+			if err != nil {
+				return "", err
+			}
+			if strings.Contains(email.From, args.Sender) {
+				toTrash = append(toTrash, Trash{MsgNum: i, Subject: email.Subject})
+			}
+		}
+
+		sb := strings.Builder{}
+		fmt.Fprintf(&sb, "## Trash by Sender: %s\n", args.Sender)
+
+		if len(toTrash) == 0 {
+			fmt.Fprintf(&sb, "No emails found from '%s' in the last %d messages.\n", args.Sender, count)
+			return sb.String(), nil
+		}
+
+		if e.config.DryRun {
+			fmt.Fprintf(&sb, "### 🔍 DRY RUN — %d emails **would** be trashed:\n", len(toTrash))
+			for i := 0; i < min(20, len(toTrash)); i++ {
+				fmt.Fprintf(&sb, "  - %s\n", toTrash[i].Subject)
+			}
+
+			if len(toTrash) > 20 {
+				fmt.Fprintf(&sb, "  ... and %d more\n", len(toTrash)-20)
+			}
+			sb.WriteString("\n")
+			sb.WriteString("Set `InboxZero.DryRun=false` in config to apply.\n")
+		} else {
+			for i := 0; i < len(toTrash); i++ {
+				e.imapStoreFlag(ctx, writer, reader, toTrash[i].MsgNum, "\\Deleted")
+			}
+
+			// Expunge to actually delete
+			writer.WriteString("A_EXP EXPUNGE\n")
+			writer.Flush()
+			e.readUntilTag(ctx, reader, "A_EXP")
+
+			fmt.Fprintf(&sb, "### 🗑️ Trashed %d emails from '%s'\n", len(toTrash), args.Sender)
+			for i := 0; i < min(20, len(toTrash)); i++ {
+				fmt.Fprintf(&sb, "  - %s\n", toTrash[i].Subject)
+			}
+		}
+
+		return sb.String(), nil
+	})
 }
 
 func (e *InboxZeroTool) cleanup(ctx context.Context, args InboxZeroParams) string {
