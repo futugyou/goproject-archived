@@ -86,7 +86,7 @@ var bufPool = sync.Pool{
 	},
 }
 
-func SerializeError(errorCode, message string) (string, error) {
+func SerializeError(errorCode, message string) string {
 	buf := bufPool.Get().(*bytes.Buffer)
 	buf.Reset()
 	defer bufPool.Put(buf)
@@ -98,10 +98,10 @@ func SerializeError(errorCode, message string) (string, error) {
 	}
 
 	if err := json.NewEncoder(buf).Encode(res); err != nil {
-		return "", err
+		return err.Error()
 	}
 
-	return string(bytes.TrimSpace(buf.Bytes())), nil
+	return string(bytes.TrimSpace(buf.Bytes()))
 }
 
 func SerializeLintResult(passed bool, failedGates []string, summary string) (string, error) {

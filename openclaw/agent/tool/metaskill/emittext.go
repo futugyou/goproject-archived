@@ -48,11 +48,7 @@ func (a *EmitTextTool) Execute(ctx context.Context, argumentsJson string) string
 
 	text, ok := doc["text"].(string)
 	if !ok {
-		msg, err := SerializeError("invalid_arguments", "'text' is required.")
-		if err != nil {
-			return err.Error()
-		}
-		return msg
+		return SerializeError("invalid_arguments", "'text' is required.")
 	}
 
 	return text

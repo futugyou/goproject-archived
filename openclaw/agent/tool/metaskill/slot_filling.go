@@ -78,27 +78,15 @@ func (a *MetaSkillFillSlotsTool) Execute(ctx context.Context, argumentsJson stri
 	}
 
 	if !IsSupportedPattern(doc.PatternId) {
-		msg, err := SerializeError("unknown_pattern_id", "Unsupported pattern_id "+doc.PatternId)
-		if err != nil {
-			return err.Error()
-		}
-		return msg
+		return SerializeError("unknown_pattern_id", "Unsupported pattern_id "+doc.PatternId)
 	}
 
 	if doc.UserIntent == "" {
-		msg, err := SerializeError("invalid_arguments", "'user_intent' is required.")
-		if err != nil {
-			return err.Error()
-		}
-		return msg
+		return SerializeError("invalid_arguments", "'user_intent' is required.")
 	}
 
 	if doc.HistorySummary != "" {
-		msg, err := SerializeError("invalid_arguments", "'history_summary' is required.")
-		if err != nil {
-			return err.Error()
-		}
-		return msg
+		return SerializeError("invalid_arguments", "'history_summary' is required.")
 	}
 
 	var requiredTriggers = ExtractRequiredTriggersFromIntent(doc.UserIntent)
