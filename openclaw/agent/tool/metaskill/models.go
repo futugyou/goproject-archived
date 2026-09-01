@@ -126,7 +126,7 @@ func SerializeLintResult(passed bool, failedGates []string, summary string) stri
 	return string(bytes.TrimSpace(buf.Bytes()))
 }
 
-func SerializePersistResult(proposalID, path string, autoEnableEligible bool) (string, error) {
+func SerializePersistResult(proposalID, path string, autoEnableEligible bool) string {
 	buf := bufPool.Get().(*bytes.Buffer)
 	buf.Reset()
 	defer bufPool.Put(buf)
@@ -141,7 +141,7 @@ func SerializePersistResult(proposalID, path string, autoEnableEligible bool) (s
 	}
 
 	if err := json.NewEncoder(buf).Encode(res); err != nil {
-		return "", err
+		return err.Error()
 	}
-	return string(bytes.TrimSpace(buf.Bytes())), nil
+	return string(bytes.TrimSpace(buf.Bytes()))
 }
