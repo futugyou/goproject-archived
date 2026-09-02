@@ -1071,9 +1071,7 @@ func (r *ToolExecutionRouter) Execute(ctx context.Context, request *core.Executi
 				fallbackReq := request
 				fallbackReq.BackendName = fallbackBackend
 				envCopy := make(map[string]string)
-				for k, v := range request.Environment {
-					envCopy[k] = v
-				}
+				maps.Copy(envCopy, request.Environment)
 				fallbackReq.Environment = envCopy
 
 				fallbackResult, fbErr := fallback.Execute(ctx, fallbackReq)

@@ -96,12 +96,15 @@ type IAutomationRunDispatcher interface {
 	PrepareDispatch(ctx context.Context, request *AutomationDispatchRequest) (*InboundMessage, error)
 }
 
+type ChannelMessageHandler func(ctx context.Context, message *InboundMessage) error
+
 type IChannelAdapter interface {
 	Close(ctx context.Context) error
 	ChannelId() string
 	Start(ctx context.Context) error
 	Send(ctx context.Context, message *OutboundMessage) error
-	GetMessageReceivedHandler() (handler func(ctx context.Context, msg *InboundMessage) error)
+	GetMessageReceivedHandler() ChannelMessageHandler
+	SetMessageReceivedHandler(handler ChannelMessageHandler)
 }
 
 type IBridgedChannelControl interface {

@@ -62,9 +62,11 @@ type BridgedChannelAdapter struct {
 	selfID    *string
 	selfIDs   []string
 
-	OnMessageReceived func(ctx context.Context, msg *core.InboundMessage) error
-	OnAuthEvent       func(evt *core.BridgeChannelAuthEvent)
+	msgHandler  core.ChannelMessageHandler
+	OnAuthEvent func(evt *core.BridgeChannelAuthEvent)
 }
+
+var _ core.IChannelAdapter = (*BridgedChannelAdapter)(nil)
 
 func NewBridgedChannelAdapter(bridge *PluginBridgeProcess, channelID string, logger *slog.Logger) *BridgedChannelAdapter {
 	if logger == nil {
@@ -77,12 +79,17 @@ func NewBridgedChannelAdapter(bridge *PluginBridgeProcess, channelID string, log
 		selfIDs:   make([]string, 0),
 	}
 }
-func (a *BridgedChannelAdapter) ChannelId() string {
-	return a.channelId
+
+func (a *BridgedChannelAdapter) GetMessageReceivedHandler() core.ChannelMessageHandler {
+	return a.msgHandler
 }
 
-func (a *BridgedChannelAdapter) GetMessageReceivedHandler() (handler func(ctx context.Context, msg *core.InboundMessage) error) {
-	return a.OnMessageReceived
+func (a *BridgedChannelAdapter) SetMessageReceivedHandler(handler core.ChannelMessageHandler) {
+	a.msgHandler = handler
+}
+
+func (a *BridgedChannelAdapter) ChannelId() string {
+	return a.channelId
 }
 
 func (a *BridgedChannelAdapter) SelfId() *string {
@@ -367,8 +374,8 @@ func (a *BridgedChannelAdapter) HandleInbound(ctx context.Context, rawParams jso
 		Attachments:      attachments,
 	}
 
-	if a.OnMessageReceived != nil {
-		if err := a.OnMessageReceived(ctx, msg); err != nil {
+	if onMessageReceived := a.GetMessageReceivedHandler(); onMessageReceived != nil {
+		if err := onMessageReceived(ctx, msg); err != nil {
 			a.logger.Warn("OnMessageReceived handler failed", "channelId", a.channelId, "error", err)
 		}
 	}
