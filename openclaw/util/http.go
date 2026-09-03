@@ -1,6 +1,8 @@
 package util
 
 import (
+	"encoding/base64"
+	"fmt"
 	"net/http"
 	"strconv"
 	"time"
@@ -33,4 +35,10 @@ func GetRetryAfter(resp *http.Response, defaultDuration time.Duration) time.Dura
 
 	// 3. 解析失败，使用默认值
 	return defaultDuration
+}
+
+func CreateBasicAuth(accountSid, authToken string) string {
+	raw := fmt.Sprintf("%s:%s", accountSid, authToken)
+	b64 := base64.StdEncoding.EncodeToString([]byte(raw))
+	return fmt.Sprintf("Basic %s", b64)
 }
