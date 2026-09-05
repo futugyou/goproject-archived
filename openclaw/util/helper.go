@@ -358,6 +358,13 @@ func TrimEnd(text string) string {
 	return strings.TrimRightFunc(text, checkIfSpace)
 }
 
+func TrimStart(text string) string {
+	checkIfSpace := func(r rune) bool {
+		return r == ' '
+	}
+	return strings.TrimLeftFunc(text, checkIfSpace)
+}
+
 func Indent(value, prefix string) string {
 	if value == "" {
 		return prefix

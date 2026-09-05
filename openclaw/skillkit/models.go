@@ -1,7 +1,6 @@
 package skillkit
 
 import (
-	"context"
 	"strings"
 )
 
@@ -208,10 +207,6 @@ type SkillRunPlan struct {
 type SkillCritiqueResult struct {
 	Markdown string   `json:"markdown"`
 	Findings []string `json:"findings"`
-}
-
-type ISkillCritiqueProvider interface {
-	Critique(ctx context.Context, pkg SkillPackage) (SkillCritiqueResult, error)
 }
 
 type CaseInsensitiveMap map[string]string
