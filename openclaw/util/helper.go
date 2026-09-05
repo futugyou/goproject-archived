@@ -131,6 +131,10 @@ func IsValidIANA(tz string) bool {
 	return err == nil
 }
 
+func RFC3339NanoFormat(t time.Time) string {
+	return t.Format(time.RFC3339Nano)
+}
+
 // encodeKey 实现 URL 安全的 Base64 编码 (密匙转码)
 func EncodeKey(key string) string {
 	if strings.TrimSpace(key) == "" {

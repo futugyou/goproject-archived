@@ -88,7 +88,7 @@ func (d *DeterministicSkillCritiqueProvider) Critique(ctx context.Context, pkg S
 	var builder = strings.Builder{}
 	builder.WriteString("# Skill Critique\n\n")
 	fmt.Fprintf(&builder, "Skill: %s\n", manifest.Name)
-	fmt.Fprintf(&builder, "GeneratedAtUtc:  %s\n\n", time.Now().UTC().Format(time.RFC3339Nano))
+	fmt.Fprintf(&builder, "GeneratedAtUtc:  %s\n\n", util.RFC3339NanoFormat(time.Now().UTC()))
 	builder.WriteString("## Findings\n\n")
 	for _, finding := range findings {
 		fmt.Fprintf(&builder, "- %s\n", finding)
