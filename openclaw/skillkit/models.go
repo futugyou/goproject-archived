@@ -24,7 +24,7 @@ const (
 )
 
 type SkillManifest struct {
-	ID            string                   `json:"id"`
+	Id            string                   `json:"id"`
 	Name          string                   `json:"name"`
 	Version       string                   `json:"version"`
 	Category      string                   `json:"category"`
@@ -139,7 +139,7 @@ func NewSkillWorkflow() SkillWorkflow {
 }
 
 type SkillWorkflowStep struct {
-	ID          string                `json:"id"`
+	Id          string                `json:"id"`
 	Name        string                `json:"name"`
 	Type        SkillWorkflowStepType `json:"type"`
 	Description string                `json:"description"`
@@ -178,7 +178,7 @@ func NewSkillPackageOptions() SkillPackageOptions {
 }
 
 type SkillValidationResult struct {
-	SkillID string                 `json:"skillId"`
+	SkillId string                 `json:"skillId"`
 	Issues  []SkillValidationIssue `json:"issues"`
 }
 
