@@ -153,6 +153,7 @@ func createDefaultWorkflow() SkillWorkflow {
 	}
 }
 
+// 1.明确能力边界
 func renderIntent(manifest SkillManifest) string {
 	return fmt.Sprintf(`# Intent
 
@@ -194,6 +195,7 @@ func renderIntent(manifest SkillManifest) string {
 	)
 }
 
+// 行为准则
 func renderExpectations(manifest SkillManifest) string {
 	return fmt.Sprintf(`# Expectations
 
@@ -225,6 +227,7 @@ func renderExpectations(manifest SkillManifest) string {
 	)
 }
 
+// 安全红线
 func renderGuardrails(manifest SkillManifest) string {
 	return fmt.Sprintf(`# Guardrails
 

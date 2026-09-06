@@ -1,6 +1,7 @@
 package util
 
 import (
+	"archive/zip"
 	"bufio"
 	"context"
 	"encoding/json"
@@ -507,4 +508,21 @@ func CopyFileWithContext(ctx context.Context, sourcePath, destPath string) error
 			}
 		}
 	}
+}
+
+func AddFileToZip(w *zip.Writer, srcPath, entryName string) error {
+	file, err := os.Open(srcPath)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+
+	// CreateHeaderEx / Create 均可，Create 会自动处理常规文件头
+	fw, err := w.Create(filepath.ToSlash(entryName))
+	if err != nil {
+		return err
+	}
+
+	_, err = io.Copy(fw, file)
+	return err
 }
