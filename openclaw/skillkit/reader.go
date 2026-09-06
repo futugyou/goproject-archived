@@ -71,18 +71,6 @@ func ResolvePackageFilePath(packageRoot, fileName string) (string, error) {
 
 type SkillPackageReader struct{}
 
-var SkillTemplateRequiredFiles []string = []string{
-	"skill.yaml",
-	"intent.md",
-	"expectations.md",
-	"workflow.yaml",
-	"tools.yaml",
-	"guardrails.md",
-	"validation.md",
-	"examples.md",
-	"trace.md",
-}
-
 func (s *SkillPackageReader) Read(ctx context.Context, skillRef, skillsRoot string) (*SkillPackage, error) {
 	packageRoot, err := ResolveSkillPath(skillRef, skillsRoot)
 	if err != nil {
