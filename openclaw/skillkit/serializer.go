@@ -336,3 +336,27 @@ func skillManifestGetList(values map[string][]string, key string) []string {
 	}
 	return []string{}
 }
+
+func SkillManifestSerializeWorkflow(workflow SkillWorkflow) string {
+	builder := &strings.Builder{}
+	builder.WriteString("steps:\n")
+	for _, step := range workflow.Steps {
+		builder.WriteString("  - id: ")
+		builder.WriteString(skillManifestEncodeScalar(step.Id))
+		builder.WriteString("\n")
+
+		skillManifestWriteScalar(builder, 4, "name", step.Name)
+		skillManifestWriteScalar(builder, 4, "type", stepTypeToYaml(step.Type))
+		skillManifestWriteScalar(builder, 4, "description", step.Description)
+	}
+
+	return builder.String()
+}
+
+func SkillManifestSerializeTools(tools SkillToolPolicy) string {
+	builder := &strings.Builder{}
+	skillManifestWriteList(builder, 0, "allowed", tools.Allowed)
+	skillManifestWriteList(builder, 0, "forbidden", tools.Forbidden)
+	skillManifestWriteList(builder, 0, "approval_required", tools.ApprovalRequired)
+	return builder.String()
+}
