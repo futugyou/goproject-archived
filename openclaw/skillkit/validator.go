@@ -63,25 +63,26 @@ func RequireText(issues []SkillValidationIssue, value, area, pass, error, fileNa
 
 type SkillValidator struct{}
 
-func (s *SkillValidator) Validate(ctx context.Context, skillRef, skillsRoot string) (*SkillValidationResult, error) {
+func (s *SkillValidator) Validate(ctx context.Context, skillRef, skillsRoot string) SkillValidationResult {
 	root, err := ResolveSkillPath(skillRef, skillsRoot)
 	if err != nil {
-		return nil, err
+		return SkillValidationResult{SkillId: skillRef, Issues: []SkillValidationIssue{ErrorSkillValidationIssue("Files", err.Error(), "skill.yaml")}}
 	}
 
 	manifestPath, err := ResolvePackageFilePath(root, "skill.yaml")
 	if err != nil {
-		return nil, err
+		return SkillValidationResult{SkillId: filepath.Base(root), Issues: []SkillValidationIssue{ErrorSkillValidationIssue("Files", err.Error(), "skill.yaml")}}
+
 	}
 
 	issues := []SkillValidationIssue{}
 	if !util.FileExists(manifestPath) {
-		return &SkillValidationResult{SkillId: filepath.Base(root), Issues: []SkillValidationIssue{ErrorSkillValidationIssue("Files", "skill.yaml is missing.", "skill.yaml")}}, nil
+		return SkillValidationResult{SkillId: filepath.Base(root), Issues: []SkillValidationIssue{ErrorSkillValidationIssue("Files", "skill.yaml is missing.", "skill.yaml")}}
 	}
 
 	manifest, err := SkillManifestRead(ctx, manifestPath)
 	if err != nil {
-		return &SkillValidationResult{SkillId: filepath.Base(root), Issues: []SkillValidationIssue{ErrorSkillValidationIssue("Files", "skill.yaml could not be read", "skill.yaml")}}, nil
+		return SkillValidationResult{SkillId: filepath.Base(root), Issues: []SkillValidationIssue{ErrorSkillValidationIssue("Files", "skill.yaml could not be read", "skill.yaml")}}
 	}
 
 	issues = append(issues, PassSkillValidationIssue("Files", "skill.yaml exists.", "skill.yaml"))
@@ -132,5 +133,5 @@ func (s *SkillValidator) Validate(ctx context.Context, skillRef, skillsRoot stri
 		issues = append(issues, ErrorSkillValidationIssue("Policy", "Tool policy has no conflicts.", "tools.yaml"))
 	}
 
-	return &SkillValidationResult{SkillId: manifest.Id, Issues: issues}, nil
+	return SkillValidationResult{SkillId: manifest.Id, Issues: issues}
 }
