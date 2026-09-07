@@ -389,3 +389,46 @@ func TypeMapSlice[T any, U any](input []T, transform func(T) U) []U {
 	}
 	return result
 }
+
+func ToHashSetOrdinalIgnoreCase(list []string) map[string]struct{} {
+	set := make(map[string]struct{}, len(list))
+	for _, item := range list {
+		set[strings.ToLower(item)] = struct{}{}
+	}
+	return set
+}
+
+// Intersect returns the common elements between two slices using exact comparison
+func Intersect[T comparable](a, b []T) []T {
+	set := make(map[T]struct{}, len(a))
+	for _, item := range a {
+		set[item] = struct{}{}
+	}
+
+	var result []T
+	for _, item := range b {
+		if _, exists := set[item]; exists {
+			result = append(result, item)
+			delete(set, item) // Optional: prevents duplicate entries in result
+		}
+	}
+	return result
+}
+
+// IntersectIgnoreCase performs a case-insensitive intersection of two string slices
+func IntersectIgnoreCase(a, b []string) []string {
+	setA := ToHashSetOrdinalIgnoreCase(a)
+	seen := make(map[string]struct{})
+	var result []string
+
+	for _, item := range b {
+		key := strings.ToLower(item)
+		if _, exists := setA[key]; exists {
+			if _, alreadyAdded := seen[key]; !alreadyAdded {
+				seen[key] = struct{}{}
+				result = append(result, item) // Preserves original casing from slice b
+			}
+		}
+	}
+	return result
+}
