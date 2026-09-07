@@ -9,7 +9,7 @@ require (
 	github.com/emersion/go-imap/v2 v2.0.0-beta.8
 	github.com/flosch/pongo2/v7 v7.0.0-alpha.1
 	github.com/futugyou/extensions_ai v0.0.1
-	github.com/go-sql-driver/mysql v1.10.0
+	github.com/go-sql-driver/mysql v1.10.1
 	github.com/google/shlex v0.0.0-20191202100458-e7afc7fbc510
 	github.com/gorilla/websocket v1.5.3
 	github.com/hibiken/asynq v0.26.0
