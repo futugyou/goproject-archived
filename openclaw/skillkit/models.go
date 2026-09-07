@@ -195,7 +195,7 @@ type SkillValidationIssue struct {
 	Severity SkillValidationSeverity `json:"severity"`
 	Area     string                  `json:"area"`
 	Message  string                  `json:"message"`
-	FileName *string                 `json:"fileName,omitempty"`
+	FileName string                  `json:"fileName,omitempty"`
 }
 
 type SkillRunPlan struct {

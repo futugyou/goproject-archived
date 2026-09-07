@@ -15,7 +15,7 @@ func ErrorSkillValidationIssue(area, message, fileName string) SkillValidationIs
 		Severity: SeverityError,
 		Area:     area,
 		Message:  message,
-		FileName: &fileName,
+		FileName: fileName,
 	}
 }
 
@@ -24,7 +24,7 @@ func WarningSkillValidationIssue(area, message, fileName string) SkillValidation
 		Severity: SeverityWarning,
 		Area:     area,
 		Message:  message,
-		FileName: &fileName,
+		FileName: fileName,
 	}
 }
 
@@ -33,7 +33,7 @@ func PassSkillValidationIssue(area, message, fileName string) SkillValidationIss
 		Severity: SeverityPass,
 		Area:     area,
 		Message:  message,
-		FileName: &fileName,
+		FileName: fileName,
 	}
 }
 
