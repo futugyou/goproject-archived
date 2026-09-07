@@ -1,10 +1,10 @@
 module github.com/futugyousuzu/ethereum-demo
 
-go 1.25.0
+go 1.26.0
 
 require (
 	github.com/ethereum/go-ethereum v1.17.5
-	golang.org/x/crypto v0.55.0
+	golang.org/x/crypto v0.56.0
 )
 
 require (
