@@ -59,7 +59,7 @@ func (s *SkillPackageService) Generate(ctx context.Context, skillRef, skillsRoot
 	}
 
 	if err := s.writer.GenerateMissing(ctx, *pkg, force); err != nil {
-		return nil
+		return err
 	}
 
 	message := "Generated missing skill files."
