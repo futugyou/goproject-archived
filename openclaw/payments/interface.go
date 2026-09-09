@@ -33,10 +33,6 @@ type IPaymentSecretVault interface {
 	Revoke(ctx context.Context, handleId, reason string) error
 }
 
-type IPaymentPolicy interface {
-	Evaluate(ctx context.Context, request ApprovalRequest, approvalServiceAvailable bool) (*PaymentPolicyDecision, error)
-}
-
 type IPaymentAuditSink interface {
 	Record(ctx context.Context, auditEvent PaymentAuditEvent) error
 }
