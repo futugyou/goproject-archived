@@ -299,7 +299,8 @@ type MemorySqliteConfig struct {
 }
 
 type MemoryPostgresConfig struct {
-	PostgresUrl string `json:"postgres_url"`
+	PostgresUrl         string `json:"postgres_url"`
+	EmbeddingDimensions int    `json:"embedding_dimensions"`
 }
 
 func NewDefaultMemorySqliteConfig() *MemorySqliteConfig {
