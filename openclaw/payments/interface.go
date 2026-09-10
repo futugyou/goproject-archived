@@ -8,10 +8,6 @@ type IPaymentApprovalService interface {
 	RequestApproval(ctx context.Context, request ApprovalRequest) (*ApprovalResult, error)
 }
 
-type IPaymentAuditSink interface {
-	Record(ctx context.Context, auditEvent PaymentAuditEvent) error
-}
-
 type IPaymentRedactor interface {
 	Redact(value string) (string, error)
 }
