@@ -194,7 +194,7 @@ type PaymentStatus struct {
 	ProviderId        string     `json:"providerId"`
 	Status            string     `json:"status"`
 	MerchantName      string     `json:"merchantName,omitempty"`
-	AmountMinor       *int64     `json:"amountMinor,omitempty"`
+	AmountMinor       int64      `json:"amountMinor,omitempty"`
 	Currency          string     `json:"currency,omitempty"`
 	UpdatedAtUtc      *time.Time `json:"updatedAtUtc,omitempty"`
 	ProviderReference string     `json:"providerReference,omitempty"`
@@ -223,7 +223,7 @@ type ApprovalRequest struct {
 	Summary              string     `json:"summary"`
 	Severity             string     `json:"severity"`
 	MerchantName         string     `json:"merchantName,omitempty"`
-	AmountMinor          *int64     `json:"amountMinor,omitempty"`
+	AmountMinor          int64      `json:"amountMinor,omitempty"`
 	Currency             string     `json:"currency,omitempty"`
 	FundingSourceDisplay string     `json:"fundingSourceDisplay,omitempty"`
 	ProviderId           string     `json:"providerId,omitempty"`
@@ -262,7 +262,7 @@ type PaymentAuditEvent struct {
 	PaymentId     string     `json:"paymentId,omitempty"`
 	Last4         string     `json:"last4,omitempty"`
 	MerchantName  string     `json:"merchantName,omitempty"`
-	AmountMinor   *int64     `json:"amountMinor,omitempty"`
+	AmountMinor   int64      `json:"amountMinor,omitempty"`
 	Currency      string     `json:"currency,omitempty"`
 	IssuedAtUtc   *time.Time `json:"issuedAtUtc,omitempty"`
 	ValidUntilUtc *time.Time `json:"validUntilUtc,omitempty"`
@@ -297,26 +297,26 @@ type PaymentSecret struct {
 	last4               string
 	expiresAtUtc        *time.Time
 	environment         string
-	pan                 *string
-	cvv                 *string
-	expMonth            *string
-	expYear             *string
-	postalCode          *string
-	authorizationToken  *string
-	authorizationHeader *string
+	pan                 string
+	cvv                 string
+	expMonth            string
+	expYear             string
+	postalCode          string
+	authorizationToken  string
+	authorizationHeader string
 }
 
 func NewPaymentSecret(
 	handleId, providerId string,
-	pan, cvv, expMonth, expYear, postalCode, authToken, authHeader *string,
+	pan, cvv, expMonth, expYear, postalCode, authToken, authHeader string,
 	expiresAtUtc *time.Time,
 	environment string,
 ) *PaymentSecret {
 	env, _ := NormalizeEnvironment(environment)
 
 	var last4 string
-	if pan != nil && len(*pan) >= 4 {
-		last4 = (*pan)[len(*pan)-4:]
+	if len(pan) >= 4 {
+		last4 = (pan)[len(pan)-4:]
 	}
 
 	return &PaymentSecret{
@@ -341,7 +341,7 @@ func (s *PaymentSecret) Last4() string            { return s.last4 }
 func (s *PaymentSecret) ExpiresAtUtc() *time.Time { return s.expiresAtUtc }
 func (s *PaymentSecret) Environment() string      { return s.environment }
 
-func (s *PaymentSecret) Resolve(field PaymentSecretField) *string {
+func (s *PaymentSecret) Resolve(field PaymentSecretField) string {
 	switch field {
 	case SecretFieldPan:
 		return s.pan
@@ -352,14 +352,14 @@ func (s *PaymentSecret) Resolve(field PaymentSecretField) *string {
 	case SecretFieldExpYear:
 		return s.expYear
 	case SecretFieldExpMonthYearShort:
-		if s.expMonth != nil && s.expYear != nil && len(*s.expYear) >= 2 {
-			res := fmt.Sprintf("%s/%s", *s.expMonth, (*s.expYear)[len(*s.expYear)-2:])
-			return &res
+		if s.expMonth != "" && len(s.expYear) >= 2 {
+			res := fmt.Sprintf("%s/%s", s.expMonth, (s.expYear)[len(s.expYear)-2:])
+			return res
 		}
 	case SecretFieldExpMonthYearLong:
-		if s.expMonth != nil && s.expYear != nil {
-			res := fmt.Sprintf("%s/%s", *s.expMonth, *s.expYear)
-			return &res
+		if s.expMonth != "" && s.expYear != "" {
+			res := fmt.Sprintf("%s/%s", s.expMonth, s.expYear)
+			return res
 		}
 	case SecretFieldPostalCode:
 		return s.postalCode
@@ -368,17 +368,17 @@ func (s *PaymentSecret) Resolve(field PaymentSecretField) *string {
 	case SecretFieldAuthorizationHeader:
 		return s.authorizationHeader
 	}
-	return nil
+	return ""
 }
 
 func (s *PaymentSecret) Clear() {
-	s.pan = nil
-	s.cvv = nil
-	s.expMonth = nil
-	s.expYear = nil
-	s.postalCode = nil
-	s.authorizationToken = nil
-	s.authorizationHeader = nil
+	s.pan = ""
+	s.cvv = ""
+	s.expMonth = ""
+	s.expYear = ""
+	s.postalCode = ""
+	s.authorizationToken = ""
+	s.authorizationHeader = ""
 }
 
 func (s *PaymentSecret) MarshalJSON() ([]byte, error) {
@@ -389,26 +389,26 @@ func (s *PaymentSecret) UnmarshalJSON(b []byte) error {
 	return errors.New("PaymentSecret cannot be deserialized")
 }
 
-func normalizeMonth(value *string) *string {
-	if value == nil || strings.TrimSpace(*value) == "" {
-		return nil
+func normalizeMonth(value string) string {
+	if strings.TrimSpace(value) == "" {
+		return ""
 	}
-	month, err := strconv.Atoi(*value)
+	month, err := strconv.Atoi(value)
 	if err != nil {
 		return value
 	}
 	formatted := fmt.Sprintf("%02d", month)
-	return &formatted
+	return formatted
 }
 
-func normalizeYear(value *string) *string {
-	if value == nil || strings.TrimSpace(*value) == "" {
-		return nil
+func normalizeYear(value string) string {
+	if strings.TrimSpace(value) == "" {
+		return ""
 	}
-	val := *value
+	val := value
 	if len(val) == 2 {
 		formatted := "20" + val
-		return &formatted
+		return formatted
 	}
 	return value
 }

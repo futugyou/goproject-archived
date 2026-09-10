@@ -4,24 +4,6 @@ import (
 	"context"
 )
 
-type IPaymentProvider interface {
-	GetProviderId() string
-	GetSetupStatus(ctx context.Context) (*PaymentSetupStatus, error)
-	ListFundingSources(tx context.Context, execContext PaymentExecutionContext) ([]FundingSource, error)
-	IssueVirtualCard(ctx context.Context,
-		request VirtualCardRequest,
-		execContext PaymentExecutionContext,
-	) (*VirtualCardIssueResult, error)
-	ExecuteMachinePayment(ctx context.Context,
-		request MachinePaymentRequest,
-		execContext PaymentExecutionContext,
-	) (*MachinePaymentProviderResult, error)
-	GetPaymentStatus(ctx context.Context,
-		paymentIdOrHandleId string,
-		execContext PaymentExecutionContext,
-	) (*PaymentStatus, error)
-}
-
 type IPaymentApprovalService interface {
 	RequestApproval(ctx context.Context, request ApprovalRequest) (*ApprovalResult, error)
 }

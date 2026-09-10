@@ -55,8 +55,8 @@ func (d *DefaultPaymentPolicy) Evaluate(ctx context.Context, request ApprovalReq
 	}
 
 	var live = environment == PaymentEnvLive
-	if live && d.maxLiveAmountMinor != nil && request.AmountMinor != nil && *request.AmountMinor > *d.maxLiveAmountMinor {
-		return deny(fmt.Sprintf("Live payment amount %d exceeds configured limit %d.", *request.AmountMinor, *d.maxLiveAmountMinor)), nil
+	if live && d.maxLiveAmountMinor != nil && request.AmountMinor > *d.maxLiveAmountMinor {
+		return deny(fmt.Sprintf("Live payment amount %d exceeds configured limit %d.", request.AmountMinor, *d.maxLiveAmountMinor)), nil
 	}
 
 	if !live && d.allowTestModeWithoutApproval {
