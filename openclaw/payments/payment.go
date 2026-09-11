@@ -93,6 +93,7 @@ type PaymentRuntimeService struct {
 	policy            IPaymentPolicy
 	approval          IPaymentApprovalService
 	providers         map[string]IPaymentProvider
+	secretTtl         time.Duration
 }
 
 func (p *PaymentRuntimeService) RetrieveMachineAuthorizationOnce(ctx context.Context, paymentId string) (*PaymentSecret, error) {
@@ -104,16 +105,15 @@ func (p *PaymentRuntimeService) requireApprovalOrPolicyAllow(ctx context.Context
 	if providerId == "" {
 		providerId = p.defaultProviderId
 	}
-	if err := p.audit.Record(ctx, PaymentAuditEvent{
+
+	p.audit.Record(ctx, PaymentAuditEvent{
 		EventType:    "approval_requested",
 		ProviderId:   providerId,
 		MerchantName: request.MerchantName,
 		AmountMinor:  request.AmountMinor,
 		Currency:     request.Currency,
 		Environment:  request.Environment,
-	}); err != nil {
-		return err
-	}
+	})
 
 	decision, err := p.policy.Evaluate(ctx, request, p.approval != nil || request.CliConfirmed)
 	if err != nil {
@@ -163,7 +163,7 @@ func (p *PaymentRuntimeService) requireApprovalOrPolicyAllow(ctx context.Context
 		decisionstr = "approved"
 	}
 
-	if err := p.audit.Record(ctx, PaymentAuditEvent{
+	p.audit.Record(ctx, PaymentAuditEvent{
 		EventType:    eventType,
 		ProviderId:   providerId,
 		MerchantName: request.MerchantName,
@@ -172,9 +172,7 @@ func (p *PaymentRuntimeService) requireApprovalOrPolicyAllow(ctx context.Context
 		Decision:     decisionstr,
 		Reason:       approval.Reason,
 		Environment:  request.Environment,
-	}); err != nil {
-		return err
-	}
+	})
 
 	if !approval.Approved {
 		msg := approval.Reason
@@ -307,6 +305,7 @@ func (p *PaymentRuntimeService) GetPaymentStatus(
 	if err != nil {
 		return nil, err
 	}
+
 	p.audit.Record(ctx, PaymentAuditEvent{
 		EventType:    "payment_status_checked",
 		ProviderId:   provider.GetProviderId(),
@@ -317,6 +316,7 @@ func (p *PaymentRuntimeService) GetPaymentStatus(
 		Status:       status.Status,
 		Environment:  effectiveContext.Environment,
 	})
+
 	return status, nil
 }
 
@@ -413,4 +413,108 @@ func (p *PaymentRuntimeService) ExecuteMachinePayment(
 		Environment:  effectiveContext.Environment,
 	})
 	return &providerResult.Result, nil
+}
+
+func (p *PaymentRuntimeService) resolveSecretTtl(validUntilUtc *time.Time) time.Duration {
+	if validUntilUtc == nil {
+		return p.secretTtl
+	}
+
+	var ttl = time.Until(*validUntilUtc)
+	if ttl <= 0 {
+		return 1 * time.Minute
+	}
+
+	if ttl < p.secretTtl {
+		return ttl
+	}
+
+	return p.secretTtl
+}
+
+func (p *PaymentRuntimeService) IssueVirtualCard(
+	ctx context.Context,
+	request VirtualCardRequest,
+	execContext PaymentExecutionContext,
+) (*VirtualCardHandle, error) {
+
+	provider, err := p.resolveProvider(request.ProviderId)
+	if err != nil {
+		return nil, err
+	}
+
+	effectiveContext, err := p.normalizeContext(execContext, request.Environment)
+	if err != nil {
+		return nil, err
+	}
+
+	if err := validateVirtualCardRequest(request); err != nil {
+		return nil, err
+	}
+
+	var approval = buildApprovalRequest(
+		ActionIssueVirtualCard,
+		fmt.Sprintf("Issue virtual card for %s (%d %s) using %s.", request.MerchantName, request.AmountMinor, request.Currency, provider.GetProviderId()),
+		provider.GetProviderId(),
+		request.MerchantName,
+		request.AmountMinor,
+		request.Currency,
+		request.ValidUntilUtc,
+		effectiveContext)
+
+	if err := p.requireApprovalOrPolicyAllow(ctx, approval); err != nil {
+		return nil, err
+	}
+
+	errAudit := func() {
+		p.audit.Record(context.Background(), PaymentAuditEvent{
+			EventType:    "virtual_card_failed",
+			ProviderId:   provider.GetProviderId(),
+			MerchantName: request.MerchantName,
+			AmountMinor:  request.AmountMinor,
+			Currency:     request.Currency,
+			Status:       "failed",
+			Environment:  effectiveContext.Environment,
+		})
+	}
+	request.ProviderId = provider.GetProviderId()
+	request.Environment = effectiveContext.Environment
+	issue, err := provider.IssueVirtualCard(ctx, request, effectiveContext)
+	if err != nil {
+		errAudit()
+		return nil, err
+	}
+
+	if issue.Secret == nil {
+		errAudit()
+		return nil, errors.New("Payment provider did not return a vaultable virtual card secret.")
+	}
+
+	secret := prepareSecretForVault(
+		*issue.Secret,
+		issue.Handle.HandleId,
+		provider.GetProviderId(),
+		effectiveContext.Environment,
+		issue.Handle.ValidUntilUtc)
+
+	if _, err := p.vault.Store(ctx, secret, p.resolveSecretTtl(issue.Handle.ValidUntilUtc), false); err != nil {
+		errAudit()
+		return nil, err
+	}
+
+	p.audit.Record(ctx, PaymentAuditEvent{
+		EventType:     "virtual_card_issued",
+		ProviderId:    provider.GetProviderId(),
+		HandleId:      issue.Handle.HandleId,
+		Last4:         issue.Handle.Last4,
+		MerchantName:  issue.Handle.TargetMerchantName,
+		AmountMinor:   request.AmountMinor,
+		Currency:      request.Currency,
+		IssuedAtUtc:   &issue.Handle.IssuedAtUtc,
+		ValidUntilUtc: issue.Handle.ValidUntilUtc,
+		Status:        issue.Handle.Status,
+		Environment:   effectiveContext.Environment,
+	})
+
+	return &issue.Handle, nil
 }
