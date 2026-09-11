@@ -92,6 +92,7 @@ type PaymentRuntimeService struct {
 	defaultProviderId string
 	policy            IPaymentPolicy
 	approval          IPaymentApprovalService
+	providers         map[string]IPaymentProvider
 }
 
 func (p *PaymentRuntimeService) RetrieveMachineAuthorizationOnce(ctx context.Context, paymentId string) (*PaymentSecret, error) {
@@ -259,4 +260,62 @@ func (p *PaymentRuntimeService) ResolveSecretFieldForApprovedBoundary(
 		Environment:  effectiveApproval.Environment,
 	})
 	return value, nil
+}
+
+func (p *PaymentRuntimeService) resolveProvider(providerId string) (IPaymentProvider, error) {
+	id := providerId
+	if id == "" {
+		id = p.defaultProviderId
+	}
+
+	if provider, ok := p.providers[id]; ok {
+		return provider, nil
+	}
+
+	return nil, fmt.Errorf("Payment provider '%s' is not registered", id)
+}
+
+func (p *PaymentRuntimeService) normalizeContext(execContext PaymentExecutionContext, environment string) (PaymentExecutionContext, error) {
+	if environment == "" {
+		environment = execContext.Environment
+	}
+	e, err := NormalizeEnvironment(environment)
+	if err != nil {
+		return execContext, err
+	}
+
+	execContext.Environment = e
+	return execContext, nil
+}
+
+func (p *PaymentRuntimeService) GetPaymentStatus(
+	ctx context.Context,
+	paymentIdOrHandleId,
+	providerId string,
+	execContext PaymentExecutionContext) (*PaymentStatus, error) {
+	provider, err := p.resolveProvider(providerId)
+	if err != nil {
+		return nil, err
+	}
+
+	effectiveContext, err := p.normalizeContext(execContext, "")
+	if err != nil {
+		return nil, err
+	}
+
+	status, err := provider.GetPaymentStatus(ctx, paymentIdOrHandleId, effectiveContext)
+	if err != nil {
+		return nil, err
+	}
+	p.audit.Record(ctx, PaymentAuditEvent{
+		EventType:    "payment_status_checked",
+		ProviderId:   provider.GetProviderId(),
+		PaymentId:    status.PaymentId,
+		MerchantName: status.MerchantName,
+		AmountMinor:  status.AmountMinor,
+		Currency:     status.Currency,
+		Status:       status.Status,
+		Environment:  effectiveContext.Environment,
+	})
+	return status, nil
 }
