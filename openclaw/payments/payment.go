@@ -96,6 +96,43 @@ type PaymentRuntimeService struct {
 	secretTtl         time.Duration
 }
 
+func NewPaymentRuntimeService(
+	providers []IPaymentProvider,
+	vault IPaymentSecretVault,
+	policy IPaymentPolicy,
+	audit IPaymentAuditSink,
+	approval IPaymentApprovalService,
+	defaultProviderId string,
+	secretTtl time.Duration,
+) *PaymentRuntimeService {
+
+	if secretTtl < 0 {
+		secretTtl = 30 * time.Minute
+	}
+
+	providerMap := map[string]IPaymentProvider{}
+	for _, v := range providers {
+		providerMap[v.GetProviderId()] = v
+		if defaultProviderId == "" {
+			defaultProviderId = v.GetProviderId()
+		}
+	}
+
+	if defaultProviderId == "" {
+		defaultProviderId = "mock"
+	}
+
+	return &PaymentRuntimeService{
+		vault:             vault,
+		audit:             audit,
+		defaultProviderId: defaultProviderId,
+		policy:            policy,
+		approval:          approval,
+		providers:         providerMap,
+		secretTtl:         secretTtl,
+	}
+}
+
 func (p *PaymentRuntimeService) RetrieveMachineAuthorizationOnce(ctx context.Context, paymentId string) (*PaymentSecret, error) {
 	return p.vault.TryRetrieve(ctx, paymentId, "machine-payment-authorization")
 }
@@ -517,4 +554,35 @@ func (p *PaymentRuntimeService) IssueVirtualCard(
 	})
 
 	return &issue.Handle, nil
+}
+
+func (p *PaymentRuntimeService) GetSetupStatus(ctx context.Context, providerId string) (*PaymentSetupStatus, error) {
+	provider, err := p.resolveProvider(providerId)
+	if err != nil {
+		return nil, err
+	}
+
+	return provider.GetSetupStatus(ctx)
+}
+
+func (p *PaymentRuntimeService) ListFundingSources(
+	ctx context.Context, providerId string,
+	execContext PaymentExecutionContext,
+) ([]FundingSource, error) {
+
+	provider, err := p.resolveProvider(providerId)
+	if err != nil {
+		return nil, err
+	}
+
+	execC, err := p.normalizeContext(execContext, "")
+	if err != nil {
+		return nil, err
+	}
+
+	return provider.ListFundingSources(ctx, execC)
+}
+
+func (p *PaymentRuntimeService) HasApprovalService() bool {
+	return p.approval != nil
 }
