@@ -34,7 +34,7 @@ func buildApprovalRequest(
 	}
 }
 
-func repareSecretForVault(
+func prepareSecretForVault(
 	secret PaymentSecret,
 	handleId,
 	providerId,
@@ -318,4 +318,99 @@ func (p *PaymentRuntimeService) GetPaymentStatus(
 		Environment:  effectiveContext.Environment,
 	})
 	return status, nil
+}
+
+func (p *PaymentRuntimeService) ExecuteMachinePayment(
+	ctx context.Context,
+	request MachinePaymentRequest,
+	execContext PaymentExecutionContext,
+) (*MachinePaymentResult, error) {
+	providerId := request.ProviderId
+	if providerId == "" {
+		providerId = request.Challenge.ProviderId
+	}
+
+	provider, err := p.resolveProvider(providerId)
+	if err != nil {
+		return nil, err
+	}
+
+	effectiveContext, err := p.normalizeContext(execContext, request.Environment)
+	if err != nil {
+		return nil, err
+	}
+
+	if err := validateMachinePaymentRequest(request); err != nil {
+		return nil, err
+	}
+
+	target := request.Challenge.MerchantName
+	if target == "" {
+		target = request.Challenge.ResourceUrl
+	}
+
+	if target == "" {
+		target = "paid resource"
+	}
+
+	summary := fmt.Sprintf("Execute machine payment for %s (%d %s) using %s.", target, request.Challenge.AmountMinor, request.Challenge.Currency, provider.GetProviderId())
+	var approval = buildApprovalRequest(
+		ActionExecuteMachinePayment,
+		summary,
+		provider.GetProviderId(),
+		request.Challenge.MerchantName,
+		request.Challenge.AmountMinor,
+		request.Challenge.Currency,
+		nil,
+		effectiveContext)
+
+	if err := p.requireApprovalOrPolicyAllow(ctx, approval); err != nil {
+		return nil, err
+	}
+
+	p.audit.Record(ctx, PaymentAuditEvent{
+		EventType:    "machine_payment_attempted",
+		ProviderId:   provider.GetProviderId(),
+		MerchantName: request.Challenge.MerchantName,
+		AmountMinor:  request.Challenge.AmountMinor,
+		Currency:     request.Challenge.Currency,
+		Environment:  effectiveContext.Environment,
+	})
+
+	request.ProviderId = provider.GetProviderId()
+	request.Environment = effectiveContext.Environment
+	providerResult, err := provider.ExecuteMachinePayment(ctx, request, effectiveContext)
+	if err != nil {
+		return nil, err
+	}
+
+	if providerResult.ScopedAuthorizationSecret != nil {
+		now := time.Now().Add(5 * time.Minute)
+		var secret = prepareSecretForVault(
+			*providerResult.ScopedAuthorizationSecret,
+			providerResult.Result.PaymentId,
+			provider.GetProviderId(),
+			effectiveContext.Environment,
+			&now)
+
+		p.vault.Store(ctx, secret, 5*time.Minute, true)
+	}
+
+	eventType := "machine_payment_failed"
+
+	if providerResult.Result.Status == "completed" {
+		eventType = "machine_payment_completed"
+	}
+
+	p.audit.Record(ctx, PaymentAuditEvent{
+		EventType:    eventType,
+		ProviderId:   provider.GetProviderId(),
+		PaymentId:    providerResult.Result.PaymentId,
+		MerchantName: providerResult.Result.MerchantName,
+		AmountMinor:  providerResult.Result.AmountMinor,
+		Currency:     providerResult.Result.Currency,
+		Status:       providerResult.Result.Status,
+		Environment:  effectiveContext.Environment,
+	})
+	return &providerResult.Result, nil
 }
