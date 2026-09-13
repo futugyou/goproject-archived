@@ -21,12 +21,13 @@ import (
 var _ core.IChannelAdapter = (*SignalChannel)(nil)
 
 type SignalChannel struct {
-	config        core.SignalChannelConfig
-	logger        *slog.Logger
-	accountNumber string
-
+	config            core.SignalChannelConfig
+	logger            *slog.Logger
+	accountNumber     string
 	onMessageReceived core.ChannelMessageHandler
-	mu                sync.RWMutex
+
+	cancelFunc context.CancelFunc
+	wg         sync.WaitGroup
 }
 
 func (c *SignalChannel) GetMessageReceivedHandler() core.ChannelMessageHandler {
@@ -54,10 +55,15 @@ func (c *SignalChannel) ChannelId() string {
 func (s *SignalChannel) ChannelType() string { return "signal" }
 
 func (c *SignalChannel) Close(ctx context.Context) error {
+	if c.cancelFunc != nil {
+		c.cancelFunc()
+	}
+
+	c.wg.Wait()
 	return nil
 }
 
-func (c *SignalChannel) Start(ctx context.Context) error {
+func (c *SignalChannel) Start(parentCtx context.Context) error {
 	var tokenSource = core.SecretResolverInstance.Resolve(c.config.AccountPhoneNumberRef)
 	if tokenSource == "" {
 		tokenSource = c.config.AccountPhoneNumber
@@ -67,14 +73,26 @@ func (c *SignalChannel) Start(ctx context.Context) error {
 		return errors.New("AccountPhoneNumber can not be empty")
 	}
 
+	ctx, cancel := context.WithCancel(parentCtx)
+	c.cancelFunc = cancel
+	c.wg.Add(1)
+
 	c.accountNumber = tokenSource
 
 	switch c.config.Driver {
 	case "signald":
-		go c.runSignaldLoop(ctx)
+		go func() {
+			defer c.wg.Done()
+			c.runSignaldLoop(ctx)
+		}()
 	case "signal_cli":
-		go c.runSignalCliLoop(ctx)
+		go func() {
+			defer c.wg.Done()
+			c.runSignalCliLoop(ctx)
+		}()
 	default:
+		cancel()
+		c.wg.Done()
 		return fmt.Errorf("Unknown Signal driver: '%s'. Expected 'signald' or 'signal_cli'.", c.config.Driver)
 	}
 
@@ -115,7 +133,9 @@ func (s *SignalChannel) runSignalCliLoop(ctx context.Context) error {
 		s.readCliOutput(ctx, stdout)
 
 		// 确保子进程被清理
-		_ = cmd.Process.Kill()
+		if cmd.Process != nil {
+			_ = cmd.Process.Kill()
+		}
 		_ = cmd.Wait()
 
 		if err := ctx.Err(); err != nil {
@@ -286,7 +306,6 @@ func (s *SignalChannel) readCliOutput(ctx context.Context, r io.Reader) {
 	if err := scanner.Err(); err != nil {
 		s.logger.Error(err.Error())
 	}
-
 }
 
 func (s *SignalChannel) processSignalCliMessage(ctx context.Context, data []byte) {
@@ -361,10 +380,7 @@ func (s *SignalChannel) dispatchInbound(ctx context.Context, senderNumber, text 
 		IsGroup:   false,
 	}
 
-	s.mu.RLock()
 	handler := s.onMessageReceived
-	s.mu.RUnlock()
-
 	if handler != nil {
 		if err := handler(ctx, &msg); err != nil {
 			s.logger.Error("Error in message handler", "error", err)
