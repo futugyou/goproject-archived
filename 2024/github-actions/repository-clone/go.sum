@@ -1,7 +1,7 @@
 github.com/ProtonMail/go-crypto v0.0.0-20230217124315-7d5c6f04bbb8 h1:wPbRQzjjwFc0ih8puEVAOFGELsn1zoIIYdxvML7mDxA=
 github.com/ProtonMail/go-crypto v0.0.0-20230217124315-7d5c6f04bbb8/go.mod h1:I0gYDMZ6Z5GRU7l58bNFSkPTFN6Yl12dsUlAZ8xy98g=
-github.com/bitfield/script v0.25.0 h1:Ml/7GM82vzYWKrK2oPIl5/lkZEGhEMCQZm235usJuwc=
-github.com/bitfield/script v0.25.0/go.mod h1:d/ZBty4KX3QZnd4Ee7+rdGdTDrkqPjeMuhc5e0p1jzs=
+github.com/bitfield/script v0.25.1 h1:Dwbgx39KX81UVNkEA+3tLk9bbDgBS/MReeYcAhFUA4c=
+github.com/bitfield/script v0.25.1/go.mod h1:d/ZBty4KX3QZnd4Ee7+rdGdTDrkqPjeMuhc5e0p1jzs=
 github.com/bwesterb/go-ristretto v1.2.0/go.mod h1:fUIoIZaG73pV5biE2Blr2xEzDoMj7NFEuV9ekS419A0=
 github.com/cloudflare/circl v1.1.0/go.mod h1:prBCrKB9DV4poKZY1l9zBXg2QJY7mvgRvtMxxK7fi4I=
 github.com/cloudflare/circl v1.6.3 h1:9GPOhQGF9MCYUeXyMYlqTR6a5gTrgR/fBLXvUgtVcg8=
