@@ -25,7 +25,7 @@ func New(config *core.ToolingConfig) *ApplyPatchTool {
 }
 
 func (a *ApplyPatchTool) Name() string {
-	return "apply_patch	"
+	return "apply_patch"
 }
 
 func (a *ApplyPatchTool) Description() string {
