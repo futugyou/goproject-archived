@@ -10,16 +10,16 @@ import (
 
 // SelectRule 遍历规则列表，返回第一个匹配成功的目标规则
 func SelectRule(
-	rules []*rules.TokenJuiceRule,
+	rules []rules.TokenJuiceRule,
 	toolName string,
 	command *string,
 	argv []string,
 	content string,
 	exitCode int,
 ) *rules.TokenJuiceRule {
-	for _, rule := range rules {
-		if RuleMatches(rule, toolName, command, argv, content, exitCode) {
-			return rule
+	for i := range rules {
+		if RuleMatches(&rules[i], toolName, command, argv, content, exitCode) {
+			return &rules[i]
 		}
 	}
 	return nil
