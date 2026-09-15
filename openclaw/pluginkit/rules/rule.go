@@ -13,7 +13,7 @@ type TokenJuiceRule struct {
 	Filters       *RuleFiltersBlock    `json:"filters,omitempty"`
 	OutputMatches []RuleOutputMatch    `json:"outputMatches,omitempty"`
 	OnEmpty       *string              `json:"onEmpty,omitempty"`
-	CounterSource *string              `json:"counterSource,omitempty"`
+	CounterSource string               `json:"counterSource,omitempty"`
 }
 
 func NewTokenJuiceRule() TokenJuiceRule {
@@ -60,9 +60,9 @@ func NewRuleFailureBlock() RuleFailureBlock {
 }
 
 type RuleCounter struct {
-	Name    string  `json:"name"`
-	Pattern string  `json:"pattern"`
-	Flags   *string `json:"flags,omitempty"`
+	Name    string `json:"name"`
+	Pattern string `json:"pattern"`
+	Flags   string `json:"flags,omitempty"`
 }
 
 type RuleFiltersBlock struct {
