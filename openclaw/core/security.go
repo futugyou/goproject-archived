@@ -842,6 +842,8 @@ func (n *NoopSentinelSubstitutionService) Substitute(ctx context.Context, sentin
 	}, nil
 }
 
+var UrlSafetyInstance = &UrlSafetyValidator{}
+
 type UrlSafetyValidator struct{}
 
 func (u *UrlSafetyValidator) addressMatchesCidr(address netip.Addr, cidr string) bool {

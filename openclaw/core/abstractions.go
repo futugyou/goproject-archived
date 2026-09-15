@@ -200,6 +200,14 @@ type ISandboxCapableTool interface {
 	FormatSandboxResult(argumentsJson string, result SandboxResult) string
 }
 
+type ToolSandboxError struct {
+	Message string
+}
+
+func (e *ToolSandboxError) Error() string {
+	return e.Message
+}
+
 // ISessionAdminStore 会话管理存储
 type ISessionAdminStore interface {
 	ListSessions(ctx context.Context, page int, pageSize int, query *SessionListQuery) (*PagedSessionList, error)
