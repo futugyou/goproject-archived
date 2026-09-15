@@ -14,45 +14,39 @@ import (
 //go:embed */*.json
 var embeddedRules embed.FS
 
-type RuleLoader struct {
-	userRulesDir string
-	projectCache sync.Map
-}
+var projectCache sync.Map
 
-func NewRuleLoader() *RuleLoader {
+var userRulesDir = func() string {
 	homeDir, err := os.UserHomeDir()
-	userRulesDir := ""
-	if err == nil {
-		userRulesDir = filepath.Join(homeDir, ".config", "tokenjuice", "rules")
+	if err != nil {
+		return ""
 	}
-	return &RuleLoader{
-		userRulesDir: userRulesDir,
-	}
-}
+	return filepath.Join(homeDir, ".config", "tokenjuice", "rules")
+}()
 
-func (rl *RuleLoader) LoadMergedRules(projectRoot *string) []TokenJuiceRule {
+func LoadMergedRules(projectRoot *string) []TokenJuiceRule {
 	if projectRoot != nil && *projectRoot != "" {
-		if val, ok := rl.projectCache.Load(*projectRoot); ok {
+		if val, ok := projectCache.Load(*projectRoot); ok {
 			return val.([]TokenJuiceRule)
 		}
-		rules := rl.loadMergedInternal(projectRoot)
-		rl.projectCache.Store(*projectRoot, rules)
+		rules := loadMergedInternal(projectRoot)
+		projectCache.Store(*projectRoot, rules)
 		return rules
 	}
 
-	return rl.loadMergedInternal(nil)
+	return loadMergedInternal(nil)
 }
 
-func (rl *RuleLoader) loadMergedInternal(projectRoot *string) []TokenJuiceRule {
+func loadMergedInternal(projectRoot *string) []TokenJuiceRule {
 	merged := make(map[string]TokenJuiceRule)
 
-	for _, rule := range rl.loadBuiltinRules() {
+	for _, rule := range loadBuiltinRules() {
 		merged[rule.ID] = rule
 	}
 
-	if rl.userRulesDir != "" {
-		if info, err := os.Stat(rl.userRulesDir); err == nil && info.IsDir() {
-			for _, rule := range rl.loadFromDirectory(rl.userRulesDir) {
+	if userRulesDir != "" {
+		if info, err := os.Stat(userRulesDir); err == nil && info.IsDir() {
+			for _, rule := range loadFromDirectory(userRulesDir) {
 				merged[rule.ID] = rule
 			}
 		}
@@ -61,7 +55,7 @@ func (rl *RuleLoader) loadMergedInternal(projectRoot *string) []TokenJuiceRule {
 	if projectRoot != nil && *projectRoot != "" {
 		projectDir := filepath.Join(*projectRoot, ".tokenjuice", "rules")
 		if info, err := os.Stat(projectDir); err == nil && info.IsDir() {
-			for _, rule := range rl.loadFromDirectory(projectDir) {
+			for _, rule := range loadFromDirectory(projectDir) {
 				merged[rule.ID] = rule
 			}
 		}
@@ -76,10 +70,9 @@ func (rl *RuleLoader) loadMergedInternal(projectRoot *string) []TokenJuiceRule {
 	return result
 }
 
-func (rl *RuleLoader) loadBuiltinRules() []TokenJuiceRule {
+func loadBuiltinRules() []TokenJuiceRule {
 	var rules []TokenJuiceRule
 
-	// 遍历 embedded FS 读取规则文件
 	var walkFS func(path string)
 	walkFS = func(path string) {
 		entries, err := embeddedRules.ReadDir(path)
@@ -129,7 +122,7 @@ func (rl *RuleLoader) loadBuiltinRules() []TokenJuiceRule {
 	return rules
 }
 
-func (rl *RuleLoader) loadFromDirectory(dir string) []TokenJuiceRule {
+func loadFromDirectory(dir string) []TokenJuiceRule {
 	var rules []TokenJuiceRule
 
 	_ = filepath.Walk(dir, func(path string, info os.FileInfo, err error) error {
@@ -168,7 +161,7 @@ func sortRules(rules []TokenJuiceRule) {
 		jIsFallback := rules[j].ID == "generic/fallback"
 
 		if iIsFallback != jIsFallback {
-			return !iIsFallback // 非 fallback 优先 (排序在前)
+			return !iIsFallback
 		}
 		return rules[i].Priority > rules[j].Priority
 	})
