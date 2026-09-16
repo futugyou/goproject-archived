@@ -17,7 +17,7 @@ type MqttPublishTool struct {
 	toolingConfig *core.ToolingConfig
 }
 
-func New(config core.MqttConfig, toolingConfig *core.ToolingConfig) *MqttPublishTool {
+func NewMqttPublishTool(config core.MqttConfig, toolingConfig *core.ToolingConfig) *MqttPublishTool {
 	if toolingConfig == nil {
 		toolingConfig = &core.ToolingConfig{}
 	}
@@ -82,10 +82,12 @@ func (a *MqttPublishTool) Execute(ctx context.Context, argumentsJson string) str
 	ctx, cancel := context.WithTimeout(ctx, time.Duration(max(1, a.config.TimeoutSeconds))*time.Second)
 	defer cancel()
 
-	client, err := CreateMqttClient(ctx, a.config)
+	client, err := CreateMqttClient(ctx, a.config, nil)
 	if err != nil {
 		return err.Error()
 	}
+
+	defer client.Disconnect(&paho.Disconnect{ReasonCode: 0})
 
 	_, err = client.Publish(ctx, &paho.Publish{
 		QoS:     byte(dto.Qos),
