@@ -6,6 +6,7 @@ require github.com/google/uuid v1.6.0
 
 require (
 	github.com/Microsoft/go-winio v0.6.2
+	github.com/eclipse/paho.golang v0.23.0
 	github.com/emersion/go-imap/v2 v2.0.0-beta.8
 	github.com/flosch/pongo2/v7 v7.0.0-alpha.1
 	github.com/futugyou/extensions_ai v0.0.1
