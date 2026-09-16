@@ -2,10 +2,8 @@ package mqtt
 
 import (
 	"context"
-	"crypto/tls"
 	"encoding/json"
 	"fmt"
-	"net"
 	"time"
 
 	"github.com/futugyou/openclaw/core"
@@ -81,57 +79,12 @@ func (a *MqttPublishTool) Execute(ctx context.Context, argumentsJson string) str
 
 	dto.Qos = util.Clamp(dto.Qos, 0, 2)
 
-	username := core.SecretResolverInstance.Resolve(a.config.UsernameRef)
-	password := core.SecretResolverInstance.Resolve(a.config.PasswordRef)
-
-	conn, err := tls.Dial("tcp", net.JoinHostPort(a.config.Host, fmt.Sprintf("%d", a.config.Port)), &tls.Config{
-		ServerName: a.config.Host, // Must pass SNI
-	})
-	if err != nil {
-		return err.Error()
-	}
-
-	clientid := a.config.ClientId
-	if clientid == "" {
-		clientid = "openclaw"
-	}
-
-	clientConfig := paho.ClientConfig{
-		ClientID: clientid,
-		Conn:     conn,
-		OnClientError: func(err error) {
-			fmt.Printf("client error: %v\n", err)
-		},
-		OnServerDisconnect: func(d *paho.Disconnect) {
-			fmt.Printf("server disconnect, reason code: %d\n", d.ReasonCode)
-		},
-	}
-
-	client := paho.NewClient(clientConfig)
-
-	connectProperties := &paho.Connect{
-		ClientID:   clientid,
-		KeepAlive:  30,
-		CleanStart: true,
-		Username:   username,
-		Password:   []byte(password),
-		Properties: &paho.ConnectProperties{
-			User: []paho.UserProperty{
-				{Key: "env", Value: "production"},
-			},
-		},
-	}
-
 	ctx, cancel := context.WithTimeout(ctx, time.Duration(max(1, a.config.TimeoutSeconds))*time.Second)
 	defer cancel()
 
-	connack, err := client.Connect(ctx, connectProperties)
+	client, err := CreateMqttClient(ctx, a.config)
 	if err != nil {
-		panic(fmt.Sprintf("MQTT 5.0 conn failed: %v", err))
-	}
-
-	if connack.ReasonCode != 0 {
-		panic(fmt.Sprintf("conn rejected, reason code: %d", connack.ReasonCode))
+		return err.Error()
 	}
 
 	_, err = client.Publish(ctx, &paho.Publish{
