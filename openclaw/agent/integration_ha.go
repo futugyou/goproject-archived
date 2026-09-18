@@ -370,10 +370,19 @@ func (b *HomeAssistantEventBridge) handleEvent(ctx context.Context, ev *HAEventE
 		Text:      text,
 	}
 
+	sendCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
+	defer cancel()
+
 	select {
 	case b.inbound <- msg:
-	case <-ctx.Done():
-		b.logger.Warn("[HomeAssistantEventBridge] failed to send event", "error", ctx.Err())
+	case <-sendCtx.Done():
+		if errors.Is(ctx.Err(), context.Canceled) {
+			b.logger.Info("[HomeAssistantEventBridge] send cancelled due to shutdown")
+		} else {
+			b.logger.Warn("[HomeAssistantEventBridge] inbound channel blocked, message dropped",
+				"error", sendCtx.Err(),
+			)
+		}
 	}
 }
 
@@ -397,14 +406,15 @@ func (b *HomeAssistantEventBridge) Execute(ctx context.Context) error {
 		}
 
 		err := b.RunOnce(ctx)
-		if err == nil {
-			backoff = 1 * time.Second
-			continue
-		}
 
 		if errors.Is(err, context.Canceled) || ctx.Err() != nil {
 			b.logger.Info("[HomeAssistantEventBridge] closing...")
 			return nil
+		}
+
+		if err == nil {
+			backoff = 1 * time.Second
+			continue
 		}
 
 		b.logger.Warn("home assistant event bridge error; reconnecting",

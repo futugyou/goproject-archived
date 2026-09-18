@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/eclipse/paho.golang/paho"
@@ -20,6 +21,8 @@ type MqttEventBridge struct {
 	inbound        chan<- core.InboundMessage
 	lastGlobalEmit time.Time
 	cooldowns      map[string]time.Time
+
+	mu sync.Mutex
 }
 
 func NewMqttEventBridge(
@@ -56,16 +59,21 @@ func (m *MqttEventBridge) Execute(ctx context.Context) error {
 		}
 
 		err := m.RunOnce(ctx)
-		if err == nil {
-			backoff = 1 * time.Second
-			continue
-		}
 
+		// 1. If the context has been cancelled, exit immediately.
 		if errors.Is(err, context.Canceled) || ctx.Err() != nil {
 			m.logger.Info("[MqttEventBridge] closing...")
 			return nil
 		}
 
+		// 2. If RunOnce returns nil (indicating the connection was successfully established and maintained for a period before disconnecting)
+		// Reset the backoff time and immediately attempt the next RunOnce.
+		if err == nil {
+			backoff = 1 * time.Second
+			continue
+		}
+
+		// 3. Perform exponential backoff only upon exceptions such as connection failure or subscription failure.
 		m.logger.Warn("mqtt event bridge error; reconnecting",
 			"delay_seconds", backoff.Seconds(),
 			"error", err,
@@ -136,7 +144,14 @@ func (m *MqttEventBridge) RunOnce(ctx context.Context) error {
 	case <-ctx.Done():
 		return ctx.Err()
 	case err := <-disconnectChan:
-		return fmt.Errorf("mqtt connection lost: %w", err)
+		// Connection lost: Log the event, but return nil!
+		// Since a lost connection requires reconnection, returning nil allows the outer Execute call to reset the backoff time.
+		if err != nil {
+			m.logger.Warn("mqtt connection lost", "error", err)
+		} else {
+			m.logger.Info("mqtt connection closed gracefully")
+		}
+		return nil
 	}
 }
 
@@ -176,10 +191,20 @@ func (m *MqttEventBridge) handleMqttMessage(ctx context.Context, p *paho.Publish
 		Text:      text,
 	}
 
+	sendCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
+	defer cancel()
+
 	select {
 	case m.inbound <- msg:
-	case <-ctx.Done():
-		m.logger.Warn("[MqttEventBridge] failed to send event", "error", ctx.Err())
+	case <-sendCtx.Done():
+		if errors.Is(ctx.Err(), context.Canceled) {
+			m.logger.Info("[MqttEventBridge] send cancelled due to shutdown")
+		} else {
+			m.logger.Warn("[MqttEventBridge] inbound channel blocked, message dropped",
+				"topic", p.Topic,
+				"error", sendCtx.Err(),
+			)
+		}
 	}
 
 	return true, nil
@@ -206,6 +231,10 @@ func (m *MqttEventBridge) tryConsumeCooldown(sub *core.MqttSubscriptionConfig, n
 
 	var cooldown = time.Duration(max(0, sub.CooldownSeconds)) * time.Second
 	var key = fmt.Sprintf("sub:%s", sub.Topic)
+
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
 	if last, ok := m.cooldowns[key]; ok && now.Sub(last) < cooldown {
 		return false
 	}
