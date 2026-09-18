@@ -79,8 +79,8 @@ func (a *MqttTool) getLast(_ context.Context, dto SubscribeDto) string {
 
 		sb := strings.Builder{}
 		for i := 0; i < min(10, len(matches)); i++ {
-			sb.WriteString(fmt.Sprintf("topic: %s\n", matches[i].Topic))
-			sb.WriteString(fmt.Sprintf("received_at: %s\n", matches[i].ReceivedAt.Format(time.RFC3339Nano)))
+			fmt.Fprintf(&sb, "topic: %s\n", matches[i].Topic)
+			fmt.Fprintf(&sb, "received_at: %s\n", matches[i].ReceivedAt.Format(time.RFC3339Nano))
 			sb.WriteString(matches[i].Payload)
 			sb.WriteString("\n\n")
 		}
@@ -140,7 +140,7 @@ func (a *MqttTool) subscribeOnce(ctx context.Context, dto SubscribeDto) string {
 		return true, nil
 	}
 
-	client, err := CreateMqttClient(ctx, a.config, []func(paho.PublishReceived) (bool, error){receiveHandle})
+	client, err := CreateMqttClient(ctx, a.config, []func(paho.PublishReceived) (bool, error){receiveHandle}, nil)
 	if err != nil {
 		return err.Error()
 	}

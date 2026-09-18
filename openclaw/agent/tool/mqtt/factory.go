@@ -10,7 +10,13 @@ import (
 	"github.com/futugyou/openclaw/core"
 )
 
-func CreateMqttClient(ctx context.Context, config core.MqttConfig, receiveHandlers []func(paho.PublishReceived) (bool, error)) (*paho.Client, error) {
+func CreateMqttClient(
+	ctx context.Context,
+	config core.MqttConfig,
+	receiveHandlers []func(paho.PublishReceived) (bool, error),
+	errorHandler func(err error),
+) (*paho.Client, error) {
+
 	username := core.SecretResolverInstance.Resolve(config.UsernameRef)
 	password := core.SecretResolverInstance.Resolve(config.PasswordRef)
 
@@ -39,6 +45,10 @@ func CreateMqttClient(ctx context.Context, config core.MqttConfig, receiveHandle
 
 	if len(receiveHandlers) > 0 {
 		clientConfig.OnPublishReceived = receiveHandlers
+	}
+
+	if errorHandler != nil {
+		clientConfig.OnClientError = errorHandler
 	}
 
 	client := paho.NewClient(clientConfig)

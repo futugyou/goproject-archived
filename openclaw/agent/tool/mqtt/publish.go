@@ -82,7 +82,7 @@ func (a *MqttPublishTool) Execute(ctx context.Context, argumentsJson string) str
 	ctx, cancel := context.WithTimeout(ctx, time.Duration(max(1, a.config.TimeoutSeconds))*time.Second)
 	defer cancel()
 
-	client, err := CreateMqttClient(ctx, a.config, nil)
+	client, err := CreateMqttClient(ctx, a.config, nil, nil)
 	if err != nil {
 		return err.Error()
 	}
