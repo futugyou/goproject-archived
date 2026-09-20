@@ -695,3 +695,56 @@ func (c *OpenClawHttpClient) StreamChatCompletion(
 
 	return fullText.String(), nil
 }
+
+func (c *OpenClawHttpClient) InitializeMcp(ctx context.Context, request McpInitializeRequest) (*McpInitializeResult, error) {
+	result, err := SendMcp[McpInitializeRequest, McpInitializeResult](ctx, c, "initialize", &request)
+	if err != nil {
+		return nil, err
+	}
+
+	if len(result.ProtocolVersion) > 0 {
+		c.negotiatedMcpProtocolVersion = result.ProtocolVersion
+	}
+
+	return result, nil
+}
+
+func (c *OpenClawHttpClient) ListMcpTools(ctx context.Context) (*McpToolListResult, error) {
+	return SendMcp[any, McpToolListResult](ctx, c, "tools/list", nil)
+}
+
+func (c *OpenClawHttpClient) ListMcpResources(ctx context.Context) (*McpResourceListResult, error) {
+	return SendMcp[any, McpResourceListResult](ctx, c, "resources/list", nil)
+}
+
+func (c *OpenClawHttpClient) ListMcpResourceTemplates(ctx context.Context) (*McpResourceTemplateListResult, error) {
+	return SendMcp[any, McpResourceTemplateListResult](ctx, c, "resources/templates/list", nil)
+}
+
+func (c *OpenClawHttpClient) ReadMcpResourceAsync(ctx context.Context, uri string) (*McpResourceTemplateListResult, error) {
+	if uri == "" {
+		return nil, errors.New("Resource uri is required.")
+	}
+
+	return SendMcp[McpReadResourceRequest, McpResourceTemplateListResult](ctx, c, "resources/read", &McpReadResourceRequest{Uri: uri})
+}
+
+func (c *OpenClawHttpClient) ListMcpPrompts(ctx context.Context) (*McpPromptListResult, error) {
+	return SendMcp[any, McpPromptListResult](ctx, c, "prompts/list", nil)
+}
+
+func (c *OpenClawHttpClient) GetMcpPrompt(ctx context.Context, name string, args map[string]string) (*McpGetPromptResult, error) {
+	if name == "" {
+		return nil, errors.New("Prompt name is required.")
+	}
+
+	return SendMcp[McpGetPromptRequest, McpGetPromptResult](ctx, c, "prompts/get", &McpGetPromptRequest{Name: name, Arguments: args})
+}
+
+func (c *OpenClawHttpClient) CallMcpTool(ctx context.Context, name string, args json.RawMessage) (*McpCallToolResult, error) {
+	if name == "" {
+		return nil, errors.New("Tool name is required.")
+	}
+
+	return SendMcp[McpCallToolRequest, McpCallToolResult](ctx, c, "tools/call", &McpCallToolRequest{Name: name, Arguments: args})
+}
