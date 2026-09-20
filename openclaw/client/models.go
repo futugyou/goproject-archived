@@ -7,6 +7,12 @@ type McpJsonRpcRequest struct {
 	Id      string          `json:"id"`
 	Method  string          `json:"method"`
 	Params  json.RawMessage `json:"params,omitempty"`
+	Error   *JsonRpcError   `json:"error,omitempty"`
+}
+
+type JsonRpcError struct {
+	Code    int    `json:"code"`
+	Message string `json:"message"`
 }
 
 func (r *McpJsonRpcRequest) UnmarshalJSON(data []byte) error {
