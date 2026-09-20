@@ -14,6 +14,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/futugyou/openclaw/core"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -306,6 +307,7 @@ func SendHttp[TParams any, TResult any](
 	method string,
 	url *url.URL,
 	parameters *TParams,
+	header map[string]string,
 ) (*TResult, error) {
 	var data []byte
 	var err error
@@ -330,6 +332,10 @@ func SendHttp[TParams any, TResult any](
 	}
 
 	request.Header.Set("Content-Type", "application/json")
+	for k, v := range header {
+		request.Header.Set(k, v)
+	}
+
 	resp, err := c.httpClient.Do(request)
 	if err != nil {
 		return nil, err
@@ -590,4 +596,102 @@ func (c *OpenClawHttpClient) discoverLegacyMcp(ctx context.Context) (*McpDiscove
 		Capabilities:      cap,
 		ServerInfo:        &result.ServerInfo,
 	}, nil
+}
+
+func (c *OpenClawHttpClient) GetAuthSession(ctx context.Context) (*core.AuthSessionResponse, error) {
+	return SendHttp[any, core.AuthSessionResponse](ctx, c, "GET", c.authSessionUri, nil, nil)
+}
+
+func (c *OpenClawHttpClient) ChatCompletion(
+	ctx context.Context,
+	request core.OpenAiChatCompletionRequest,
+	presetId *string) (*core.OpenAiChatCompletionResponse, error) {
+	var header map[string]string
+	if presetId != nil && *presetId != "" {
+		header = map[string]string{
+			"X-OpenClaw-Preset": *presetId,
+		}
+	}
+
+	return SendHttp[core.OpenAiChatCompletionRequest, core.OpenAiChatCompletionResponse](ctx, c, "POST", c.chatCompletionsUri, &request, header)
+}
+
+func (c *OpenClawHttpClient) StreamChatCompletion(
+	ctx context.Context,
+	request core.OpenAiChatCompletionRequest,
+	onText func(string),
+	presetId *string,
+) (string, error) {
+	request.Stream = true
+
+	reqBody, err := json.Marshal(request)
+	if err != nil {
+		return "", fmt.Errorf("failed to marshal request: %w", err)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.chatCompletionsUri.String(), bytes.NewReader(reqBody))
+	if err != nil {
+		return "", fmt.Errorf("failed to create request: %w", err)
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "text/event-stream")
+
+	if presetId != nil && *presetId != "" {
+		req.Header.Set("X-OpenClaw-Preset", *presetId)
+	}
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("HTTP request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		body, _ := io.ReadAll(resp.Body)
+		return "", fmt.Errorf("HTTP error %d: %s", resp.StatusCode, string(body))
+	}
+
+	scanner := bufio.NewScanner(resp.Body)
+	var fullText strings.Builder
+
+	for scanner.Scan() {
+		line := scanner.Text()
+
+		// 检查数据是否以 "data:" 开头
+		if !strings.HasPrefix(line, "data:") {
+			continue
+		}
+
+		// 提取 "data:" 后面的内容并去除两边空白
+		data := strings.TrimSpace(line[len("data:"):])
+		if len(data) == 0 {
+			continue
+		}
+
+		if data == "[DONE]" {
+			break
+		}
+
+		var chunk core.OpenAiStreamChunk
+		if err := json.Unmarshal([]byte(data), &chunk); err != nil {
+			return "", fmt.Errorf("failed to parse SSE chunk: %s: %w", data, err)
+		}
+
+		if len(chunk.Choices) > 0 {
+			delta := chunk.Choices[0].Delta.Content
+			if delta != "" {
+				fullText.WriteString(delta)
+				if onText != nil {
+					onText(delta)
+				}
+			}
+		}
+	}
+
+	if err := scanner.Err(); err != nil {
+		return "", fmt.Errorf("error reading response stream: %w", err)
+	}
+
+	return fullText.String(), nil
 }
