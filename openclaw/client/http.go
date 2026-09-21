@@ -10,6 +10,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -1073,4 +1074,132 @@ func (c *OpenClawHttpClient) StreamBackendEvents(
 	}
 
 	return scanner.Err()
+}
+
+func (c *OpenClawHttpClient) GetIntegrationOperatorAudit(ctx context.Context, query core.OperatorAuditQuery) (*core.IntegrationOperatorAuditResponse, error) {
+	return SendHttp[any, core.IntegrationOperatorAuditResponse](ctx, c, "GET", c.buildOperatorAuditUri(query), nil, nil)
+}
+
+func (c *OpenClawHttpClient) buildOperatorAuditUri(hquery core.OperatorAuditQuery) *url.URL {
+	resultUri := *c.integrationOperatorAuditUri
+	query := resultUri.Query()
+	query.Set("limit", fmt.Sprintf("%d", util.Clamp(hquery.Limit, 1, 500)))
+	if hquery.ActorId != "" {
+		query.Set("actorId", hquery.ActorId)
+	}
+	if hquery.ActionType != "" {
+		query.Set("actionType", hquery.ActionType)
+	}
+	if hquery.TargetId != "" {
+		query.Set("targetId", hquery.TargetId)
+	}
+	if hquery.FromUtc != nil {
+		query.Set("fromUtc", hquery.FromUtc.Format(time.RFC3339Nano))
+	}
+	if hquery.ToUtc != nil {
+		query.Set("toUtc", hquery.ToUtc.Format(time.RFC3339Nano))
+	}
+	resultUri.RawQuery = query.Encode()
+
+	return &resultUri
+}
+
+func (c *OpenClawHttpClient) ListSessions(ctx context.Context, page, pageSize int, hquery core.SessionListQuery) (*core.IntegrationSessionsResponse, error) {
+	resultUri := *c.integrationOperatorAuditUri
+	query := resultUri.Query()
+	query.Set("page", fmt.Sprintf("%d", max(page, 1)))
+	query.Set("pageSize", fmt.Sprintf("%d", util.Clamp(pageSize, 1, 200)))
+	if hquery.Search != "" {
+		query.Set("search", hquery.Search)
+	}
+	if hquery.ChannelId != "" {
+		query.Set("channelId", hquery.ChannelId)
+	}
+	if hquery.SenderId != "" {
+		query.Set("senderId", hquery.SenderId)
+	}
+	if hquery.FromUtc != nil {
+		query.Set("fromUtc", hquery.FromUtc.Format(time.RFC3339Nano))
+	}
+	if hquery.ToUtc != nil {
+		query.Set("toUtc", hquery.ToUtc.Format(time.RFC3339Nano))
+	}
+	if hquery.State != nil {
+		query.Set("state", hquery.State.String())
+	}
+	if hquery.Starred != nil {
+		query.Set("starred", strconv.FormatBool(*hquery.Starred))
+	}
+	if hquery.Tag != "" {
+		query.Set("tag", hquery.Tag)
+	}
+	resultUri.RawQuery = query.Encode()
+
+	return SendHttp[any, core.IntegrationSessionsResponse](ctx, c, "GET", &resultUri, nil, nil)
+}
+
+func (c *OpenClawHttpClient) GetSession(ctx context.Context, sessionId string) (*core.IntegrationSessionDetailResponse, error) {
+	if sessionId == "" {
+		return nil, errors.New("Session id is required")
+	}
+
+	return SendHttp[any, core.IntegrationSessionDetailResponse](ctx, c, "GET", c.integrationSessionsUri.JoinPath(sessionId), nil, nil)
+}
+
+func (c *OpenClawHttpClient) GetSessionTimeline(ctx context.Context, sessionId string, limit int) (*core.IntegrationSessionTimelineResponse, error) {
+	if sessionId == "" {
+		return nil, errors.New("Session id is required")
+	}
+
+	resultUri := c.integrationSessionsUri.JoinPath(sessionId)
+	query := resultUri.Query()
+	query.Set("limit", fmt.Sprintf("%d", util.Clamp(limit, 1, 500)))
+	resultUri.RawQuery = query.Encode()
+	return SendHttp[any, core.IntegrationSessionTimelineResponse](ctx, c, "GET", resultUri, nil, nil)
+}
+
+func (c *OpenClawHttpClient) SearchSessions(ctx context.Context, search core.SessionSearchQuery) (*core.IntegrationSessionSearchResponse, error) {
+	resultUri := *c.integrationSessionsUri
+	query := resultUri.Query()
+	query.Set("text", search.Text)
+	query.Set("limit", fmt.Sprintf("%d", util.Clamp(search.Limit, 1, 200)))
+	query.Set("snippetLength", fmt.Sprintf("%d", util.Clamp(search.SnippetLength, 40, 1000)))
+	if search.ChannelId != "" {
+		query.Set("channelId", search.ChannelId)
+	}
+	if search.SenderId != "" {
+		query.Set("senderId", search.SenderId)
+	}
+	if search.FromUtc != nil {
+		query.Set("fromUtc", search.FromUtc.Format(time.RFC3339Nano))
+	}
+	if search.ToUtc != nil {
+		query.Set("toUtc", search.ToUtc.Format(time.RFC3339Nano))
+	}
+	resultUri.RawQuery = query.Encode()
+	return SendHttp[any, core.IntegrationSessionSearchResponse](ctx, c, "GET", &resultUri, nil, nil)
+}
+
+func (c *OpenClawHttpClient) ListProfiles(ctx context.Context) (*core.IntegrationProfilesResponse, error) {
+	return SendHttp[any, core.IntegrationProfilesResponse](ctx, c, "GET", c.integrationProfilesUri, nil, nil)
+}
+
+func (c *OpenClawHttpClient) ListToolPresets(ctx context.Context) (*core.IntegrationToolPresetsResponse, error) {
+	return SendHttp[any, core.IntegrationToolPresetsResponse](ctx, c, "GET", c.integrationToolPresetsUri, nil, nil)
+}
+
+func (c *OpenClawHttpClient) GetProfile(ctx context.Context, actorId string) (*core.IntegrationProfileResponse, error) {
+	if actorId == "" {
+		return nil, errors.New("Actor id is required")
+	}
+	return SendHttp[any, core.IntegrationProfileResponse](ctx, c, "GET", c.integrationProfilesUri.JoinPath(actorId), nil, nil)
+}
+
+func (c *OpenClawHttpClient) SaveProfile(ctx context.Context, actorId string, profile core.UserProfile) (*core.IntegrationProfileResponse, error) {
+	if actorId == "" {
+		return nil, errors.New("Actor id is required")
+	}
+	return SendHttp[core.IntegrationProfileUpdateRequest, core.IntegrationProfileResponse](ctx, c, "PUT", c.integrationProfilesUri.JoinPath(actorId), &core.IntegrationProfileUpdateRequest{
+		Profile: profile,
+	}, nil)
 }

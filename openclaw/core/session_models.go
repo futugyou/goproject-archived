@@ -13,6 +13,23 @@ const (
 	SessionStateExpired
 )
 
+func (s *SessionState) String() string {
+	if s == nil {
+		return ""
+	}
+	state := *s
+	switch state {
+	case SessionStateActive:
+		return "active"
+	case SessionStatePaused:
+		return "paused"
+	case SessionStateExpired:
+		return "expired"
+	}
+
+	return ""
+}
+
 type SessionRunState uint8
 
 const (
@@ -412,8 +429,8 @@ const (
 
 type SessionSearchQuery struct {
 	Text          string     `json:"text"`
-	ChannelID     string     `json:"channel_id"`
-	SenderID      string     `json:"sender_id"`
+	ChannelId     string     `json:"channel_id"`
+	SenderId      string     `json:"sender_id"`
 	FromUtc       *time.Time `json:"from_utc"`
 	ToUtc         *time.Time `json:"to_utc"`
 	Limit         int        `json:"limit"`
@@ -428,18 +445,18 @@ func DefaultSessionSearchQuery() SessionSearchQuery {
 }
 
 type SessionTurnsFts struct {
-	SessionID string    `json:"session_id"`
-	ChannelID string    `json:"channel_id"`
-	SenderID  string    `json:"sender_id"`
+	SessionId string    `json:"session_id"`
+	ChannelId string    `json:"channel_id"`
+	SenderId  string    `json:"sender_id"`
 	Role      string    `json:"role"`
 	Timestamp time.Time `json:"timestamp"`
 	Content   string    `json:"content"`
 }
 
 type SessionSearchHit struct {
-	SessionID string    `json:"session_id"`
-	ChannelID string    `json:"channel_id"`
-	SenderID  string    `json:"sender_id"`
+	SessionId string    `json:"session_id"`
+	ChannelId string    `json:"channel_id"`
+	SenderId  string    `json:"sender_id"`
 	Role      string    `json:"role"`
 	Timestamp time.Time `json:"timestamp"`
 	Snippet   string    `json:"snippet"`

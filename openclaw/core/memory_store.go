@@ -109,11 +109,11 @@ func (s *PostgresMemoryStore) SearchSessions(ctx context.Context, query *Session
 		// 动态拼接过滤条件
 		tx = tx.Where("search_vector @@ websearch_to_tsquery('simplified', ?)", query.Text)
 
-		if query.ChannelID != "" {
-			tx = tx.Where("channel_id = ?", query.ChannelID)
+		if query.ChannelId != "" {
+			tx = tx.Where("channel_id = ?", query.ChannelId)
 		}
-		if query.SenderID != "" {
-			tx = tx.Where("sender_id = ?", query.SenderID)
+		if query.SenderId != "" {
+			tx = tx.Where("sender_id = ?", query.SenderId)
 		}
 		if query.FromUtc != nil {
 			tx = tx.Where("timestamp >= ?", *query.FromUtc)
@@ -130,9 +130,9 @@ func (s *PostgresMemoryStore) SearchSessions(ctx context.Context, query *Session
 		hits := make([]SessionSearchHit, len(ftsResults))
 		for i, res := range ftsResults {
 			hits[i] = SessionSearchHit{
-				SessionID: res.SessionID,
-				ChannelID: res.ChannelID,
-				SenderID:  res.SenderID,
+				SessionId: res.SessionId,
+				ChannelId: res.ChannelId,
+				SenderId:  res.SenderId,
 				Role:      res.Role,
 				Timestamp: res.Timestamp,
 				Snippet:   res.Snippet,
@@ -145,8 +145,8 @@ func (s *PostgresMemoryStore) SearchSessions(ctx context.Context, query *Session
 
 	// 2. fallback
 	fallback, err := s.ListSessions(ctx, 1, 200, &SessionListQuery{
-		ChannelId: query.ChannelID,
-		SenderId:  query.SenderID,
+		ChannelId: query.ChannelId,
+		SenderId:  query.SenderId,
 		FromUtc:   query.FromUtc,
 		ToUtc:     query.ToUtc,
 	})
@@ -182,9 +182,9 @@ func (s *PostgresMemoryStore) SearchSessions(ctx context.Context, query *Session
 			score := 1.0 + bonus
 
 			itemsFallback = append(itemsFallback, SessionSearchHit{
-				SessionID: session.Id,
-				ChannelID: session.ChannelId,
-				SenderID:  session.SenderId,
+				SessionId: session.Id,
+				ChannelId: session.ChannelId,
+				SenderId:  session.SenderId,
 				Role:      turn.Role,
 				Timestamp: turn.Timestamp,
 				Snippet:   s.buildSnippet(turn.Content, idx, query.SnippetLength),
