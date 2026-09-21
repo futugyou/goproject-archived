@@ -15,6 +15,8 @@ import (
 	"time"
 
 	"github.com/futugyou/openclaw/core"
+	"github.com/futugyou/openclaw/payments"
+	"github.com/futugyou/openclaw/util"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -721,7 +723,7 @@ func (c *OpenClawHttpClient) ListMcpResourceTemplates(ctx context.Context) (*Mcp
 	return SendMcp[any, McpResourceTemplateListResult](ctx, c, "resources/templates/list", nil)
 }
 
-func (c *OpenClawHttpClient) ReadMcpResourceAsync(ctx context.Context, uri string) (*McpResourceTemplateListResult, error) {
+func (c *OpenClawHttpClient) ReadMcpResource(ctx context.Context, uri string) (*McpResourceTemplateListResult, error) {
 	if uri == "" {
 		return nil, errors.New("Resource uri is required.")
 	}
@@ -747,4 +749,328 @@ func (c *OpenClawHttpClient) CallMcpTool(ctx context.Context, name string, args 
 	}
 
 	return SendMcp[McpCallToolRequest, McpCallToolResult](ctx, c, "tools/call", &McpCallToolRequest{Name: name, Arguments: args})
+}
+
+func buildPaymentUri(baseUri *url.URL, provider, environment string, yes bool) *url.URL {
+	resultUri := *baseUri
+
+	query := resultUri.Query()
+
+	if provider != "" {
+		query.Set("provider", provider)
+	}
+
+	if environment != "" {
+		query.Set("environment", environment)
+	}
+
+	if yes {
+		query.Set("yes", "true")
+	}
+
+	resultUri.RawQuery = query.Encode()
+
+	return &resultUri
+}
+
+func (c *OpenClawHttpClient) GetIntegrationDashboard(ctx context.Context) (*core.IntegrationDashboardResponse, error) {
+	return SendHttp[any, core.IntegrationDashboardResponse](ctx, c, "GET", c.integrationDashboardUri, nil, nil)
+}
+
+func (c *OpenClawHttpClient) GetIntegrationStatus(ctx context.Context) (*core.IntegrationStatusResponse, error) {
+	return SendHttp[any, core.IntegrationStatusResponse](ctx, c, "GET", c.integrationStatusUri, nil, nil)
+}
+
+func (c *OpenClawHttpClient) GetPaymentSetupStatus(ctx context.Context, provider string) (*payments.PaymentSetupStatus, error) {
+	return SendHttp[any, payments.PaymentSetupStatus](ctx, c, "GET", buildPaymentUri(c.integrationPaymentSetupUri, provider, "", false), nil, nil)
+}
+
+func (c *OpenClawHttpClient) ListPaymentFundingSources(ctx context.Context, provider, environment string) ([]payments.FundingSource, error) {
+	result, err := SendHttp[any, []payments.FundingSource](ctx, c, "GET", buildPaymentUri(c.integrationPaymentFundingUri, provider, environment, false), nil, nil)
+	if err != nil {
+		return nil, err
+	}
+	return *result, nil
+}
+
+func (c *OpenClawHttpClient) IssueVirtualCard(ctx context.Context, request payments.VirtualCardRequest, yes bool) (*payments.VirtualCardHandle, error) {
+	return SendHttp[payments.VirtualCardRequest, payments.VirtualCardHandle](ctx, c, "POST", buildPaymentUri(c.integrationPaymentVirtualCardUri, request.ProviderId, request.Environment, yes), &request, nil)
+}
+
+func (c *OpenClawHttpClient) ExecuteMachinePayment(ctx context.Context, request payments.MachinePaymentRequest, yes bool) (*payments.MachinePaymentResult, error) {
+	return SendHttp[payments.MachinePaymentRequest, payments.MachinePaymentResult](ctx, c, "POST", buildPaymentUri(c.integrationPaymentExecuteUri, request.ProviderId, request.Environment, yes), &request, nil)
+}
+
+func (c *OpenClawHttpClient) GetPaymentStatus(ctx context.Context, id, provider, environment string) (*payments.PaymentStatus, error) {
+	if id == "" {
+		return nil, errors.New("Payment id is required")
+	}
+	return SendHttp[any, payments.PaymentStatus](ctx, c, "GET", buildPaymentUri(c.integrationPaymentStatusUri.JoinPath(url.PathEscape(id)), provider, environment, false), nil, nil)
+}
+
+func (c *OpenClawHttpClient) buildApprovalsUri(channelId, senderId string) *url.URL {
+	resultUri := *c.integrationApprovalsUri
+
+	query := resultUri.Query()
+
+	if channelId != "" {
+		query.Set("channelId", channelId)
+	}
+
+	if senderId != "" {
+		query.Set("senderId", senderId)
+	}
+
+	resultUri.RawQuery = query.Encode()
+	return &resultUri
+}
+
+func (c *OpenClawHttpClient) GetIntegrationApprovals(ctx context.Context, channelId, senderId string) (*core.IntegrationApprovalsResponse, error) {
+	return SendHttp[any, core.IntegrationApprovalsResponse](ctx, c, "GET", c.buildApprovalsUri(channelId, senderId), nil, nil)
+}
+
+func (c *OpenClawHttpClient) buildApprovalHistoryUri(hquery core.ApprovalHistoryQuery) *url.URL {
+	resultUri := *c.integrationApprovalHistoryUri
+
+	query := resultUri.Query()
+	query.Set("limit", fmt.Sprintf("%d", util.Clamp(hquery.Limit, 1, 500)))
+
+	if hquery.ChannelId != "" {
+		query.Set("channelId", hquery.ChannelId)
+	}
+	if hquery.SenderId != "" {
+		query.Set("senderId", hquery.SenderId)
+	}
+	if hquery.ToolName != "" {
+		query.Set("toolName", hquery.ToolName)
+	}
+	if hquery.FromUtc != nil {
+		query.Set("fromUtc", hquery.FromUtc.Format(time.RFC3339Nano))
+	}
+	if hquery.ToUtc != nil {
+		query.Set("toUtc", hquery.ToUtc.Format(time.RFC3339Nano))
+	}
+
+	resultUri.RawQuery = query.Encode()
+	return &resultUri
+}
+
+func (c *OpenClawHttpClient) GetIntegrationApprovalHistory(ctx context.Context, query core.ApprovalHistoryQuery) (*core.IntegrationApprovalHistoryResponse, error) {
+	return SendHttp[any, core.IntegrationApprovalHistoryResponse](ctx, c, "GET", c.buildApprovalHistoryUri(query), nil, nil)
+}
+
+func (c *OpenClawHttpClient) postApprovalDecision(ctx context.Context, approvalId string, approved bool) (*core.OperationStatusResponse, error) {
+	if approvalId == "" {
+		return nil, errors.New("approvalId is required.")
+	}
+
+	resultUri := *c.toolsApproveUri
+
+	query := resultUri.Query()
+	query.Set("approvalId", approvalId)
+
+	if approved {
+		query.Set("approved", "true")
+	} else {
+		query.Set("approved", "false")
+	}
+
+	return SendHttp[any, core.OperationStatusResponse](ctx, c, "GET", &resultUri, nil, nil)
+}
+
+func (c *OpenClawHttpClient) ApproveToolRequest(ctx context.Context, approvalId string) (*core.OperationStatusResponse, error) {
+	return c.postApprovalDecision(ctx, approvalId, true)
+}
+
+func (c *OpenClawHttpClient) DenyToolRequest(ctx context.Context, approvalId string) (*core.OperationStatusResponse, error) {
+	return c.postApprovalDecision(ctx, approvalId, false)
+}
+
+func (c *OpenClawHttpClient) GetIntegrationProviders(ctx context.Context, recentTurnsLimit int) (*core.IntegrationProvidersResponse, error) {
+	resultUri := *c.integrationProvidersUri
+	query := resultUri.Query()
+	query.Set("recentTurnsLimit", fmt.Sprintf("%d", util.Clamp(recentTurnsLimit, 1, 256)))
+
+	return SendHttp[any, core.IntegrationProvidersResponse](ctx, c, "GET", &resultUri, nil, nil)
+}
+
+func (c *OpenClawHttpClient) GetIntegrationPlugins(ctx context.Context) (*core.IntegrationPluginsResponse, error) {
+	return SendHttp[any, core.IntegrationPluginsResponse](ctx, c, "GET", c.integrationPluginsUri, nil, nil)
+}
+
+func (c *OpenClawHttpClient) buildCompatibilityCatalogUri(compatibilityStatus, kind, category string) *url.URL {
+	resultUri := *c.integrationCompatibilityCatalogUri
+
+	query := resultUri.Query()
+
+	if compatibilityStatus != "" {
+		query.Set("compatibilityStatus", compatibilityStatus)
+	}
+	if kind != "" {
+		query.Set("kind", kind)
+	}
+	if category != "" {
+		query.Set("category", category)
+	}
+
+	resultUri.RawQuery = query.Encode()
+	return &resultUri
+}
+
+func (c *OpenClawHttpClient) GetCompatibilityCatalog(ctx context.Context, compatibilityStatus, kind, category string) (*core.IntegrationCompatibilityCatalogResponse, error) {
+	return SendHttp[any, core.IntegrationCompatibilityCatalogResponse](ctx, c, "GET", c.buildCompatibilityCatalogUri(compatibilityStatus, kind, category), nil, nil)
+}
+
+func (c *OpenClawHttpClient) GetIntegrationAccounts(ctx context.Context) (*core.IntegrationAccountsResponse, error) {
+	return SendHttp[any, core.IntegrationAccountsResponse](ctx, c, "GET", c.integrationAccountsUri, nil, nil)
+}
+
+func (c *OpenClawHttpClient) GetIntegrationAccount(ctx context.Context, accountId string) (*core.IntegrationConnectedAccountResponse, error) {
+	resultUri := *c.integrationAccountsUri
+	query := resultUri.Query()
+
+	if accountId != "" {
+		query.Set("accountId", accountId)
+	}
+	resultUri.RawQuery = query.Encode()
+	return SendHttp[any, core.IntegrationConnectedAccountResponse](ctx, c, "GET", &resultUri, nil, nil)
+}
+
+func (c *OpenClawHttpClient) CreateIntegrationAccount(ctx context.Context, request core.ConnectedAccountCreateRequest) (*core.IntegrationConnectedAccountResponse, error) {
+	return SendHttp[core.ConnectedAccountCreateRequest, core.IntegrationConnectedAccountResponse](ctx, c, "POST", c.integrationAccountsUri, &request, nil)
+}
+
+func (c *OpenClawHttpClient) DeleteIntegrationAccount(ctx context.Context, accountId string) (*core.OperationStatusResponse, error) {
+	resultUri := *c.integrationAccountsUri
+	query := resultUri.Query()
+
+	if accountId != "" {
+		query.Set("accountId", accountId)
+	}
+	resultUri.RawQuery = query.Encode()
+	return SendHttp[any, core.OperationStatusResponse](ctx, c, "DELETE", &resultUri, nil, nil)
+}
+
+func (c *OpenClawHttpClient) GetIntegrationBackends(ctx context.Context) (*core.IntegrationBackendsResponse, error) {
+	return SendHttp[any, core.IntegrationBackendsResponse](ctx, c, "GET", c.integrationBackendsUri, nil, nil)
+}
+
+func (c *OpenClawHttpClient) buildIntegrationBackendUri(backendId string) *url.URL {
+	return c.integrationBackendsUri.JoinPath(backendId)
+}
+func (c *OpenClawHttpClient) buildIntegrationBackendProbeUri(backendId string) *url.URL {
+	return c.buildIntegrationBackendUri(backendId).JoinPath("probe")
+}
+func (c *OpenClawHttpClient) buildIntegrationBackendSessionsUri(backendId string) *url.URL {
+	return c.buildIntegrationBackendUri(backendId).JoinPath("sessions")
+}
+
+func (c *OpenClawHttpClient) GetIntegrationBackend(ctx context.Context, backendId string) (*core.IntegrationBackendResponse, error) {
+	return SendHttp[any, core.IntegrationBackendResponse](ctx, c, "GET", c.buildIntegrationBackendUri(backendId), nil, nil)
+}
+
+func (c *OpenClawHttpClient) ProbeIntegrationBackend(ctx context.Context, backendId string, request core.BackendProbeRequest) (*core.BackendProbeResult, error) {
+	return SendHttp[core.BackendProbeRequest, core.BackendProbeResult](ctx, c, "POST", c.buildIntegrationBackendProbeUri(backendId), &request, nil)
+}
+
+func (c *OpenClawHttpClient) StartBackendSession(ctx context.Context, backendId string, request core.StartBackendSessionRequest) (*core.IntegrationBackendSessionResponse, error) {
+	return SendHttp[core.StartBackendSessionRequest, core.IntegrationBackendSessionResponse](ctx, c, "POST", c.buildIntegrationBackendSessionsUri(backendId), &request, nil)
+}
+
+func (c *OpenClawHttpClient) SendBackendInput(ctx context.Context, backendId, sessionId string, request core.BackendInput) (*core.IntegrationBackendSessionResponse, error) {
+	return SendHttp[core.BackendInput, core.IntegrationBackendSessionResponse](ctx, c, "POST", c.buildIntegrationBackendSessionsUri(backendId), &request, nil)
+}
+
+func (c *OpenClawHttpClient) buildIntegrationBackendSessionUri(backendId, sessionId string) *url.URL {
+	return c.buildIntegrationBackendSessionsUri(backendId).JoinPath(sessionId)
+}
+
+func (c *OpenClawHttpClient) buildIntegrationBackendInputUri(backendId, sessionId string) *url.URL {
+	return c.buildIntegrationBackendSessionUri(backendId, sessionId).JoinPath("input")
+}
+
+func (c *OpenClawHttpClient) buildIntegrationBackendEventsUri(backendId, sessionId string, afterSequence int64, limit int) *url.URL {
+	resultUri := c.buildIntegrationBackendSessionUri(backendId, sessionId).JoinPath("events")
+	query := resultUri.Query()
+	query.Set("afterSequence", fmt.Sprintf("%d", max(afterSequence, 0)))
+	query.Set("limit", fmt.Sprintf("%d", util.Clamp(limit, 1, 500)))
+	resultUri.RawQuery = query.Encode()
+	return resultUri
+}
+
+func (c *OpenClawHttpClient) buildIntegrationBackendEventStreamUri(backendId, sessionId string, afterSequence int64, limit int) *url.URL {
+	resultUri := c.buildIntegrationBackendSessionUri(backendId, sessionId).JoinPath("events").JoinPath("stream")
+	query := resultUri.Query()
+	query.Set("afterSequence", fmt.Sprintf("%d", max(afterSequence, 0)))
+	query.Set("limit", fmt.Sprintf("%d", util.Clamp(limit, 1, 500)))
+	resultUri.RawQuery = query.Encode()
+	return resultUri
+
+}
+
+func (c *OpenClawHttpClient) StopBackendSession(ctx context.Context, backendId, sessionId string) (*core.IntegrationBackendSessionResponse, error) {
+	return SendHttp[any, core.IntegrationBackendSessionResponse](ctx, c, "DELETE", c.buildIntegrationBackendInputUri(backendId, sessionId), nil, nil)
+}
+
+func (c *OpenClawHttpClient) GetBackendSession(ctx context.Context, backendId, sessionId string) (*core.IntegrationBackendSessionResponse, error) {
+	return SendHttp[any, core.IntegrationBackendSessionResponse](ctx, c, "GET", c.buildIntegrationBackendSessionUri(backendId, sessionId), nil, nil)
+}
+
+func (c *OpenClawHttpClient) GetBackendEvents(ctx context.Context, backendId, sessionId string, afterSequence int64, limit int) (*core.IntegrationBackendEventsResponse, error) {
+	return SendHttp[any, core.IntegrationBackendEventsResponse](ctx, c, "GET", c.buildIntegrationBackendEventsUri(backendId, sessionId, afterSequence, limit), nil, nil)
+}
+
+func (c *OpenClawHttpClient) StreamBackendEvents(
+	ctx context.Context,
+	backendId, sessionId string, afterSequence int64, limit int,
+	onEvent func(core.BackendEvent),
+) error {
+	resulturi := c.buildIntegrationBackendEventStreamUri(backendId, sessionId, afterSequence, limit)
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, resulturi.String(), nil)
+	if err != nil {
+		return fmt.Errorf("failed to create request: %w", err)
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "text/event-stream")
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("HTTP request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		body, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("HTTP error %d: %s", resp.StatusCode, string(body))
+	}
+
+	scanner := bufio.NewScanner(resp.Body)
+	for scanner.Scan() {
+		line := scanner.Text()
+
+		if !strings.HasPrefix(line, "data:") {
+			continue
+		}
+
+		data := strings.TrimSpace(line[len("data:"):])
+		if len(data) == 0 {
+			continue
+		}
+
+		if data == "[DONE]" {
+			break
+		}
+
+		var event core.BackendEvent
+		if err := json.Unmarshal([]byte(data), &event); err != nil {
+			return fmt.Errorf("failed to parse SSE chunk: %s: %w", data, err)
+		}
+
+		if onEvent != nil {
+			onEvent(event)
+		}
+	}
+
+	return scanner.Err()
 }
