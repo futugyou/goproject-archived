@@ -1531,3 +1531,124 @@ func (c *OpenClawHttpClient) ClearAutomationQuarantine(ctx context.Context, auto
 		c.integrationAutomationsUri.JoinPath(automationId).JoinPath("/quarantine/clear"),
 		nil, nil)
 }
+
+func (c *OpenClawHttpClient) ListWorkflows(ctx context.Context) (*core.IntegrationWorkflowsResponse, error) {
+	return SendHttp[any, core.IntegrationWorkflowsResponse](ctx, c, "GET", c.integrationWorkflowsUri, nil, nil)
+}
+
+func (c *OpenClawHttpClient) RunWorkflow(ctx context.Context, workflowId string, request core.AgentWorkflowRequest) (*core.IntegrationWorkflowsResponse, error) {
+	if workflowId == "" {
+		return nil, errors.New("workflow id is required.")
+	}
+	return SendHttp[core.AgentWorkflowRequest, core.IntegrationWorkflowsResponse](ctx, c, "POST", c.integrationWorkflowsUri.JoinPath(workflowId).JoinPath("/runs"), &request, nil)
+}
+
+func (c *OpenClawHttpClient) GetWorkflowRun(ctx context.Context, workflowId, runId string) (*core.AgentWorkflowRunSnapshot, error) {
+	if workflowId == "" {
+		return nil, errors.New("workflow id is required.")
+	}
+	if runId == "" {
+		return nil, errors.New("workflow run id is required.")
+	}
+	requesturi := c.integrationWorkflowsUri.JoinPath(workflowId).JoinPath("/runs").JoinPath(runId)
+	return SendHttp[any, core.AgentWorkflowRunSnapshot](ctx, c, "GET", requesturi, nil, nil)
+}
+
+func (c *OpenClawHttpClient) RespondWorkflowRun(ctx context.Context, workflowId, runId string, response core.AgentWorkflowResponse) (*core.AgentWorkflowRunSnapshot, error) {
+	if workflowId == "" {
+		return nil, errors.New("workflow id is required.")
+	}
+	if runId == "" {
+		return nil, errors.New("workflow run id is required.")
+	}
+	requesturi := c.integrationWorkflowsUri.JoinPath(workflowId).JoinPath("/runs").JoinPath(runId).JoinPath("/responses")
+	return SendHttp[core.AgentWorkflowResponse, core.AgentWorkflowRunSnapshot](ctx, c, "POST", requesturi, &response, nil)
+}
+
+func (c *OpenClawHttpClient) QueryRuntimeEvents(ctx context.Context, request core.RuntimeEventQuery) (*core.IntegrationRuntimeEventsResponse, error) {
+	resultUri := *c.integrationRuntimeEventsUri
+	query := resultUri.Query()
+	query.Set("limit", fmt.Sprintf("%d", util.Clamp(request.Limit, 1, 500)))
+	if request.SessionId != "" {
+		query.Set("sessionId", request.SessionId)
+	}
+	if request.ChannelId != "" {
+		query.Set("channelId", request.ChannelId)
+	}
+	if request.SenderId != "" {
+		query.Set("senderId", request.SenderId)
+	}
+	if request.Component != "" {
+		query.Set("component", request.Component)
+	}
+	if request.Action != "" {
+		query.Set("action", request.Action)
+	}
+	if request.FromUtc != nil {
+		query.Set("fromUtc", request.FromUtc.Format(time.RFC3339Nano))
+	}
+	if request.ToUtc != nil {
+		query.Set("toUtc", request.ToUtc.Format(time.RFC3339Nano))
+	}
+	resultUri.RawQuery = query.Encode()
+	return SendHttp[any, core.IntegrationRuntimeEventsResponse](ctx, c, "GET", &resultUri, nil, nil)
+}
+
+func (c *OpenClawHttpClient) EnqueueMessage(ctx context.Context, request core.IntegrationMessageRequest) (*core.IntegrationMessageResponse, error) {
+	return SendHttp[core.IntegrationMessageRequest, core.IntegrationMessageResponse](ctx, c, "POST", c.integrationMessagesUri, &request, nil)
+}
+
+func (c *OpenClawHttpClient) GetHeartbeat(ctx context.Context) (*core.HeartbeatPreviewResponse, error) {
+	return SendHttp[any, core.HeartbeatPreviewResponse](ctx, c, "GET", c.adminHeartbeatUri, nil, nil)
+}
+
+func (c *OpenClawHttpClient) GetAdminAutomations(ctx context.Context) (*core.IntegrationAutomationsResponse, error) {
+	return SendHttp[any, core.IntegrationAutomationsResponse](ctx, c, "GET", c.adminAutomationsUri, nil, nil)
+}
+
+func (c *OpenClawHttpClient) GetAdminAutomationTemplates(ctx context.Context) (*core.AutomationTemplateListResponse, error) {
+	return SendHttp[any, core.AutomationTemplateListResponse](ctx, c, "GET", c.adminAutomationsUri.JoinPath("/templates"), nil, nil)
+}
+
+func (c *OpenClawHttpClient) GetAdminAutomation(ctx context.Context, automationId string) (*core.IntegrationAutomationDetailResponse, error) {
+	if automationId == "" {
+		return nil, errors.New("automation id is required")
+	}
+	return SendHttp[any, core.IntegrationAutomationDetailResponse](ctx, c, "GET", c.adminAutomationsUri.JoinPath(automationId), nil, nil)
+}
+
+func (c *OpenClawHttpClient) PreviewAutomation(ctx context.Context, automation core.AutomationDefinition) (*core.AutomationPreview, error) {
+	return SendHttp[core.AutomationDefinition, core.AutomationPreview](ctx, c, "POST", c.adminAutomationsUri.JoinPath("/preview"), &automation, nil)
+}
+
+func (c *OpenClawHttpClient) SaveAutomation(ctx context.Context, automationId string, automation core.AutomationDefinition) (*core.IntegrationAutomationDetailResponse, error) {
+	if automationId == "" {
+		return nil, errors.New("automation id is required")
+	}
+	return SendHttp[core.AutomationDefinition, core.IntegrationAutomationDetailResponse](ctx, c, "POST", c.adminAutomationsUri.JoinPath(automationId), &automation, nil)
+}
+
+func (c *OpenClawHttpClient) RunAdminAutomation(ctx context.Context, automationId string, dryRun bool) (*core.MutationResponse, error) {
+	if automationId == "" {
+		return nil, errors.New("automation id is required")
+	}
+	return SendHttp[core.AutomationRunRequest, core.MutationResponse](ctx, c, "POST",
+		c.adminAutomationsUri.JoinPath(automationId).JoinPath("/run"),
+		&core.AutomationRunRequest{DryRun: dryRun}, nil)
+}
+
+func (c *OpenClawHttpClient) DeleteAdminAutomation(ctx context.Context, automationId string) (*core.MutationResponse, error) {
+	if automationId == "" {
+		return nil, errors.New("automation id is required")
+	}
+	return SendHttp[any, core.MutationResponse](ctx, c, "DELETE", c.adminAutomationsUri.JoinPath(automationId), nil, nil)
+}
+
+func (c *OpenClawHttpClient) MigrateAutomations(ctx context.Context, apply bool) (*core.IntegrationAutomationsResponse, error) {
+	resultUri := *c.adminAutomationsUri.JoinPath("/migrate")
+	query := resultUri.Query()
+	query.Set("apply", strconv.FormatBool(apply))
+	resultUri.RawQuery = query.Encode()
+
+	return SendHttp[any, core.IntegrationAutomationsResponse](ctx, c, "POST", &resultUri, nil, nil)
+}
