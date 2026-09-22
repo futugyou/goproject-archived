@@ -1203,3 +1203,155 @@ func (c *OpenClawHttpClient) SaveProfile(ctx context.Context, actorId string, pr
 		Profile: profile,
 	}, nil)
 }
+
+func (c *OpenClawHttpClient) ListMemoryNotes(ctx context.Context, prefix, memoryClass, projectId string, limit int) (*core.MemoryNoteListResponse, error) {
+	resultUri := *c.adminMemoryNotesUri
+	query := resultUri.Query()
+	query.Set("limit", fmt.Sprintf("%d", util.Clamp(limit, 1, 200)))
+	if prefix != "" {
+		query.Set("prefix", prefix)
+	}
+	if memoryClass != "" {
+		query.Set("memoryClass", memoryClass)
+	}
+	if projectId != "" {
+		query.Set("projectId", projectId)
+	}
+	resultUri.RawQuery = query.Encode()
+	return SendHttp[any, core.MemoryNoteListResponse](ctx, c, "GET", &resultUri, nil, nil)
+}
+
+func (c *OpenClawHttpClient) SearchMemoryNotes(ctx context.Context, querystr, memoryClass, projectId string, limit int) (*core.MemoryNoteListResponse, error) {
+	resultUri := *c.adminMemorySearchUri
+	query := resultUri.Query()
+	query.Set("limit", fmt.Sprintf("%d", util.Clamp(limit, 1, 200)))
+	query.Set("query", querystr)
+	if memoryClass != "" {
+		query.Set("memoryClass", memoryClass)
+	}
+	if projectId != "" {
+		query.Set("projectId", projectId)
+	}
+	resultUri.RawQuery = query.Encode()
+	return SendHttp[any, core.MemoryNoteListResponse](ctx, c, "GET", &resultUri, nil, nil)
+}
+
+func (c *OpenClawHttpClient) GetMemoryNote(ctx context.Context, key string) (*core.MemoryNoteDetailResponse, error) {
+	if key == "" {
+		return nil, errors.New("Memory note key is required.")
+	}
+	return SendHttp[any, core.MemoryNoteDetailResponse](ctx, c, "GET", c.adminMemoryNotesUri.JoinPath(key), nil, nil)
+}
+
+func (c *OpenClawHttpClient) SaveMemoryNote(ctx context.Context, request core.MemoryNoteUpsertRequest) (*core.MemoryNoteDetailResponse, error) {
+	return SendHttp[core.MemoryNoteUpsertRequest, core.MemoryNoteDetailResponse](ctx, c, "POST", c.adminMemoryNotesUri, &request, nil)
+}
+
+func (c *OpenClawHttpClient) DeleteMemoryNote(ctx context.Context, key string) (*core.MutationResponse, error) {
+	if key == "" {
+		return nil, errors.New("Memory note key is required.")
+	}
+	return SendHttp[any, core.MutationResponse](ctx, c, "DELETE", c.adminMemoryNotesUri.JoinPath(key), nil, nil)
+}
+
+func (c *OpenClawHttpClient) ExportMemoryConsole(ctx context.Context, actorId, projectId string, includeProfiles, includeProposals, includeAutomations, includeNotes bool) (*core.MemoryConsoleExportBundle, error) {
+	resultUri := *c.adminMemoryExportUri
+	query := resultUri.Query()
+	query.Set("includeProfiles", strconv.FormatBool(includeProfiles))
+	query.Set("includeProposals", strconv.FormatBool(includeProposals))
+	query.Set("includeAutomations", strconv.FormatBool(includeAutomations))
+	query.Set("includeNotes", strconv.FormatBool(includeNotes))
+	if actorId != "" {
+		query.Set("actorId", actorId)
+	}
+	if projectId != "" {
+		query.Set("projectId", projectId)
+	}
+	resultUri.RawQuery = query.Encode()
+	return SendHttp[any, core.MemoryConsoleExportBundle](ctx, c, "GET", &resultUri, nil, nil)
+}
+
+func (c *OpenClawHttpClient) ImportMemoryConsole(ctx context.Context, bundle core.MemoryConsoleExportBundle) (*core.MemoryConsoleImportResponse, error) {
+	return SendHttp[core.MemoryConsoleExportBundle, core.MemoryConsoleImportResponse](ctx, c, "POST", c.adminMemoryImportUri, &bundle, nil)
+}
+
+func (c *OpenClawHttpClient) GetFractalMemoryStatus(ctx context.Context) (*core.StructuredMemoryStatusResponse, error) {
+	return SendHttp[any, core.StructuredMemoryStatusResponse](ctx, c, "GET", c.adminMemoryFractalStatusUri, nil, nil)
+}
+
+func (c *OpenClawHttpClient) SearchFractalMemory(ctx context.Context, querystr string, limit int, scope string) (*core.StructuredMemorySearchResult, error) {
+	if querystr == "" {
+		return nil, errors.New("Query is required.")
+	}
+
+	resultUri := *c.adminMemoryFractalSearchUri
+	query := resultUri.Query()
+	query.Set("query", querystr)
+	query.Set("limit", fmt.Sprintf("%d", util.Clamp(limit, 1, 50)))
+	if scope != "" {
+		query.Set("scope", scope)
+	}
+	resultUri.RawQuery = query.Encode()
+	return SendHttp[any, core.StructuredMemorySearchResult](ctx, c, "GET", &resultUri, nil, nil)
+}
+
+func (c *OpenClawHttpClient) OpenFractalMemory(ctx context.Context, path string, depth int, view string) (*core.StructuredMemoryOpenResult, error) {
+	if path == "" {
+		return nil, errors.New("path is required.")
+	}
+
+	resultUri := *c.adminMemoryFractalOpenUri
+	query := resultUri.Query()
+	query.Set("path", path)
+	if depth >= 0 {
+		query.Set("depth", fmt.Sprintf("%d", util.Clamp(depth, 0, 3)))
+	}
+
+	if view != "" {
+		query.Set("view", view)
+	}
+	resultUri.RawQuery = query.Encode()
+	return SendHttp[any, core.StructuredMemoryOpenResult](ctx, c, "GET", &resultUri, nil, nil)
+}
+
+func (c *OpenClawHttpClient) ExportFractalMemory(ctx context.Context, path string, mode string) (*core.StructuredMemoryExportResult, error) {
+	if path == "" {
+		return nil, errors.New("path is required.")
+	}
+
+	resultUri := *c.adminMemoryFractalExportUri
+	query := resultUri.Query()
+	query.Set("path", path)
+	if mode != "" {
+		query.Set("mode", mode)
+	}
+	resultUri.RawQuery = query.Encode()
+	return SendHttp[any, core.StructuredMemoryExportResult](ctx, c, "GET", &resultUri, nil, nil)
+}
+
+func (c *OpenClawHttpClient) GetRecentFractalMemory(ctx context.Context, days, limit int, scope string) (*core.StructuredMemoryRecentResult, error) {
+	resultUri := *c.adminMemoryFractalRecentUri
+	query := resultUri.Query()
+	query.Set("days", fmt.Sprintf("%d", util.Clamp(days, 1, 3650)))
+	query.Set("limit", fmt.Sprintf("%d", util.Clamp(limit, 1, 100)))
+	if scope != "" {
+		query.Set("scope", scope)
+	}
+	resultUri.RawQuery = query.Encode()
+	return SendHttp[any, core.StructuredMemoryRecentResult](ctx, c, "GET", &resultUri, nil, nil)
+}
+
+func (c *OpenClawHttpClient) ValidateFractalMemory(ctx context.Context) (*core.StructuredMemoryValidationResult, error) {
+	return SendHttp[any, core.StructuredMemoryValidationResult](ctx, c, "POST", c.adminMemoryFractalValidateUri, nil, nil)
+}
+
+func (c *OpenClawHttpClient) RefreshFractalMemoryIndex(ctx context.Context) (*core.StructuredMemoryValidationResult, error) {
+	return SendHttp[any, core.StructuredMemoryValidationResult](ctx, c, "POST", c.adminMemoryFractalIndexRefreshUri, nil, nil)
+}
+
+func (c *OpenClawHttpClient) CreateFractalMemoryHandoff(ctx context.Context, path string) (*core.StructuredMemoryHandoffResult, error) {
+	if path == "" {
+		return nil, errors.New("path is required.")
+	}
+	return SendHttp[core.StructuredMemoryPathRequest, core.StructuredMemoryHandoffResult](ctx, c, "POST", c.adminMemoryFractalHandoffUri, &core.StructuredMemoryPathRequest{Path: path}, nil)
+}
