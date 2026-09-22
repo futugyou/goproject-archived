@@ -214,9 +214,9 @@ func DefaultHarnessContractMetadata() HarnessContractMetadata {
 type HarnessContractListQuery struct {
 	Status          string     `json:"status,omitempty"`
 	RiskLevel       string     `json:"risk_level,omitempty"`
-	SourceSessionID string     `json:"source_session_id,omitempty"`
-	ActorID         string     `json:"actor_id,omitempty"`
-	ChannelID       string     `json:"channel_id,omitempty"`
+	SourceSessionId string     `json:"source_session_id,omitempty"`
+	ActorId         string     `json:"actor_id,omitempty"`
+	ChannelId       string     `json:"channel_id,omitempty"`
 	Tag             string     `json:"tag,omitempty"`
 	CreatedFromUtc  *time.Time `json:"created_from_utc,omitempty"`
 	CreatedToUtc    *time.Time `json:"created_to_utc,omitempty"`

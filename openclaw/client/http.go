@@ -1355,3 +1355,179 @@ func (c *OpenClawHttpClient) CreateFractalMemoryHandoff(ctx context.Context, pat
 	}
 	return SendHttp[core.StructuredMemoryPathRequest, core.StructuredMemoryHandoffResult](ctx, c, "POST", c.adminMemoryFractalHandoffUri, &core.StructuredMemoryPathRequest{Path: path}, nil)
 }
+
+func (c *OpenClawHttpClient) ListSharedHarnessState(ctx context.Context, request core.SharedHarnessStateListQuery) (*core.SharedHarnessStateListResponse, error) {
+	resultUri := *c.adminHarnessSharedStateUri
+	query := resultUri.Query()
+	query.Set("limit", fmt.Sprintf("%d", util.Clamp(request.Limit, 1, 500)))
+	if request.SessionId != "" {
+		query.Set("sessionId", request.SessionId)
+	}
+	if request.ParentSessionId != "" {
+		query.Set("parentSessionId", request.ParentSessionId)
+	}
+	if request.HarnessContractId != "" {
+		query.Set("harnessContractId", request.HarnessContractId)
+	}
+	if request.Status != "" {
+		query.Set("status", request.Status)
+	}
+	if request.Tag != "" {
+		query.Set("tag", request.Tag)
+	}
+	if request.CreatedFromUtc != nil {
+		query.Set("createdFromUtc", request.CreatedFromUtc.Format(time.RFC3339Nano))
+	}
+	if request.CreatedToUtc != nil {
+		query.Set("createdToUtc", request.CreatedToUtc.Format(time.RFC3339Nano))
+	}
+	resultUri.RawQuery = query.Encode()
+	return SendHttp[any, core.SharedHarnessStateListResponse](ctx, c, "GET", &resultUri, nil, nil)
+}
+
+func (c *OpenClawHttpClient) GetSharedHarnessState(ctx context.Context, id string) (*core.SharedHarnessStateDetailResponse, error) {
+	if id == "" {
+		return nil, errors.New("Shared harness state id is required.")
+	}
+	return SendHttp[any, core.SharedHarnessStateDetailResponse](ctx, c, "GET", c.adminHarnessSharedStateUri.JoinPath(id), nil, nil)
+}
+
+func (c *OpenClawHttpClient) GetSharedHarnessStateForSession(ctx context.Context, sessionId string) (*core.SharedHarnessStateDetailResponse, error) {
+	if sessionId == "" {
+		return nil, errors.New("Session id is required.")
+	}
+	return SendHttp[any, core.SharedHarnessStateDetailResponse](ctx, c, "GET", c.baseUri.JoinPath("/admin/sessions/").JoinPath(sessionId).JoinPath("arness-state"), nil, nil)
+}
+
+func (c *OpenClawHttpClient) DetectSharedHarnessStateConflicts(ctx context.Context, id string) (*core.SharedHarnessStateMutationResponse, error) {
+	if id == "" {
+		return nil, errors.New("Shared harness state id is required.")
+	}
+	return SendHttp[any, core.SharedHarnessStateMutationResponse](ctx, c, "POST", c.adminHarnessSharedStateUri.JoinPath(id).JoinPath("detect-conflicts"), nil, nil)
+}
+
+func (c *OpenClawHttpClient) ExportAgentBundle(
+	ctx context.Context,
+	actorId, projectId string,
+	includeSettings, includeNotes, includeProfiles, includeProposals, includeAutomations, includePolicies, includeManagedSkills bool) (*core.AgentBundleExportBundle, error) {
+	resultUri := *c.adminAgentBundleExportUri
+	query := resultUri.Query()
+	query.Set("includeSettings", strconv.FormatBool(includeSettings))
+	query.Set("includeNotes", strconv.FormatBool(includeNotes))
+	query.Set("includeProfiles", strconv.FormatBool(includeProfiles))
+	query.Set("includeProposals", strconv.FormatBool(includeProposals))
+	query.Set("includeAutomations", strconv.FormatBool(includeAutomations))
+	query.Set("includePolicies", strconv.FormatBool(includePolicies))
+	query.Set("includeManagedSkills", strconv.FormatBool(includeManagedSkills))
+	if actorId != "" {
+		query.Set("actorId", actorId)
+	}
+	if projectId != "" {
+		query.Set("projectId", projectId)
+	}
+	resultUri.RawQuery = query.Encode()
+	return SendHttp[any, core.AgentBundleExportBundle](ctx, c, "GET", &resultUri, nil, nil)
+}
+
+func (c *OpenClawHttpClient) ImportAgentBundle(ctx context.Context, bundle core.AgentBundleExportBundle) (*core.AgentBundleImportResponse, error) {
+	return SendHttp[core.AgentBundleExportBundle, core.AgentBundleImportResponse](ctx, c, "POST", c.adminAgentBundleImportUri, &bundle, nil)
+}
+
+func (c *OpenClawHttpClient) UpdateSessionMetadata(ctx context.Context, sessionId string, bundle core.SessionMetadataUpdateRequest) (*core.AgentBundleImportResponse, error) {
+	if sessionId == "" {
+		return nil, errors.New("Session id is required.")
+	}
+
+	requesturi := c.baseUri.JoinPath("/admin/sessions/").JoinPath(sessionId).JoinPath("/metadata")
+	return SendHttp[core.SessionMetadataUpdateRequest, core.AgentBundleImportResponse](ctx, c, "POST", requesturi, &bundle, nil)
+}
+
+func (c *OpenClawHttpClient) PromoteSession(ctx context.Context, sessionId string, bundle core.SessionPromotionRequest) (*core.SessionPromotionResponse, error) {
+	if sessionId == "" {
+		return nil, errors.New("Session id is required.")
+	}
+
+	requesturi := c.baseUri.JoinPath("/admin/sessions/").JoinPath(sessionId).JoinPath("/promote")
+	return SendHttp[core.SessionPromotionRequest, core.SessionPromotionResponse](ctx, c, "POST", requesturi, &bundle, nil)
+}
+
+func (c *OpenClawHttpClient) ListAutomations(ctx context.Context) (*core.IntegrationAutomationsResponse, error) {
+	return SendHttp[any, core.IntegrationAutomationsResponse](ctx, c, "GET", c.integrationAutomationsUri, nil, nil)
+}
+
+func (c *OpenClawHttpClient) ListAutomationTemplates(ctx context.Context) (*core.AutomationTemplateListResponse, error) {
+	return SendHttp[any, core.AutomationTemplateListResponse](ctx, c, "GET", c.integrationAutomationsUri.JoinPath("templates"), nil, nil)
+}
+
+func (c *OpenClawHttpClient) GetAutomation(ctx context.Context, automationId string) (*core.IntegrationAutomationDetailResponse, error) {
+	if automationId == "" {
+		return nil, errors.New("Automation id is required.")
+	}
+
+	return SendHttp[any, core.IntegrationAutomationDetailResponse](ctx, c, "GET", c.integrationAutomationsUri.JoinPath(automationId), nil, nil)
+}
+
+func (c *OpenClawHttpClient) RunAutomation(ctx context.Context, automationId string, dryRun bool) (*core.MutationResponse, error) {
+	if automationId == "" {
+		return nil, errors.New("Automation id is required.")
+	}
+
+	return SendHttp[core.AutomationRunRequest, core.MutationResponse](ctx, c, "POST",
+		c.integrationAutomationsUri.JoinPath(automationId).JoinPath("run"),
+		&core.AutomationRunRequest{
+			DryRun: dryRun,
+		}, nil)
+}
+
+func (c *OpenClawHttpClient) DeleteAutomation(ctx context.Context, automationId string) (*core.MutationResponse, error) {
+	if automationId == "" {
+		return nil, errors.New("Automation id is required.")
+	}
+
+	return SendHttp[any, core.MutationResponse](ctx, c, "DELETE",
+		c.integrationAutomationsUri.JoinPath(automationId),
+		nil, nil)
+}
+
+func (c *OpenClawHttpClient) GetAutomationRuns(ctx context.Context, automationId string) (*core.IntegrationAutomationRunsResponse, error) {
+	if automationId == "" {
+		return nil, errors.New("Automation id is required.")
+	}
+
+	return SendHttp[any, core.IntegrationAutomationRunsResponse](ctx, c, "GET", c.integrationAutomationsUri.JoinPath(automationId).JoinPath("/runs"), nil, nil)
+}
+
+func (c *OpenClawHttpClient) GetAutomationRun(ctx context.Context, automationId, runId string) (*core.IntegrationAutomationRunDetailResponse, error) {
+	if automationId == "" {
+		return nil, errors.New("Automation id is required.")
+	}
+	if runId == "" {
+		return nil, errors.New("Automation run id is required.")
+	}
+
+	return SendHttp[any, core.IntegrationAutomationRunDetailResponse](ctx, c, "GET",
+		c.integrationAutomationsUri.JoinPath(automationId).JoinPath(runId),
+		nil, nil)
+}
+
+func (c *OpenClawHttpClient) ReplayAutomationRun(ctx context.Context, automationId, runId string) (*core.MutationResponse, error) {
+	if automationId == "" {
+		return nil, errors.New("Automation id is required.")
+	}
+	if runId == "" {
+		return nil, errors.New("Automation run id is required.")
+	}
+
+	return SendHttp[any, core.MutationResponse](ctx, c, "POST",
+		c.integrationAutomationsUri.JoinPath(automationId).JoinPath(runId).JoinPath("/replay"),
+		nil, nil)
+}
+
+func (c *OpenClawHttpClient) ClearAutomationQuarantine(ctx context.Context, automationId string) (*core.MutationResponse, error) {
+	if automationId == "" {
+		return nil, errors.New("Automation id is required.")
+	}
+	return SendHttp[any, core.MutationResponse](ctx, c, "POST",
+		c.integrationAutomationsUri.JoinPath(automationId).JoinPath("/quarantine/clear"),
+		nil, nil)
+}

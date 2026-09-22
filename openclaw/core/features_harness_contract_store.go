@@ -57,16 +57,16 @@ func (p *PostgresHarnessContractStore) List(ctx context.Context, query *HarnessC
 			tx = tx.Where("risk_level = ?", query.RiskLevel)
 		}
 
-		if query.SourceSessionID != "" {
-			tx = tx.Where("source_session_id = ?", query.SourceSessionID)
+		if query.SourceSessionId != "" {
+			tx = tx.Where("source_session_id = ?", query.SourceSessionId)
 		}
 
-		if query.ActorID != "" {
-			tx = tx.Where("actor_id = ?", query.ActorID)
+		if query.ActorId != "" {
+			tx = tx.Where("actor_id = ?", query.ActorId)
 		}
 
-		if query.ChannelID != "" {
-			tx = tx.Where("channel_id = ?", query.ChannelID)
+		if query.ChannelId != "" {
+			tx = tx.Where("channel_id = ?", query.ChannelId)
 		}
 
 		if query.CreatedFromUtc != nil {
@@ -150,16 +150,16 @@ func (p *PostgresSharedHarnessStateStore) List(ctx context.Context, query Shared
 		tx = tx.Where("status = ?", query.Status)
 	}
 
-	if query.SessionID != "" {
-		tx = tx.Where("session_id = ?", query.SessionID)
+	if query.SessionId != "" {
+		tx = tx.Where("session_id = ?", query.SessionId)
 	}
 
-	if query.ParentSessionID != "" {
-		tx = tx.Where("parent_session_id = ?", query.ParentSessionID)
+	if query.ParentSessionId != "" {
+		tx = tx.Where("parent_session_id = ?", query.ParentSessionId)
 	}
 
-	if query.HarnessContractID != "" {
-		tx = tx.Where("harness_contract_id = ?", query.HarnessContractID)
+	if query.HarnessContractId != "" {
+		tx = tx.Where("harness_contract_id = ?", query.HarnessContractId)
 	}
 
 	if query.CreatedFromUtc != nil {

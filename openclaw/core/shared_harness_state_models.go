@@ -235,9 +235,9 @@ func NewDefaultHarnessConflict() HarnessConflict {
 }
 
 type SharedHarnessStateListQuery struct {
-	SessionID         string     `json:"session_id,omitempty"`
-	ParentSessionID   string     `json:"parent_session_id,omitempty"`
-	HarnessContractID string     `json:"harness_contract_id,omitempty"`
+	SessionId         string     `json:"session_id,omitempty"`
+	ParentSessionId   string     `json:"parent_session_id,omitempty"`
+	HarnessContractId string     `json:"harness_contract_id,omitempty"`
 	Status            string     `json:"status,omitempty"`
 	Tag               string     `json:"tag,omitempty"`
 	CreatedFromUtc    *time.Time `json:"created_from_utc,omitempty"`
