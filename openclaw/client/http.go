@@ -267,20 +267,6 @@ func NewOpenClawHttpClient(baseUrl string, authToken string, customHTTPClient *h
 	return c, nil
 }
 
-func (c *OpenClawHttpClient) newRequest(method string, targetUrl *url.URL) (*http.Request, error) {
-	req, err := http.NewRequest(method, targetUrl.String(), nil)
-	if err != nil {
-		return nil, err
-	}
-
-	req.Header.Set("User-Agent", "openclaw-client/1.0")
-	if strings.TrimSpace(c.authToken) != "" {
-		req.Header.Set("Authorization", "Bearer "+c.authToken)
-	}
-
-	return req, nil
-}
-
 func (c *OpenClawHttpClient) nextRequestId() int64 {
 	return c.mcpRequestId.Add(1)
 }
@@ -1839,4 +1825,219 @@ func (c *OpenClawHttpClient) RevokeOperatorAccountToken(ctx context.Context, acc
 		return nil, errors.New("token id is required.")
 	}
 	return SendHttp[any, core.MutationResponse](ctx, c, "DELETE", c.adminOperatorAccountsUri.JoinPath(accountId).JoinPath("/tokens").JoinPath(tokenId), nil, nil)
+}
+
+func (c *OpenClawHttpClient) GetOrganizationPolicy(ctx context.Context) (*core.OrganizationPolicyResponse, error) {
+	return SendHttp[any, core.OrganizationPolicyResponse](ctx, c, "GET", c.adminOrganizationPolicyUri, nil, nil)
+}
+
+func (c *OpenClawHttpClient) SaveOrganizationPolicy(ctx context.Context, request core.OrganizationPolicySnapshot) (*core.OrganizationPolicyResponse, error) {
+	return SendHttp[core.OrganizationPolicySnapshot, core.OrganizationPolicyResponse](ctx, c, "POST", c.adminOrganizationPolicyUri, &request, nil)
+}
+
+func buildDateRangeUri(baseUri *url.URL, fromUtc, toUtc *time.Time) *url.URL {
+	resultUri := *baseUri
+	query := resultUri.Query()
+	if fromUtc != nil {
+		query.Set("fromUtc", fromUtc.Format(time.RFC3339Nano))
+	}
+
+	if toUtc != nil {
+		query.Set("toUtc", toUtc.Format(time.RFC3339Nano))
+	}
+
+	resultUri.RawQuery = query.Encode()
+
+	return &resultUri
+}
+
+func (c *OpenClawHttpClient) GetSetupStatus(ctx context.Context) (*core.SetupStatusResponse, error) {
+	return SendHttp[any, core.SetupStatusResponse](ctx, c, "GET", c.adminSetupStatusUri, nil, nil)
+}
+
+func (c *OpenClawHttpClient) GetOperatorInsights(ctx context.Context, fromUtc, toUtc *time.Time) (*core.OperatorInsightsResponse, error) {
+	return SendHttp[any, core.OperatorInsightsResponse](ctx, c, "GET", buildDateRangeUri(c.adminInsightsUri, fromUtc, toUtc), nil, nil)
+}
+
+func (c *OpenClawHttpClient) GetObservabilitySummary(ctx context.Context, fromUtc, toUtc *time.Time) (*core.ObservabilitySummaryResponse, error) {
+	return SendHttp[any, core.ObservabilitySummaryResponse](ctx, c, "GET", buildDateRangeUri(c.adminObservabilitySummaryUri, fromUtc, toUtc), nil, nil)
+}
+
+func (c *OpenClawHttpClient) GetObservabilitySeries(ctx context.Context, fromUtc, toUtc *time.Time, bucketMinutes int) (*core.ObservabilitySeriesResponse, error) {
+	resultUri := *c.adminObservabilitySeriesUri
+	if bucketMinutes <= 0 {
+		bucketMinutes = 60
+	}
+	query := resultUri.Query()
+	query.Set("bucketMinutes", fmt.Sprintf("%d", util.Clamp(bucketMinutes, 5, 24*60)))
+	if fromUtc != nil {
+		query.Set("fromUtc", fromUtc.Format(time.RFC3339Nano))
+	}
+
+	if toUtc != nil {
+		query.Set("toUtc", toUtc.Format(time.RFC3339Nano))
+	}
+
+	resultUri.RawQuery = query.Encode()
+
+	return SendHttp[any, core.ObservabilitySeriesResponse](ctx, c, "GET", &resultUri, nil, nil)
+}
+
+func (c *OpenClawHttpClient) ExportAuditBundle(ctx context.Context, fromUtc, toUtc *time.Time) ([]byte, error) {
+	requesturi := buildDateRangeUri(c.adminAuditExportUri, fromUtc, toUtc)
+	request, err := http.NewRequestWithContext(ctx, "GET", requesturi.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	resp, err := c.httpClient.Do(request)
+	if err != nil {
+		return nil, err
+	}
+
+	defer resp.Body.Close()
+
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return nil, fmt.Errorf("Error: Failed to search (HTTP %d)", resp.StatusCode)
+	}
+
+	return io.ReadAll(resp.Body)
+}
+
+func (c *OpenClawHttpClient) ExportTrajectoryJsonl(ctx context.Context, fromUtc, toUtc *time.Time, sessionId string, anonymize bool) (string, error) {
+	resultUri := *c.adminTrajectoryExportUri
+	query := resultUri.Query()
+	if fromUtc != nil {
+		query.Set("fromUtc", fromUtc.Format(time.RFC3339Nano))
+	}
+	if toUtc != nil {
+		query.Set("toUtc", toUtc.Format(time.RFC3339Nano))
+	}
+	if sessionId != "" {
+		query.Set("sessionId", sessionId)
+	}
+	if anonymize {
+		query.Set("anonymize", strconv.FormatBool(anonymize))
+	}
+
+	resultUri.RawQuery = query.Encode()
+
+	request, err := http.NewRequestWithContext(ctx, "GET", resultUri.String(), nil)
+	if err != nil {
+		return "", err
+	}
+
+	resp, err := c.httpClient.Do(request)
+	if err != nil {
+		return "", err
+	}
+
+	defer resp.Body.Close()
+
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return "", fmt.Errorf("Error: Failed to search (HTTP %d)", resp.StatusCode)
+	}
+
+	data, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", err
+	}
+
+	return string(data), nil
+}
+
+func (c *OpenClawHttpClient) ExportIncidentBundle(ctx context.Context, approvalLimit, eventLimit int) (*core.IncidentBundleResponse, error) {
+	resultUri := *c.adminIncidentExportUri
+	query := resultUri.Query()
+	query.Set("approvalLimit", fmt.Sprintf("%d", util.Clamp(approvalLimit, 1, 500)))
+	query.Set("eventLimit", fmt.Sprintf("%d", util.Clamp(eventLimit, 1, 500)))
+	resultUri.RawQuery = query.Encode()
+
+	return SendHttp[any, core.IncidentBundleResponse](ctx, c, "GET", &resultUri, nil, nil)
+}
+
+func (c *OpenClawHttpClient) GetWhatsAppSetup(ctx context.Context) (*core.WhatsAppSetupResponse, error) {
+	return SendHttp[any, core.WhatsAppSetupResponse](ctx, c, "GET", c.adminWhatsAppSetupUri, nil, nil)
+}
+
+func (c *OpenClawHttpClient) SaveWhatsAppSetup(ctx context.Context, request core.WhatsAppSetupRequest) (*core.WhatsAppSetupResponse, error) {
+	return SendHttp[core.WhatsAppSetupRequest, core.WhatsAppSetupResponse](ctx, c, "PUT", c.adminWhatsAppSetupUri, &request, nil)
+}
+
+func (c *OpenClawHttpClient) RestartWhatsApp(ctx context.Context) (*core.WhatsAppSetupResponse, error) {
+	return SendHttp[any, core.WhatsAppSetupResponse](ctx, c, "POST", c.adminWhatsAppRestartUri, nil, nil)
+}
+
+func (c *OpenClawHttpClient) GetChannelAuth(ctx context.Context, channelId, accountId string) (*core.ChannelAuthStatusResponse, error) {
+	if channelId == "" {
+		return nil, errors.New("Channel id is required")
+	}
+	resultUri := c.baseUri.JoinPath("/admin/channels").JoinPath(channelId)
+	query := resultUri.Query()
+	if accountId != "" {
+		query.Set("accountId", accountId)
+	}
+	resultUri.RawQuery = query.Encode()
+
+	return SendHttp[any, core.ChannelAuthStatusResponse](ctx, c, "GET", resultUri, nil, nil)
+}
+
+func (c *OpenClawHttpClient) StreamChannelAuth(
+	ctx context.Context,
+	channelId, accountId string,
+	onEvent func(core.ChannelAuthStatusItem),
+) error {
+	resulturi := c.baseUri.JoinPath("/admin/channels").JoinPath(channelId).JoinPath("/auth/stream")
+	query := resulturi.Query()
+	if accountId != "" {
+		query.Set("accountId", accountId)
+	}
+	resulturi.RawQuery = query.Encode()
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, resulturi.String(), nil)
+	if err != nil {
+		return fmt.Errorf("failed to create request: %w", err)
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "text/event-stream")
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("HTTP request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		body, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("HTTP error %d: %s", resp.StatusCode, string(body))
+	}
+
+	scanner := bufio.NewScanner(resp.Body)
+	for scanner.Scan() {
+		line := scanner.Text()
+
+		if !strings.HasPrefix(line, "data:") {
+			continue
+		}
+
+		data := strings.TrimSpace(line[len("data:"):])
+		if len(data) == 0 {
+			continue
+		}
+
+		if data == "[DONE]" {
+			break
+		}
+
+		var event core.ChannelAuthStatusItem
+		if err := json.Unmarshal([]byte(data), &event); err != nil {
+			return fmt.Errorf("failed to parse SSE chunk: %s: %w", data, err)
+		}
+
+		if onEvent != nil {
+			onEvent(event)
+		}
+	}
+
+	return scanner.Err()
 }
