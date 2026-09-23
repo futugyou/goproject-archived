@@ -1652,3 +1652,191 @@ func (c *OpenClawHttpClient) MigrateAutomations(ctx context.Context, apply bool)
 
 	return SendHttp[any, core.IntegrationAutomationsResponse](ctx, c, "POST", &resultUri, nil, nil)
 }
+
+func (c *OpenClawHttpClient) ListLearningProposals(ctx context.Context, status, kind string) (*core.LearningProposalListResponse, error) {
+	resultUri := *c.adminLearningProposalsUri
+	query := resultUri.Query()
+	if status != "" {
+		query.Set("status", status)
+	}
+	if kind != "" {
+		query.Set("kind", kind)
+	}
+
+	resultUri.RawQuery = query.Encode()
+
+	return SendHttp[any, core.LearningProposalListResponse](ctx, c, "GET", &resultUri, nil, nil)
+}
+
+func (c *OpenClawHttpClient) GetLearningProposalDetail(ctx context.Context, proposalId string) (*core.LearningProposalDetailResponse, error) {
+	if proposalId == "" {
+		return nil, fmt.Errorf("Proposal id is required")
+	}
+
+	return SendHttp[any, core.LearningProposalDetailResponse](ctx, c, "GET", c.adminLearningProposalsUri.JoinPath(proposalId), nil, nil)
+}
+
+func (c *OpenClawHttpClient) ApproveLearningProposal(ctx context.Context, proposalId string) (*core.LearningProposal, error) {
+	if proposalId == "" {
+		return nil, fmt.Errorf("Proposal id is required")
+	}
+
+	return SendHttp[any, core.LearningProposal](ctx, c, "POST", c.adminLearningProposalsUri.JoinPath(proposalId).JoinPath("approve"), nil, nil)
+}
+
+func (c *OpenClawHttpClient) RejectLearningProposal(ctx context.Context, proposalId string) (*core.LearningProposal, error) {
+	if proposalId == "" {
+		return nil, fmt.Errorf("Proposal id is required")
+	}
+
+	return SendHttp[any, core.LearningProposal](ctx, c, "POST", c.adminLearningProposalsUri.JoinPath(proposalId).JoinPath("reject"), nil, nil)
+}
+
+func (c *OpenClawHttpClient) RollbackLearningProposal(ctx context.Context, proposalId, reason string) (*core.LearningProposal, error) {
+	if proposalId == "" {
+		return nil, fmt.Errorf("Proposal id is required")
+	}
+
+	return SendHttp[core.LearningProposalReviewRequest, core.LearningProposal](ctx, c, "POST",
+		c.adminLearningProposalsUri.JoinPath(proposalId).JoinPath("rollback"), &core.LearningProposalReviewRequest{Reason: reason}, nil)
+}
+
+func (c *OpenClawHttpClient) PreviewHeartbeat(ctx context.Context, request core.HeartbeatConfigDto) (*core.HeartbeatPreviewResponse, error) {
+	return SendHttp[core.HeartbeatConfigDto, core.HeartbeatPreviewResponse](ctx, c, "POST", c.adminHeartbeatPreviewUri, &request, nil)
+}
+
+func (c *OpenClawHttpClient) SaveHeartbeat(ctx context.Context, request core.HeartbeatConfigDto) (*core.HeartbeatPreviewResponse, error) {
+	return SendHttp[core.HeartbeatConfigDto, core.HeartbeatPreviewResponse](ctx, c, "PUT", c.adminHeartbeatUri, &request, nil)
+}
+
+func (c *OpenClawHttpClient) GetHeartbeatStatus(ctx context.Context) (*core.HeartbeatStatusResponse, error) {
+	return SendHttp[any, core.HeartbeatStatusResponse](ctx, c, "GET", c.adminHeartbeatStatusUri, nil, nil)
+}
+
+func (c *OpenClawHttpClient) GetPulseStatus(ctx context.Context) (*core.PulseStatusResponse, error) {
+	return SendHttp[any, core.PulseStatusResponse](ctx, c, "GET", c.adminPulseStatusUri, nil, nil)
+}
+
+func (c *OpenClawHttpClient) RunPulse(ctx context.Context, request core.PulseRunRequest) (*core.PulseRunResponse, error) {
+	return SendHttp[core.PulseRunRequest, core.PulseRunResponse](ctx, c, "POST", c.adminPulseRunUri, &request, nil)
+}
+
+func (c *OpenClawHttpClient) GetPulseEvents(ctx context.Context, limit int) (*core.RuntimeEventListResponse, error) {
+	resultUri := *c.adminPulseEventsUri
+	query := resultUri.Query()
+	query.Set("limit", fmt.Sprintf("%d", util.Clamp(limit, 1, 500)))
+
+	resultUri.RawQuery = query.Encode()
+
+	return SendHttp[any, core.RuntimeEventListResponse](ctx, c, "GET", &resultUri, nil, nil)
+}
+
+func (c *OpenClawHttpClient) EnablePulse(ctx context.Context) (*core.PulseStatusResponse, error) {
+	return SendHttp[any, core.PulseStatusResponse](ctx, c, "POST", c.adminPulseEnableUri, nil, nil)
+}
+
+func (c *OpenClawHttpClient) DisablePulse(ctx context.Context) (*core.PulseStatusResponse, error) {
+	return SendHttp[any, core.PulseStatusResponse](ctx, c, "POST", c.adminPulseDisableUri, nil, nil)
+}
+
+func (c *OpenClawHttpClient) GetSecurityPosture(ctx context.Context) (*core.SecurityPostureResponse, error) {
+	return SendHttp[any, core.SecurityPostureResponse](ctx, c, "GET", c.adminPostureUri, nil, nil)
+}
+
+func (c *OpenClawHttpClient) GetModelProfiles(ctx context.Context) (*core.ModelProfilesStatusResponse, error) {
+	return SendHttp[any, core.ModelProfilesStatusResponse](ctx, c, "GET", c.adminModelsUri, nil, nil)
+}
+
+func (c *OpenClawHttpClient) GetModelSelectionDoctor(ctx context.Context) (*core.ModelSelectionDoctorResponse, error) {
+	return SendHttp[any, core.ModelSelectionDoctorResponse](ctx, c, "GET", c.adminModelsDoctorUri, nil, nil)
+}
+
+func (c *OpenClawHttpClient) RunModelEvaluation(ctx context.Context, request core.ModelEvaluationRequest) (*core.ModelEvaluationReport, error) {
+	return SendHttp[core.ModelEvaluationRequest, core.ModelEvaluationReport](ctx, c, "POST", c.adminModelEvaluationsUri, &request, nil)
+}
+
+func (c *OpenClawHttpClient) ListExternalCliConnectors(ctx context.Context) (*core.ExternalCliConnectorListResponse, error) {
+	return SendHttp[any, core.ExternalCliConnectorListResponse](ctx, c, "GET", c.adminExternalCliConnectorsUri, nil, nil)
+}
+
+func (c *OpenClawHttpClient) GetExternalCliConnectorStatus(ctx context.Context, connector string) (*core.ExternalCliConnectorStatus, error) {
+	if connector == "" {
+		return nil, errors.New("Connector is required.")
+	}
+	requesturi := c.baseUri.JoinPath("/admin/external-cli/connectors").JoinPath(connector)
+	return SendHttp[any, core.ExternalCliConnectorStatus](ctx, c, "GET", requesturi, nil, nil)
+}
+
+func (c *OpenClawHttpClient) ListExternalCliCommands(ctx context.Context, connector string) (*core.ExternalCliCommandListResponse, error) {
+	if connector == "" {
+		return nil, errors.New("Connector is required.")
+	}
+	requesturi := c.baseUri.JoinPath("/admin/external-cli/connectors").JoinPath(connector).JoinPath("/commands")
+	return SendHttp[any, core.ExternalCliCommandListResponse](ctx, c, "GET", requesturi, nil, nil)
+}
+
+func (c *OpenClawHttpClient) PreviewExternalCli(ctx context.Context, request core.ExternalCliPreviewRequest) (*core.ExternalCliPreviewResponse, error) {
+	return SendHttp[core.ExternalCliPreviewRequest, core.ExternalCliPreviewResponse](ctx, c, "POST", c.adminExternalCliPreviewUri, &request, nil)
+}
+
+func (c *OpenClawHttpClient) ExecuteExternalCli(ctx context.Context, request core.ExternalCliExecuteRequest) (*core.ExternalCliExecutionResult, error) {
+	return SendHttp[core.ExternalCliExecuteRequest, core.ExternalCliExecutionResult](ctx, c, "POST", c.adminExternalCliExecuteUri, &request, nil)
+}
+
+func (c *OpenClawHttpClient) SimulateApproval(ctx context.Context, request core.ApprovalSimulationRequest) (*core.ApprovalSimulationResponse, error) {
+	return SendHttp[core.ApprovalSimulationRequest, core.ApprovalSimulationResponse](ctx, c, "POST", c.adminApprovalSimulationUri, &request, nil)
+}
+
+func (c *OpenClawHttpClient) TestAccountResolution(ctx context.Context, request core.BackendCredentialResolutionRequest) (*core.BackendCredentialResolutionResponse, error) {
+	return SendHttp[core.BackendCredentialResolutionRequest, core.BackendCredentialResolutionResponse](ctx, c, "POST", c.adminAccountResolutionUri, &request, nil)
+}
+
+func (c *OpenClawHttpClient) GetOperatorAccounts(ctx context.Context) (*core.OperatorAccountListResponse, error) {
+	return SendHttp[any, core.OperatorAccountListResponse](ctx, c, "GET", c.adminOperatorAccountsUri, nil, nil)
+}
+
+func (c *OpenClawHttpClient) ExchangeOperatorToken(ctx context.Context, request core.OperatorTokenExchangeRequest) (*core.OperatorTokenExchangeResponse, error) {
+	return SendHttp[core.OperatorTokenExchangeRequest, core.OperatorTokenExchangeResponse](ctx, c, "POST", c.authOperatorTokenUri, &request, nil)
+}
+
+func (c *OpenClawHttpClient) GetOperatorAccount(ctx context.Context, accountId string) (*core.OperatorAccountDetailResponse, error) {
+	if accountId == "" {
+		return nil, errors.New("Account id is required.")
+	}
+	return SendHttp[any, core.OperatorAccountDetailResponse](ctx, c, "GET", c.adminOperatorAccountsUri.JoinPath(accountId), nil, nil)
+}
+
+func (c *OpenClawHttpClient) CreateOperatorAccount(ctx context.Context, request core.OperatorAccountCreateRequest) (*core.OperatorAccountDetailResponse, error) {
+	return SendHttp[core.OperatorAccountCreateRequest, core.OperatorAccountDetailResponse](ctx, c, "POST", c.adminOperatorAccountsUri, &request, nil)
+}
+
+func (c *OpenClawHttpClient) UpdateOperatorAccount(ctx context.Context, accountId string, request core.OperatorAccountUpdateRequest) (*core.OperatorAccountDetailResponse, error) {
+	if accountId == "" {
+		return nil, errors.New("Account id is required.")
+	}
+	return SendHttp[core.OperatorAccountUpdateRequest, core.OperatorAccountDetailResponse](ctx, c, "PUT", c.adminOperatorAccountsUri.JoinPath(accountId), &request, nil)
+}
+
+func (c *OpenClawHttpClient) DeleteOperatorAccount(ctx context.Context, accountId string) (*core.MutationResponse, error) {
+	if accountId == "" {
+		return nil, errors.New("Account id is required.")
+	}
+	return SendHttp[any, core.MutationResponse](ctx, c, "DELETE", c.adminOperatorAccountsUri.JoinPath(accountId), nil, nil)
+}
+
+func (c *OpenClawHttpClient) CreateOperatorAccountToken(ctx context.Context, accountId string, request core.OperatorAccountTokenCreateRequest) (*core.OperatorAccountTokenCreateResponse, error) {
+	if accountId == "" {
+		return nil, errors.New("Account id is required.")
+	}
+	return SendHttp[core.OperatorAccountTokenCreateRequest, core.OperatorAccountTokenCreateResponse](ctx, c, "POST", c.adminOperatorAccountsUri.JoinPath(accountId).JoinPath("/tokens"), &request, nil)
+}
+
+func (c *OpenClawHttpClient) RevokeOperatorAccountToken(ctx context.Context, accountId, tokenId string) (*core.MutationResponse, error) {
+	if accountId == "" {
+		return nil, errors.New("Account id is required.")
+	}
+	if tokenId == "" {
+		return nil, errors.New("token id is required.")
+	}
+	return SendHttp[any, core.MutationResponse](ctx, c, "DELETE", c.adminOperatorAccountsUri.JoinPath(accountId).JoinPath("/tokens").JoinPath(tokenId), nil, nil)
+}
