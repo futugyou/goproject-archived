@@ -11,6 +11,8 @@ func DefaultDynamicTurnRoutingConfig() *DynamicTurnRoutingConfig {
 
 type DynamicTurnRoutingConfig struct {
 	Enabled    bool                            `json:"enabled"`
+	Jev        *DecisionRoutingConfig          `json:"jev"`
+	Laya       *DecisionRoutingConfig          `json:"laya"`
 	BundlePath string                          `json:"bundle_path"`
 	Assets     *DynamicTurnRoutingAssetsConfig `json:"assets"`
 	Policy     *DynamicTurnRoutingPolicyConfig `json:"policy"`
@@ -20,6 +22,76 @@ func DefaultDynamicTurnRoutingAssetsConfig() *DynamicTurnRoutingAssetsConfig {
 	return &DynamicTurnRoutingAssetsConfig{
 		Dimensions: 384,
 	}
+}
+
+//  包含通用 routing 配置及特定 Provider 的专有字段
+type DecisionRoutingConfig struct {
+	// Base configuration elements
+	Mode                     string  `json:"mode"`
+	Endpoint                 string  `json:"endpoint"`
+	Model                    string  `json:"model"`
+	TimeoutMs                int     `json:"timeout_ms"`
+	MaxStateChars            int     `json:"max_state_chars"`
+	HistoryMessages          int     `json:"history_messages"`
+	MaxConcurrentRequests    int     `json:"max_concurrent_requests"`
+	CircuitFailureThreshold  int     `json:"circuit_failure_threshold"`
+	CircuitBreakSeconds      int     `json:"circuit_break_seconds"`
+	MinConfidence            float64 `json:"min_confidence"`
+	DowngradeMinConfidence   float64 `json:"downgrade_min_confidence"`
+	MinProbabilityMargin     float64 `json:"min_probability_margin"`
+	HighRiskThreshold        float64 `json:"high_risk_threshold"`
+	InputUsdPerMillionTokens float64 `json:"input_usd_per_million_tokens"`
+	DiagnosticsPath          string  `json:"diagnostics_path"` // 相对于 Memory.StoragePath，为空时禁用 journal
+
+	ProviderName string
+	// Jev Specific
+	ApiKeyRef string `json:"api_key_ref,omitempty"`
+
+	// Laya Specific
+	CalibrationId string `json:"calibration_id,omitempty"` // 评估后的 calibration artifact SHA-256，Active routing 必填
+	Language      string `json:"language,omitempty"`       // 可选 BCP-47 语言提示，默认由服务自动检测
+}
+
+func NewDefaultDecisionRoutingConfig() *DecisionRoutingConfig {
+	return &DecisionRoutingConfig{
+		Mode:                    "disabled",
+		Endpoint:                "",
+		Model:                   "",
+		TimeoutMs:               1500,
+		MaxStateChars:           12000,
+		HistoryMessages:         4,
+		MaxConcurrentRequests:   8,
+		CircuitFailureThreshold: 3,
+		CircuitBreakSeconds:     30,
+		MinConfidence:           0.80,
+		DowngradeMinConfidence:  0.95,
+		MinProbabilityMargin:    0.15,
+		HighRiskThreshold:       0.20,
+		DiagnosticsPath:         "",
+	}
+}
+
+func NewJevRoutingConfig() *DecisionRoutingConfig {
+	cfg := NewDefaultDecisionRoutingConfig()
+
+	cfg.Endpoint = "https://api.typesafe.ai/v1/systemone"
+	cfg.Model = "jev-1.13.0"
+	cfg.InputUsdPerMillionTokens = 0.042
+	cfg.DiagnosticsPath = "routing/jev-decisions.jsonl"
+	cfg.ApiKeyRef = "env:TYPESAFE_API_KEY"
+
+	return cfg
+}
+
+func NewLayaRoutingConfig() *DecisionRoutingConfig {
+	cfg := NewDefaultDecisionRoutingConfig()
+
+	cfg.Endpoint = "http://127.0.0.1:8099/v1/decisions"
+	cfg.Model = "laya@1c5edc17a7acd8701df6fc341c0d179f1c62c982"
+	cfg.DiagnosticsPath = "routing/laya-decisions.jsonl"
+	cfg.MaxConcurrentRequests = 1
+
+	return cfg
 }
 
 type DynamicTurnRoutingAssetsConfig struct {
