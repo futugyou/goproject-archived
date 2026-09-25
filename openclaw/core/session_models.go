@@ -99,6 +99,7 @@ type Session struct {
 	RouteAllowedTools            []string                        `json:"route_allowed_tools" gorm:"type:text[];not null;default:'{}'"`
 	RouteToolsDisabled           bool                            `json:"route_tools_disabled"`
 	RouteModelTier               string                          `json:"route_model_tier"`
+	RouteModelTierSource         string                          `json:"route_model_tier_source"`
 	RouteReason                  string                          `json:"route_reason"`
 	ReasoningEffort              string                          `json:"reasoning_effort,omitempty"`
 	VerboseMode                  bool                            `json:"verbose_mode"`
