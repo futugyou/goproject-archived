@@ -21,8 +21,8 @@ func NewCapabilityProviderRegistry(providers []core.ICapabilityProvider, default
 		defaultProvider = "local"
 	}
 
-	providerIds := []string{}
-	kvproviders := map[string]core.ICapabilityProvider{}
+	providerIds := make([]string, 0, len(providers))
+	kvproviders := make(map[string]core.ICapabilityProvider, len(providers))
 	for _, v := range providers {
 		providerIds = append(providerIds, v.Id())
 		kvproviders[v.Id()] = v
@@ -39,12 +39,7 @@ func (c *CapabilityProviderRegistry) Get(id string) core.ICapabilityProvider {
 	if id == "" {
 		id = c.DefaultProvider
 	}
-
-	if p, ok := c.providers[id]; ok {
-		return p
-	}
-
-	return nil
+	return c.providers[id]
 }
 
 func (c *CapabilityProviderRegistry) Resolve(ctx context.Context, request core.ResolveCapabilityRequest, isToolAllowed func(string) bool) (
@@ -55,36 +50,27 @@ func (c *CapabilityProviderRegistry) Resolve(ctx context.Context, request core.R
 		return nil, &core.ResolveCapabilityFailure{FailureCode: core.ResolveCapabilityFailureCodesProviderUnavailable}, nil, nil, errors.New("can not found provider")
 	}
 
-	isLocalCapabilityProvider := false
-	switch provider.(type) {
-	case *LocalCapabilityProvider:
-		isLocalCapabilityProvider = true
-	}
-
-	tried := []core.CapabilityCandidate{}
-	candidates := []core.CapabilityCandidate{}
-	policyDenied := false
+	_, isLocal := provider.(*LocalCapabilityProvider)
 	rawcandidates, err := provider.Discover(ctx, request)
 	if err != nil {
-		return nil, &core.ResolveCapabilityFailure{FailureCode: getCode(policyDenied, len(tried) == 0), TriedCandidates: candidates}, candidates, nil, err
+		return nil, &core.ResolveCapabilityFailure{FailureCode: getCode(false, true), TriedCandidates: nil}, nil, nil, err
 	}
 
-	discovered := []core.CapabilityCandidate{}
+	var discovered []core.CapabilityCandidate
+	policyDenied := false
 	for _, v := range rawcandidates {
-		allowed := false
-		if !isLocalCapabilityProvider || (isToolAllowed != nil && isToolAllowed(v.Name) != false) {
-			allowed = true
+		allowed := !isLocal || (isToolAllowed != nil && isToolAllowed(v.Name))
+		if allowed {
 			discovered = append(discovered, v)
+		} else {
+			policyDenied = true
 		}
-		policyDenied = policyDenied || !allowed
 	}
 
 	slices.SortFunc(discovered, func(a, b core.CapabilityCandidate) int {
-		i := cmp.Compare(a.Rank, b.Rank)
-		if i != 0 {
+		if i := cmp.Compare(a.Rank, b.Rank); i != 0 {
 			return i
 		}
-
 		return cmp.Compare(a.Name, b.Name)
 	})
 
@@ -96,30 +82,37 @@ func (c *CapabilityProviderRegistry) Resolve(ctx context.Context, request core.R
 		return nil, &core.ResolveCapabilityFailure{FailureCode: code}, nil, nil, errors.New("no matching capabilityCandidate")
 	}
 
-	selected := []core.CapabilityCandidate{}
+	selected := discovered
 	if request.SelectionPolicy == core.ResolveCapabilitySelectionPolicyExactName {
+		selected = nil
 		for _, v := range discovered {
 			if v.Name == request.TaskDescription {
 				selected = append(selected, v)
 			}
 		}
-	} else {
-		selected = discovered
+	}
+
+	var tried []core.CapabilityCandidate
+	fail := func(err error) (*core.ResolveCapabilityBinding, *core.ResolveCapabilityFailure, []core.CapabilityCandidate, *core.CapabilityTarget, error) {
+		return nil, &core.ResolveCapabilityFailure{
+			FailureCode:     getCode(policyDenied, len(tried) == 0),
+			TriedCandidates: tried,
+		}, tried, nil, err
 	}
 
 	for i := 0; i < min(5, len(selected)); i++ {
 		candidate := selected[i]
 		tried = append(tried, candidate)
+
 		target, err := provider.Bind(ctx, candidate.Name, nil)
 		if err != nil {
-			return nil, &core.ResolveCapabilityFailure{FailureCode: getCode(policyDenied, len(tried) == 0), TriedCandidates: candidates}, candidates, nil, err
+			return fail(err)
 		}
-
 		if target == nil {
 			continue
 		}
 
-		if isToolAllowed != nil && isToolAllowed(target.Tool.Name()) == false {
+		if isToolAllowed != nil && !isToolAllowed(target.Tool.Name()) {
 			policyDenied = true
 			continue
 		}
@@ -133,21 +126,18 @@ func (c *CapabilityProviderRegistry) Resolve(ctx context.Context, request core.R
 			SchemaFingerprint: util.ComputeTurnHash(target.Tool.ParameterSchema()),
 		}
 
-		return binding, nil, candidates, target, nil
+		return binding, nil, tried, target, nil
 	}
 
-	return nil, &core.ResolveCapabilityFailure{FailureCode: getCode(policyDenied, len(tried) == 0), TriedCandidates: candidates}, candidates, nil, errors.New("no matching capabilityCandidate")
+	return fail(errors.New("no matching capabilityCandidate"))
 }
 
-func getCode(policyDenied bool, hasTried bool) string {
+func getCode(policyDenied, noTried bool) string {
 	if policyDenied {
 		return core.ResolveCapabilityFailureCodesToolPolicyDenied
 	}
-
-	if hasTried {
-		return core.ResolveCapabilityFailureCodesAllAddsFailed
+	if noTried {
+		return core.ResolveCapabilityFailureCodesSelectionPolicyNoMatch
 	}
-
-	return core.ResolveCapabilityFailureCodesSelectionPolicyNoMatch
-
+	return core.ResolveCapabilityFailureCodesAllAddsFailed
 }
