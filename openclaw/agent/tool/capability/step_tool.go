@@ -3,7 +3,7 @@ package capability
 import "context"
 
 type governedStepTool struct {
-	run func(ctx context.Context) string
+	run func(ctx context.Context) (string, error)
 }
 
 func (g *governedStepTool) Name() string { return "resolve_capability" }
@@ -12,5 +12,9 @@ func (g *governedStepTool) Description() string {
 }
 func (g *governedStepTool) ParameterSchema() string { return "{\"type\":\"object\"}" }
 func (g *governedStepTool) Execute(ctx context.Context, argumentsJson string) string {
-	return g.run(ctx)
+	m, err := g.run(ctx)
+	if err != nil {
+		return err.Error()
+	}
+	return m
 }

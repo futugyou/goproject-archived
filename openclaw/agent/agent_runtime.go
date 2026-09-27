@@ -1109,7 +1109,7 @@ func (a *AgentRuntime) ExecuteMetaToolStepWithPolicy(
 			false,
 			nil,
 			nil,
-			attempt)
+			attempt, nil)
 
 		if lastResult != nil {
 			if lastResult.ResultStatus == "completed" || attempt == maxAttempts {
@@ -4881,6 +4881,16 @@ func (a *AgentRuntime) ReloadSkills(ctx context.Context) []string {
 	}
 
 	return a.LoadedSkillNames()
+}
+
+func (a *AgentRuntime) ClearCapabilitySlotRuntimeCache(ctx context.Context) error {
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	default:
+	}
+
+	return nil
 }
 
 func createNativeAgentRuntime(

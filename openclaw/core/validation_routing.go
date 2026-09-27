@@ -94,8 +94,8 @@ func validateLaya(cfg *DecisionRoutingConfig, mode string) (*url.URL, error) {
 	return endpoint, nil
 }
 
-// validateJev Jev 的独立校验逻辑占位（对应原 C# JevRoutingConfiguration.Validate）
-func validateJev(cfg *DecisionRoutingConfig, mode string) (*url.URL, error) {
+// validateJev Jev 的独立校验逻辑占位
+func validateJev(cfg *DecisionRoutingConfig, _ string) (*url.URL, error) {
 	if err := DecisionRoutingConfigurationValidateLimits(cfg); err != nil {
 		return nil, err
 	}

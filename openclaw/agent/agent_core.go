@@ -6,12 +6,15 @@ import (
 )
 
 type ToolExecutionResult struct {
-	Invocation     *core.ToolInvocation
-	ResultText     string
-	ResultStatus   string
-	FailureCode    string
-	FailureMessage string
-	NextStep       string
+	Invocation           *core.ToolInvocation
+	ResultText           string
+	ResultStatus         string
+	FailureCode          string
+	FailureMessage       string
+	NextStep             string
+	CapabilityInvocation *core.ToolInvocation
+	BindingTrajectory    *core.CapabilityBindingTrajectory
+	RetrySafe            bool
 }
 
 func CreateMetaStepFailedToolResult(

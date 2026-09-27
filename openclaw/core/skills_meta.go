@@ -584,30 +584,51 @@ func (m *MetaConditionEvaluator) IsTruthy(value string) bool {
 type MetaSkillStepDefinition struct {
 	Id string `json:"id"`
 	// Step kind (agent, tool_call, llm_chat, etc.).
-	Kind                 string                   `json:"kind"`
-	Skill                string                   `json:"skill,omitempty"`
-	Tool                 string                   `json:"tool,omitempty"`
-	SkillExecEntrypoint  string                   `json:"skill_exec_entrypoint,omitempty"`
-	SkillExecArgs        []string                 `json:"skill_exec_args,omitempty"`
-	SkillExecStdin       string                   `json:"skill_exec_stdin,omitempty"`
-	SkillExecCwd         string                   `json:"skill_exec_cwd,omitempty"`
-	SkillExecParseMode   string                   `json:"skill_exec_parse_mode,omitempty"`
-	WithJSON             string                   `json:"with_json,omitempty"`
-	When                 string                   `json:"when,omitempty"`
-	ToolArgsJSON         string                   `json:"tool_args_json,omitempty"`
-	ToolAllowlist        []string                 `json:"tool_allowlist,omitempty"`
-	OutputChoices        []string                 `json:"output_choices,omitempty"`
-	Clarify              *MetaClarifySchema       `json:"clarify,omitempty"`
-	Routes               []MetaRouteDefinition    `json:"routes,omitempty"`
-	DependsOn            []string                 `json:"depends_on,omitempty"`
-	OnFailure            string                   `json:"on_failure,omitempty"`
-	TimeoutSeconds       *int                     `json:"timeout_seconds,omitempty"`
-	Retry                *MetaStepRetryPolicy     `json:"retry"`
-	OutputContract       *MetaStepOutputContract  `json:"output_contract"`
-	Iterable             string                   `json:"iterable"`
-	FanOutMaxConcurrency int                      `json:"fan_out_max_concurrency"`
-	FanOutTemplate       *MetaSkillStepDefinition `json:"fan_out_template,omitempty"`
-	FanOutMergeMode      string                   `json:"fan_out_merge_mode"`
+	Kind                 string                       `json:"kind"`
+	Skill                string                       `json:"skill,omitempty"`
+	Tool                 string                       `json:"tool,omitempty"`
+	SkillExecEntrypoint  string                       `json:"skill_exec_entrypoint,omitempty"`
+	CapabilityRef        *MetaCapabilityRefDefinition `json:"capability_ref,omitempty"`
+	SkillExecArgs        []string                     `json:"skill_exec_args,omitempty"`
+	SkillExecStdin       string                       `json:"skill_exec_stdin,omitempty"`
+	SkillExecCwd         string                       `json:"skill_exec_cwd,omitempty"`
+	SkillExecParseMode   string                       `json:"skill_exec_parse_mode,omitempty"`
+	WithJSON             string                       `json:"with_json,omitempty"`
+	When                 string                       `json:"when,omitempty"`
+	ToolArgsJSON         string                       `json:"tool_args_json,omitempty"`
+	ToolAllowlist        []string                     `json:"tool_allowlist,omitempty"`
+	OutputChoices        []string                     `json:"output_choices,omitempty"`
+	Clarify              *MetaClarifySchema           `json:"clarify,omitempty"`
+	Routes               []MetaRouteDefinition        `json:"routes,omitempty"`
+	DependsOn            []string                     `json:"depends_on,omitempty"`
+	OnFailure            string                       `json:"on_failure,omitempty"`
+	TimeoutSeconds       *int                         `json:"timeout_seconds,omitempty"`
+	Retry                *MetaStepRetryPolicy         `json:"retry"`
+	OutputContract       *MetaStepOutputContract      `json:"output_contract"`
+	Iterable             string                       `json:"iterable"`
+	FanOutMaxConcurrency int                          `json:"fan_out_max_concurrency"`
+	FanOutTemplate       *MetaSkillStepDefinition     `json:"fan_out_template,omitempty"`
+	FanOutMergeMode      string                       `json:"fan_out_merge_mode"`
+}
+
+type MetaCapabilityRefDefinition struct {
+	Provider        string
+	Binding         string
+	Static          *MetaCapabilityStaticBinding
+	Intent          *MetaCapabilityIntent
+	SelectionPolicy string
+	Fallback        string
+}
+
+type MetaCapabilityStaticBinding struct {
+	Target   string
+	ToolName string
+}
+
+type MetaCapabilityIntent struct {
+	Type            *string
+	TaskDescription string
+	Keywords        []string
 }
 
 type MetaClarifySchema struct {

@@ -948,7 +948,8 @@ func (o *OpenClawToolExecutor) Execute(
 	isStreaming bool,
 	approvalCallback ToolApprovalCallback,
 	onDelta func(string) error,
-	toolCallCount int) (*ToolExecutionResult, error) {
+	toolCallCount int,
+	boundCapabilityTool core.ITool) (*ToolExecutionResult, error) {
 	var span trace.Span
 	ctx, span = core.Tracer.Start(ctx, "Agent.ExecuteTool", trace.WithAttributes(
 		attribute.String("tool.name", toolName),
@@ -956,13 +957,21 @@ func (o *OpenClawToolExecutor) Execute(
 	defer span.End()
 
 	var persistedArgsJson = o.redaction.Redact(argsJson)
-
+	if toolName == "update_goal" && toolCallCount > 1 {
+		return CreateImmediateResult(toolName, persistedArgsJson,
+			"Error: update_goal must be called alone after all other tools have completed.",
+			callId, core.ToolResultStatusesBlocked, core.ToolFailureCodesToolFailed, "", "", nil), nil
+	}
 	var tool core.ITool
 	o.toolsMutationLock.Lock()
 	if t, ok := o.toolsByName[toolName]; ok {
 		tool = t
 	}
 	o.toolsMutationLock.Unlock()
+
+	if boundCapabilityTool != nil && boundCapabilityTool.Name() == toolName {
+		tool = boundCapabilityTool
+	}
 
 	if tool == nil {
 		return CreateImmediateResult(
@@ -1546,7 +1555,7 @@ func (o *OpenClawToolExecutor) ExecuteWithFunctionCallContent(
 			argsJson = string(data)
 		}
 	}
-	return o.Execute(ctx, call.Name, argsJson, call.CallId, session, turnCtx, isStreaming, approvalCallback, onDelta, toolCallCount)
+	return o.Execute(ctx, call.Name, argsJson, call.CallId, session, turnCtx, isStreaming, approvalCallback, onDelta, toolCallCount, nil)
 }
 
 func (o *OpenClawToolExecutor) ReplaceMcpTools(toAdd []core.ITool, toRemove []string) error {

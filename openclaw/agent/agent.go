@@ -547,6 +547,7 @@ type IAgentRuntime interface {
 	ReloadSkills(ctx context.Context) []string
 	RunStreaming(ctx context.Context, session *core.Session, userMessage string, approvalCallback ToolApprovalCallback, correlationId string) (<-chan core.AgentStreamEvent, error)
 	ApplyMcpToolChanges(ctx context.Context, toAdd []core.ITool, toRemove []string) error
+	ClearCapabilitySlotRuntimeCache(ctx context.Context) error
 }
 
 type LlmExecutionResult struct {

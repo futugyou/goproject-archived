@@ -521,10 +521,12 @@ type SessionMetaStepResult struct {
 }
 
 type SessionMetaStepExecutionEvidence struct {
-	CommandPreview string `json:"command_preview"`
-	InputMode      string `json:"input_mode"`
-	StdinBytes     int    `json:"stdin_bytes"`
-	ParseMode      string `json:"parse_mode"`
+	CommandPreview       string                       `json:"command_preview"`
+	InputMode            string                       `json:"input_mode"`
+	StdinBytes           int                          `json:"stdin_bytes"`
+	ParseMode            string                       `json:"parse_mode"`
+	CapabilityBinding    *CapabilityBindingTrajectory `json:"capability_binding"`
+	CapabilityInvocation *ToolInvocation              `json:"capability_invocation"`
 }
 
 func DefaultSessionMetaStepExecutionEvidence() *SessionMetaStepExecutionEvidence {
@@ -534,6 +536,29 @@ func DefaultSessionMetaStepExecutionEvidence() *SessionMetaStepExecutionEvidence
 	}
 }
 
+type CapabilityBindingTrajectory struct {
+	Provider          string                       `json:"provider"`
+	Revision          int64                        `json:"revision"`
+	SchemaFingerprint *string                      `json:"schemaFingerprint,omitempty"`
+	Schema            *string                      `json:"schema,omitempty"`
+	Binding           string                       `json:"binding"`             // 绑定模式: static 或 dynamic
+	IntentKey         *string                      `json:"intentKey,omitempty"` // 规范化 Intent 的 SHA-256 哈希 (仅限 dynamic)
+	CapabilityType    *string                      `json:"capabilityType,omitempty"`
+	TaskDescription   *string                      `json:"taskDescription,omitempty"` // 传递给解析器的任务描述 (仅限 dynamic)
+	KeyWords          *string                      `json:"keyWords,omitempty"`        // 逗号分隔的关键词 (仅限 dynamic)
+	SelectionPolicy   string                       `json:"selectionPolicy"`           // 解析器选择策略 WIRE 值: first 或 exact_name
+	CacheHit          bool                         `json:"cacheHit"`                  // 是否命中 Session 绑定缓存 (仅限 dynamic)
+	Server            *string                      `json:"server,omitempty"`          // 绑定的服务器名，未成功时为 nil
+	Tool              *string                      `json:"tool,omitempty"`            // 绑定的工具名，未成功时为 nil
+	ElapsedMs         float64                      `json:"elapsedMs"`                 // 绑定阶段耗时 (毫秒)
+	Candidates        []CapabilityBindingCandidate `json:"candidates"`                // 搜索到的 Top-N 候选者 (仅限 dynamic)
+	Attempted         []CapabilityBindingCandidate `json:"attempted"`                 // 解析器实际尝试添加的候选者
+}
+
+type CapabilityBindingCandidate struct {
+	Name string `json:"name"`
+	Rank int    `json:"rank"`
+}
 type MetaRunReplayPreviewResponse struct {
 	SessionId           string                            `json:"session_id"`
 	RunId               string                            `json:"run_id"`
