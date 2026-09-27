@@ -68,7 +68,7 @@ func (c *CapabilityBindingCache) Generation() int64 {
 	return c.generation
 }
 
-func TryGetValue[T any](c *CapabilityBindingCache, scope, key string) (*T, bool) {
+func GetCapabilityBindingCache[T any](c *CapabilityBindingCache, scope, key string) (*T, bool) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
@@ -142,7 +142,7 @@ func (c *CapabilityBindingCache) TryGet(sessionId, key string) (string, string, 
 		Tool   string
 	}
 
-	if d, ok := TryGetValue[ServerTool](c, sessionId, key); ok {
+	if d, ok := GetCapabilityBindingCache[ServerTool](c, sessionId, key); ok {
 		return d.Server, d.Tool, true
 	}
 

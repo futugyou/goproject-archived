@@ -2,16 +2,20 @@ package capability
 
 import "context"
 
-type governedStepTool struct {
+type GovernedStepTool struct {
 	run func(ctx context.Context) (string, error)
 }
 
-func (g *governedStepTool) Name() string { return "resolve_capability" }
-func (g *governedStepTool) Description() string {
+func NewGovernedStepTool(run func(ctx context.Context) (string, error)) *GovernedStepTool {
+	return &GovernedStepTool{run: run}
+}
+
+func (g *GovernedStepTool) Name() string { return "resolve_capability" }
+func (g *GovernedStepTool) Description() string {
 	return "Resolve an authorized capability workflow step"
 }
-func (g *governedStepTool) ParameterSchema() string { return "{\"type\":\"object\"}" }
-func (g *governedStepTool) Execute(ctx context.Context, argumentsJson string) string {
+func (g *GovernedStepTool) ParameterSchema() string { return "{\"type\":\"object\"}" }
+func (g *GovernedStepTool) Execute(ctx context.Context, argumentsJson string) string {
 	m, err := g.run(ctx)
 	if err != nil {
 		return err.Error()
