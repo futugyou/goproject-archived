@@ -75,6 +75,7 @@ type AgentRuntime struct {
 	fractalMemory                   *core.FractalMemoryConfig
 	backgroundExecutionEnabled      bool
 	turnRoutingPolicy               ITurnRoutingPolicy
+	capabilitySlotExecutor          *CapabilitySlotExecutor
 
 	skillGate         sync.RWMutex
 	loadedSkillNames  []string
@@ -986,27 +987,35 @@ func ExecuteMetaLlmStepWithPolicy(
 	lastFailureMessage := ""
 
 	for attempt := range maxAttempts {
+		result, err, shouldReturnEarly := func() (*MetaLlmStepExecutionResult, error, bool) {
+			timeoutCtx, cancel := CreateMetaStepTimeout(ctx, step)
+			if cancel != nil {
+				defer cancel()
+			}
 
-		timeoutCtx, cancel := CreateMetaStepTimeout(ctx, step)
-		if cancel != nil {
-			defer cancel()
+			res, err := executor(timeoutCtx)
+			if res != nil {
+				return SucceededMetaLlmStepExecutionResult(*res), nil, true
+			}
+
+			if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+				return nil, err, true
+			}
+
+			if err != nil {
+				lastFailureCode = "step_timeout"
+				lastFailureMessage = fmt.Sprintf("Meta step '%s' failed: %s", step.Id, err.Error())
+			}
+
+			return nil, nil, false
+		}()
+
+		if shouldReturnEarly {
+			return result, err
 		}
 
-		result, err := executor(timeoutCtx)
-		if result != nil {
-			return SucceededMetaLlmStepExecutionResult(*result), nil
-		}
-
-		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
-			return nil, err
-		}
-
-		if err != nil {
-			lastFailureCode = "step_timeout"
-			lastFailureMessage = fmt.Sprintf("Meta step '%s' failed: %s", step.Id, err.Error())
-		}
-
-		if attempt == maxAttempts {
+		isLastAttempt := attempt == maxAttempts-1
+		if isLastAttempt {
 			if lastFailureCode == "" {
 				lastFailureCode = "llm_failed"
 			}
@@ -1017,10 +1026,13 @@ func ExecuteMetaLlmStepWithPolicy(
 			return FaileddMetaLlmStepExecutionResult(lastFailureCode, lastFailureMessage), nil
 		}
 
-		if attempt < maxAttempts && step.Retry.BackoffMs > 0 {
+		if step.Retry.BackoffMs > 0 {
+			timer := time.NewTimer(time.Duration(step.Retry.BackoffMs) * time.Millisecond)
 			select {
-			case <-time.After(time.Duration(step.Retry.BackoffMs) * time.Millisecond):
-			case <-timeoutCtx.Done():
+			case <-timer.C:
+			case <-ctx.Done():
+				timer.Stop()
+				return nil, ctx.Err()
 			}
 		}
 	}
@@ -2211,21 +2223,24 @@ func (a *AgentRuntime) ExecuteMetaSkill(ctx context.Context, session *core.Sessi
 
 			switch NormalizeMetaStepKind(step.Kind) {
 			case "tool_call":
+				capabilityRef := step.CapabilityRef
 				var toolName = step.Tool
-				if toolName != "" {
+				if toolName != "" && capabilityRef == nil {
 					return ReturnMetaExecutionOutput(session, metaSkill, "", stepResults, fmt.Sprintf("Meta step '%s' is 'tool_call' but does not declare a tool.", step.Id), false)
 				}
 
-				if len(step.ToolAllowlist) > 0 && !slices.Contains(step.ToolAllowlist, toolName) {
-					stepResults = append(stepResults, core.NewMetaStepExecutionResult(step.Id, step.Kind, "blocked", "tool_not_allowlisted", 0, false))
-					return ReturnMetaExecutionOutput(session, metaSkill, "", stepResults, fmt.Sprintf("Meta step '%s' tool '%s' is not allowlisted.", step.Id, toolName), false)
-				}
+				if capabilityRef == nil {
+					if len(step.ToolAllowlist) > 0 && !slices.Contains(step.ToolAllowlist, toolName) {
+						stepResults = append(stepResults, core.NewMetaStepExecutionResult(step.Id, step.Kind, "blocked", "tool_not_allowlisted", 0, false))
+						return ReturnMetaExecutionOutput(session, metaSkill, "", stepResults, fmt.Sprintf("Meta step '%s' tool '%s' is not allowlisted.", step.Id, toolName), false)
+					}
 
-				if !IsToolAllowedByMetaCapabilities(metaSkill, toolName) {
-					delete(pending, step.Id)
-					progress = true
-					stepResults = append(stepResults, core.NewMetaStepExecutionResult(step.Id, step.Kind, "blocked", "metadata_capability_denied", 0, false))
-					return ReturnMetaExecutionOutput(session, metaSkill, "", stepResults, fmt.Sprintf("Meta step '%s' tool '%s' is not permitted by metadata capabilities.", step.Id, toolName), false)
+					if !IsToolAllowedByMetaCapabilities(metaSkill, toolName) {
+						delete(pending, step.Id)
+						progress = true
+						stepResults = append(stepResults, core.NewMetaStepExecutionResult(step.Id, step.Kind, "blocked", "metadata_capability_denied", 0, false))
+						return ReturnMetaExecutionOutput(session, metaSkill, "", stepResults, fmt.Sprintf("Meta step '%s' tool '%s' is not permitted by metadata capabilities.", step.Id, toolName), false)
+					}
 				}
 
 				compositionToolArgsJSON := ""
@@ -2243,14 +2258,27 @@ func (a *AgentRuntime) ExecuteMetaSkill(ctx context.Context, session *core.Sessi
 				}
 
 				start := time.Now()
-				toolResult, err := a.ExecuteMetaToolStepWithPolicy(
-					ctx,
-					metaSkill,
-					&step,
-					toolName,
-					toolArgsJson,
-					session,
-					turnCtx)
+				var toolResult *ToolExecutionResult
+
+				if capabilityRef != nil {
+					toolResult, err = a.ExecuteMetaCapabilityStepWithPolicy(
+						ctx,
+						metaSkill,
+						&step,
+						capabilityRef,
+						toolArgsJson,
+						session,
+						turnCtx)
+				} else {
+					toolResult, err = a.ExecuteMetaToolStepWithPolicy(
+						ctx,
+						metaSkill,
+						&step,
+						toolName,
+						toolArgsJson,
+						session,
+						turnCtx)
+				}
 
 				if err != nil {
 					return ReturnMetaExecutionOutput(session, metaSkill, "", stepResults, fmt.Sprintf("Meta step '%s' exec error.", step.Id), false)
@@ -2895,6 +2923,100 @@ func (a *AgentRuntime) ExecuteMetaSkill(ctx context.Context, session *core.Sessi
 	var finalText = ResolveMetaFinalText(metaSkill, steps, outputs, executedStepIds)
 
 	return ReturnMetaExecutionOutput(session, metaSkill, finalText, stepResults, "", false)
+}
+
+func (s *AgentRuntime) ExecuteMetaCapabilityStepWithPolicy(
+	ctx context.Context,
+	metaSkill *core.SkillDefinition,
+	step *core.MetaSkillStepDefinition,
+	capabilityRef *core.MetaCapabilityRefDefinition,
+	toolArgsJSON string,
+	session *core.Session,
+	turnCtx *core.TurnContext,
+) (*ToolExecutionResult, error) {
+	if s.capabilitySlotExecutor == nil {
+		return CreateMetaStepFailedToolResult(
+			"capability",
+			toolArgsJSON,
+			core.CapabilitySlotFailureCodesNotConfigured,
+			fmt.Sprintf("Meta step '%s' declares a capability slot but no capability executor is wired (no capability provider registry).", step.Id),
+		), nil
+	}
+
+	maxAttempts := max(1, step.Retry.MaxAttempts)
+	var lastResult *ToolExecutionResult
+
+	for attempt := 1; attempt <= maxAttempts; attempt++ {
+		res, shouldReturn, err := func() (*ToolExecutionResult, bool, error) {
+			effectiveCtx, cancel := CreateMetaStepTimeout(ctx, step)
+			if cancel != nil {
+				defer cancel()
+			}
+
+			executionID := fmt.Sprintf("meta:%s:%s:attempt:%d:%s", metaSkill.Name, step.Id, attempt, util.CleanUUID())
+
+			res, execErr := s.capabilitySlotExecutor.ExecuteGoverned(
+				effectiveCtx,
+				capabilityRef,
+				toolArgsJSON,
+				session,
+				turnCtx,
+				s.toolExecutor,
+				executionID,
+				func(name string) bool {
+					return IsToolAllowedByMetaCapabilities(metaSkill, name)
+				},
+			)
+
+			if errors.Is(execErr, context.DeadlineExceeded) && ctx.Err() == nil {
+				res = CreateMetaStepFailedToolResult(
+					"capability",
+					toolArgsJSON,
+					"step_timeout",
+					fmt.Sprintf("Meta step '%s' timed out after %d second(s).", step.Id, step.TimeoutSeconds),
+				)
+				execErr = nil
+			} else if execErr != nil {
+				return nil, true, execErr
+			}
+
+			if res.ResultStatus == core.ToolResultStatusesCompleted || !res.RetrySafe || attempt == maxAttempts {
+				return res, true, nil
+			}
+
+			return res, false, nil
+		}()
+
+		if err != nil {
+			return nil, err
+		}
+
+		lastResult = res
+		if shouldReturn {
+			return lastResult, nil
+		}
+
+		if step.Retry.BackoffMs > 0 {
+			timer := time.NewTimer(time.Duration(step.Retry.BackoffMs) * time.Millisecond)
+			select {
+			case <-timer.C:
+			case <-ctx.Done():
+				timer.Stop()
+				return nil, ctx.Err()
+			}
+		}
+	}
+
+	if lastResult != nil {
+		return lastResult, nil
+	}
+
+	return CreateMetaStepFailedToolResult(
+		"capability",
+		toolArgsJSON,
+		"step_failed",
+		fmt.Sprintf("Meta step '%s' failed before producing a result.", step.Id),
+	), nil
 }
 
 func (a *AgentRuntime) BuildMetaRoutingSuffix(userMessage string) string {
@@ -4888,6 +5010,10 @@ func (a *AgentRuntime) ClearCapabilitySlotRuntimeCache(ctx context.Context) erro
 	case <-ctx.Done():
 		return ctx.Err()
 	default:
+	}
+
+	if a.capabilitySlotExecutor != nil {
+		a.capabilitySlotExecutor.ClearRuntimeCache()
 	}
 
 	return nil
