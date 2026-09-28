@@ -3,6 +3,7 @@ package file
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -66,57 +67,57 @@ type EditFileParams struct {
 	ReplaceAll bool   `json:"replace_all"`
 }
 
-func (a *EditFileTool) Execute(ctx context.Context, argumentsJson string) string {
+func (a *EditFileTool) Execute(ctx context.Context, argumentsJson string) (string, error) {
 	if a.config.ReadOnlyMode {
-		return "Error: edit_file is disabled because Tooling.ReadOnlyMode is enabled."
+		return "", errors.New("Error: edit_file is disabled because Tooling.ReadOnlyMode is enabled.")
 	}
 
 	var args EditFileParams
 	if err := json.Unmarshal([]byte(argumentsJson), &args); err != nil {
-		return fmt.Sprintf("invalid arguments: %v", err)
+		return "", err
 	}
 
 	if args.Path == "" {
-		return "Error: 'path' is required."
+		return "", errors.New("Error: 'path' is required.")
 	}
 
 	if args.OldText == "" {
-		return "Error: 'old_text' is required and must not be empty."
+		return "", errors.New("Error: 'old_text' is required and must not be empty.")
 	}
 
 	if args.NewText == "" {
-		return "Error: 'new_text' is required."
+		return "", errors.New("Error: 'new_text' is required.")
 	}
 
 	replaceAll := args.ReplaceAll
 
 	path, err := filepath.Abs(args.Path)
 	if err != nil {
-		return fmt.Sprintf("invalid path: %v", err)
+		return "", err
 	}
 
 	if !pathpolicy.IsWriteAllowed(a.config, path) {
-		return fmt.Sprintf("Error: Write access denied for path: %s", path)
+		return "", fmt.Errorf("Error: Write access denied for path: %s", path)
 	}
 
 	if _, err := os.Stat(path); os.IsNotExist(err) {
-		return fmt.Sprintf("Error: File not found: %s", path)
+		return "", err
 	}
 
 	content, err := os.ReadFile(path)
 	if err != nil {
-		return fmt.Sprintf("failed to read file: %v", err)
+		return "", err
 	}
 
 	if !strings.Contains(string(content), args.OldText) {
-		return "Error: 'old_text' not found in file."
+		return "", errors.New("Error: 'old_text' not found in file.")
 	}
 
 	if !replaceAll {
 		firstIdx := strings.Index(string(content), args.OldText)
 		lastIdx := strings.LastIndex(string(content), args.OldText)
 		if firstIdx != lastIdx {
-			return "Error: 'old_text' appears multiple times. Set replace_all=true or provide more context to make it unique."
+			return "", errors.New("Error: 'old_text' appears multiple times. Set replace_all=true or provide more context to make it unique.")
 		}
 	}
 
@@ -129,18 +130,18 @@ func (a *EditFileTool) Execute(ctx context.Context, argumentsJson string) string
 
 	tmpPath := path + ".tmp"
 	if err := os.WriteFile(tmpPath, []byte(updated), 0644); err != nil {
-		return fmt.Sprintf("failed to write temporary file: %v", err)
+		return "", err
 	}
 
 	if err := os.Rename(tmpPath, path); err != nil {
-		return fmt.Sprintf("failed to rename temporary file: %v", err)
+		return "", err
 	}
 
 	count := 1
 	if replaceAll {
 		count = ReplaceCount(string(content), args.OldText)
 	}
-	return fmt.Sprintf("Replaced %d occurrence(s) in %s.", count, path)
+	return fmt.Sprintf("Replaced %d occurrence(s) in %s.", count, path), nil
 }
 
 func ReplaceFirst(source, oldValue, newValue string) string {

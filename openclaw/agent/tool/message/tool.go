@@ -3,6 +3,7 @@ package message
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 
 	"github.com/futugyou/openclaw/core"
@@ -57,25 +58,25 @@ type MessageModel struct {
 	ReplyTo     string `json:"reply_to"`
 }
 
-func (a *MessageTool) Execute(ctx context.Context, argumentsJson string) string {
+func (a *MessageTool) Execute(ctx context.Context, argumentsJson string) (string, error) {
 	if argumentsJson == "" {
-		return "Error: arguments payload is empty."
+		return "", errors.New("Error: arguments payload is empty.")
 	}
 
 	var model MessageModel
 
 	if err := json.Unmarshal([]byte(argumentsJson), &model); err != nil {
-		return err.Error()
+		return "", err
 	}
 
 	if model.ChannelId == "" {
-		return "Error: channel_id is required."
+		return "", errors.New("Error: channel_id is required.")
 	}
 	if model.RecipientId == "" {
-		return "Error: recipient_id is required."
+		return "", errors.New("Error: recipient_id is required.")
 	}
 	if model.Text == "" {
-		return "Error: text is required."
+		return "", errors.New("Error: text is required.")
 	}
 
 	msg := core.OutboundMessage{
@@ -86,9 +87,9 @@ func (a *MessageTool) Execute(ctx context.Context, argumentsJson string) string 
 	}
 	select {
 	case <-ctx.Done():
-		return ctx.Err().Error()
+		return "", ctx.Err()
 	case a.outbound <- msg:
 	}
 
-	return fmt.Sprintf("Message queued for delivery to %s:%s.", model.ChannelId, model.RecipientId)
+	return fmt.Sprintf("Message queued for delivery to %s:%s.", model.ChannelId, model.RecipientId), nil
 }

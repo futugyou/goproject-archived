@@ -100,19 +100,19 @@ func (a *ShellTool) FormatSandboxResult(argumentsJson string, result core.Sandbo
 	return fmt.Sprintf("[exit: %d]\n%s", result.ExitCode, output)
 }
 
-func (a *ShellTool) Execute(ctx context.Context, argumentsJson string) string {
+func (a *ShellTool) Execute(ctx context.Context, argumentsJson string) (string, error) {
 	if argumentsJson == "" {
-		return "Error: arguments payload is empty."
+		return "", errors.New("Error: arguments payload is empty.")
 	}
 
 	var model ShellModel
 
 	if err := json.Unmarshal([]byte(argumentsJson), &model); err != nil {
-		return err.Error()
+		return "", err
 	}
 
 	if model.Command == "" {
-		return "Error: command is required"
+		return "", errors.New("Error: command is required")
 	}
 
 	if model.TimeoutSeconds <= 0 {
@@ -132,7 +132,7 @@ func (a *ShellTool) Execute(ctx context.Context, argumentsJson string) string {
 	result := util.RunProcess(ctx, exe, args, "", int64(model.TimeoutSeconds), 64*1024, 64*1024)
 
 	if result.Error != "" {
-		return result.Error
+		return "", errors.New(result.Error)
 	}
 
 	output := result.StdoutText
@@ -140,5 +140,5 @@ func (a *ShellTool) Execute(ctx context.Context, argumentsJson string) string {
 		output = fmt.Sprintf("%s\n[stderr]: %s", result.StdoutText, result.StderrText)
 	}
 
-	return fmt.Sprintf("[exit: %d]\n%s", result.ExitCode, output)
+	return fmt.Sprintf("[exit: %d]\n%s", result.ExitCode, output), nil
 }

@@ -3,6 +3,7 @@ package loopcontrol
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 
 	"github.com/futugyou/openclaw/core"
@@ -40,13 +41,13 @@ func (a *LoopControlTool) ParameterSchema() string {
 	`
 }
 
-func (a *LoopControlTool) Execute(ctx context.Context, argumentsJson string) string {
-	return "Error: loop_control requires session context."
+func (a *LoopControlTool) Execute(ctx context.Context, argumentsJson string) (string, error) {
+	return "", errors.New("Error: loop_control requires session context.")
 }
 
-func (a *LoopControlTool) ExecuteContext(ctx context.Context, argumentsJson string, toolContext core.ToolExecutionContext) string {
+func (a *LoopControlTool) ExecuteContext(ctx context.Context, argumentsJson string, toolContext core.ToolExecutionContext) (string, error) {
 	if argumentsJson == "" {
-		return "Error: arguments payload is empty."
+		return "", errors.New("Error: arguments payload is empty.")
 	}
 
 	var model struct {
@@ -54,20 +55,20 @@ func (a *LoopControlTool) ExecuteContext(ctx context.Context, argumentsJson stri
 	}
 
 	if err := json.Unmarshal([]byte(argumentsJson), &model); err != nil {
-		return err.Error()
+		return "", err
 	}
 
 	if model.Status == "" {
-		return "Error: status is required."
+		return "", errors.New("Error: status is required.")
 	}
 
 	if model.Status != "complete" {
-		return fmt.Sprintf("Error: unsupported status '%s'. Only 'complete' is allowed.", model.Status)
+		return "", fmt.Errorf("Error: unsupported status '%s'. Only 'complete' is allowed.", model.Status)
 	}
 
 	if err := a.detector.OnToolComplete(ctx, toolContext.Session.Id); err != nil {
-		return err.Error()
+		return "", err
 	}
 
-	return "Loop marked as complete. The recurring task has been stopped."
+	return "Loop marked as complete. The recurring task has been stopped.", nil
 }

@@ -3,6 +3,7 @@ package sessions
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -52,13 +53,13 @@ type SessionModel struct {
 	Limit     int    `json:"limit"`
 }
 
-func (a *SessionsTool) handleSend(ctx context.Context, targetSessionId, message string) string {
+func (a *SessionsTool) handleSend(ctx context.Context, targetSessionId, message string) (string, error) {
 	targetContext, err := a.sessionManager.Load(ctx, targetSessionId)
 	if err != nil {
-		return err.Error()
+		return "", err
 	}
 	if targetContext == nil {
-		return fmt.Sprintf("Error: Target session '%s' does not exist.", targetSessionId)
+		return "", fmt.Errorf("Error: Target session '%s' does not exist.", targetSessionId)
 	}
 
 	var msg = core.InboundMessage{
@@ -70,25 +71,25 @@ func (a *SessionsTool) handleSend(ctx context.Context, targetSessionId, message 
 
 	select {
 	case a.pipelineChannel <- msg:
-		return fmt.Sprintf("Message queued for delivery to session %s.", targetSessionId)
+		return fmt.Sprintf("Message queued for delivery to session %s.", targetSessionId), nil
 	case <-ctx.Done():
-		return ctx.Err().Error()
+		return "", ctx.Err()
 	}
 }
 
-func (a *SessionsTool) handleHistory(ctx context.Context, sessionId string, limit int) string {
+func (a *SessionsTool) handleHistory(ctx context.Context, sessionId string, limit int) (string, error) {
 	session, err := a.sessionManager.Load(ctx, sessionId)
 	if err != nil {
-		return err.Error()
+		return "", err
 	}
 
 	if session == nil {
-		return fmt.Sprintf("Error: Target session '%s' does not exist.", sessionId)
+		return "", fmt.Errorf("Error: Target session '%s' does not exist.", sessionId)
 	}
 
 	count := len(session.History)
 	if count == 0 {
-		return "Session history is currently empty."
+		return "", errors.New("Session history is currently empty.")
 	}
 
 	recent := session.History
@@ -107,16 +108,16 @@ func (a *SessionsTool) handleHistory(ctx context.Context, sessionId string, limi
 		}
 		fmt.Fprintf(&sb, "[%s] %s: %s\n", turn.Timestamp, turn.Role, turn.Content)
 	}
-	return sb.String()
+	return sb.String(), nil
 }
 
-func (a *SessionsTool) handleList(ctx context.Context) string {
+func (a *SessionsTool) handleList(ctx context.Context) (string, error) {
 	active, err := a.sessionManager.ListActive(ctx)
 	if err != nil {
-		return err.Error()
+		return "", err
 	}
 	if len(active) == 0 {
-		return "No active sessions found."
+		return "", errors.New("No active sessions found.")
 	}
 
 	var sb = strings.Builder{}
@@ -124,18 +125,18 @@ func (a *SessionsTool) handleList(ctx context.Context) string {
 	for _, session := range active {
 		fmt.Fprintf(&sb, "- ID: %s, Channel: %s, Sender: %s, State: %d\n", session.Id, session.ChannelId, session.SenderId, session.State)
 	}
-	return sb.String()
+	return sb.String(), nil
 }
 
-func (a *SessionsTool) Execute(ctx context.Context, argumentsJson string) string {
+func (a *SessionsTool) Execute(ctx context.Context, argumentsJson string) (string, error) {
 	if argumentsJson == "" {
-		return "Error: arguments payload is empty."
+		return "", errors.New("Error: arguments payload is empty.")
 	}
 
 	var model SessionModel
 
 	if err := json.Unmarshal([]byte(argumentsJson), &model); err != nil {
-		return err.Error()
+		return "", err
 	}
 
 	switch model.Action {
@@ -146,6 +147,6 @@ func (a *SessionsTool) Execute(ctx context.Context, argumentsJson string) string
 	case "send":
 		return a.handleSend(ctx, model.SessionId, model.Message)
 	default:
-		return "Error: Unknown action. Valid actions are 'list', 'history', 'send'."
+		return "", errors.New("Error: Unknown action. Valid actions are 'list', 'history', 'send'.")
 	}
 }

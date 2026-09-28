@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/tls"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net"
 	"net/smtp"
@@ -92,20 +93,20 @@ type emailArgs struct {
 	Count     int    `json:"count"`
 }
 
-func (e *EmailTool) Execute(ctx context.Context, argumentsJson string) string {
+func (e *EmailTool) Execute(ctx context.Context, argumentsJson string) (string, error) {
 	var args emailArgs
 	// 设置参数默认值
 	args.Folder = "INBOX"
 	args.Count = 10
 
 	if err := json.Unmarshal([]byte(argumentsJson), &args); err != nil {
-		return fmt.Sprintf("Failed to parse parameters.: %v", err)
+		return "", err
 	}
 
 	action := strings.ToLower(strings.TrimSpace(args.Action))
 
 	if e.toolingConfig != nil && e.toolingConfig.ReadOnlyMode && action == "send" {
-		return "Error: email send action is disabled because Tooling.ReadOnlyMode is enabled."
+		return "", errors.New("Error: email send action is disabled because Tooling.ReadOnlyMode is enabled.")
 	}
 
 	switch action {
@@ -118,25 +119,25 @@ func (e *EmailTool) Execute(ctx context.Context, argumentsJson string) string {
 	case "search":
 		return e.searchEmails(ctx, args)
 	default:
-		return fmt.Sprintf("Error: Unsupported email action '%s'. Use: send, list, read, search.", action)
+		return "", fmt.Errorf("Error: Unsupported email action '%s'. Use: send, list, read, search.", action)
 	}
 }
 
-func (e *EmailTool) sendEmail(_ context.Context, args emailArgs) string {
+func (e *EmailTool) sendEmail(_ context.Context, args emailArgs) (string, error) {
 	if strings.TrimSpace(e.config.SmtpHost) == "" {
-		return "Error: SMTP host not configured. Set Email.SmtpHost."
+		return "", errors.New("Error: SMTP host not configured. Set Email.SmtpHost.")
 	}
 
 	if strings.TrimSpace(args.To) == "" {
-		return "Error: 'to' is required to send an email."
+		return "", errors.New("Error: 'to' is required to send an email.")
 	}
 	if strings.TrimSpace(args.Subject) == "" {
-		return "Error: 'subject' is required to send an email."
+		return "", errors.New("Error: 'subject' is required to send an email.")
 	}
 
 	password := core.SecretResolverInstance.Resolve(e.config.PasswordRef)
 	if strings.TrimSpace(e.config.Username) == "" || strings.TrimSpace(password) == "" {
-		return "Error: Email credentials not configured. Set Email.Username and Email.PasswordRef."
+		return "", errors.New("Error: Email credentials not configured. Set Email.Username and Email.PasswordRef.")
 	}
 
 	from := e.config.FromAddress
@@ -156,20 +157,20 @@ func (e *EmailTool) sendEmail(_ context.Context, args emailArgs) string {
 
 	err := smtp.SendMail(addr, auth, from, []string{args.To}, msg)
 	if err != nil {
-		return fmt.Sprintf("Error: Failed to send email — %s", err.Error())
+		return "", err
 	}
 
-	return fmt.Sprintf("Email sent successfully.\nTo: %s\nSubject: %s", args.To, args.Subject)
+	return fmt.Sprintf("Email sent successfully.\nTo: %s\nSubject: %s", args.To, args.Subject), nil
 }
 
-func (e *EmailTool) listEmails(ctx context.Context, args emailArgs) string {
+func (e *EmailTool) listEmails(ctx context.Context, args emailArgs) (string, error) {
 	folder := args.Folder
 	if folder == "" {
 		folder = "INBOX"
 	}
 	folder = core.Sanitizer.StripCrlf(folder)
 	if err := core.Sanitizer.CheckImapFolderName(folder); err != nil {
-		return err.Error()
+		return "", err
 	}
 
 	count := args.Count
@@ -209,13 +210,13 @@ func (e *EmailTool) listEmails(ctx context.Context, args emailArgs) string {
 	})
 }
 
-func (e *EmailTool) readEmail(ctx context.Context, args emailArgs) string {
+func (e *EmailTool) readEmail(ctx context.Context, args emailArgs) (string, error) {
 	if strings.TrimSpace(args.MessageID) == "" {
-		return "Error: 'message_id' (message number) is required to read an email."
+		return "", errors.New("Error: 'message_id' (message number) is required to read an email.")
 	}
 	msgNum, err := strconv.Atoi(args.MessageID)
 	if err != nil {
-		return "Error: 'message_id' (message number) is required to read an email."
+		return "", err
 	}
 
 	folder := args.Folder
@@ -224,7 +225,7 @@ func (e *EmailTool) readEmail(ctx context.Context, args emailArgs) string {
 	}
 	folder = core.Sanitizer.StripCrlf(folder)
 	if err := core.Sanitizer.CheckImapFolderName(folder); err != nil {
-		return err.Error()
+		return "", err
 	}
 
 	return e.executeImap(ctx, func(reader *bufio.Reader, conn net.Conn) (string, error) {
@@ -241,10 +242,10 @@ func (e *EmailTool) readEmail(ctx context.Context, args emailArgs) string {
 	})
 }
 
-func (e *EmailTool) searchEmails(ctx context.Context, args emailArgs) string {
+func (e *EmailTool) searchEmails(ctx context.Context, args emailArgs) (string, error) {
 	query := strings.TrimSpace(args.Query)
 	if query == "" {
-		return "Error: 'query' is required for search."
+		return "", errors.New("Error: 'query' is required for search.")
 	}
 
 	folder := args.Folder
@@ -255,7 +256,7 @@ func (e *EmailTool) searchEmails(ctx context.Context, args emailArgs) string {
 	folder = core.Sanitizer.StripCrlf(folder)
 	query = core.Sanitizer.StripCrlf(query)
 	if err := core.Sanitizer.CheckImapFolderName(folder); err != nil {
-		return err.Error()
+		return "", err
 	}
 
 	return e.executeImap(ctx, func(reader *bufio.Reader, conn net.Conn) (string, error) {
@@ -316,14 +317,14 @@ func (e *EmailTool) searchEmails(ctx context.Context, args emailArgs) string {
 
 // ── IMAP 底层网络通讯辅助函数 ────────────────────────────────────
 
-func (e *EmailTool) executeImap(_ context.Context, action func(reader *bufio.Reader, conn net.Conn) (string, error)) string {
+func (e *EmailTool) executeImap(_ context.Context, action func(reader *bufio.Reader, conn net.Conn) (string, error)) (string, error) {
 	if strings.TrimSpace(e.config.ImapHost) == "" {
-		return "Error: IMAP host not configured. Set Email.ImapHost."
+		return "", errors.New("Error: IMAP host not configured. Set Email.ImapHost.")
 	}
 
 	password := core.SecretResolverInstance.Resolve(e.config.PasswordRef)
 	if strings.TrimSpace(e.config.Username) == "" || strings.TrimSpace(password) == "" {
-		return "Error: Email credentials not configured. Set Email.Username and Email.PasswordRef."
+		return "", errors.New("Error: Email credentials not configured. Set Email.Username and Email.PasswordRef.")
 	}
 
 	addr := fmt.Sprintf("%s:%d", e.config.ImapHost, e.config.ImapPort)
@@ -333,7 +334,7 @@ func (e *EmailTool) executeImap(_ context.Context, action func(reader *bufio.Rea
 
 	conn, err := tls.Dial("tcp", addr, tlsConfig)
 	if err != nil {
-		return fmt.Sprintf("Error: IMAP operation failed — %s", err.Error())
+		return "", err
 	}
 	defer conn.Close()
 
@@ -341,30 +342,30 @@ func (e *EmailTool) executeImap(_ context.Context, action func(reader *bufio.Rea
 
 	// 读取服务器 Greeting 消息
 	if _, err := reader.ReadString('\n'); err != nil {
-		return fmt.Sprintf("Error: IMAP operation failed — %s", err.Error())
+		return "", err
 	}
 
 	// 登录 LOGIN
 	loginCmd := fmt.Sprintf("A1 LOGIN %s %s\r\n", imapQuote(e.config.Username), imapQuote(password))
 	if _, err := conn.Write([]byte(loginCmd)); err != nil {
-		return fmt.Sprintf("Error: IMAP operation failed — %s", err.Error())
+		return "", fmt.Errorf("Error: IMAP operation failed — %s", err.Error())
 	}
 
 	loginResp, err := readUntilTag(reader, "A1")
 	if err != nil || !strings.Contains(strings.ToUpper(loginResp), "OK") {
-		return fmt.Sprintf("Error: IMAP login failed — %s", strings.TrimSpace(loginResp))
+		return "", fmt.Errorf("Error: IMAP login failed — %s", strings.TrimSpace(loginResp))
 	}
 
 	// 执行具体逻辑
 	result, err := action(reader, conn)
 	if err != nil {
-		return fmt.Sprintf("Error: IMAP operation failed — %s", err.Error())
+		return "", err
 	}
 
 	// 登出 LOGOUT
 	_, _ = conn.Write([]byte("A99 LOGOUT\r\n"))
 
-	return result
+	return result, nil
 }
 
 func imapSelect(conn net.Conn, reader *bufio.Reader, folder string) (int, error) {

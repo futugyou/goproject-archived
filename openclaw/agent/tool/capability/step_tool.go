@@ -11,14 +11,13 @@ func NewGovernedStepTool(run func(ctx context.Context) (string, error)) *Governe
 }
 
 func (g *GovernedStepTool) Name() string { return "resolve_capability" }
+
 func (g *GovernedStepTool) Description() string {
 	return "Resolve an authorized capability workflow step"
 }
+
 func (g *GovernedStepTool) ParameterSchema() string { return "{\"type\":\"object\"}" }
-func (g *GovernedStepTool) Execute(ctx context.Context, argumentsJson string) string {
-	m, err := g.run(ctx)
-	if err != nil {
-		return err.Error()
-	}
-	return m
+
+func (g *GovernedStepTool) Execute(ctx context.Context, argumentsJson string) (string, error) {
+	return g.run(ctx)
 }

@@ -795,9 +795,9 @@ func (p *PluginBridgeProcess) Start(
 	return &init, nil
 }
 
-func (p *PluginBridgeProcess) ExecuteTool(ctx context.Context, toolName string, argumentsJSON string) string {
+func (p *PluginBridgeProcess) ExecuteTool(ctx context.Context, toolName string, argumentsJSON string) (string, error) {
 	if err := p.ensureProcessRunning(ctx); err != nil {
-		return err.Error()
+		return "", err
 	}
 
 	p.mu.Lock()
@@ -805,12 +805,12 @@ func (p *PluginBridgeProcess) ExecuteTool(ctx context.Context, toolName string, 
 	p.mu.Unlock()
 
 	if cmd == nil || cmd.Process == nil {
-		return "Error: Plugin bridge process is not running."
+		return "", errors.New("Error: Plugin bridge process is not running.")
 	}
 
 	var rawParams json.RawMessage
 	if err := json.Unmarshal([]byte(argumentsJSON), &rawParams); err != nil {
-		return fmt.Sprintf("invalid arguments json: %s", err.Error())
+		return "", err
 	}
 
 	execRequest := core.BridgeExecuteRequest{
@@ -820,18 +820,18 @@ func (p *PluginBridgeProcess) ExecuteTool(ctx context.Context, toolName string, 
 
 	resp, err := p.SendAndWait(ctx, "execute", execRequest)
 	if err != nil {
-		return err.Error()
+		return "", err
 	}
 
 	if resp.Error != nil {
-		return fmt.Sprintf("Error: %s", resp.Error.Message)
+		return "", fmt.Errorf("Error: %s", resp.Error.Message)
 	}
 
 	if resp.Result != nil {
 		var resultObj map[string]json.RawMessage
 		if err := json.Unmarshal(*resp.Result, &resultObj); err == nil {
 			if details, ok := resultObj["details"]; ok && string(details) != "null" {
-				return string(details)
+				return string(details), nil
 			}
 
 			if contentArray, ok := resultObj["content"]; ok {
@@ -846,14 +846,14 @@ func (p *PluginBridgeProcess) ExecuteTool(ctx context.Context, toolName string, 
 						}
 						buf.WriteString(item.Text)
 					}
-					return buf.String()
+					return buf.String(), nil
 				}
 			}
 		}
-		return string(*resp.Result)
+		return string(*resp.Result), nil
 	}
 
-	return ""
+	return "", nil
 }
 
 func (p *PluginBridgeProcess) SendRequest(ctx context.Context, method string, parameters any) error {

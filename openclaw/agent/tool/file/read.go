@@ -65,11 +65,11 @@ type FileReadModel struct {
 	MaxLines  int32  `json:"max_lines"`
 }
 
-func (a *FileReadTool) Execute(ctx context.Context, argumentsJson string) string {
+func (a *FileReadTool) Execute(ctx context.Context, argumentsJson string) (string, error) {
 	var args FileReadModel
 
 	if err := json.Unmarshal([]byte(argumentsJson), &args); err != nil {
-		return err.Error()
+		return "", err
 	}
 
 	if args.StartLine == 0 {
@@ -85,12 +85,12 @@ func (a *FileReadTool) Execute(ctx context.Context, argumentsJson string) string
 	var resolvedPath = pathpolicy.ResolveRealPath(args.Path)
 
 	if !pathpolicy.IsReadAllowed(*a.config, resolvedPath) {
-		return fmt.Sprintf("Error: Read access denied for path: %s", args.Path)
+		return "", fmt.Errorf("Error: Read access denied for path: %s", args.Path)
 	}
 
 	file, err := os.Open(resolvedPath)
 	if err != nil {
-		return err.Error()
+		return "", err
 	}
 	defer file.Close()
 
@@ -105,7 +105,7 @@ func (a *FileReadTool) Execute(ctx context.Context, argumentsJson string) string
 	for scanner.Scan() {
 		select {
 		case <-ctx.Done():
-			return ctx.Err().Error()
+			return "", ctx.Err()
 		default:
 		}
 
@@ -131,7 +131,7 @@ func (a *FileReadTool) Execute(ctx context.Context, argumentsJson string) string
 	}
 
 	if err := scanner.Err(); err != nil {
-		return err.Error()
+		return "", err
 	}
 
 	if totalLines > args.StartLine-1+read {
@@ -143,5 +143,5 @@ func (a *FileReadTool) Execute(ctx context.Context, argumentsJson string) string
 			args.StartLine, args.StartLine+read-1, totalLines)
 	}
 
-	return sb.String()
+	return sb.String(), nil
 }

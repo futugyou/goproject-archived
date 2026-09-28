@@ -91,8 +91,8 @@ func (a *ExternalCliTool) ParameterSchema() string {
 `
 }
 
-func (a *ExternalCliTool) Execute(ctx context.Context, argumentsJson string) string {
-	return "Error: external_cli requires execution context."
+func (a *ExternalCliTool) Execute(ctx context.Context, argumentsJson string) (string, error) {
+	return "", errors.New("Error: external_cli requires execution context.")
 }
 
 func buildSummary(request core.ExternalCliToolRequest) string {
@@ -291,10 +291,10 @@ func (a *ExternalCliTool) ResolveActionDescriptor(argumentsJson string) (*core.T
 	}, nil
 }
 
-func (a *ExternalCliTool) ExecuteContext(ctx context.Context, argumentsJson string, toolContext core.ToolExecutionContext) string {
+func (a *ExternalCliTool) ExecuteContext(ctx context.Context, argumentsJson string, toolContext core.ToolExecutionContext) (string, error) {
 	var request core.ExternalCliToolRequest
 	if err := json.Unmarshal([]byte(argumentsJson), &request); err != nil {
-		return fmt.Sprintf("Error: Invalid external_cli arguments: %v", err)
+		return "", err
 	}
 
 	var response any
@@ -303,7 +303,7 @@ func (a *ExternalCliTool) ExecuteContext(ctx context.Context, argumentsJson stri
 	case "list_connectors":
 		summary, err1 := a.registry.ListConnectors()
 		if err1 != nil {
-			return fmt.Sprintf("Error: ListConnectors: %v", err)
+			return "", err
 		}
 
 		response = core.ExternalCliConnectorListResponse{
@@ -313,23 +313,23 @@ func (a *ExternalCliTool) ExecuteContext(ctx context.Context, argumentsJson stri
 	case "connector_status":
 		connector := strings.TrimSpace(request.Connector)
 		if connector == "" {
-			return "request.Connector MUST have 'connector'"
+			return "", errors.New("request.Connector MUST have 'connector'")
 		}
 		response, err = a.registry.GetStatus(ctx, connector)
 	case "list_commands":
 		connector := strings.TrimSpace(request.Connector)
 		if connector == "" {
-			return "request.Connector MUST have 'connector'"
+			return "", errors.New("request.Connector MUST have 'connector'")
 		}
 		response, err = a.registry.ListCommands(connector)
 	case "command_schema":
 		connector := strings.TrimSpace(request.Connector)
 		if connector == "" {
-			return "request.Connector MUST have 'connector'"
+			return "", errors.New("request.Connector MUST have 'connector'")
 		}
 		command := strings.TrimSpace(request.Command)
 		if command == "" {
-			return "request.Command MUST have 'command'"
+			return "", errors.New("request.Command MUST have 'command'")
 		}
 		response, err = a.registry.GetCommandSchema(connector, command)
 	case "preview":
@@ -342,13 +342,13 @@ func (a *ExternalCliTool) ExecuteContext(ctx context.Context, argumentsJson stri
 
 	if err != nil {
 		a.recordEvent(toolContext, "blocked_by_policy", "warning", err.Error(), request, nil)
-		return err.Error()
+		return "", err
 	}
 
 	data, err := json.Marshal(response)
 	if err != nil {
-		return err.Error()
+		return "", err
 	}
 
-	return string(data)
+	return string(data), nil
 }

@@ -49,15 +49,15 @@ type SubscribeDto struct {
 	Qos       int    `json:"qos"`
 }
 
-func (a *MqttTool) Execute(ctx context.Context, argumentsJson string) string {
+func (a *MqttTool) Execute(ctx context.Context, argumentsJson string) (string, error) {
 	var dto SubscribeDto
 
 	if err := json.Unmarshal([]byte(argumentsJson), &dto); err != nil {
-		return err.Error()
+		return "", err
 	}
 
 	if dto.Topic == "" {
-		return "Error: topic is required"
+		return "", errors.New("Error: topic is required")
 	}
 
 	switch dto.Op {
@@ -66,15 +66,15 @@ func (a *MqttTool) Execute(ctx context.Context, argumentsJson string) string {
 	case "get_last":
 		return a.getLast(ctx, dto)
 	default:
-		return fmt.Sprintf("Error: Unknown op '%s'.", dto.Op)
+		return "", fmt.Errorf("Error: Unknown op '%s'.", dto.Op)
 	}
 }
 
-func (a *MqttTool) getLast(_ context.Context, dto SubscribeDto) string {
+func (a *MqttTool) getLast(_ context.Context, dto SubscribeDto) (string, error) {
 	if strings.Contains(dto.Topic, "*") {
 		var matches = FindByGlob(dto.Topic)
 		if len(matches) == 0 {
-			return "No cached messages matched."
+			return "", errors.New("No cached messages matched.")
 		}
 
 		sb := strings.Builder{}
@@ -85,15 +85,15 @@ func (a *MqttTool) getLast(_ context.Context, dto SubscribeDto) string {
 			sb.WriteString("\n\n")
 		}
 
-		return util.TrimEnd(sb.String())
+		return util.TrimEnd(sb.String()), nil
 	}
 
 	payload, receivedAt, found := GetPayload(dto.Topic)
 	if !found {
-		return "No cached message for topic. Enable Mqtt.Events.Enabled to cache subscriptions."
+		return "", errors.New("No cached message for topic. Enable Mqtt.Events.Enabled to cache subscriptions.")
 	}
 
-	return fmt.Sprintf("topic: %s\nreceived_at: %s\n%s", dto.Topic, receivedAt.Format(time.RFC3339Nano), *payload)
+	return fmt.Sprintf("topic: %s\nreceived_at: %s\n%s", dto.Topic, receivedAt.Format(time.RFC3339Nano), *payload), nil
 }
 
 type Result struct {
@@ -102,9 +102,9 @@ type Result struct {
 	Err     error
 }
 
-func (a *MqttTool) subscribeOnce(ctx context.Context, dto SubscribeDto) string {
+func (a *MqttTool) subscribeOnce(ctx context.Context, dto SubscribeDto) (string, error) {
 	if core.GlobMatcherInstance.IsAllowed(a.config.Policy.AllowSubscribeTopicGlobs, a.config.Policy.DenySubscribeTopicGlobs, dto.Topic) {
-		return fmt.Sprintf("Error: Subscribe to topic '%s' is not allowed by policy.", dto.Topic)
+		return "", fmt.Errorf("Error: Subscribe to topic '%s' is not allowed by policy.", dto.Topic)
 	}
 
 	qos := util.Clamp(dto.Qos, 0, 2)
@@ -142,7 +142,7 @@ func (a *MqttTool) subscribeOnce(ctx context.Context, dto SubscribeDto) string {
 
 	client, err := CreateMqttClient(ctx, a.config, []func(paho.PublishReceived) (bool, error){receiveHandle}, nil)
 	if err != nil {
-		return err.Error()
+		return "", err
 	}
 
 	defer client.Disconnect(&paho.Disconnect{ReasonCode: 0})
@@ -153,20 +153,20 @@ func (a *MqttTool) subscribeOnce(ctx context.Context, dto SubscribeDto) string {
 		},
 	})
 	if err != nil {
-		return fmt.Sprintf("subscribe failed: %s", err.Error())
+		return "", err
 	}
 
 	select {
 	case res := <-msgChan:
 		if res.Err != nil {
-			return fmt.Sprintf("topic: %s\n%s", res.Topic, res.Err.Error())
+			return "", res.Err
 		}
-		return fmt.Sprintf("topic: %s\npayload: %s", res.Topic, res.Payload)
+		return fmt.Sprintf("topic: %s\npayload: %s", res.Topic, res.Payload), nil
 
 	case <-ctx.Done():
 		if errors.Is(ctx.Err(), context.DeadlineExceeded) {
-			return fmt.Sprintf("Error: timeout (%d ms) reached before receiving message", timeoutMs)
+			return "", fmt.Errorf("Error: timeout (%d ms) reached before receiving message", timeoutMs)
 		}
-		return ctx.Err().Error()
+		return "", ctx.Err()
 	}
 }

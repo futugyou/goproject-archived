@@ -60,10 +60,10 @@ type FillSlotsStep struct {
 	WithKeys map[string]string `json:"with_keys"`
 }
 
-func (a *MetaSkillFillSlotsTool) Execute(ctx context.Context, argumentsJson string) string {
+func (a *MetaSkillFillSlotsTool) Execute(ctx context.Context, argumentsJson string) (string, error) {
 	select {
 	case <-ctx.Done():
-		return ctx.Err().Error()
+		return "", ctx.Err()
 	default:
 	}
 
@@ -74,7 +74,7 @@ func (a *MetaSkillFillSlotsTool) Execute(ctx context.Context, argumentsJson stri
 	var doc FillSlotModel
 
 	if err := json.Unmarshal([]byte(argumentsJson), &doc); err != nil {
-		return err.Error()
+		return "", err
 	}
 
 	if !IsSupportedPattern(doc.PatternId) {
@@ -103,7 +103,7 @@ func (a *MetaSkillFillSlotsTool) Execute(ctx context.Context, argumentsJson stri
 	var baseName = BuildNameFromIntent(doc.UserIntent, doc.PatternId)
 	description, err := BuildDescription(doc.UserIntent)
 	if err != nil {
-		return err.Error()
+		return "", err
 	}
 
 	wf := FillSlotsResult{
@@ -178,8 +178,8 @@ func (a *MetaSkillFillSlotsTool) Execute(ctx context.Context, argumentsJson stri
 
 	bytes, err := json.Marshal(wf)
 	if err != nil {
-		return err.Error()
+		return "", err
 	}
 
-	return string(bytes)
+	return string(bytes), nil
 }

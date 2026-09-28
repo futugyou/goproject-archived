@@ -67,10 +67,10 @@ type ImageAnalyzeModel struct {
 	Prompt     string   `json:"Prompt"`
 }
 
-func (a *ImageAnalyzeTool) Execute(ctx context.Context, argumentsJson string) string {
+func (a *ImageAnalyzeTool) Execute(ctx context.Context, argumentsJson string) (string, error) {
 	var args ImageAnalyzeModel
 	if err := json.Unmarshal([]byte(argumentsJson), &args); err != nil {
-		return fmt.Sprintf("Error: Invalid argument JSON: %v", err)
+		return "", fmt.Errorf("Error: Invalid argument JSON: %v", err)
 	}
 
 	var imageUrls []string
@@ -93,17 +93,17 @@ func (a *ImageAnalyzeTool) Execute(ctx context.Context, argumentsJson string) st
 	}
 
 	if len(imageUrls) == 0 && len(imagePaths) == 0 {
-		return "Error: No images provided. Supply at least one image_url or image_path."
+		return "", errors.New("Error: No images provided. Supply at least one image_url or image_path.")
 	}
 
 	totalImages := len(imageUrls) + len(imagePaths)
 	if totalImages > a.config.MaxImagesPerCall {
-		return fmt.Sprintf("Error: Too many images (%d). Maximum allowed per call is %d.", totalImages, a.config.MaxImagesPerCall)
+		return "", fmt.Errorf("Error: Too many images (%d). Maximum allowed per call is %d.", totalImages, a.config.MaxImagesPerCall)
 	}
 
 	apiKey := a.resolveKey()
 	if strings.TrimSpace(apiKey) == "" {
-		return "Error: Vision API key not configured. Set Plugins:Native:ImageAnalyze:ApiKey."
+		return "", errors.New("Error: Vision API key not configured. Set Plugins:Native:ImageAnalyze:ApiKey.")
 	}
 
 	var parts []openai.ChatCompletionContentPartUnionParam
@@ -125,12 +125,12 @@ func (a *ImageAnalyzeTool) Execute(ctx context.Context, argumentsJson string) st
 
 	for _, path := range imagePaths {
 		if _, err := os.Stat(path); os.IsNotExist(err) {
-			return fmt.Sprintf("Error: File not found: %s", path)
+			return "", fmt.Errorf("Error: File not found: %s", path)
 		}
 
 		bytes, err := os.ReadFile(path)
 		if err != nil {
-			return fmt.Sprintf("Error: Could not read image file '%s': %v", path, err)
+			return "", fmt.Errorf("Error: Could not read image file '%s': %v", path, err)
 		}
 
 		mimeType := inferMimeType(path)
@@ -153,7 +153,7 @@ func (t *ImageAnalyzeTool) callWithSdk(
 	ctx context.Context,
 	parts []openai.ChatCompletionContentPartUnionParam,
 	apiKey string,
-) string {
+) (string, error) {
 	opts := []option.RequestOption{
 		option.WithAPIKey(apiKey),
 	}
@@ -187,17 +187,17 @@ func (t *ImageAnalyzeTool) callWithSdk(
 
 	if err != nil {
 		if errors.Is(reqCtx.Err(), context.DeadlineExceeded) {
-			return "Error: Vision API request timed out."
+			return "", errors.New("Error: Vision API request timed out.")
 		}
-		return fmt.Sprintf("Error: Vision API request failed — %v", err)
+		return "", fmt.Errorf("Error: Vision API request failed — %v", err)
 	}
 
 	if len(completion.Choices) == 0 {
-		return ""
+		return "", nil
 	}
 
 	text := strings.TrimSpace(completion.Choices[0].Message.Content)
-	return util.Truncate(text, t.config.MaxOutputChars)
+	return util.Truncate(text, t.config.MaxOutputChars), nil
 }
 
 func (a *ImageAnalyzeTool) resolveKey() string {

@@ -41,10 +41,10 @@ type LintRunModel struct {
 	Gates   string `json:"gates"`
 }
 
-func (a *MetaSkillLintRunTool) Execute(ctx context.Context, argumentsJson string) string {
+func (a *MetaSkillLintRunTool) Execute(ctx context.Context, argumentsJson string) (string, error) {
 	select {
 	case <-ctx.Done():
-		return ctx.Err().Error()
+		return "", ctx.Err()
 	default:
 	}
 
@@ -55,7 +55,7 @@ func (a *MetaSkillLintRunTool) Execute(ctx context.Context, argumentsJson string
 	var doc LintRunModel
 
 	if err := json.Unmarshal([]byte(argumentsJson), &doc); err != nil {
-		return err.Error()
+		return "", err
 	}
 
 	if doc.SkillMd == "" {

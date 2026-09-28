@@ -3,6 +3,7 @@ package homeassistant
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"strconv"
@@ -65,10 +66,10 @@ type ReadAssistantModel struct {
 	EntityId     string `json:"entity_id"`
 }
 
-func (a *HomeAssistantTool) Execute(ctx context.Context, argumentsJson string) string {
+func (a *HomeAssistantTool) Execute(ctx context.Context, argumentsJson string) (string, error) {
 	var model ReadAssistantModel
 	if err := json.Unmarshal([]byte(argumentsJson), &model); err != nil {
-		return err.Error()
+		return "", err
 	}
 
 	if model.Limit <= 0 {
@@ -93,28 +94,28 @@ func (a *HomeAssistantTool) Execute(ctx context.Context, argumentsJson string) s
 	case "describe_entity":
 		return a.describeEntity(ctx, model)
 	default:
-		return fmt.Sprintf("Error: Unknown op '%s'.", model.Op)
+		return "", fmt.Errorf("Error: Unknown op '%s'.", model.Op)
 	}
 }
 
-func (a *HomeAssistantTool) describeEntity(ctx context.Context, model ReadAssistantModel) string {
+func (a *HomeAssistantTool) describeEntity(ctx context.Context, model ReadAssistantModel) (string, error) {
 	if model.EntityId == "" {
-		return "Error: entity_id is required for describe_entity."
+		return "", errors.New("Error: entity_id is required for describe_entity.")
 	}
 	if err := a.index.RefreshRegistries(ctx); err != nil {
-		return err.Error()
+		return "", err
 	}
 	if err := a.index.EnsureWarm(ctx, *a.rest); err != nil {
-		return err.Error()
+		return "", err
 	}
 
 	raw, err := a.rest.GetState(ctx, model.EntityId)
 	if err != nil {
-		return err.Error()
+		return "", err
 	}
 
 	if model.Format == "json" {
-		return raw
+		return raw, nil
 	}
 
 	var entry = a.index.Get(model.EntityId)
@@ -161,16 +162,16 @@ func (a *HomeAssistantTool) describeEntity(ctx context.Context, model ReadAssist
 		}
 	}
 
-	return sb.String()
+	return sb.String(), nil
 }
 
-func (a *HomeAssistantTool) resolveTargets(ctx context.Context, model ReadAssistantModel) string {
+func (a *HomeAssistantTool) resolveTargets(ctx context.Context, model ReadAssistantModel) (string, error) {
 	// Ensure we have registry metadata for area/name resolution (P2)
 	if err := a.index.RefreshRegistries(ctx); err != nil {
-		return err.Error()
+		return "", err
 	}
 	if err := a.index.EnsureWarm(ctx, *a.rest); err != nil {
-		return err.Error()
+		return "", err
 	}
 
 	var matches = a.index.Query(model.Domain, model.Area, model.NameContains)
@@ -180,13 +181,13 @@ func (a *HomeAssistantTool) resolveTargets(ctx context.Context, model ReadAssist
 	if model.Format == "json" {
 		data, err := json.Marshal(matches)
 		if err != nil {
-			return err.Error()
+			return "", err
 		}
-		return string(data)
+		return string(data), nil
 	}
 
 	if len(matches) == 0 {
-		return "No targets matched."
+		return "", errors.New("No targets matched.")
 	}
 
 	var sb = strings.Builder{}
@@ -207,16 +208,16 @@ func (a *HomeAssistantTool) resolveTargets(ctx context.Context, model ReadAssist
 		}
 		sb.WriteString("\n")
 	}
-	return sb.String()
+	return sb.String(), nil
 }
 
-func (a *HomeAssistantTool) listServices(ctx context.Context, format string) string {
+func (a *HomeAssistantTool) listServices(ctx context.Context, format string) (string, error) {
 	raw, err := a.rest.GetServices(ctx)
 	if err != nil {
-		return err.Error()
+		return "", err
 	}
 	if format == "json" {
-		return raw
+		return raw, nil
 	}
 
 	var model []struct {
@@ -225,7 +226,7 @@ func (a *HomeAssistantTool) listServices(ctx context.Context, format string) str
 	}
 
 	if err := json.Unmarshal([]byte(raw), &model); err != nil {
-		return raw
+		return raw, nil
 	}
 
 	sb := strings.Builder{}
@@ -243,10 +244,10 @@ func (a *HomeAssistantTool) listServices(ctx context.Context, format string) str
 	}
 
 	if sb.Len() > 0 {
-		return "No services found."
+		return "", errors.New("No services found.")
 	}
 
-	return sb.String()
+	return sb.String(), nil
 }
 
 func tryFormatSingleState(rawJson string) string {
@@ -283,29 +284,29 @@ func tryFormatSingleState(rawJson string) string {
 	return util.TrimEnd(sb.String())
 }
 
-func (a *HomeAssistantTool) getState(ctx context.Context, model ReadAssistantModel) string {
+func (a *HomeAssistantTool) getState(ctx context.Context, model ReadAssistantModel) (string, error) {
 	if model.EntityId != "" {
-		return "Error: entity_id is required for get_state."
+		return "", errors.New("Error: entity_id is required for get_state.")
 	}
 
 	raw, err := a.rest.GetState(ctx, model.EntityId)
 	if err != nil {
-		return err.Error()
+		return "", err
 	}
 	if model.Format == "json" {
-		return raw
+		return raw, nil
 	}
 
 	ss := tryFormatSingleState(raw)
 	if ss == "" {
-		return raw
+		return raw, nil
 	}
-	return ss
+	return ss, nil
 }
 
-func (a *HomeAssistantTool) listEntities(ctx context.Context, domain string, area string, contains string, limit int, format string) string {
+func (a *HomeAssistantTool) listEntities(ctx context.Context, domain string, area string, contains string, limit int, format string) (string, error) {
 	if err := a.index.EnsureWarm(ctx, *a.rest); err != nil {
-		return err.Error()
+		return "", err
 	}
 
 	var matches = a.index.Query(domain, area, contains)
@@ -315,13 +316,13 @@ func (a *HomeAssistantTool) listEntities(ctx context.Context, domain string, are
 	if format == "json" {
 		data, err := json.Marshal(matches)
 		if err != nil {
-			return err.Error()
+			return "", err
 		}
-		return string(data)
+		return string(data), nil
 	}
 
 	if len(matches) == 0 {
-		return "No entities matched."
+		return "", errors.New("No entities matched.")
 	}
 
 	var sb = strings.Builder{}
@@ -352,5 +353,5 @@ func (a *HomeAssistantTool) listEntities(ctx context.Context, domain string, are
 		sb.WriteString("\n")
 	}
 
-	return sb.String()
+	return sb.String(), nil
 }

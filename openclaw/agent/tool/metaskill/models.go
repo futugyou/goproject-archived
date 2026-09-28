@@ -86,7 +86,7 @@ var bufPool = sync.Pool{
 	},
 }
 
-func SerializeError(errorCode, message string) string {
+func SerializeError(errorCode, message string) (string, error) {
 	buf := bufPool.Get().(*bytes.Buffer)
 	buf.Reset()
 	defer bufPool.Put(buf)
@@ -98,13 +98,13 @@ func SerializeError(errorCode, message string) string {
 	}
 
 	if err := json.NewEncoder(buf).Encode(res); err != nil {
-		return err.Error()
+		return "", err
 	}
 
-	return string(bytes.TrimSpace(buf.Bytes()))
+	return string(bytes.TrimSpace(buf.Bytes())), nil
 }
 
-func SerializeLintResult(passed bool, failedGates []string, summary string) string {
+func SerializeLintResult(passed bool, failedGates []string, summary string) (string, error) {
 	buf := bufPool.Get().(*bytes.Buffer)
 	buf.Reset()
 	defer bufPool.Put(buf)
@@ -121,12 +121,12 @@ func SerializeLintResult(passed bool, failedGates []string, summary string) stri
 	}
 
 	if err := json.NewEncoder(buf).Encode(res); err != nil {
-		return err.Error()
+		return "", err
 	}
-	return string(bytes.TrimSpace(buf.Bytes()))
+	return string(bytes.TrimSpace(buf.Bytes())), nil
 }
 
-func SerializePersistResult(proposalID, path string, autoEnableEligible bool) string {
+func SerializePersistResult(proposalID, path string, autoEnableEligible bool) (string, error) {
 	buf := bufPool.Get().(*bytes.Buffer)
 	buf.Reset()
 	defer bufPool.Put(buf)
@@ -141,7 +141,7 @@ func SerializePersistResult(proposalID, path string, autoEnableEligible bool) st
 	}
 
 	if err := json.NewEncoder(buf).Encode(res); err != nil {
-		return err.Error()
+		return "", err
 	}
-	return string(bytes.TrimSpace(buf.Bytes()))
+	return string(bytes.TrimSpace(buf.Bytes())), nil
 }

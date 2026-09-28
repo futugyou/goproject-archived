@@ -3,6 +3,7 @@ package capability
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"strings"
 
 	"github.com/futugyou/openclaw/core"
@@ -53,42 +54,42 @@ func (g *ResolveCapabilityTool) ParameterSchema() string {
 `
 }
 
-func (g *ResolveCapabilityTool) Execute(ctx context.Context, argumentsJson string) string {
+func (g *ResolveCapabilityTool) Execute(ctx context.Context, argumentsJson string) (string, error) {
 	var raw map[string]json.RawMessage
 	if err := json.Unmarshal([]byte(argumentsJson), &raw); err != nil {
-		return err.Error()
+		return "", err
 	}
 
 	rawTask, ok := raw["task_description"]
 	if !ok {
-		return "task_description is required"
+		return "", errors.New("task_description is required")
 	}
 	var task string
 	if err := json.Unmarshal(rawTask, &task); err != nil || strings.TrimSpace(task) == "" {
-		return "task_description is required"
+		return "", errors.New("task_description is required")
 	}
 
 	policyStr := "first"
 	if rawPolicy, ok := raw["selection_policy"]; ok {
 		if err := json.Unmarshal(rawPolicy, &policyStr); err != nil {
-			return err.Error()
+			return "", err
 		}
 	}
 	if policyStr != "first" && policyStr != "exact_name" {
-		return "Unsupported selection policy"
+		return "", errors.New("Unsupported selection policy")
 	}
 
 	if _, ok := raw["prefer_version"]; ok {
-		return "Unsupported constraint"
+		return "", errors.New("Unsupported constraint")
 	}
 	if _, ok := raw["top_k"]; ok {
-		return "Unsupported constraint"
+		return "", errors.New("Unsupported constraint")
 	}
 
 	var providerStr string
 	if rawProvider, ok := raw["provider"]; ok {
 		if err := json.Unmarshal(rawProvider, &providerStr); err != nil || strings.TrimSpace(providerStr) == "" {
-			return "provider must be a non-empty identifier"
+			return "", errors.New("provider must be a non-empty identifier")
 		}
 	}
 
@@ -96,24 +97,24 @@ func (g *ResolveCapabilityTool) Execute(ctx context.Context, argumentsJson strin
 	_, hasKeyWords := raw["key_words"]
 
 	if hasKeywords && hasKeyWords {
-		return "Specify keywords or legacy key_words, not both"
+		return "", errors.New("Specify keywords or legacy key_words, not both")
 	}
 
 	var keywords string
 	if hasKeywords {
 		var kwList []string
 		if err := json.Unmarshal(raw["keywords"], &kwList); err != nil {
-			return "keywords must contain non-empty strings"
+			return "", errors.New("keywords must contain non-empty strings")
 		}
 		for _, w := range kwList {
 			if strings.TrimSpace(w) == "" {
-				return "keywords must contain non-empty strings"
+				return "", errors.New("keywords must contain non-empty strings")
 			}
 		}
 		keywords = strings.Join(kwList, ",")
 	} else if hasKeyWords {
 		if err := json.Unmarshal(raw["key_words"], &keywords); err != nil {
-			return err.Error()
+			return "", err
 		}
 	}
 
@@ -131,7 +132,7 @@ func (g *ResolveCapabilityTool) Execute(ctx context.Context, argumentsJson strin
 
 	binding, failure, _, _, err := g.providers.Resolve(ctx, req, g.isToolAllowed)
 	if err != nil {
-		return err.Error()
+		return "", err
 	}
 
 	var responseBytes []byte
@@ -142,8 +143,8 @@ func (g *ResolveCapabilityTool) Execute(ctx context.Context, argumentsJson strin
 	}
 
 	if err != nil {
-		return err.Error()
+		return "", err
 	}
 
-	return string(responseBytes)
+	return string(responseBytes), nil
 }

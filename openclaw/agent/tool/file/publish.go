@@ -3,6 +3,7 @@ package file
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -49,24 +50,24 @@ func (a *PublishFileTool) ParameterSchema() string {
 }`
 }
 
-func (a *PublishFileTool) Execute(ctx context.Context, argumentsJson string) string {
+func (a *PublishFileTool) Execute(ctx context.Context, argumentsJson string) (string, error) {
 	var root map[string]any
 	if err := json.Unmarshal([]byte(argumentsJson), &root); err != nil {
-		return err.Error()
+		return "", err
 	}
 
 	var path = util.GetString(root, "path")
 	if path == nil || strings.TrimSpace(*path) == "" {
-		return "Error: 'path' is required."
+		return "", errors.New("Error: 'path' is required.")
 	}
 	var resolvedPath = pathpolicy.ResolveRealPath(*path)
 
 	if !pathpolicy.IsReadAllowed(*a.config, resolvedPath) {
-		return fmt.Sprintf("Error: Read access denied for path: %s", *path)
+		return "", fmt.Errorf("Error: Read access denied for path: %s", *path)
 	}
 
 	if !util.FileExists(resolvedPath) {
-		return fmt.Sprintf("Error: File not found: %s", *path)
+		return "", fmt.Errorf("Error: File not found: %s", *path)
 	}
 
 	// If the file is already inside an AllowedWriteRoot, GatewayWorkers can
@@ -77,12 +78,12 @@ func (a *PublishFileTool) Execute(ctx context.Context, argumentsJson string) str
 	}
 
 	if publishPath == "" {
-		return "Error: Could not copy file to a publishable location. Ensure WorkspaceRoot or an AllowedWriteRoot is configured."
+		return "", errors.New("Error: Could not copy file to a publishable location. Ensure WorkspaceRoot or an AllowedWriteRoot is configured.")
 	}
 
 	fileinfo, err := os.Stat(publishPath)
 	if err != nil {
-		return err.Error()
+		return "", err
 	}
 
 	fileName := filepath.Base(publishPath)
@@ -96,7 +97,7 @@ func (a *PublishFileTool) Execute(ctx context.Context, argumentsJson string) str
 		sizeLabel = fmt.Sprintf("%d MB", size/1_048_576)
 	}
 
-	return fmt.Sprintf("File ready for download: %s (%s)\n[FILE_PATH:%s]", fileName, sizeLabel, publishPath)
+	return fmt.Sprintf("File ready for download: %s (%s)\n[FILE_PATH:%s]", fileName, sizeLabel, publishPath), nil
 }
 
 func (a *PublishFileTool) copyToDownloadsFolder(ctx context.Context, sourcePath string) string {

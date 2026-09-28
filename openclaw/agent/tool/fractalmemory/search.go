@@ -37,7 +37,7 @@ func (a *FractalMemorySearchTool) ParameterSchema() string {
 `
 }
 
-func (a *FractalMemorySearchTool) Execute(ctx context.Context, argumentsJson string) string {
+func (a *FractalMemorySearchTool) Execute(ctx context.Context, argumentsJson string) (string, error) {
 	var model struct {
 		Query string `json:"query"`
 		Limit int    `json:"limit"`
@@ -66,5 +66,5 @@ func (a *FractalMemorySearchTool) Execute(ctx context.Context, argumentsJson str
 		return FractalMemoryError(err.Error())
 	}
 
-	return string(d)
+	return string(d), nil
 }

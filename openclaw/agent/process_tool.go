@@ -57,8 +57,8 @@ func (a *ProcessTool) ParameterSchema() string {
     }`
 }
 
-func (a *ProcessTool) Execute(ctx context.Context, argumentsJson string) string {
-	return "Error: process requires execution context."
+func (a *ProcessTool) Execute(ctx context.Context, argumentsJson string) (string, error) {
+	return "", errors.New("Error: process requires execution context.")
 }
 
 type ProcessModel struct {
@@ -76,22 +76,22 @@ type ProcessModel struct {
 	SessionId        string `json:"session_id"`
 }
 
-func (a *ProcessTool) ExecuteContext(ctx context.Context, argumentsJson string, toolContext core.ToolExecutionContext) string {
+func (a *ProcessTool) ExecuteContext(ctx context.Context, argumentsJson string, toolContext core.ToolExecutionContext) (string, error) {
 	if a.tooling.ReadOnlyMode {
-		return "Error: process is disabled because Tooling.ReadOnlyMode is enabled."
+		return "", errors.New("Error: process is disabled because Tooling.ReadOnlyMode is enabled.")
 	}
 	if !a.tooling.AllowShell {
-		return "Error: process is disabled because shell execution is disabled by configuration."
+		return "", errors.New("Error: process is disabled because shell execution is disabled by configuration.")
 	}
 
 	if argumentsJson == "" {
-		return "Error: arguments payload is empty."
+		return "", errors.New("Error: arguments payload is empty.")
 	}
 
 	var model ProcessModel
 
 	if err := json.Unmarshal([]byte(argumentsJson), &model); err != nil {
-		return err.Error()
+		return "", err
 	}
 
 	if model.Action == "" {
@@ -114,14 +114,14 @@ func (a *ProcessTool) ExecuteContext(ctx context.Context, argumentsJson string, 
 	case "kill":
 		return a.kill(ctx, model, toolContext)
 	default:
-		return "Error: Unknown action. Valid actions are start, list, poll, log, wait, write, and kill."
+		return "", errors.New("Error: Unknown action. Valid actions are start, list, poll, log, wait, write, and kill.")
 	}
 }
 
-func (a *ProcessTool) start(ctx context.Context, model ProcessModel, toolContext core.ToolExecutionContext) string {
+func (a *ProcessTool) start(ctx context.Context, model ProcessModel, toolContext core.ToolExecutionContext) (string, error) {
 	var subcommand = model.Command
 	if subcommand == "" {
-		return "Error: command is required for process start."
+		return "", errors.New("Error: command is required for process start.")
 	}
 
 	command := "cmd.exe"
@@ -144,24 +144,24 @@ func (a *ProcessTool) start(ctx context.Context, model ProcessModel, toolContext
 		Arguments:        arguments,
 	})
 	if err != nil {
-		return err.Error()
+		return "", err
 	}
 
 	return fmt.Sprintf("Started process %s\nbackend: %s\ncommand: %s",
 		handle.ProcessId,
 		handle.BackendName,
 		handle.CommandPreview,
-	)
+	), nil
 }
 
-func (a *ProcessTool) list(_ context.Context, model ProcessModel, toolContext core.ToolExecutionContext) string {
+func (a *ProcessTool) list(_ context.Context, model ProcessModel, toolContext core.ToolExecutionContext) (string, error) {
 	ownerSessionId := model.SessionId
 	if ownerSessionId == "" {
 		ownerSessionId = toolContext.Session.Id
 	}
 	var items = a.processes.List(ownerSessionId)
 	if len(items) == 0 {
-		return fmt.Sprintf("No background processes found for session %s.", ownerSessionId)
+		return "", fmt.Errorf("No background processes found for session %s.", ownerSessionId)
 	}
 
 	var sb = strings.Builder{}
@@ -170,17 +170,17 @@ func (a *ProcessTool) list(_ context.Context, model ProcessModel, toolContext co
 		sb.WriteString("\n")
 	}
 
-	return sb.String()
+	return sb.String(), nil
 }
 
-func (a *ProcessTool) poll(_ context.Context, model ProcessModel, toolContext core.ToolExecutionContext) string {
+func (a *ProcessTool) poll(_ context.Context, model ProcessModel, toolContext core.ToolExecutionContext) (string, error) {
 	var processId = model.ProcessId
 	if processId == "" {
-		return "Error: process_id is required."
+		return "", errors.New("Error: process_id is required.")
 	}
 	var status = a.processes.GetStatus(processId, toolContext.Session.Id)
 	if status == nil {
-		return fmt.Sprintf("Error: process '%s' was not found.", processId)
+		return "", fmt.Errorf("Error: process '%s' was not found.", processId)
 	}
 
 	exit := "-"
@@ -193,13 +193,13 @@ func (a *ProcessTool) poll(_ context.Context, model ProcessModel, toolContext co
 		exit,
 		status.StdoutBytes,
 		status.StderrBytes,
-	)
+	), nil
 }
 
-func (a *ProcessTool) log(_ context.Context, model ProcessModel, toolContext core.ToolExecutionContext) string {
+func (a *ProcessTool) log(_ context.Context, model ProcessModel, toolContext core.ToolExecutionContext) (string, error) {
 	var processId = model.ProcessId
 	if processId == "" {
-		return "Error: process_id is required."
+		return "", errors.New("Error: process_id is required.")
 	}
 
 	log := a.processes.ReadLog(&core.ExecutionProcessLogRequest{
@@ -211,7 +211,7 @@ func (a *ProcessTool) log(_ context.Context, model ProcessModel, toolContext cor
 	})
 
 	if log == nil {
-		return fmt.Sprintf("Error: process '%s' was not found.", processId)
+		return "", fmt.Errorf("Error: process '%s' was not found.", processId)
 	}
 
 	return fmt.Sprintf("[stdout]\n%s\n[stderr]\n%s\n[next_stdout_offset=%d next_stderr_offset=%d]",
@@ -219,13 +219,13 @@ func (a *ProcessTool) log(_ context.Context, model ProcessModel, toolContext cor
 		log.Stderr,
 		log.NextStdoutOffset,
 		log.NextStderrOffset,
-	)
+	), nil
 }
 
-func (a *ProcessTool) wait(ctx context.Context, model ProcessModel, toolContext core.ToolExecutionContext) string {
+func (a *ProcessTool) wait(ctx context.Context, model ProcessModel, toolContext core.ToolExecutionContext) (string, error) {
 	var processId = model.ProcessId
 	if processId == "" {
-		return "Error: process_id is required."
+		return "", errors.New("Error: process_id is required.")
 	}
 
 	if model.TimeoutSeconds > 0 {
@@ -239,32 +239,32 @@ func (a *ProcessTool) wait(ctx context.Context, model ProcessModel, toolContext 
 		if errors.Is(ctx.Err(), context.DeadlineExceeded) {
 			var status = a.processes.GetStatus(processId, toolContext.Session.Id)
 			if status == nil {
-				return fmt.Sprintf("Error: process '%s' was not found.", processId)
+				return "", fmt.Errorf("Error: process '%s' was not found.", processId)
 			}
 
 			if status.State == "running" {
-				return fmt.Sprintf("%s still running state=%s", status.ProcessId, status.State)
+				return "", fmt.Errorf("%s still running state=%s", status.ProcessId, status.State)
 			} else {
-				return fmt.Sprintf("%s completed with state=%s", status.ProcessId, status.State)
+				return "", fmt.Errorf("%s completed with state=%s", status.ProcessId, status.State)
 			}
 		}
-		return err.Error()
+		return "", err
 	}
 	if status != nil {
-		return fmt.Sprintf("%s completed with state=%s", status.ProcessId, status.State)
+		return fmt.Sprintf("%s completed with state=%s", status.ProcessId, status.State), nil
 	} else {
-		return fmt.Sprintf("Error: process '%s' was not found.", processId)
+		return "", fmt.Errorf("Error: process '%s' was not found.", processId)
 	}
 }
 
-func (a *ProcessTool) write(ctx context.Context, model ProcessModel, toolContext core.ToolExecutionContext) string {
+func (a *ProcessTool) write(ctx context.Context, model ProcessModel, toolContext core.ToolExecutionContext) (string, error) {
 	var processId = model.ProcessId
 	if processId == "" {
-		return "Error: process_id is required."
+		return "", errors.New("Error: process_id is required.")
 	}
 	input := model.Input
 	if input == "" {
-		return "Error: input is required."
+		return "", errors.New("Error: input is required.")
 	}
 
 	f, err := a.processes.Write(ctx, core.ExecutionProcessInputRequest{
@@ -273,28 +273,28 @@ func (a *ProcessTool) write(ctx context.Context, model ProcessModel, toolContext
 		Data:           input,
 	})
 	if err != nil {
-		return err.Error()
+		return "", err
 	}
 	if f {
-		return fmt.Sprintf("Input written to process %s", processId)
+		return fmt.Sprintf("Input written to process %s", processId), nil
 	} else {
-		return fmt.Sprintf("Error: process '%s' was not found.", processId)
+		return "", fmt.Errorf("Error: process '%s' was not found.", processId)
 	}
 }
 
-func (a *ProcessTool) kill(ctx context.Context, model ProcessModel, toolContext core.ToolExecutionContext) string {
+func (a *ProcessTool) kill(ctx context.Context, model ProcessModel, toolContext core.ToolExecutionContext) (string, error) {
 	var processId = model.ProcessId
 	if processId == "" {
-		return "Error: process_id is required."
+		return "", errors.New("Error: process_id is required.")
 	}
 
 	f, err := a.processes.Kill(ctx, processId, toolContext.Session.Id)
 	if err != nil {
-		return err.Error()
+		return "", err
 	}
 	if f {
-		return fmt.Sprintf("Process %s terminated.", processId)
+		return fmt.Sprintf("Process %s terminated.", processId), nil
 	} else {
-		return fmt.Sprintf("Error: process '%s' was not found.", processId)
+		return "", fmt.Errorf("Error: process '%s' was not found.", processId)
 	}
 }

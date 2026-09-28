@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/tls"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"math"
 	"net"
@@ -89,11 +90,11 @@ type InboxZeroParams struct {
 	Count  int    `json:"count"`
 }
 
-func (a *InboxZeroTool) Execute(ctx context.Context, argumentsJson string) string {
+func (a *InboxZeroTool) Execute(ctx context.Context, argumentsJson string) (string, error) {
 
 	var args InboxZeroParams
 	if err := json.Unmarshal([]byte(argumentsJson), &args); err != nil {
-		return fmt.Sprintf("invalid arguments: %v", err)
+		return "", err
 	}
 
 	action := strings.ToLower(args.Action)
@@ -107,8 +108,7 @@ func (a *InboxZeroTool) Execute(ctx context.Context, argumentsJson string) strin
 	case "spam-rescue":
 		return a.spamRescue(ctx, args)
 	default:
-		return fmt.Sprintf("Error: Unknown action '%s'. Use: analyze, cleanup, trash-sender, spam-rescue, categorize.", action)
-
+		return "", fmt.Errorf("Error: Unknown action '%s'. Use: analyze, cleanup, trash-sender, spam-rescue, categorize.", action)
 	}
 }
 
@@ -119,7 +119,7 @@ func (e *InboxZeroTool) imapCopyToInbox(ctx context.Context, reader *bufio.Reade
 	e.readUntilTag(ctx, reader, tag)
 }
 
-func (e *InboxZeroTool) spamRescue(ctx context.Context, args InboxZeroParams) string {
+func (e *InboxZeroTool) spamRescue(ctx context.Context, args InboxZeroParams) (string, error) {
 	var count = args.Count
 	// Try common spam folder names
 	var spamFolders = []string{"[Gmail]/Spam", "Junk", "Spam", "Junk E-mail", "INBOX.Junk", "INBOX.Spam"}
@@ -208,9 +208,9 @@ func (e *InboxZeroTool) spamRescue(ctx context.Context, args InboxZeroParams) st
 	})
 }
 
-func (e *InboxZeroTool) trashBySender(ctx context.Context, args InboxZeroParams) string {
+func (e *InboxZeroTool) trashBySender(ctx context.Context, args InboxZeroParams) (string, error) {
 	if args.Sender == "" {
-		return "Error: 'sender' is required for trash-sender action."
+		return "", errors.New("Error: 'sender' is required for trash-sender action.")
 	}
 
 	var folder = args.Folder
@@ -221,7 +221,7 @@ func (e *InboxZeroTool) trashBySender(ctx context.Context, args InboxZeroParams)
 	folder = core.Sanitizer.StripCrlf(folder)
 	var folderError = core.Sanitizer.CheckImapFolderName(folder)
 	if folderError != nil {
-		return folderError.Error()
+		return "", folderError
 	}
 
 	return e.executeImap(ctx, func(ctx context.Context, reader *bufio.Reader, writer *bufio.Writer) (string, error) {
@@ -290,7 +290,7 @@ func (e *InboxZeroTool) trashBySender(ctx context.Context, args InboxZeroParams)
 	})
 }
 
-func (e *InboxZeroTool) cleanup(ctx context.Context, args InboxZeroParams) string {
+func (e *InboxZeroTool) cleanup(ctx context.Context, args InboxZeroParams) (string, error) {
 	var folder = args.Folder
 	if folder == "" {
 		folder = "INBOX"
@@ -299,7 +299,7 @@ func (e *InboxZeroTool) cleanup(ctx context.Context, args InboxZeroParams) strin
 	folder = core.Sanitizer.StripCrlf(folder)
 	var folderError = core.Sanitizer.CheckImapFolderName(folder)
 	if folderError != nil {
-		return folderError.Error()
+		return "", folderError
 	}
 
 	return e.executeImap(ctx, func(ctx context.Context, reader *bufio.Reader, writer *bufio.Writer) (string, error) {
@@ -509,7 +509,7 @@ func getCategoryPriority(category string) int {
 	}
 }
 
-func (e *InboxZeroTool) analyze(ctx context.Context, args InboxZeroParams) string {
+func (e *InboxZeroTool) analyze(ctx context.Context, args InboxZeroParams) (string, error) {
 
 	var folder = args.Folder
 	if folder == "" {
@@ -519,7 +519,7 @@ func (e *InboxZeroTool) analyze(ctx context.Context, args InboxZeroParams) strin
 	folder = core.Sanitizer.StripCrlf(folder)
 	var folderError = core.Sanitizer.CheckImapFolderName(folder)
 	if folderError != nil {
-		return folderError.Error()
+		return "", folderError
 	}
 
 	return e.executeImap(ctx, func(ctx context.Context, reader *bufio.Reader, writer *bufio.Writer) (string, error) {
@@ -749,14 +749,14 @@ func (e *InboxZeroTool) imapFetchHeadersExtended(ctx context.Context, reader *bu
 func (e *InboxZeroTool) executeImap(
 	ctx context.Context,
 	action func(ctx context.Context, reader *bufio.Reader, writer *bufio.Writer) (string, error),
-) string {
+) (string, error) {
 	if strings.TrimSpace(e.emailConfig.ImapHost) == "" {
-		return "Error: IMAP host not configured. Set Plugins.Native.Email.ImapHost."
+		return "", errors.New("Error: IMAP host not configured. Set Plugins.Native.Email.ImapHost.")
 	}
 
 	password := core.SecretResolverInstance.Resolve(e.emailConfig.PasswordRef)
 	if strings.TrimSpace(e.emailConfig.Username) == "" || strings.TrimSpace(password) == "" {
-		return "Error: Email credentials not configured. Set Email.Username and Email.PasswordRef."
+		return "", errors.New("Error: Email credentials not configured. Set Email.Username and Email.PasswordRef.")
 	}
 
 	var cancel context.CancelFunc = func() {}
@@ -771,7 +771,7 @@ func (e *InboxZeroTool) executeImap(
 
 	rawConn, err := dialer.DialContext(effectiveCtx, "tcp", addr)
 	if err != nil {
-		return fmt.Sprintf("Error: IMAP operation failed — %v", err)
+		return "", fmt.Errorf("Error: IMAP operation failed — %v", err)
 	}
 	defer rawConn.Close()
 
@@ -780,7 +780,7 @@ func (e *InboxZeroTool) executeImap(
 	})
 
 	if err := tlsConn.HandshakeContext(effectiveCtx); err != nil {
-		return fmt.Sprintf("Error: IMAP operation failed — %v", err)
+		return "", fmt.Errorf("Error: IMAP operation failed — %v", err)
 	}
 
 	reader := bufio.NewReader(tlsConn)
@@ -789,30 +789,30 @@ func (e *InboxZeroTool) executeImap(
 	// Read greeting
 	_, err = reader.ReadString('\n')
 	if err != nil {
-		return fmt.Sprintf("Error: IMAP operation failed — %v", err)
+		return "", fmt.Errorf("Error: IMAP operation failed — %v", err)
 	}
 
 	// Login
 	loginCmd := fmt.Sprintf("A1 LOGIN %s %s\r\n", imapQuote(e.emailConfig.Username), imapQuote(password))
 	if _, err := writer.WriteString(loginCmd); err != nil {
-		return fmt.Sprintf("Error: IMAP operation failed — %v", err)
+		return "", fmt.Errorf("Error: IMAP operation failed — %v", err)
 	}
 	if err := writer.Flush(); err != nil {
-		return fmt.Sprintf("Error: IMAP operation failed — %v", err)
+		return "", fmt.Errorf("Error: IMAP operation failed — %v", err)
 	}
 
 	loginResp, err := e.readUntilTag(effectiveCtx, reader, "A1")
 	if err != nil {
-		return fmt.Sprintf("Error: IMAP operation failed — %v", err)
+		return "", fmt.Errorf("Error: IMAP operation failed — %v", err)
 	}
 
 	if !strings.Contains(strings.ToUpper(loginResp), "OK") {
-		return fmt.Sprintf("Error: IMAP login failed — %s", loginResp)
+		return "", fmt.Errorf("Error: IMAP login failed — %s", loginResp)
 	}
 
 	result, err := action(effectiveCtx, reader, writer)
 	if err != nil {
-		return fmt.Sprintf("Error: IMAP operation failed — %v", err)
+		return "", fmt.Errorf("Error: IMAP operation failed — %v", err)
 	}
 
 	// Logout
@@ -821,7 +821,7 @@ func (e *InboxZeroTool) executeImap(
 		_, _ = e.readUntilTag(effectiveCtx, reader, "A99")
 	}
 
-	return result
+	return result, nil
 }
 
 func (e *InboxZeroTool) readUntilTag(ctx context.Context, reader *bufio.Reader, tag string) (string, error) {

@@ -3,6 +3,7 @@ package git
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 	"unicode"
@@ -99,12 +100,12 @@ func tokenizeGitArgs(args string) []string {
 	return tokens
 }
 
-func (a *GitTool) runGit(ctx context.Context, gitArgs, cwd string) string {
+func (a *GitTool) runGit(ctx context.Context, gitArgs, cwd string) (string, error) {
 	args := tokenizeGitArgs(gitArgs)
 	result := util.RunProcess(ctx, "git", args, cwd, 30, int64(a.config.MaxDiffBytes), 8192)
 
 	if result.Error != "" {
-		return result.Error
+		return "", errors.New(result.Error)
 	}
 
 	var sb strings.Builder
@@ -125,38 +126,38 @@ func (a *GitTool) runGit(ctx context.Context, gitArgs, cwd string) string {
 	if sb.Len() > 0 {
 		fmt.Fprintf(&sb, "\n(git %s completed with exit code %d)", gitArgs, result.ExitCode)
 	}
-	return sb.String()
+	return sb.String(), nil
 }
 
-func (a *GitTool) Execute(ctx context.Context, argumentsJson string) string {
+func (a *GitTool) Execute(ctx context.Context, argumentsJson string) (string, error) {
 	var args GitModel
 
 	if err := json.Unmarshal([]byte(argumentsJson), &args); err != nil {
-		return err.Error()
+		return "", err
 	}
 
 	args.Subcommand = strings.ToLower(args.Subcommand)
 
 	_, ok := destructiveSubcommands[args.Subcommand]
 	if ok && !a.config.AllowPush {
-		return fmt.Sprintf("Error: '%s' is disabled. Set GitTools.AllowPush = true to enable destructive operations.", args.Subcommand)
+		return "", fmt.Errorf("Error: '%s' is disabled. Set GitTools.AllowPush = true to enable destructive operations.", args.Subcommand)
 	}
 
 	_, ok1 := safeSubcommands[args.Subcommand]
 
 	if !ok && !ok1 {
-		return fmt.Sprintf("Error: Unsupported git subcommand '%s'.", args.Subcommand)
+		return "", fmt.Errorf("Error: Unsupported git subcommand '%s'.", args.Subcommand)
 	}
 
 	// Block dangerous flag combinations even when destructive ops are allowed
 	if args.Subcommand == "reset" && strings.Contains(args.Args, "--hard") && !a.config.AllowPush {
-		return "Error: 'git reset --hard' is disabled. Set GitTools.AllowPush = true to enable."
+		return "", errors.New("Error: 'git reset --hard' is disabled. Set GitTools.AllowPush = true to enable.")
 	}
 
 	// Validate args.Args against shell metacharacter injection
 	if args.Args != "" {
 		if err := core.Sanitizer.CheckShellMetaChars(args.Args, "args"); err != nil {
-			return err.Error()
+			return "", err
 		}
 	}
 

@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -288,32 +289,32 @@ func formatEventList(root CalendarResponse) string {
 	return sb.String()
 }
 
-func (a *CalendarTool) deleteEvent(ctx context.Context, args map[string]any) string {
+func (a *CalendarTool) deleteEvent(ctx context.Context, args map[string]any) (string, error) {
 	var eventId = util.GetString(args, "event_id")
 	if eventId == nil || strings.TrimSpace(*eventId) == "" {
-		return "Error: 'event_id' is required to delete an event."
+		return "", errors.New("Error: 'event_id' is required to delete an event.")
 	}
 
 	var url = fmt.Sprintf("%s/calendars/%s/events/%s", calendarApiBase, url.QueryEscape(a.config.CalendarId), url.QueryEscape(*eventId))
 	req, err := http.NewRequestWithContext(ctx, http.MethodDelete, url, nil)
 	if err != nil {
-		return err.Error()
+		return "", err
 	}
 
 	req.Header.Set("Authorization", "Bearer "+a.accessToken)
 
 	resp, err := a.httpClient.Do(req)
 	if err != nil {
-		return err.Error()
+		return "", err
 	}
 
 	defer resp.Body.Close()
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return fmt.Sprintf("Error: Failed to delete event (HTTP %d)", resp.StatusCode)
+		return "", fmt.Errorf("Error: Failed to delete event (HTTP %d)", resp.StatusCode)
 	}
 
-	return fmt.Sprintf("Event '%s' deleted successfully.", *eventId)
+	return "", fmt.Errorf("Event '%s' deleted successfully.", *eventId)
 }
 
 func getStringOrDefault(ptr *string, defaultValue string) string {
@@ -323,10 +324,10 @@ func getStringOrDefault(ptr *string, defaultValue string) string {
 	return defaultValue
 }
 
-func (a *CalendarTool) updateEvent(ctx context.Context, args map[string]any) string {
+func (a *CalendarTool) updateEvent(ctx context.Context, args map[string]any) (string, error) {
 	var eventId = util.GetString(args, "event_id")
 	if eventId == nil || strings.TrimSpace(*eventId) == "" {
-		return "Error: 'event_id' is required to update an event."
+		return "", errors.New("Error: 'event_id' is required to update an event.")
 	}
 
 	var title = getStringOrDefault(util.GetString(args, "title"), "")
@@ -340,26 +341,26 @@ func (a *CalendarTool) updateEvent(ctx context.Context, args map[string]any) str
 	var url = fmt.Sprintf("%s/calendars/%s/events/%s", calendarApiBase, url.QueryEscape(a.config.CalendarId), url.QueryEscape(*eventId))
 	req, err := http.NewRequestWithContext(ctx, http.MethodPatch, url, bytes.NewBuffer(content))
 	if err != nil {
-		return err.Error()
+		return "", err
 	}
 
 	req.Header.Set("Authorization", "Bearer "+a.accessToken)
 
 	resp, err := a.httpClient.Do(req)
 	if err != nil {
-		return err.Error()
+		return "", err
 	}
 
 	defer resp.Body.Close()
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return fmt.Sprintf("Error: Failed to update event (HTTP %d)", resp.StatusCode)
+		return "", fmt.Errorf("Error: Failed to update event (HTTP %d)", resp.StatusCode)
 	}
 
-	return fmt.Sprintf("Event '%s' updated successfully.", *eventId)
+	return fmt.Sprintf("Event '%s' updated successfully.", *eventId), nil
 }
 
-func (a *CalendarTool) createEvent(ctx context.Context, args map[string]any) string {
+func (a *CalendarTool) createEvent(ctx context.Context, args map[string]any) (string, error) {
 	var title = getStringOrDefault(util.GetString(args, "title"), "")
 	var start = getStringOrDefault(util.GetString(args, "start"), "")
 	var end = getStringOrDefault(util.GetString(args, "end"), "")
@@ -367,7 +368,7 @@ func (a *CalendarTool) createEvent(ctx context.Context, args map[string]any) str
 	var loc = getStringOrDefault(util.GetString(args, "location"), "")
 
 	if title == "" || start == "" {
-		return "Error: 'title' and 'start' are required to create an event."
+		return "", errors.New("Error: 'title' and 'start' are required to create an event.")
 	}
 
 	// Default end = start + 1 hour
@@ -383,25 +384,25 @@ func (a *CalendarTool) createEvent(ctx context.Context, args map[string]any) str
 	var url = fmt.Sprintf("%s/calendars/%s/events", calendarApiBase, url.QueryEscape(a.config.CalendarId))
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewBuffer(content))
 	if err != nil {
-		return err.Error()
+		return "", err
 	}
 
 	req.Header.Set("Authorization", "Bearer "+a.accessToken)
 
 	resp, err := a.httpClient.Do(req)
 	if err != nil {
-		return err.Error()
+		return "", err
 	}
 
 	defer resp.Body.Close()
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return fmt.Sprintf("Error: Failed to create event (HTTP %d)", resp.StatusCode)
+		return "", fmt.Errorf("Error: Failed to create event (HTTP %d)", resp.StatusCode)
 	}
 
 	var doc CalendarCreateEventResp
 	if err := json.NewDecoder(resp.Body).Decode(&doc); err != nil {
-		return err.Error()
+		return "", err
 	}
 
 	eventId := doc.Id
@@ -410,7 +411,7 @@ func (a *CalendarTool) createEvent(ctx context.Context, args map[string]any) str
 	}
 	htmlLink := doc.HtmlLink
 
-	return fmt.Sprintf("Event created successfully.\nID: %s\nTitle: %s\nStart: %s\nEnd: %s\nLink: %s", eventId, title, start, end, htmlLink)
+	return fmt.Sprintf("Event created successfully.\nID: %s\nTitle: %s\nStart: %s\nEnd: %s\nLink: %s", eventId, title, start, end, htmlLink), nil
 }
 
 type CalendarCreateEventResp struct {
@@ -418,42 +419,42 @@ type CalendarCreateEventResp struct {
 	HtmlLink string `json:"htmlLink"`
 }
 
-func (a *CalendarTool) searchEvents(ctx context.Context, args map[string]any) string {
+func (a *CalendarTool) searchEvents(ctx context.Context, args map[string]any) (string, error) {
 	var query = getStringOrDefault(util.GetString(args, "query"), "")
 	if query == "" {
-		return "Error: 'query' parameter is required for search."
+		return "", errors.New("Error: 'query' parameter is required for search.")
 	}
 
 	var url = fmt.Sprintf("%s/calendars/%s/events?q=%s&maxResults=%d&singleEvents=true&orderBy=startTime", calendarApiBase, url.QueryEscape(a.config.CalendarId), url.QueryEscape(query), a.config.MaxEvents)
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
-		return err.Error()
+		return "", err
 	}
 
 	req.Header.Set("Authorization", "Bearer "+a.accessToken)
 
 	resp, err := a.httpClient.Do(req)
 	if err != nil {
-		return err.Error()
+		return "", err
 	}
 
 	defer resp.Body.Close()
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return fmt.Sprintf("Error: Failed to search (HTTP %d)", resp.StatusCode)
+		return "", fmt.Errorf("Error: Failed to search (HTTP %d)", resp.StatusCode)
 	}
 
 	var root CalendarResponse
 	if err := json.NewDecoder(resp.Body).Decode(&root); err != nil {
-		return err.Error()
+		return "", err
 	}
 
-	return formatEventList(root)
+	return formatEventList(root), nil
 }
 
 var defaultDaysAhead int = 7
 
-func (a *CalendarTool) listEvents(ctx context.Context, args map[string]any) string {
+func (a *CalendarTool) listEvents(ctx context.Context, args map[string]any) (string, error) {
 	var daysAhead = util.GetInt(args, "days_ahead")
 	if daysAhead == nil {
 		daysAhead = &defaultDaysAhead
@@ -477,48 +478,48 @@ func (a *CalendarTool) listEvents(ctx context.Context, args map[string]any) stri
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, geturl, nil)
 	if err != nil {
-		return err.Error()
+		return "", err
 	}
 
 	req.Header.Set("Authorization", "Bearer "+a.accessToken)
 
 	resp, err := a.httpClient.Do(req)
 	if err != nil {
-		return err.Error()
+		return "", err
 	}
 
 	defer resp.Body.Close()
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return fmt.Sprintf("Error: Failed to search (HTTP %d)", resp.StatusCode)
+		return "", fmt.Errorf("Error: Failed to search (HTTP %d)", resp.StatusCode)
 	}
 
 	var root CalendarResponse
 	if err := json.NewDecoder(resp.Body).Decode(&root); err != nil {
-		return err.Error()
+		return "", err
 	}
 
-	return formatEventList(root)
+	return formatEventList(root), nil
 }
 
-func (a *CalendarTool) Execute(ctx context.Context, argumentsJson string) string {
+func (a *CalendarTool) Execute(ctx context.Context, argumentsJson string) (string, error) {
 	if a.config.CredentialsPath == "" || !util.FileExists(a.config.CredentialsPath) {
-		return "Error: Calendar credentials not configured. Set Calendar.CredentialsPath to a valid service account JSON key file."
+		return "", errors.New("Error: Calendar credentials not configured. Set Calendar.CredentialsPath to a valid service account JSON key file.")
 	}
 
 	var args map[string]any
 	if err := json.Unmarshal([]byte(argumentsJson), &args); err != nil {
-		return err.Error()
+		return "", err
 	}
 
 	action, ok := args["action"].(string)
 	if !ok {
-		return "Error: Unsupported calendar action. Use: list, search, create, update, delete"
+		return "", errors.New("Error: Unsupported calendar action. Use: list, search, create, update, delete")
 	}
 	action = strings.ToLower(action)
 
 	if err := a.ensureAccessToken(ctx); err != nil {
-		return fmt.Sprintf("Error: Failed to authenticate with Google Calendar — %s", err.Error())
+		return "", err
 	}
 
 	switch action {
@@ -533,6 +534,6 @@ func (a *CalendarTool) Execute(ctx context.Context, argumentsJson string) string
 	case "delete":
 		return a.deleteEvent(ctx, args)
 	default:
-		return fmt.Sprintf("Error: Unsupported calendar action '%s'. Use: list, search, create, update, delete.", action)
+		return "", fmt.Errorf("Error: Unsupported calendar action '%s'. Use: list, search, create, update, delete.", action)
 	}
 }

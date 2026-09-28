@@ -29,10 +29,10 @@ func (e *EmitTextTool) ParameterSchema() string {
 }`
 }
 
-func (a *EmitTextTool) Execute(ctx context.Context, argumentsJson string) string {
+func (a *EmitTextTool) Execute(ctx context.Context, argumentsJson string) (string, error) {
 	select {
 	case <-ctx.Done():
-		return ctx.Err().Error()
+		return "", ctx.Err()
 	default:
 	}
 
@@ -43,7 +43,7 @@ func (a *EmitTextTool) Execute(ctx context.Context, argumentsJson string) string
 	var doc map[string]any
 
 	if err := json.Unmarshal([]byte(argumentsJson), &doc); err != nil {
-		return err.Error()
+		return "", err
 	}
 
 	text, ok := doc["text"].(string)
@@ -51,5 +51,5 @@ func (a *EmitTextTool) Execute(ctx context.Context, argumentsJson string) string
 		return SerializeError("invalid_arguments", "'text' is required.")
 	}
 
-	return text
+	return text, nil
 }

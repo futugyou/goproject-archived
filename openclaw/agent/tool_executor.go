@@ -405,7 +405,7 @@ func BlocksPlanExecuteVerifyDecision(decision string) bool {
 	return decision != core.PlanExecuteVerifyDecisionKindsProceed && decision != core.PlanExecuteVerifyDecisionKindsRequireApproval
 }
 
-func InvokeTool(ctx context.Context, tool core.ITool, argsJson string, toolContext *core.ToolExecutionContext) string {
+func InvokeTool(ctx context.Context, tool core.ITool, argsJson string, toolContext *core.ToolExecutionContext) (string, error) {
 	if contextualTool, ok := tool.(core.IToolWithContext); ok && toolContext != nil {
 		return contextualTool.ExecuteContext(ctx, argsJson, *toolContext)
 	}
@@ -413,7 +413,7 @@ func InvokeTool(ctx context.Context, tool core.ITool, argsJson string, toolConte
 	return tool.Execute(ctx, argsJson)
 }
 
-func (o *OpenClawToolExecutor) ExecuteToolWithTimeout(ctx context.Context, tool core.ITool, argsJson string, session *core.Session, turnCtx *core.TurnContext) string {
+func (o *OpenClawToolExecutor) ExecuteToolWithTimeout(ctx context.Context, tool core.ITool, argsJson string, session *core.Session, turnCtx *core.TurnContext) (string, error) {
 	var execContext = &core.ToolExecutionContext{
 		Session:     session,
 		TurnContext: turnCtx,
@@ -618,12 +618,12 @@ func (o *OpenClawToolExecutor) ExecuteToolWithRouting(
 			return "", errors.New(strings.Join(CreateLocalExecutionUnavailableException(tool), "\n"))
 		}
 
-		return o.ExecuteToolWithTimeout(ctx, tool, argsJson, session, turnCtx), nil
+		return o.ExecuteToolWithTimeout(ctx, tool, argsJson, session, turnCtx)
 	}
 
 	sandboxCapableTool, ok := tool.(core.ISandboxCapableTool)
 	if !ok {
-		return o.ExecuteToolWithTimeout(ctx, tool, argsJson, session, turnCtx), nil
+		return o.ExecuteToolWithTimeout(ctx, tool, argsJson, session, turnCtx)
 	}
 
 	backendName := o.config.Execution.DefaultBackend
@@ -648,7 +648,7 @@ func (o *OpenClawToolExecutor) ExecuteToolWithRouting(
 	}
 
 	if backendName == "local" && !legacySandboxRoute {
-		return o.ExecuteToolWithTimeout(ctx, tool, argsJson, session, turnCtx), nil
+		return o.ExecuteToolWithTimeout(ctx, tool, argsJson, session, turnCtx)
 	}
 
 	if o.executionRouter.RequiresWorkspace(backendName) && o.config.Tooling.WorkspaceRoot != "" {
@@ -729,7 +729,7 @@ func handleToolExecutorError(
 		if sandboxMode == core.ToolSandboxMode_Require {
 			return "", fmt.Errorf("Error: Tool '%s' requires sandboxing but the sandbox provider is unavailable.", tool.Name())
 		}
-		return o.ExecuteToolWithTimeout(ctx, tool, argsJson, session, turnCtx), nil
+		return o.ExecuteToolWithTimeout(ctx, tool, argsJson, session, turnCtx)
 	}
 	return "", err
 }

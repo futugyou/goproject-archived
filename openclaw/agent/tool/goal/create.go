@@ -3,6 +3,7 @@ package goal
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -43,8 +44,8 @@ func (a *CreateGoalTool) ParameterSchema() string {
 }`
 }
 
-func (a *CreateGoalTool) Execute(ctx context.Context, argumentsJson string) string {
-	return "Error: create_goal requires session context"
+func (a *CreateGoalTool) Execute(ctx context.Context, argumentsJson string) (string, error) {
+	return "", errors.New("Error: create_goal requires session context")
 }
 
 type CreateGoal struct {
@@ -52,32 +53,32 @@ type CreateGoal struct {
 	TokenBudget int64   `json:"token_budget,omitempty"`
 }
 
-func (a *CreateGoalTool) ExecuteContext(ctx context.Context, argumentsJson string, toolContext core.ToolExecutionContext) string {
+func (a *CreateGoalTool) ExecuteContext(ctx context.Context, argumentsJson string, toolContext core.ToolExecutionContext) (string, error) {
 	if argumentsJson == "" {
-		return "Error: arguments payload is empty."
+		return "", errors.New("Error: arguments payload is empty.")
 	}
 
 	if toolContext.Session == nil {
-		return "Error: ToolExecutionContext Session is empty."
+		return "", errors.New("Error: ToolExecutionContext Session is empty.")
 	}
 
 	var data CreateGoal
 	if err := json.Unmarshal([]byte(argumentsJson), &data); err != nil {
-		return "Error: arguments must be valid JSON."
+		return "", errors.New("Error: arguments must be valid JSON.")
 	}
 
 	if data.Objective == nil || strings.TrimSpace(*data.Objective) == "" {
-		return "Error: objective is required."
+		return "", errors.New("Error: objective is required.")
 	}
 
 	if data.TokenBudget < 0 {
-		return "Error: token_budget cannot be negative."
+		return "", errors.New("Error: token_budget cannot be negative.")
 	}
 
 	goal, err := a.goalService.CreateGoal(ctx, toolContext.Session.Id, *data.Objective, data.TokenBudget, toolContext.Session.GetTotalTokens())
 	if err != nil {
-		return err.Error()
+		return "", err
 	}
 
-	return fmt.Sprintf("goal created. Status: %s. Objective: %s", goal.Status.ToDisplayName(), goal.Objective)
+	return fmt.Sprintf("goal created. Status: %s. Objective: %s", goal.Status.ToDisplayName(), goal.Objective), nil
 }

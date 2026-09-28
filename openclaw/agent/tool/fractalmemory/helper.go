@@ -39,15 +39,15 @@ func BuildWriteDescriptor(
 	}
 }
 
-func FractalMemoryError(message string) string {
+func FractalMemoryError(message string) (string, error) {
 	response := core.MutationResponse{
 		Error: message,
 	}
 
 	d, err := json.Marshal(response)
 	if err != nil {
-		return message
+		return "", err
 	}
 
-	return string(d)
+	return string(d), nil
 }

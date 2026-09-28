@@ -3,6 +3,7 @@ package mcpnative
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"strings"
 
 	"github.com/futugyou/openclaw/core"
@@ -40,18 +41,18 @@ func (e *McpNativeTool) ParameterSchema() string {
 	return e.parameterSchema
 }
 
-func (a *McpNativeTool) Execute(ctx context.Context, argumentsJson string) string {
+func (a *McpNativeTool) Execute(ctx context.Context, argumentsJson string) (string, error) {
 	return a.executeCore(ctx, argumentsJson, nil)
 }
 
-func (a *McpNativeTool) ExecuteContext(ctx context.Context, argumentsJson string, toolContext core.ToolExecutionContext) string {
+func (a *McpNativeTool) ExecuteContext(ctx context.Context, argumentsJson string, toolContext core.ToolExecutionContext) (string, error) {
 	return a.executeCore(ctx, argumentsJson, &toolContext)
 }
 
-func (e *McpNativeTool) executeCore(ctx context.Context, argumentsJson string, toolContext *core.ToolExecutionContext) string {
+func (e *McpNativeTool) executeCore(ctx context.Context, argumentsJson string, toolContext *core.ToolExecutionContext) (string, error) {
 	var argsDoc map[string]any
 	if err := json.Unmarshal([]byte(argumentsJson), &argsDoc); err != nil {
-		return err.Error()
+		return "", err
 	}
 
 	params := &mcp.CallToolParams{
@@ -67,13 +68,13 @@ func (e *McpNativeTool) executeCore(ctx context.Context, argumentsJson string, t
 	}
 	response, err := e.mcpSession.CallTool(ctx, params)
 	if err != nil {
-		return err.Error()
+		return "", err
 	}
 	var text = FormatResponseContent(response, e.suppressStructuredContent)
 	if response.IsError {
-		return "Error: " + text
+		return "", errors.New("Error: " + text)
 	}
-	return text
+	return text, nil
 }
 
 func FormatResponseContent(response *mcp.CallToolResult, suppressStructuredContent bool) string {

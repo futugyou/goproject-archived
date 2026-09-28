@@ -36,7 +36,7 @@ func (a *FractalMemoryExportTool) ParameterSchema() string {
 `
 }
 
-func (a *FractalMemoryExportTool) Execute(ctx context.Context, argumentsJson string) string {
+func (a *FractalMemoryExportTool) Execute(ctx context.Context, argumentsJson string) (string, error) {
 	var model struct {
 		Path string `json:"path"`
 		Mode string `json:"mode"`
@@ -64,5 +64,5 @@ func (a *FractalMemoryExportTool) Execute(ctx context.Context, argumentsJson str
 		return FractalMemoryError(err.Error())
 	}
 
-	return string(d)
+	return string(d), nil
 }

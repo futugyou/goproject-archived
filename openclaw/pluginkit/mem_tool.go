@@ -3,6 +3,7 @@ package pluginkit
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -54,15 +55,15 @@ type kgArgs struct {
 	To        string `json:"to"`
 }
 
-func (t *KnowledgeGraphTool) Execute(ctx context.Context, argumentsJson string) string {
+func (t *KnowledgeGraphTool) Execute(ctx context.Context, argumentsJson string) (string, error) {
 	kg, err := t.provider()
 	if err != nil {
-		return fmt.Sprintf("Error: %v", err)
+		return "", err
 	}
 
 	var args kgArgs
 	if err := json.Unmarshal([]byte(argumentsJson), &args); err != nil {
-		return "Error: invalid JSON arguments"
+		return "", errors.New("Error: invalid JSON arguments")
 	}
 
 	switch args.Action {
@@ -73,18 +74,18 @@ func (t *KnowledgeGraphTool) Execute(ctx context.Context, argumentsJson string) 
 	case "timeline":
 		return t.handleTimeline(ctx, kg, args)
 	default:
-		return "Error: action must be one of add, query, or timeline."
+		return "", errors.New("Error: action must be one of add, query, or timeline.")
 	}
 }
 
-func (a *KnowledgeGraphTool) handleTimeline(ctx context.Context, kg IKnowledgeGraph, args kgArgs) string {
+func (a *KnowledgeGraphTool) handleTimeline(ctx context.Context, kg IKnowledgeGraph, args kgArgs) (string, error) {
 	entity, err := ParseEntityRef(args.Entity)
 	if err != nil {
-		return err.Error()
+		return "", err
 	}
 
 	if entity.ID == "" {
-		return "Error: timeline requires entity."
+		return "", errors.New("Error: timeline requires entity.")
 	}
 
 	var from *time.Time
@@ -109,11 +110,11 @@ func (a *KnowledgeGraphTool) handleTimeline(ctx context.Context, kg IKnowledgeGr
 	)
 
 	if err != nil {
-		return fmt.Sprintf("Error timeline triple: %v", err)
+		return "", fmt.Errorf("Error timeline triple: %v", err)
 	}
 
 	if len(events) == 0 {
-		return "No temporal knowledge graph events found."
+		return "", errors.New("No temporal knowledge graph events found.")
 	}
 
 	sb := &strings.Builder{}
@@ -134,23 +135,23 @@ func (a *KnowledgeGraphTool) handleTimeline(ctx context.Context, kg IKnowledgeGr
 		sb.WriteString("\n")
 	}
 
-	return strings.TrimSpace(sb.String())
+	return strings.TrimSpace(sb.String()), nil
 }
 
-func (a *KnowledgeGraphTool) handleQuery(ctx context.Context, kg IKnowledgeGraph, args kgArgs) string {
+func (a *KnowledgeGraphTool) handleQuery(ctx context.Context, kg IKnowledgeGraph, args kgArgs) (string, error) {
 	subject, err := ParseEntityRef(args.Subject)
 	if err != nil {
-		return err.Error()
+		return "", err
 	}
 
 	obj, err := ParseEntityRef(args.Object)
 	if err != nil {
-		return err.Error()
+		return "", err
 	}
 
 	predicate := args.Predicate
 	if subject.ID == "" || obj.ID == "" || predicate == "" {
-		return "Error: add requires subject, predicate, and object."
+		return "", errors.New("Error: add requires subject, predicate, and object.")
 	}
 
 	var now = time.Now().UTC()
@@ -180,21 +181,21 @@ func (a *KnowledgeGraphTool) handleQuery(ctx context.Context, kg IKnowledgeGraph
 	})
 
 	if err != nil {
-		return fmt.Sprintf("Error adding triple: %v", err)
+		return "", err
 	}
 
-	return fmt.Sprintf("Added temporal triple %d: %s %s %s", id, subject, args.Predicate, obj)
+	return fmt.Sprintf("Added temporal triple %d: %s %s %s", id, subject, args.Predicate, obj), nil
 }
 
-func (a *KnowledgeGraphTool) handleAdd(ctx context.Context, kg IKnowledgeGraph, args kgArgs) string {
+func (a *KnowledgeGraphTool) handleAdd(ctx context.Context, kg IKnowledgeGraph, args kgArgs) (string, error) {
 	sub, err := ParseEntityRef(args.Subject)
 	if err != nil {
-		return err.Error()
+		return "", err
 	}
 
 	obj, err := ParseEntityRef(args.Object)
 	if err != nil {
-		return err.Error()
+		return "", err
 	}
 
 	now := time.Now().UTC()
@@ -213,8 +214,8 @@ func (a *KnowledgeGraphTool) handleAdd(ctx context.Context, kg IKnowledgeGraph, 
 		CreatedAt: now,
 	})
 	if err != nil {
-		return fmt.Sprintf("Error adding triple: %v", err)
+		return "", err
 	}
 
-	return fmt.Sprintf("Added temporal triple %d: %s %s %s", id, sub, args.Predicate, obj)
+	return fmt.Sprintf("Added temporal triple %d: %s %s %s", id, sub, args.Predicate, obj), nil
 }

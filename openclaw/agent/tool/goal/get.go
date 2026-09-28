@@ -2,6 +2,7 @@ package goal
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -28,15 +29,15 @@ func (a *GetGoalTool) ParameterSchema() string {
 	return `{"type":"object","properties":{},"required":[]}`
 }
 
-func (a *GetGoalTool) Execute(ctx context.Context, argumentsJson string) string {
-	return "Error: get_goal requires session context. Use the default parameterless call."
+func (a *GetGoalTool) Execute(ctx context.Context, argumentsJson string) (string, error) {
+	return "", errors.New("Error: get_goal requires session context. Use the default parameterless call.")
 }
 
-func (a *GetGoalTool) ExecuteContext(ctx context.Context, argumentsJson string, toolContext core.ToolExecutionContext) string {
+func (a *GetGoalTool) ExecuteContext(ctx context.Context, argumentsJson string, toolContext core.ToolExecutionContext) (string, error) {
 	var sessionId = toolContext.Session.Id
 	goal, err := a.goalService.GetGoal(ctx, sessionId)
 	if err != nil {
-		return err.Error()
+		return "", err
 	}
 
 	var sb = strings.Builder{}
@@ -55,5 +56,5 @@ func (a *GetGoalTool) ExecuteContext(ctx context.Context, argumentsJson string, 
 		fmt.Fprintf(&sb, "\nNote: %s", goal.StatusNote)
 	}
 
-	return sb.String()
+	return sb.String(), nil
 }

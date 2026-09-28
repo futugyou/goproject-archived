@@ -3,6 +3,7 @@ package goal
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -44,8 +45,8 @@ func (a *UpdateGoalTool) ParameterSchema() string {
 }`
 }
 
-func (a *UpdateGoalTool) Execute(ctx context.Context, argumentsJson string) string {
-	return "Error: update_goal requires session context."
+func (a *UpdateGoalTool) Execute(ctx context.Context, argumentsJson string) (string, error) {
+	return "", errors.New("Error: update_goal requires session context.")
 }
 
 type UpdateGoal struct {
@@ -78,49 +79,49 @@ func tryVerifyCompletion(toolContext core.ToolExecutionContext) bool {
 	return !strings.EqualFold(content, "[tool_use]")
 }
 
-func (a *UpdateGoalTool) ExecuteContext(ctx context.Context, argumentsJson string, toolContext core.ToolExecutionContext) string {
+func (a *UpdateGoalTool) ExecuteContext(ctx context.Context, argumentsJson string, toolContext core.ToolExecutionContext) (string, error) {
 	if argumentsJson == "" {
-		return "Error: arguments payload is empty."
+		return "", errors.New("Error: arguments payload is empty.")
 	}
 
 	if toolContext.Session == nil {
-		return "Error: ToolExecutionContext Session is empty."
+		return "", errors.New("Error: ToolExecutionContext Session is empty.")
 	}
 
 	var data UpdateGoal
 	if err := json.Unmarshal([]byte(argumentsJson), &data); err != nil {
-		return "Error: arguments must be valid JSON."
+		return "", errors.New("Error: arguments must be valid JSON.")
 	}
 
 	if data.Status == "" {
-		return "Error: status is required."
+		return "", errors.New("Error: status is required.")
 	}
 
 	goal, err := a.goalService.GetGoal(ctx, toolContext.Session.Id)
 	if err != nil || goal == nil {
-		return "Error: No active goal for this session."
+		return "", errors.New("Error: No active goal for this session.")
 	}
 
 	if !goal.Status.IsPursuable() {
-		return fmt.Sprintf("Error: Goal is not active (current status: %s).", goal.Status.ToDisplayName())
+		return "", fmt.Errorf("Error: Goal is not active (current status: %s).", goal.Status.ToDisplayName())
 	}
 
 	switch data.Status {
 	case "complete":
 		if !tryVerifyCompletion(toolContext) {
-			return "Warning: Cannot verify completion. The goal may not be fully achieved yet. " +
-				"Please continue working toward the objective and verify all requirements before declaring completion."
+			return "", errors.New("Warning: Cannot verify completion. The goal may not be fully achieved yet. " +
+				"Please continue working toward the objective and verify all requirements before declaring completion.")
 		}
 		if err := a.goalService.UpdateStatus(ctx, toolContext.Session.Id, core.GoalStatus_Complete, data.Note); err != nil {
-			return err.Error()
+			return "", err
 		}
-		return "Goal marked as complete. Well done!"
+		return "Goal marked as complete. Well done!", nil
 	case "blocked":
 		if err := a.goalService.UpdateStatus(ctx, toolContext.Session.Id, core.GoalStatus_Blocked, data.Note); err != nil {
-			return err.Error()
+			return "", err
 		}
-		return "Goal marked as blocked. The user can resume it with /goal resume."
+		return "Goal marked as blocked. The user can resume it with /goal resume.", nil
 	default:
-		return fmt.Sprintf("Error: Invalid status '%s'. Use 'complete' or 'blocked'.", data.Status)
+		return "", fmt.Errorf("Error: Invalid status '%s'. Use 'complete' or 'blocked'.", data.Status)
 	}
 }

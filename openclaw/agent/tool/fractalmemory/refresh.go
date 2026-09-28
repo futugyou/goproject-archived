@@ -28,7 +28,7 @@ func (a *FractalMemoryIndexRefreshTool) ParameterSchema() string {
 	return `{"type":"object","properties":{}}`
 }
 
-func (a *FractalMemoryIndexRefreshTool) Execute(ctx context.Context, argumentsJson string) string {
+func (a *FractalMemoryIndexRefreshTool) Execute(ctx context.Context, argumentsJson string) (string, error) {
 	response, err := a.provider.RefreshIndex(ctx)
 	if err != nil {
 		return FractalMemoryError(err.Error())
@@ -39,7 +39,7 @@ func (a *FractalMemoryIndexRefreshTool) Execute(ctx context.Context, argumentsJs
 		return FractalMemoryError(err.Error())
 	}
 
-	return string(d)
+	return string(d), nil
 }
 
 func (a *FractalMemoryIndexRefreshTool) ResolveActionDescriptor(argumentsJson string) (*core.ToolActionDescriptor, error) {

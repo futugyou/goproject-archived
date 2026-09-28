@@ -38,7 +38,7 @@ func (a *FractalMemoryOpenTool) ParameterSchema() string {
 `
 }
 
-func (a *FractalMemoryOpenTool) Execute(ctx context.Context, argumentsJson string) string {
+func (a *FractalMemoryOpenTool) Execute(ctx context.Context, argumentsJson string) (string, error) {
 	var model struct {
 		Path  string `json:"path"`
 		Depth int    `json:"depth"`
@@ -72,5 +72,5 @@ func (a *FractalMemoryOpenTool) Execute(ctx context.Context, argumentsJson strin
 		return FractalMemoryError(err.Error())
 	}
 
-	return string(d)
+	return string(d), nil
 }

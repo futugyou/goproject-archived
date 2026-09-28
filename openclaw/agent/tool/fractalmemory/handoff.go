@@ -35,7 +35,7 @@ func (a *FractalMemoryHandoffCreateTool) ParameterSchema() string {
 `
 }
 
-func (a *FractalMemoryHandoffCreateTool) Execute(ctx context.Context, argumentsJson string) string {
+func (a *FractalMemoryHandoffCreateTool) Execute(ctx context.Context, argumentsJson string) (string, error) {
 	var model struct {
 		Path string `json:"path"`
 	}
@@ -58,7 +58,7 @@ func (a *FractalMemoryHandoffCreateTool) Execute(ctx context.Context, argumentsJ
 		return FractalMemoryError(err.Error())
 	}
 
-	return string(d)
+	return string(d), nil
 }
 
 func (a *FractalMemoryHandoffCreateTool) ResolveActionDescriptor(argumentsJson string) (*core.ToolActionDescriptor, error) {

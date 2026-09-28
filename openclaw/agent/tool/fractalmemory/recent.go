@@ -36,7 +36,7 @@ func (a *FractalMemoryRecentTool) ParameterSchema() string {
 `
 }
 
-func (a *FractalMemoryRecentTool) Execute(ctx context.Context, argumentsJson string) string {
+func (a *FractalMemoryRecentTool) Execute(ctx context.Context, argumentsJson string) (string, error) {
 	var model struct {
 		Days  int    `json:"days"`
 		Limit int    `json:"limit"`
@@ -67,5 +67,5 @@ func (a *FractalMemoryRecentTool) Execute(ctx context.Context, argumentsJson str
 		return FractalMemoryError(err.Error())
 	}
 
-	return string(d)
+	return string(d), nil
 }

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net"
 	"net/url"
@@ -486,30 +487,30 @@ func newToolSandboxError(msg string) error {
 	return &core.ToolSandboxError{Message: msg}
 }
 
-func (b *BrowserTool) Execute(ctx context.Context, argumentsJson string) string {
+func (b *BrowserTool) Execute(ctx context.Context, argumentsJson string) (string, error) {
 	if !b.localExecutionSupported {
-		return browserLocalExecutionUnavailableMessage
+		return "", errors.New(browserLocalExecutionUnavailableMessage)
 	}
 
 	if err := b.ensureInitialized(ctx); err != nil {
-		return fmt.Sprintf("Error: %v", err)
+		return "", err
 	}
 
 	b.mu.Lock()
 	defer b.mu.Unlock()
 
 	if b.disposed {
-		return "Error: Browser tool is disposed."
+		return "", errors.New("Error: Browser tool is disposed.")
 	}
 
 	page, err := b.ensureActivePageLocked()
 	if err != nil {
-		return fmt.Sprintf("Error: Browser not initialized. %v", err)
+		return "", fmt.Errorf("Error: Browser not initialized. %v", err)
 	}
 
 	var args map[string]interface{}
 	if err := json.Unmarshal([]byte(argumentsJson), &args); err != nil {
-		return "Error: Invalid arguments JSON."
+		return "", errors.New("Error: Invalid arguments JSON.")
 	}
 
 	action, _ := args["action"].(string)
@@ -518,73 +519,73 @@ func (b *BrowserTool) Execute(ctx context.Context, argumentsJson string) string 
 	case "goto":
 		rawURL, _ := args["url"].(string)
 		if err := b.validateBrowserURL(rawURL); err != nil {
-			return fmt.Sprintf("Error: %v", err)
+			return "", err
 		}
 		_, err := page.Goto(rawURL, playwright.PageGotoOptions{
 			WaitUntil: playwright.WaitUntilStateLoad,
 		})
 		if err != nil {
-			return fmt.Sprintf("Browser action failed: %v", err)
+			return "", err
 		}
 		title, err := page.Title()
 		if err != nil {
-			return fmt.Sprintf("Browser action failed: %v", err)
+			return "", err
 		}
-		return fmt.Sprintf("Navigated to %s. Title: '%s'", rawURL, title)
+		return fmt.Sprintf("Navigated to %s. Title: '%s'", rawURL, title), nil
 
 	case "click":
 		selector, _ := args["selector"].(string)
 		if err := page.Click(selector); err != nil {
-			return fmt.Sprintf("Browser action failed: %v", err)
+			return "", err
 		}
-		return fmt.Sprintf("Clicked selector: %s", selector)
+		return fmt.Sprintf("Clicked selector: %s", selector), nil
 
 	case "fill":
 		selector, _ := args["selector"].(string)
 		val, _ := args["value"].(string)
 		if err := page.Fill(selector, val); err != nil {
-			return fmt.Sprintf("Browser action failed: %v", err)
+			return "", err
 		}
-		return fmt.Sprintf("Filled %s with provided value.", selector)
+		return fmt.Sprintf("Filled %s with provided value.", selector), nil
 
 	case "get_text":
 		selector, ok := args["selector"].(string)
 		if ok && strings.TrimSpace(selector) != "" {
 			content, err := page.TextContent(selector)
 			if err != nil || content == "" {
-				return "No text found for selector."
+				return "", errors.New("No text found for selector.")
 			}
-			return content
+			return content, nil
 		}
 		body, err := page.TextContent("body")
 		if err != nil || body == "" {
-			return "Body is empty."
+			return "", errors.New("Body is empty.")
 		}
-		return body
+		return body, nil
 
 	case "evaluate":
 		if !b.config.AllowBrowserEvaluate {
-			return "Error: Browser evaluate is disabled by configuration (Tooling.AllowBrowserEvaluate=false)."
+			return "", errors.New("Error: Browser evaluate is disabled by configuration (Tooling.AllowBrowserEvaluate=false).")
 		}
 		script, _ := args["script"].(string)
 		result, err := page.Evaluate(script)
 		if err != nil {
-			return fmt.Sprintf("Browser action failed: %v", err)
+			return "", err
 		}
 		resBytes, _ := json.Marshal(result)
-		return string(resBytes)
+		return string(resBytes), nil
 
 	case "screenshot":
 		bytes, err := page.Screenshot(playwright.PageScreenshotOptions{
 			FullPage: playwright.Bool(true),
 		})
 		if err != nil {
-			return fmt.Sprintf("Browser action failed: %v", err)
+			return "", err
 		}
-		return fmt.Sprintf("Screenshot taken. Base64: %s", base64.StdEncoding.EncodeToString(bytes))
+		return fmt.Sprintf("Screenshot taken. Base64: %s", base64.StdEncoding.EncodeToString(bytes)), nil
 
 	default:
-		return fmt.Sprintf("Error: Unknown action '%s'", action)
+		return "", fmt.Errorf("Error: Unknown action '%s'", action)
 	}
 }
 

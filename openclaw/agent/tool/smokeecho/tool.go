@@ -55,8 +55,8 @@ func parseChunks(argumentsJson string) []string {
 	return model.Chunks
 }
 
-func (a *StreamingSmokeEchoTool) Execute(ctx context.Context, argumentsJson string) string {
-	return strings.Join(parseChunks(argumentsJson), "")
+func (a *StreamingSmokeEchoTool) Execute(ctx context.Context, argumentsJson string) (string, error) {
+	return strings.Join(parseChunks(argumentsJson), ""), nil
 }
 
 func (a *StreamingSmokeEchoTool) ExecuteStreaming(ctx context.Context, argumentsJson string) (<-chan string, error) {

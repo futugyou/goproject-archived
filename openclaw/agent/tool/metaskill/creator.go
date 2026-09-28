@@ -57,10 +57,10 @@ type CreatorStep struct {
 	WithKeys map[string]string
 }
 
-func (a *MetaSkillAssembleTool) Execute(ctx context.Context, argumentsJson string) string {
+func (a *MetaSkillAssembleTool) Execute(ctx context.Context, argumentsJson string) (string, error) {
 	select {
 	case <-ctx.Done():
-		return ctx.Err().Error()
+		return "", ctx.Err()
 	default:
 	}
 
@@ -71,7 +71,7 @@ func (a *MetaSkillAssembleTool) Execute(ctx context.Context, argumentsJson strin
 	var doc AssembleModel
 
 	if err := json.Unmarshal([]byte(argumentsJson), &doc); err != nil {
-		return err.Error()
+		return "", err
 	}
 
 	if !IsSupportedPattern(doc.PatternId) {
@@ -84,25 +84,18 @@ func (a *MetaSkillAssembleTool) Execute(ctx context.Context, argumentsJson strin
 		return SerializeError("invalid_slots_json", "slots_json is not valid JSON.")
 	}
 
-	var result string
-	var err error
 	switch doc.PatternId {
 	case "p1_sequential":
-		result, err = RenderP1(slots)
+		return RenderP1(slots)
 	case "p2_fan_out_merge":
-		result, err = RenderP2(slots)
+		return RenderP2(slots)
 	case "p3_condition_gated":
-		result, err = RenderP3(slots)
+		return RenderP3(slots)
 	default:
-		return fmt.Sprintf("Unsupported pattern_id '%s'.", doc.PatternId)
+		return "", fmt.Errorf("Unsupported pattern_id '%s'.", doc.PatternId)
 	}
-
-	if err != nil {
-		return err.Error()
-	}
-
-	return result
 }
+
 func RenderP1(slots map[string]any) (string, error) {
 	common, err := ParseCommonSlots(slots)
 	if err != nil {

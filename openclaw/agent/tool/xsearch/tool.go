@@ -3,6 +3,7 @@ package xsearch
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -64,19 +65,19 @@ type XSearchItemResponse struct {
 	CreatedAt string `json:"created_at"`
 }
 
-func (e *XSearchTool) Execute(ctx context.Context, argumentsJson string) string {
+func (e *XSearchTool) Execute(ctx context.Context, argumentsJson string) (string, error) {
 	if e.bearerToken == "" {
-		return "Error: X API bearer token not configured. Set X_BEARER_TOKEN environment variable."
+		return "", errors.New("Error: X API bearer token not configured. Set X_BEARER_TOKEN environment variable.")
 	}
 
 	var args XSearchArgs
 
 	if err := json.Unmarshal([]byte(argumentsJson), &args); err != nil {
-		return fmt.Sprintf("Failed to parse parameters.: %v", err)
+		return "", err
 	}
 
 	if args.Query == "" {
-		return "Error: 'query' is required."
+		return "", errors.New("Error: 'query' is required.")
 	}
 
 	if args.MaxResults <= 0 {
@@ -91,25 +92,25 @@ func (e *XSearchTool) Execute(ctx context.Context, argumentsJson string) string 
 
 	req, err := http.NewRequestWithContext(ctx, "GET", pathurl, nil)
 	if err != nil {
-		return err.Error()
+		return "", err
 	}
 
 	req.Header.Set("Authorization", "Bearer "+e.bearerToken)
 
 	resp, err := e.httpClient.Do(req)
 	if err != nil {
-		return err.Error()
+		return "", err
 	}
 
 	defer resp.Body.Close()
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return fmt.Sprintf("http response code: %d", resp.StatusCode)
+		return "", fmt.Errorf("http response code: %d", resp.StatusCode)
 	}
 
 	var doc XSearchResponse
 	if err := json.NewDecoder(resp.Body).Decode(&doc); err != nil {
-		return err.Error()
+		return "", err
 	}
 
 	sb := strings.Builder{}
@@ -123,8 +124,8 @@ func (e *XSearchTool) Execute(ctx context.Context, argumentsJson string) string 
 	}
 
 	if sb.Len() == 0 {
-		return "No results found."
+		return "", errors.New("No results found.")
 	}
 
-	return sb.String()
+	return sb.String(), nil
 }

@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"os"
@@ -71,10 +72,10 @@ type ImageGenModel struct {
 	Quality string `json:"quality"`
 }
 
-func (a *ImageGenTool) Execute(ctx context.Context, argumentsJson string) string {
+func (a *ImageGenTool) Execute(ctx context.Context, argumentsJson string) (string, error) {
 	var args ImageGenModel
 	if err := json.Unmarshal([]byte(argumentsJson), &args); err != nil {
-		return fmt.Sprintf("Error: Invalid argument JSON: %v", err)
+		return "", fmt.Errorf("Error: Invalid argument JSON: %v", err)
 	}
 
 	if args.Size == "" {
@@ -92,7 +93,7 @@ func (a *ImageGenTool) Execute(ctx context.Context, argumentsJson string) string
 	case "dashscope", "qwen":
 		return a.generateDashScope(ctx, args.Prompt, args.Size, effective)
 	default:
-		return fmt.Sprintf("Error: Unsupported image generation provider '%s'.", effective.Provider)
+		return "", fmt.Errorf("Error: Unsupported image generation provider '%s'.", effective.Provider)
 	}
 }
 
@@ -144,14 +145,14 @@ func TryDecodeDataUri(value string) ([]byte, string, bool) {
 	return bytes, mimeType, true
 }
 
-func (a *ImageGenTool) generateDashScope(ctx context.Context, prompt string, size string, effective EffectiveImageGenConfig) string {
+func (a *ImageGenTool) generateDashScope(ctx context.Context, prompt string, size string, effective EffectiveImageGenConfig) (string, error) {
 	var apiKey = core.SecretResolverInstance.Resolve(effective.ApiKey)
 	if apiKey == "" {
-		return "Error: API key not configured. Set ImageGen.ApiKey or bind ImageGen.ModelProfileId to a profile with ApiKey."
+		return "", errors.New("Error: API key not configured. Set ImageGen.ApiKey or bind ImageGen.ModelProfileId to a profile with ApiKey.")
 	}
 
 	if effective.Endpoint == "" {
-		return "Error: DashScope endpoint not configured. Set ImageGen.Endpoint to the full API path (e.g. https://dashscope.aliyuncs.com/api/v1/services/aigc/multimodal-generation/generation)."
+		return "", errors.New("Error: DashScope endpoint not configured. Set ImageGen.Endpoint to the full API path (e.g. https://dashscope.aliyuncs.com/api/v1/services/aigc/multimodal-generation/generation).")
 	}
 
 	var url = effective.Endpoint
@@ -160,25 +161,25 @@ func (a *ImageGenTool) generateDashScope(ctx context.Context, prompt string, siz
 	content := a.buildDashScopeRequestJson(prompt, size, effective.Model)
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewBuffer(content))
 	if err != nil {
-		return err.Error()
+		return "", err
 	}
 
 	req.Header.Set("Authorization", "Bearer "+apiKey)
 
 	resp, err := a.httpClient.Do(req)
 	if err != nil {
-		return err.Error()
+		return "", err
 	}
 
 	defer resp.Body.Close()
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return fmt.Sprintf("Error: Failed to search (HTTP %d)", resp.StatusCode)
+		return "", fmt.Errorf("Error: Failed to search (HTTP %d)", resp.StatusCode)
 	}
 
 	var root DashScopeImage
 	if err := json.NewDecoder(resp.Body).Decode(&root); err != nil {
-		return err.Error()
+		return "", err
 	}
 
 	imageValue := ""
@@ -199,20 +200,20 @@ func (a *ImageGenTool) generateDashScope(ctx context.Context, prompt string, siz
 		if ok {
 			var savedPath = a.saveImageBytes(ctx, dataBytes, dataMime)
 			if savedPath == "" {
-				return "Error: image data was returned but could not be saved. Ensure Tooling.WorkspaceRoot or an AllowedWriteRoot is configured."
+				return "", errors.New("Error: image data was returned but could not be saved. Ensure Tooling.WorkspaceRoot or an AllowedWriteRoot is configured.")
 			}
-			return formatImagePathResult(savedPath)
+			return formatImagePathResult(savedPath), nil
 		}
 
-		return formatImageResult(imageValue, "")
+		return formatImageResult(imageValue, ""), nil
 	}
 
 	// Surface DashScope's own error code/message when present.
 	if root.Code != "" || root.Message != "" {
-		return fmt.Sprintf("Error: Image generation failed — %s: %s", root.Code, root.Message)
+		return "", fmt.Errorf("Error: Image generation failed — %s: %s", root.Code, root.Message)
 	}
 
-	return "Error: Unexpected response format from image API."
+	return "", errors.New("Error: Unexpected response format from image API.")
 }
 
 func (c *ImageGenTool) buildDashScopeRequestJson(prompt, size, model string) []byte {
@@ -266,10 +267,10 @@ func ResolveOpenAiEndpoint(configuredEndpoint string) string {
 	return "https://api.openai.com/v1"
 }
 
-func (a *ImageGenTool) generateOpenAi(ctx context.Context, prompt string, size string, quality string, effective EffectiveImageGenConfig) string {
+func (a *ImageGenTool) generateOpenAi(ctx context.Context, prompt string, size string, quality string, effective EffectiveImageGenConfig) (string, error) {
 	var apiKey = core.SecretResolverInstance.Resolve(effective.ApiKey)
 	if apiKey == "" {
-		return "Error: API key not configured. Set ImageGen.ApiKey or bind ImageGen.ModelProfileId to a profile with ApiKey."
+		return "", errors.New("Error: API key not configured. Set ImageGen.ApiKey or bind ImageGen.ModelProfileId to a profile with ApiKey.")
 	}
 
 	var endpoint = ResolveOpenAiEndpoint(effective.Endpoint)
@@ -297,34 +298,34 @@ func (a *ImageGenTool) generateOpenAi(ctx context.Context, prompt string, size s
 	})
 
 	if err != nil {
-		return "Error: Image generation request failed"
+		return "", err
 	}
 
 	if len(res.Data) == 0 {
-		return "no image generated"
+		return "", errors.New("no image generated")
 	}
 
 	url := res.Data[0].URL
 	if url != "" {
-		return formatImageResult(url, res.Data[0].RevisedPrompt)
+		return formatImageResult(url, res.Data[0].RevisedPrompt), nil
 	}
 
 	b64json := res.Data[0].B64JSON
 	if b64json != "" {
 		imgBytes, err := base64.StdEncoding.DecodeString(b64json)
 		if err != nil {
-			return fmt.Sprintf("base64 decode failed: %s", err.Error())
+			return "", err
 		}
 
 		var savedPath = a.saveImageBytes(ctx, imgBytes, "image/png")
 		if savedPath == "" {
-			return "Error: image data was returned but could not be saved. Ensure Tooling.WorkspaceRoot or an AllowedWriteRoot is configured."
+			return "", errors.New("Error: image data was returned but could not be saved. Ensure Tooling.WorkspaceRoot or an AllowedWriteRoot is configured.")
 		}
 
-		return formatImagePathResult(savedPath)
+		return formatImagePathResult(savedPath), nil
 	}
 
-	return "Image generated but no URL or data returned."
+	return "", errors.New("Image generated but no URL or data returned.")
 }
 
 func (a *ImageGenTool) saveImageBytes(_ context.Context, imgBytes []byte, mimeType string) string {

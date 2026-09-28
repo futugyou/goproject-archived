@@ -27,7 +27,7 @@ func (a *FractalMemoryValidateTool) ParameterSchema() string {
 	return `{"type":"object","properties":{}}`
 }
 
-func (a *FractalMemoryValidateTool) Execute(ctx context.Context, argumentsJson string) string {
+func (a *FractalMemoryValidateTool) Execute(ctx context.Context, argumentsJson string) (string, error) {
 	response, err := a.provider.Validate(ctx)
 	if err != nil {
 		return FractalMemoryError(err.Error())
@@ -38,5 +38,5 @@ func (a *FractalMemoryValidateTool) Execute(ctx context.Context, argumentsJson s
 		return FractalMemoryError(err.Error())
 	}
 
-	return string(d)
+	return string(d), nil
 }

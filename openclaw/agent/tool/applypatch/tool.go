@@ -3,6 +3,7 @@ package applypatch
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"slices"
 	"strconv"
@@ -49,44 +50,44 @@ func (a *ApplyPatchTool) ParameterSchema() string {
 }`
 }
 
-func (a *ApplyPatchTool) Execute(ctx context.Context, argumentsJson string) string {
+func (a *ApplyPatchTool) Execute(ctx context.Context, argumentsJson string) (string, error) {
 	if a.config.ReadOnlyMode {
-		return "Error: apply_patch is disabled because Tooling.ReadOnlyMode is enabled."
+		return "", errors.New("Error: apply_patch is disabled because Tooling.ReadOnlyMode is enabled.")
 	}
 
 	var root map[string]any
 	if err := json.Unmarshal([]byte(argumentsJson), &root); err != nil {
-		return err.Error()
+		return "", err
 	}
 
 	var path = util.GetString(root, "path")
 	if path == nil || strings.TrimSpace(*path) == "" {
-		return "Error: 'path' is required."
+		return "", errors.New("Error: 'path' is required.")
 	}
 
 	var patch = util.GetString(root, "patch")
 	if patch == nil || strings.TrimSpace(*patch) == "" {
-		return "Error: 'patch' is required."
+		return "", errors.New("Error: 'patch' is required.")
 	}
 
 	var resolvedPath = pathpolicy.ResolveRealPath(*path)
 
 	if !pathpolicy.IsWriteAllowed(*a.config, resolvedPath) {
-		return fmt.Sprintf("Error: Write access denied for path: %s", *path)
+		return "", fmt.Errorf("Error: Write access denied for path: %s", *path)
 	}
 
 	if !util.FileExists(resolvedPath) {
-		return fmt.Sprintf("Error: File not found: %s", *path)
+		return "", fmt.Errorf("Error: File not found: %s", *path)
 	}
 
 	originalLines, err := util.ReadAllLines(ctx, resolvedPath)
 	if err != nil {
-		return err.Error()
+		return "", err
 	}
 	var hunks = parseHunks(*patch)
 
 	if len(hunks) == 0 {
-		return "Error: No valid hunks found in patch. Use @@ -start,count +start,count @@ headers."
+		return "", errors.New("Error: No valid hunks found in patch. Use @@ -start,count +start,count @@ headers.")
 	}
 
 	result := slices.Clone(originalLines)
@@ -95,19 +96,19 @@ func (a *ApplyPatchTool) Execute(ctx context.Context, argumentsJson string) stri
 	for _, hunk := range hunks {
 		var startLine = hunk.OriginalStart - 1 + offset
 		if startLine < 0 || startLine > len(result) {
-			return fmt.Sprintf("Error: Hunk at line %d is out of range (file has %d lines).", hunk.OriginalStart, len(result))
+			return "", fmt.Errorf("Error: Hunk at line %d is out of range (file has %d lines).", hunk.OriginalStart, len(result))
 		}
 
 		// Validate removed lines match file content
 		if startLine+len(hunk.RemoveLines) > len(result) {
-			return fmt.Sprintf("Error: Hunk at line %d expects %d lines to remove, but only %d lines remain.", hunk.OriginalStart, len(hunk.RemoveLines), len(result)-startLine)
+			return "", fmt.Errorf("Error: Hunk at line %d expects %d lines to remove, but only %d lines remain.", hunk.OriginalStart, len(hunk.RemoveLines), len(result)-startLine)
 		}
 
 		for i := 0; i < len(hunk.RemoveLines); i++ {
 			var expected = strings.TrimSpace(hunk.RemoveLines[i])
 			var actual = strings.TrimSpace(result[startLine+i])
 			if !strings.EqualFold(expected, actual) {
-				return fmt.Sprintf("Error: Hunk at line %d mismatch. Expected: \"%s\" Got: \"%s\"", hunk.OriginalStart+i, util.Truncate(expected, 60), util.Truncate(actual, 60))
+				return "", fmt.Errorf("Error: Hunk at line %d mismatch. Expected: \"%s\" Got: \"%s\"", hunk.OriginalStart+i, util.Truncate(expected, 60), util.Truncate(actual, 60))
 			}
 		}
 
@@ -125,10 +126,10 @@ func (a *ApplyPatchTool) Execute(ctx context.Context, argumentsJson string) stri
 	}
 
 	if err := util.SaveOneFile(ctx, resolvedPath, result); err != nil {
-		return err.Error()
+		return "", err
 	}
 
-	return fmt.Sprintf("Applied %d hunk(s) to %s.", len(hunks), *path)
+	return fmt.Sprintf("Applied %d hunk(s) to %s.", len(hunks), *path), nil
 }
 
 type Hunk struct {

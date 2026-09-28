@@ -3,6 +3,7 @@ package memory
 import (
 	"context"
 	"encoding/json"
+	"errors"
 
 	"github.com/futugyou/openclaw/core"
 )
@@ -38,9 +39,9 @@ func (a *MemoryGetTool) ParameterSchema() string {
 	`
 }
 
-func (a *MemoryGetTool) Execute(ctx context.Context, argumentsJson string) string {
+func (a *MemoryGetTool) Execute(ctx context.Context, argumentsJson string) (string, error) {
 	if argumentsJson == "" {
-		return "Error: arguments payload is empty."
+		return "", errors.New("Error: arguments payload is empty.")
 	}
 
 	var model struct {
@@ -48,20 +49,20 @@ func (a *MemoryGetTool) Execute(ctx context.Context, argumentsJson string) strin
 	}
 
 	if err := json.Unmarshal([]byte(argumentsJson), &model); err != nil {
-		return err.Error()
+		return "", err
 	}
 
 	if model.Key == "" {
-		return "Error: key is required."
+		return "", errors.New("Error: key is required.")
 	}
 
 	if err := core.Sanitizer.CheckMemoryKey(model.Key); err != nil {
-		return err.Error()
+		return "", err
 	}
 
 	content, err := a.store.LoadNote(ctx, model.Key)
 	if err != nil {
-		return err.Error()
+		return "", err
 	}
-	return content
+	return content, nil
 }

@@ -3,6 +3,7 @@ package file
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -58,36 +59,36 @@ type WriteReadModel struct {
 	Content string `json:"content"`
 }
 
-func (a *FileWriteTool) Execute(ctx context.Context, argumentsJson string) string {
+func (a *FileWriteTool) Execute(ctx context.Context, argumentsJson string) (string, error) {
 	if a.config.ReadOnlyMode {
-		return "Error: write_file is disabled because Tooling.ReadOnlyMode is enabled."
+		return "", errors.New("Error: write_file is disabled because Tooling.ReadOnlyMode is enabled.")
 	}
 
 	var args WriteReadModel
 	if err := json.Unmarshal([]byte(argumentsJson), &args); err != nil {
-		return err.Error()
+		return "", err
 	}
 
 	if args.Path == "" {
-		return "Error: 'path' is required."
+		return "", errors.New("Error: 'path' is required.")
 	}
 
 	resolvedPath := pathpolicy.ResolveRealPath(args.Path)
 	if !pathpolicy.IsReadAllowed(*a.config, resolvedPath) {
-		return fmt.Sprintf("Error: Write access denied for path: %s", args.Path)
+		return "", fmt.Errorf("Error: Write access denied for path: %s", args.Path)
 	}
 
 	dir := filepath.Dir(resolvedPath)
 	if dir != "" {
 		err := os.MkdirAll(dir, 0755)
 		if err != nil {
-			return err.Error()
+			return "", err
 		}
 	}
 
 	if err := util.SaveFile(ctx, resolvedPath, args.Content); err != nil {
-		return err.Error()
+		return "", err
 	}
 
-	return fmt.Sprintf("Written %d characters to %s", len(args.Content), args.Path)
+	return fmt.Sprintf("Written %d characters to %s", len(args.Content), args.Path), nil
 }

@@ -3,6 +3,7 @@ package agent
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"sort"
@@ -108,15 +109,15 @@ func (a *DelegateTool) ParameterSchema() string {
     `
 }
 
-func (a *DelegateTool) Execute(ctx context.Context, argumentsJson string) string {
+func (a *DelegateTool) Execute(ctx context.Context, argumentsJson string) (string, error) {
 	return a.executeCore(ctx, argumentsJson, nil)
 }
 
-func (a *DelegateTool) ExecuteContext(ctx context.Context, argumentsJson string, toolContext core.ToolExecutionContext) string {
+func (a *DelegateTool) ExecuteContext(ctx context.Context, argumentsJson string, toolContext core.ToolExecutionContext) (string, error) {
 	return a.executeCore(ctx, argumentsJson, &toolContext)
 }
 
-func (d *DelegateTool) executeCore(ctx context.Context, argumentsJson string, toolContext *core.ToolExecutionContext) string {
+func (d *DelegateTool) executeCore(ctx context.Context, argumentsJson string, toolContext *core.ToolExecutionContext) (string, error) {
 	// Parse JSON arguments
 	var args struct {
 		Profile string `json:"profile"`
@@ -124,14 +125,14 @@ func (d *DelegateTool) executeCore(ctx context.Context, argumentsJson string, to
 	}
 
 	if err := json.Unmarshal([]byte(argumentsJson), &args); err != nil {
-		return "Error: Invalid JSON arguments."
+		return "", errors.New("Error: Invalid JSON arguments.")
 	}
 
 	if strings.TrimSpace(args.Profile) == "" {
-		return "Error: 'profile' parameter is required."
+		return "", errors.New("Error: 'profile' parameter is required.")
 	}
 	if strings.TrimSpace(args.Task) == "" {
-		return "Error: 'task' parameter is required."
+		return "", errors.New("Error: 'task' parameter is required.")
 	}
 
 	// Lookup profile configuration
@@ -141,12 +142,12 @@ func (d *DelegateTool) executeCore(ctx context.Context, argumentsJson string, to
 		for k := range d.delegationConfig.Profiles {
 			availableProfiles = append(availableProfiles, k)
 		}
-		return fmt.Sprintf("Error: Unknown agent profile '%s'. Available: %s", args.Profile, strings.Join(availableProfiles, ", "))
+		return "", fmt.Errorf("Error: Unknown agent profile '%s'. Available: %s", args.Profile, strings.Join(availableProfiles, ", "))
 	}
 
 	// Check max delegation depth
 	if d.currentDepth >= d.delegationConfig.MaxDepth {
-		return fmt.Sprintf("Error: Maximum delegation depth (%d) reached. Cannot delegate further.", d.delegationConfig.MaxDepth)
+		return "", fmt.Errorf("Error: Maximum delegation depth (%d) reached. Cannot delegate further.", d.delegationConfig.MaxDepth)
 	}
 
 	// Log execution
@@ -260,7 +261,7 @@ func (d *DelegateTool) executeCore(ctx context.Context, argumentsJson string, to
 				slog.Any("error", err),
 			)
 		}
-		return errMsg
+		return "", errors.New(errMsg)
 	}
 
 	FinalizeDelegateToolDelegation(subSession, parentSummary, "completed", result, "")
@@ -274,7 +275,7 @@ func (d *DelegateTool) executeCore(ctx context.Context, argumentsJson string, to
 		)
 	}
 
-	return result
+	return result, nil
 }
 
 type toolUsageKey struct {

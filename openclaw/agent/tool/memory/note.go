@@ -3,6 +3,7 @@ package memory
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 
 	"github.com/futugyou/openclaw/core"
@@ -46,9 +47,9 @@ func (a *MemoryNoteTool) ParameterSchema() string {
 } `
 }
 
-func (a *MemoryNoteTool) Execute(ctx context.Context, argumentsJson string) string {
+func (a *MemoryNoteTool) Execute(ctx context.Context, argumentsJson string) (string, error) {
 	if argumentsJson == "" {
-		return "Error: arguments payload is empty."
+		return "", errors.New("Error: arguments payload is empty.")
 	}
 
 	var model struct {
@@ -58,31 +59,31 @@ func (a *MemoryNoteTool) Execute(ctx context.Context, argumentsJson string) stri
 	}
 
 	if err := json.Unmarshal([]byte(argumentsJson), &model); err != nil {
-		return err.Error()
+		return "", err
 	}
 
 	if model.Key == "" {
-		return "Error: key is required."
+		return "", errors.New("Error: key is required.")
 	}
 
 	if err := core.Sanitizer.CheckMemoryKey(model.Key); err != nil {
-		return err.Error()
+		return "", err
 	}
 
 	switch model.Action {
 	case "read":
 		content, err := a.store.LoadNote(ctx, model.Key)
 		if err != nil {
-			return err.Error()
+			return "", err
 		}
-		return content
+		return content, nil
 	case "write":
 		if err := a.store.SaveNote(ctx, model.Key, model.Content); err != nil {
-			return err.Error()
+			return "", err
 		}
-		return fmt.Sprintf("Saved note: %s", model.Key)
+		return "", fmt.Errorf("Saved note: %s", model.Key)
 	default:
-		return fmt.Sprintf("Unknown action: %s", model.Action)
+		return "", fmt.Errorf("Unknown action: %s", model.Action)
 	}
 
 }

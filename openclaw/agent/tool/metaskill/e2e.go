@@ -71,10 +71,10 @@ type RuntimeCase struct {
 	Baseline   map[string]string `json:"baseline"`
 }
 
-func (a *MetaSkillRuntimeE2ERunTool) Execute(ctx context.Context, argumentsJson string) string {
+func (a *MetaSkillRuntimeE2ERunTool) Execute(ctx context.Context, argumentsJson string) (string, error) {
 	select {
 	case <-ctx.Done():
-		return ctx.Err().Error()
+		return "", ctx.Err()
 	default:
 	}
 
@@ -84,7 +84,7 @@ func (a *MetaSkillRuntimeE2ERunTool) Execute(ctx context.Context, argumentsJson 
 
 	var args map[string]any
 	if err := json.Unmarshal([]byte(argumentsJson), &args); err != nil {
-		return err.Error()
+		return "", err
 	}
 
 	skillMd := util.Deref(util.GetString(args, "skill_md"))
@@ -97,7 +97,7 @@ func (a *MetaSkillRuntimeE2ERunTool) Execute(ctx context.Context, argumentsJson 
 
 	runtimeCtx, ok := FromContext(ctx)
 	if !ok || runtimeCtx == nil {
-		return `{"status":"unavailable","passed":false,"winner":"","reason":"runtime_e2e_context_unavailable","cases":[]}`
+		return `{"status":"unavailable","passed":false,"winner":"","reason":"runtime_e2e_context_unavailable","cases":[]}`, nil
 	}
 
 	prompts := normalisePrompts(evalPromptsRaw, skillMd)
@@ -107,12 +107,12 @@ func (a *MetaSkillRuntimeE2ERunTool) Execute(ctx context.Context, argumentsJson 
 	for _, prompt := range prompts {
 		meta, err := runtimeCtx.Runner(ctx, "meta", prompt, skillMd, baselineModel)
 		if err != nil {
-			return err.Error()
+			return "", err
 		}
 
 		baseline, err := runtimeCtx.Runner(ctx, "baseline", prompt, skillMd, baselineModel)
 		if err != nil {
-			return err.Error()
+			return "", err
 		}
 
 		baselineInvalidReason := checkBaselineInvalidReason(baseline)
@@ -131,7 +131,7 @@ func (a *MetaSkillRuntimeE2ERunTool) Execute(ctx context.Context, argumentsJson 
 
 		verdict, err := runtimeCtx.Judge(ctx, prompt, meta, baseline)
 		if err != nil {
-			return err.Error()
+			return "", err
 		}
 
 		winner := normaliseWinner(getDictString(verdict, "winner"))
@@ -179,10 +179,10 @@ func (a *MetaSkillRuntimeE2ERunTool) Execute(ctx context.Context, argumentsJson 
 
 	resBytes, err := json.Marshal(resultMap)
 	if err != nil {
-		return err.Error()
+		return "", err
 	}
 
-	return string(resBytes)
+	return string(resBytes), nil
 }
 
 func checkBaselineInvalidReason(baseline map[string]string) string {

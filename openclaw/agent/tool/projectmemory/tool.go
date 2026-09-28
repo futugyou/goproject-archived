@@ -3,6 +3,7 @@ package projectmemory
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -56,19 +57,19 @@ type ProjectMemoryModel struct {
 	Content string `json:"content"`
 }
 
-func (a *ProjectMemoryTool) Execute(ctx context.Context, argumentsJson string) string {
+func (a *ProjectMemoryTool) Execute(ctx context.Context, argumentsJson string) (string, error) {
 	if argumentsJson == "" {
-		return "Error: arguments payload is empty."
+		return "", errors.New("Error: arguments payload is empty.")
 	}
 
 	var model ProjectMemoryModel
 
 	if err := json.Unmarshal([]byte(argumentsJson), &model); err != nil {
-		return err.Error()
+		return "", err
 	}
 
 	if model.Action == "" {
-		return "Error: action is empty."
+		return "", errors.New("Error: action is empty.")
 	}
 
 	switch model.Action {
@@ -81,48 +82,48 @@ func (a *ProjectMemoryTool) Execute(ctx context.Context, argumentsJson string) s
 	case "delete":
 		return a.delete(ctx, model)
 	default:
-		return "Error: Unknown action. Use 'save', 'load', 'list', or 'delete'."
+		return "", errors.New("Error: Unknown action. Use 'save', 'load', 'list', or 'delete'.")
 	}
 }
 
-func (a *ProjectMemoryTool) save(ctx context.Context, model ProjectMemoryModel) string {
+func (a *ProjectMemoryTool) save(ctx context.Context, model ProjectMemoryModel) (string, error) {
 	if model.Key == "" {
-		return "Error: 'key' is required for save."
+		return "", errors.New("Error: 'key' is required for save.")
 	}
 	if model.Content == "" {
-		return "Error: 'content' is required for save."
+		return "", errors.New("Error: 'content' is required for save.")
 	}
 	fullKey := a.projectKey(model.Key)
 	if err := a.memory.SaveNote(ctx, fullKey, model.Content); err != nil {
-		return err.Error()
+		return "", err
 	}
 
-	return fmt.Sprintf("Saved project memory: %s", model.Key)
+	return fmt.Sprintf("Saved project memory: %s", model.Key), nil
 }
 
-func (a *ProjectMemoryTool) load(ctx context.Context, model ProjectMemoryModel) string {
+func (a *ProjectMemoryTool) load(ctx context.Context, model ProjectMemoryModel) (string, error) {
 	if model.Key == "" {
-		return "Error: 'key' is required"
+		return "", errors.New("Error: 'key' is required")
 	}
 	fullKey := a.projectKey(model.Key)
 	result, err := a.memory.LoadNote(ctx, fullKey)
 	if err != nil {
-		return err.Error()
+		return "", err
 	}
 	if result != "" {
-		return result
+		return result, nil
 	}
-	return fmt.Sprintf("No project memory found for key: %s", model.Key)
+	return "", fmt.Errorf("No project memory found for key: %s", model.Key)
 }
 
-func (a *ProjectMemoryTool) list(ctx context.Context, _ ProjectMemoryModel) string {
+func (a *ProjectMemoryTool) list(ctx context.Context, _ ProjectMemoryModel) (string, error) {
 	var prefix = fmt.Sprintf("project:%s:", a.projectid)
 	notes, err := a.memory.ListNotesWithPrefix(ctx, prefix)
 	if err != nil {
-		return err.Error()
+		return "", err
 	}
 	if len(notes) == 0 {
-		return "No project memory saved yet."
+		return "", errors.New("No project memory saved yet.")
 	}
 
 	sb := strings.Builder{}
@@ -136,18 +137,18 @@ func (a *ProjectMemoryTool) list(ctx context.Context, _ ProjectMemoryModel) stri
 		}
 		fmt.Fprintf(&sb, "  - %s", cleanKey)
 	}
-	return sb.String()
+	return sb.String(), nil
 }
 
-func (a *ProjectMemoryTool) delete(ctx context.Context, model ProjectMemoryModel) string {
+func (a *ProjectMemoryTool) delete(ctx context.Context, model ProjectMemoryModel) (string, error) {
 	if model.Key == "" {
-		return "Error: 'key' is required for delete."
+		return "", errors.New("Error: 'key' is required for delete.")
 	}
 	fullKey := a.projectKey(model.Key)
 	if err := a.memory.DeleteNote(ctx, fullKey); err != nil {
-		return err.Error()
+		return "", err
 	}
-	return fmt.Sprintf("delete project memory: %s", model.Key)
+	return fmt.Sprintf("delete project memory: %s", model.Key), nil
 }
 
 func (a *ProjectMemoryTool) projectKey(key string) string {

@@ -116,10 +116,10 @@ func toJSONRawMessage(val string) json.RawMessage {
 	return res
 }
 
-func (a *MetaSkillPersistProposalTool) Execute(ctx context.Context, argumentsJson string) string {
+func (a *MetaSkillPersistProposalTool) Execute(ctx context.Context, argumentsJson string) (string, error) {
 	select {
 	case <-ctx.Done():
-		return ctx.Err().Error()
+		return "", ctx.Err()
 	default:
 	}
 
@@ -130,7 +130,7 @@ func (a *MetaSkillPersistProposalTool) Execute(ctx context.Context, argumentsJso
 	var doc PersistProposalModel
 
 	if err := json.Unmarshal([]byte(argumentsJson), &doc); err != nil {
-		return err.Error()
+		return "", err
 	}
 
 	if doc.SkillMd == "" || doc.LintResult == "" || doc.SmokeResult == "" {
@@ -138,18 +138,18 @@ func (a *MetaSkillPersistProposalTool) Execute(ctx context.Context, argumentsJso
 	}
 	homeDir, err := resolveHomeDirectory(doc.Home)
 	if err != nil {
-		return err.Error()
+		return "", err
 	}
 
 	proposalID := buildProposalID(doc.SkillMd)
 	proposalDir := filepath.Join(homeDir, "proposals", proposalID)
 
 	if err := os.MkdirAll(proposalDir, 0755); err != nil {
-		return fmt.Sprintf("failed to create directory: %s", err.Error())
+		return "", err
 	}
 
 	if err := os.WriteFile(filepath.Join(proposalDir, "SKILL.md"), []byte(doc.SkillMd), 0644); err != nil {
-		return fmt.Sprintf("failed to write SKILL.md: %s", err.Error())
+		return "", err
 	}
 
 	var lint LintPayload
@@ -175,11 +175,11 @@ func (a *MetaSkillPersistProposalTool) Execute(ctx context.Context, argumentsJso
 		autoEnableEligible,
 	)
 	if err != nil {
-		return fmt.Sprintf("failed to build gates payload: %s", err.Error())
+		return "", err
 	}
 
 	if err := os.WriteFile(filepath.Join(proposalDir, "gates.json"), gatesJSON, 0644); err != nil {
-		return fmt.Sprintf("failed to write gates.json: %s", err.Error())
+		return "", err
 	}
 
 	return SerializePersistResult(proposalID, proposalDir, autoEnableEligible)

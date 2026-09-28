@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -68,22 +69,22 @@ type PdfModel struct {
 	MaxPages int    `json:"max_pages"`
 }
 
-func (a *PdfReadTool) Execute(ctx context.Context, argumentsJson string) string {
+func (a *PdfReadTool) Execute(ctx context.Context, argumentsJson string) (string, error) {
 	if argumentsJson == "" {
-		return "Error: arguments payload is empty."
+		return "", errors.New("Error: arguments payload is empty.")
 	}
 
 	var model PdfModel
 
 	if err := json.Unmarshal([]byte(argumentsJson), &model); err != nil {
-		return err.Error()
+		return "", err
 	}
 
 	if model.Path == "" {
-		return "Error: path is required."
+		return "", errors.New("Error: path is required.")
 	}
 	if !util.FileExists(model.Path) {
-		return fmt.Sprintf("Error: File not found: %s", model.Path)
+		return "", fmt.Errorf("Error: File not found: %s", model.Path)
 	}
 	if model.Pages == "" {
 		model.Pages = "all"
@@ -95,23 +96,23 @@ func (a *PdfReadTool) Execute(ctx context.Context, argumentsJson string) string 
 	var fullPath = pathpolicy.ResolveRealPath(model.Path)
 
 	if !pathpolicy.IsReadAllowed(a.toolingConfig, fullPath) {
-		return fmt.Sprintf("Error: Read access denied for path: %s", model.Path)
+		return "", fmt.Errorf("Error: Read access denied for path: %s", model.Path)
 	}
 
 	externalResult, err := tryPdfToText(ctx, fullPath, model.Pages, model.MaxPages)
 	if err != nil {
-		return err.Error()
+		return "", err
 	}
 
 	if externalResult != "" {
-		return util.Truncate(externalResult, a.config.MaxOutputChars)
+		return util.Truncate(externalResult, a.config.MaxOutputChars), nil
 	}
 
 	text, err := extractTextBasic(ctx, fullPath, model.MaxPages)
 	if err != nil {
-		return err.Error()
+		return "", err
 	}
-	return util.Truncate(text, a.config.MaxOutputChars)
+	return util.Truncate(text, a.config.MaxOutputChars), nil
 }
 
 func extractTextBasic(ctx context.Context, fullPath string, maxPages int) (string, error) {

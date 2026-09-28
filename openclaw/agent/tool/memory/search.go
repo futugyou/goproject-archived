@@ -3,6 +3,7 @@ package memory
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -45,9 +46,9 @@ func indent(s string) string {
 	return " " + strings.ReplaceAll(s, "\n", "\n  ")
 }
 
-func (a *MemorySearchTool) Execute(ctx context.Context, argumentsJson string) string {
+func (a *MemorySearchTool) Execute(ctx context.Context, argumentsJson string) (string, error) {
 	if argumentsJson == "" {
-		return "Error: arguments payload is empty."
+		return "", errors.New("Error: arguments payload is empty.")
 	}
 
 	var model struct {
@@ -58,11 +59,11 @@ func (a *MemorySearchTool) Execute(ctx context.Context, argumentsJson string) st
 	}
 
 	if err := json.Unmarshal([]byte(argumentsJson), &model); err != nil {
-		return err.Error()
+		return "", err
 	}
 
 	if model.Query == "" {
-		return "Error: query is required."
+		return "", errors.New("Error: query is required.")
 	}
 
 	if model.Limit <= 0 {
@@ -77,18 +78,18 @@ func (a *MemorySearchTool) Execute(ctx context.Context, argumentsJson string) st
 
 	hits, err := a.store.SearchNotes(ctx, model.Query, model.Prefix, model.Limit)
 	if err != nil {
-		return err.Error()
+		return "", err
 	}
 	if len(hits) == 0 {
-		return "No matching memory notes found."
+		return "", errors.New("No matching memory notes found.")
 	}
 
 	if model.Format == "json" {
 		data, err := json.Marshal(hits)
 		if err != nil {
-			return err.Error()
+			return "", err
 		}
-		return string(data)
+		return string(data), nil
 	}
 
 	var sb = strings.Builder{}
@@ -99,5 +100,5 @@ func (a *MemorySearchTool) Execute(ctx context.Context, argumentsJson string) st
 		sb.WriteString("\n")
 	}
 
-	return sb.String()
+	return sb.String(), nil
 }

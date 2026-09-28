@@ -59,10 +59,10 @@ type SmokeRunItem struct {
 	Degraded        bool   `json:"degraded"`
 }
 
-func (a *MetaSkillSmokeRunTool) Execute(ctx context.Context, argumentsJson string) string {
+func (a *MetaSkillSmokeRunTool) Execute(ctx context.Context, argumentsJson string) (string, error) {
 	select {
 	case <-ctx.Done():
-		return ctx.Err().Error()
+		return "", ctx.Err()
 	default:
 	}
 
@@ -73,7 +73,7 @@ func (a *MetaSkillSmokeRunTool) Execute(ctx context.Context, argumentsJson strin
 	var doc SmokeRunModel
 
 	if err := json.Unmarshal([]byte(argumentsJson), &doc); err != nil {
-		return err.Error()
+		return "", err
 	}
 
 	if doc.SkillMd == "" {
@@ -85,11 +85,11 @@ func (a *MetaSkillSmokeRunTool) Execute(ctx context.Context, argumentsJson strin
 	}
 	positive, err := DeterministicFixture(doc.SkillMd, "positive")
 	if err != nil {
-		return err.Error()
+		return "", err
 	}
 	negative, err := DeterministicFixture(doc.SkillMd, "negative")
 	if err != nil {
-		return err.Error()
+		return "", err
 	}
 
 	var g3Passed = SimulateMetaResolution(doc.SkillMd, positive)
@@ -113,9 +113,9 @@ func (a *MetaSkillSmokeRunTool) Execute(ctx context.Context, argumentsJson strin
 
 	data, err := json.Marshal(result)
 	if err != nil {
-		return err.Error()
+		return "", err
 	}
-	return string(data)
+	return string(data), nil
 }
 
 var (

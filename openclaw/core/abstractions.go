@@ -249,7 +249,7 @@ type ITool interface {
 	Name() string
 	Description() string
 	ParameterSchema() string
-	Execute(ctx context.Context, argumentsJson string) string
+	Execute(ctx context.Context, argumentsJson string) (string, error)
 }
 
 // IToolActionDescriptorProvider 工具动作描述符解析器
@@ -292,7 +292,7 @@ type IToolSandbox interface {
 
 type IToolWithContext interface {
 	ITool
-	ExecuteContext(ctx context.Context, argumentsJson string, toolContext ToolExecutionContext) string
+	ExecuteContext(ctx context.Context, argumentsJson string, toolContext ToolExecutionContext) (string, error)
 }
 
 type ITurnTokenUsageObserver interface {

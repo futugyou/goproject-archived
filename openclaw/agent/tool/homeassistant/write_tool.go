@@ -3,6 +3,7 @@ package homeassistant
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"maps"
 	"net/http"
@@ -84,14 +85,14 @@ type WriteAssistantModel struct {
 	Limit        int    `json:"limit"`
 }
 
-func (a *HomeAssistantWriteTool) Execute(ctx context.Context, argumentsJson string) string {
+func (a *HomeAssistantWriteTool) Execute(ctx context.Context, argumentsJson string) (string, error) {
 	if a.toolingConfig != nil && a.toolingConfig.ReadOnlyMode {
-		return "Error: home_assistant_write is disabled because Tooling.ReadOnlyMode is enabled."
+		return "", errors.New("Error: home_assistant_write is disabled because Tooling.ReadOnlyMode is enabled.")
 	}
 
 	var model map[string]any
 	if err := json.Unmarshal([]byte(argumentsJson), &model); err != nil {
-		return err.Error()
+		return "", err
 	}
 
 	if op, ok := model["op"].(string); ok {
@@ -101,11 +102,11 @@ func (a *HomeAssistantWriteTool) Execute(ctx context.Context, argumentsJson stri
 		case "call_services":
 			return a.callServices(ctx, model)
 		default:
-			return fmt.Sprintf("Error: Unknown op '%s'.", op)
+			return "", fmt.Errorf("Error: Unknown op '%s'.", op)
 		}
 	}
 
-	return "Error: Unknown op"
+	return "", errors.New("Error: Unknown op")
 }
 
 func readEntityIds(root map[string]any) []string {
@@ -158,44 +159,44 @@ func buildServiceCallBody(root map[string]any, entityIds []string) string {
 	return string(str)
 }
 
-func (a *HomeAssistantWriteTool) callServices(ctx context.Context, model map[string]any) string {
+func (a *HomeAssistantWriteTool) callServices(ctx context.Context, model map[string]any) (string, error) {
 	var domain = util.GetString(model, "domain")
 	if domain == nil {
-		return "Missing required string field 'domain'."
+		return "", errors.New("Missing required string field 'domain'.")
 	}
 	var service = util.GetString(model, "service")
 	if service == nil {
-		return "Missing required string field 'service'."
+		return "", errors.New("Missing required string field 'service'.")
 	}
 	var serviceName = fmt.Sprintf("%s.%s", *domain, *service)
 
 	if !core.GlobMatcherInstance.IsAllowed(a.config.Policy.AllowServiceGlobs, a.config.Policy.DenyServiceGlobs, serviceName) {
-		return fmt.Sprintf("Error: Service '%s' is not allowed by policy.", serviceName)
+		return "", fmt.Errorf("Error: Service '%s' is not allowed by policy.", serviceName)
 	}
 
 	var entityIds = readEntityIds(model)
 	for _, entityId := range entityIds {
 		if !core.GlobMatcherInstance.IsAllowed(a.config.Policy.AllowEntityIdGlobs, a.config.Policy.DenyEntityIdGlobs, entityId) {
-			return fmt.Sprintf("Error: Entity '%s' is not allowed by policy.", entityId)
+			return "", fmt.Errorf("Error: Entity '%s' is not allowed by policy.", entityId)
 		}
 	}
 
 	var bodyJson = buildServiceCallBody(model, entityIds)
 	if bodyJson == "" {
-		return "can not build service call body"
+		return "", errors.New("can not build service call body")
 	}
 
 	result, err := a.rest.CallService(ctx, *domain, *service, bodyJson)
 	if err != nil {
-		return err.Error()
+		return "", err
 	}
-	return result
+	return result, nil
 }
 
-func (a *HomeAssistantWriteTool) callService(ctx context.Context, model map[string]any) string {
+func (a *HomeAssistantWriteTool) callService(ctx context.Context, model map[string]any) (string, error) {
 	callsRaw, ok := model["calls"].([]any)
 	if !ok {
-		return "Error: calls is required for call_services."
+		return "", errors.New("Error: calls is required for call_services.")
 	}
 
 	var sb = strings.Builder{}
@@ -209,11 +210,11 @@ func (a *HomeAssistantWriteTool) callService(ctx context.Context, model map[stri
 		i++
 		var domain = util.GetString(model, "domain")
 		if domain == nil {
-			return "Missing required string field 'domain'."
+			return "", errors.New("Missing required string field 'domain'.")
 		}
 		var service = util.GetString(model, "service")
 		if service == nil {
-			return "Missing required string field 'service'."
+			return "", errors.New("Missing required string field 'service'.")
 		}
 		var serviceName = fmt.Sprintf("%s.%s", *domain, *service)
 
@@ -253,5 +254,5 @@ func (a *HomeAssistantWriteTool) callService(ctx context.Context, model map[stri
 		}
 	}
 
-	return strings.TrimRight(sb.String(), "\r\n")
+	return strings.TrimRight(sb.String(), "\r\n"), nil
 }

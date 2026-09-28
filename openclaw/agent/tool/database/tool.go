@@ -3,6 +3,7 @@ package database
 import (
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -83,44 +84,35 @@ type ToolArguments struct {
 	Table  string `json:"table"`
 }
 
-func (a *DatabaseTool) Execute(ctx context.Context, argumentsJson string) string {
+func (a *DatabaseTool) Execute(ctx context.Context, argumentsJson string) (string, error) {
 	var args ToolArguments
 	if err := json.Unmarshal([]byte(argumentsJson), &args); err != nil {
-		return fmt.Sprintf("Error: Invalid JSON arguments — %v", err)
+		return "", err
 	}
 
 	action := strings.ToLower(strings.TrimSpace(args.Action))
 
 	if a.toolingConfig != nil && a.toolingConfig.ReadOnlyMode && action == "execute" {
-		return "Error: database execute action is disabled because Tooling.ReadOnlyMode is enabled."
+		return "", errors.New("Error: database execute action is disabled because Tooling.ReadOnlyMode is enabled.")
 	}
 
 	connString := a.resolveConnectionString()
 	if strings.TrimSpace(connString) == "" {
-		return "Error: Database connection string not configured. Set Database.ConnectionString."
+		return "", errors.New("Error: Database connection string not configured. Set Database.ConnectionString.")
 	}
-
-	var res string
-	var err error
 
 	switch action {
 	case "query":
-		res, err = a.runQuery(ctx, args, connString)
+		return a.runQuery(ctx, args, connString)
 	case "execute":
-		res, err = a.runExecute(ctx, args, connString)
+		return a.runExecute(ctx, args, connString)
 	case "tables":
-		res, err = a.listTables(ctx, connString)
+		return a.listTables(ctx, connString)
 	case "schema":
-		res, err = a.getSchema(ctx, args, connString)
+		return a.getSchema(ctx, args, connString)
 	default:
-		return fmt.Sprintf("Error: Unsupported database action '%s'. Use: query, execute, tables, schema.", action)
+		return "", fmt.Errorf("Error: Unsupported database action '%s'. Use: query, execute, tables, schema.", action)
 	}
-
-	if err != nil {
-		return fmt.Sprintf("Error: Database operation failed — %v", err)
-	}
-
-	return res
 }
 
 func (a *DatabaseTool) runQuery(ctx context.Context, args ToolArguments, connString string) (string, error) {

@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"strings"
 	"sync"
@@ -371,8 +372,21 @@ func (e *CapabilitySlotExecutor) Execute(
 
 	var resultText *ToolExecutionResult
 	if invoke == nil {
-		outStr := found.target.Tool.Execute(ctx, arguments)
-		resultText = result(outStr, arguments)
+		outStr, err := found.target.Tool.Execute(ctx, arguments)
+		if err != nil {
+			var outcomeErr *ToolOutcomeError
+			failCode := core.CapabilitySlotFailureCodesExecutionFailed
+			msg := err.Error()
+			if errors.As(err, &outcomeErr) {
+				if outcomeErr.FailureCode != "" {
+					failCode = outcomeErr.FailureCode
+				}
+				msg = outcomeErr.Message
+			}
+			resultText = fail(failCode, msg, arguments, trajectory, core.ToolResultStatusesFailed)
+		} else {
+			resultText = result(outStr, arguments)
+		}
 	} else {
 		res, err := invoke(ctx, found.target.Tool, arguments)
 		if err != nil {

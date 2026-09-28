@@ -3,6 +3,7 @@ package mqtt
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"time"
 
@@ -54,27 +55,27 @@ type PublishDto struct {
 	Retain  bool   `json:"retain"`
 }
 
-func (a *MqttPublishTool) Execute(ctx context.Context, argumentsJson string) string {
+func (a *MqttPublishTool) Execute(ctx context.Context, argumentsJson string) (string, error) {
 	if a.toolingConfig.ReadOnlyMode {
-		return "Error: mqtt_publish is disabled because Tooling.ReadOnlyMode is enabled."
+		return "", errors.New("Error: mqtt_publish is disabled because Tooling.ReadOnlyMode is enabled.")
 	}
 
 	var dto PublishDto
 
 	if err := json.Unmarshal([]byte(argumentsJson), &dto); err != nil {
-		return err.Error()
+		return "", err
 	}
 
 	if dto.Op != "publish" {
-		return fmt.Sprintf("unknown op %s", dto.Op)
+		return "", fmt.Errorf("unknown op %s", dto.Op)
 	}
 
 	if dto.Topic == "" {
-		return "Error: topic is required"
+		return "", errors.New("Error: topic is required")
 	}
 
 	if core.GlobMatcherInstance.IsAllowed(a.config.Policy.AllowPublishTopicGlobs, a.config.Policy.DenyPublishTopicGlobs, dto.Topic) {
-		return fmt.Sprintf("Error: Publish to topic '%s' is not allowed by policy.", dto.Topic)
+		return "", fmt.Errorf("Error: Publish to topic '%s' is not allowed by policy.", dto.Topic)
 	}
 
 	dto.Qos = util.Clamp(dto.Qos, 0, 2)
@@ -84,7 +85,7 @@ func (a *MqttPublishTool) Execute(ctx context.Context, argumentsJson string) str
 
 	client, err := CreateMqttClient(ctx, a.config, nil, nil)
 	if err != nil {
-		return err.Error()
+		return "", err
 	}
 
 	defer client.Disconnect(&paho.Disconnect{ReasonCode: 0})
@@ -96,8 +97,8 @@ func (a *MqttPublishTool) Execute(ctx context.Context, argumentsJson string) str
 		Retain:  dto.Retain,
 	})
 	if err != nil {
-		return err.Error()
+		return "", err
 	}
 
-	return "OK"
+	return "OK", nil
 }

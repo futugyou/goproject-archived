@@ -38,7 +38,7 @@ func NewBridgedPluginTool(bridge *PluginBridgeProcess, pluginId string, registra
 	return tool
 }
 
-func (b *BridgedPluginTool) Execute(ctx context.Context, argumentsJson string) string {
+func (b *BridgedPluginTool) Execute(ctx context.Context, argumentsJson string) (string, error) {
 	return b.bridge.ExecuteTool(ctx, b.name, argumentsJson)
 }
 

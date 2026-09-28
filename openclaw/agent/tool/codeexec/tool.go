@@ -194,10 +194,10 @@ func (a *CodeExecTool) FormatSandboxResult(argumentsJson string, result core.San
 	return sb.String()
 }
 
-func (a *CodeExecTool) runProcess(ctx context.Context, exe string, args []string, timeoutSec int) string {
+func (a *CodeExecTool) runProcess(ctx context.Context, exe string, args []string, timeoutSec int) (string, error) {
 	result := util.RunProcess(ctx, exe, args, "", int64(timeoutSec), int64(a.config.MaxOutputBytes), 8192)
 	if result.Error != "" {
-		return result.Error
+		return "", errors.New(result.Error)
 	}
 	// 拼接输出结果
 	var sb strings.Builder
@@ -219,7 +219,7 @@ func (a *CodeExecTool) runProcess(ctx context.Context, exe string, args []string
 		sb.WriteString(result.StderrText)
 	}
 
-	return sb.String()
+	return sb.String(), nil
 }
 
 func canRunProcess(executable string, arguments []string) bool {
@@ -302,10 +302,10 @@ func addArgumentTokens(input []string, flags string) (output []string) {
 	return
 }
 
-func (a *CodeExecTool) runInDocker(ctx context.Context, language, code string, timeoutSec int) string {
+func (a *CodeExecTool) runInDocker(ctx context.Context, language, code string, timeoutSec int) (string, error) {
 	interpreter, flags := getInterpreter(language)
 	if interpreter == "" {
-		return fmt.Sprintf("Error: Unsupported language '%s'.", language)
+		return "", fmt.Errorf("Error: Unsupported language '%s'.", language)
 	}
 
 	ext := ""
@@ -322,7 +322,7 @@ func (a *CodeExecTool) runInDocker(ctx context.Context, language, code string, t
 
 	tmpFile, err := os.CreateTemp("", "code-*"+ext)
 	if err != nil {
-		return "failed to create temp file"
+		return "", err
 	}
 
 	codeFilePath := tmpFile.Name()
@@ -333,7 +333,7 @@ func (a *CodeExecTool) runInDocker(ctx context.Context, language, code string, t
 	}()
 	// 2. 将代码写入临时文件
 	if _, err := tmpFile.WriteString(code); err != nil {
-		return "failed to write code to temp file"
+		return "", err
 	}
 
 	_ = tmpFile.Close()
@@ -360,10 +360,10 @@ func (a *CodeExecTool) runInDocker(ctx context.Context, language, code string, t
 	return a.runProcess(ctx, "docker", dockerArgs, timeoutSec)
 }
 
-func (a *CodeExecTool) Execute(ctx context.Context, argumentsJson string) string {
+func (a *CodeExecTool) Execute(ctx context.Context, argumentsJson string) (string, error) {
 	language, code, timeoutSec, errstr, ok := a.tryParseArguments(argumentsJson)
 	if !ok {
-		return errstr
+		return "", errors.New(errstr)
 	}
 	backend := strings.ToLower(a.config.Backend)
 	switch backend {
@@ -372,15 +372,15 @@ func (a *CodeExecTool) Execute(ctx context.Context, argumentsJson string) string
 	case "process":
 		return a.runInProcess(ctx, language, code, timeoutSec)
 	default:
-		return fmt.Sprintf("Error: Unsupported backend '%s'. Use 'docker' or 'process'.", a.config.Backend)
+		return "", fmt.Errorf("Error: Unsupported backend '%s'. Use 'docker' or 'process'.", a.config.Backend)
 	}
 }
 
-func (a *CodeExecTool) runInProcess(ctx context.Context, language string, code string, timeoutSec int) string {
+func (a *CodeExecTool) runInProcess(ctx context.Context, language string, code string, timeoutSec int) (string, error) {
 	if language == "bash" {
 		var command = BashProcessCommand
 		if command == nil {
-			return "Error: Bash execution is not available on this host."
+			return "", errors.New("Error: Bash execution is not available on this host.")
 		}
 
 		return a.runProcess(ctx, command.Executable, append(command.PrefixArguments, code), timeoutSec)
@@ -388,7 +388,7 @@ func (a *CodeExecTool) runInProcess(ctx context.Context, language string, code s
 
 	interpreter, flags := getInterpreter(language)
 	if interpreter == "" {
-		return fmt.Sprintf("Error: Unsupported language '%s'.", language)
+		return "", fmt.Errorf("Error: Unsupported language '%s'.", language)
 	}
 
 	// Write code to a temp file
@@ -406,7 +406,7 @@ func (a *CodeExecTool) runInProcess(ctx context.Context, language string, code s
 
 	tmpFile, err := os.CreateTemp("", "openclaw-exec-"+util.CleanUUID()+ext)
 	if err != nil {
-		return "failed to create temp file"
+		return "", err
 	}
 
 	codeFilePath := tmpFile.Name()
@@ -416,7 +416,7 @@ func (a *CodeExecTool) runInProcess(ctx context.Context, language string, code s
 		_ = os.Remove(codeFilePath)
 	}()
 	if _, err := tmpFile.WriteString(code); err != nil {
-		return "failed to write code to temp file"
+		return "", err
 	}
 
 	_ = tmpFile.Close()
