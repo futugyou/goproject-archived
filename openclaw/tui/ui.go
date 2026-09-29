@@ -22,6 +22,19 @@ func pause() {
 	_, _ = bufio.NewReader(os.Stdin).ReadString('\n')
 }
 
+var box = lipgloss.NewStyle().
+	Border(lipgloss.RoundedBorder()).
+	Padding(0, 1)
+
+func titledTable(title string, t table.Model) string {
+	content := lipgloss.JoinVertical(
+		lipgloss.Left,
+		lipgloss.NewStyle().Bold(true).Render(title),
+		t.View(),
+	)
+	return box.Render(content)
+}
+
 type TerminalUi struct {
 	client *client.OpenClawHttpClient
 }
@@ -81,6 +94,8 @@ func RunAsync(ctx context.Context, baseUrl, authToken, presetId string) error {
 			ui.showStatus(ctx)
 		case "Insights":
 			ui.ShowInsights(ctx)
+		case "Approvals":
+			ui.ShowApprovals(ctx)
 		case "Exit":
 			return nil
 		}
@@ -198,15 +213,39 @@ func (ui *TerminalUi) ShowInsights(ctx context.Context) error {
 	return nil
 }
 
-var box = lipgloss.NewStyle().
-	Border(lipgloss.RoundedBorder()).
-	Padding(0, 1)
+func (ui *TerminalUi) ShowApprovals(ctx context.Context) error {
+	approvals, err := ui.client.GetIntegrationApprovals(ctx, "", "")
+	if err != nil {
+		return err
+	}
 
-func titledTable(title string, t table.Model) string {
-	content := lipgloss.JoinVertical(
-		lipgloss.Left,
-		lipgloss.NewStyle().Bold(true).Render(title),
-		t.View(),
+	rows := []table.Row{}
+	for _, item := range approvals.Items {
+		rows = append(rows, table.Row{
+			item.ApprovalId,
+			item.ToolName,
+			item.ChannelId,
+			item.SenderId,
+		})
+	}
+
+	t := table.New(
+		table.WithColumns([]table.Column{
+			{Title: "Approval ID"},
+			{Title: "Tool"},
+			{Title: "Channel"},
+			{Title: "Sender"},
+		}),
+		table.WithRows(rows),
 	)
-	return box.Render(content)
+
+	if len(approvals.Items) == 0 {
+		fmt.Println(mutedStyle.Render("No pending approvals"))
+	} else {
+		fmt.Println(t.View())
+	}
+
+	pause()
+
+	return nil
 }
