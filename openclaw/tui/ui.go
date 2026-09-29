@@ -6,12 +6,14 @@ import (
 	"fmt"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 
 	"charm.land/bubbles/v2/table"
 	"charm.land/huh/v2"
 	"charm.land/lipgloss/v2"
 	"github.com/futugyou/openclaw/client"
+	"github.com/futugyou/openclaw/core"
 )
 
 var mutedStyle = lipgloss.NewStyle().
@@ -33,6 +35,37 @@ func titledTable(title string, t table.Model) string {
 		t.View(),
 	)
 	return box.Render(content)
+}
+
+func panel(title, content string) string {
+	titleStyle := lipgloss.NewStyle().
+		Bold(true).
+		Padding(0, 1)
+
+	bodyStyle := lipgloss.NewStyle().
+		Padding(1, 2)
+
+	border := lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder())
+
+	return border.Render(
+		lipgloss.JoinVertical(
+			lipgloss.Left,
+			titleStyle.Render(title),
+			bodyStyle.Render(content),
+		),
+	)
+}
+
+func confirm(title string, defaultValue bool) (bool, error) {
+	value := defaultValue
+
+	err := huh.NewConfirm().
+		Title(title).
+		Value(&value).
+		Run()
+
+	return value, err
 }
 
 type TerminalUi struct {
@@ -96,6 +129,8 @@ func RunAsync(ctx context.Context, baseUrl, authToken, presetId string) error {
 			ui.ShowInsights(ctx)
 		case "Approvals":
 			ui.ShowApprovals(ctx)
+		case "Sessions":
+			ui.ShowSessions(ctx)
 		case "Exit":
 			return nil
 		}
@@ -246,6 +281,129 @@ func (ui *TerminalUi) ShowApprovals(ctx context.Context) error {
 	}
 
 	pause()
+
+	return nil
+}
+
+func (ui *TerminalUi) ShowSessions(ctx context.Context) error {
+	var search string
+
+	if err := huh.NewInput().
+		Title("Session filter").
+		Description("blank for all").
+		Value(&search).
+		Run(); err != nil {
+		return err
+	}
+
+	sessions, err := ui.client.ListSessions(ctx, 1, 25, core.SessionListQuery{
+		Search: search,
+	})
+	if err != nil {
+		return err
+	}
+
+	rows := []table.Row{}
+	for _, item := range append(sessions.Active, sessions.Persisted.Items...) {
+		if len(rows) >= 25 {
+			break
+		}
+		rows = append(rows, table.Row{
+			item.Id,
+			item.ChannelId,
+			item.SenderId,
+			item.State.String(),
+			strconv.Itoa(item.HistoryTurns),
+		})
+	}
+
+	t := table.New(
+		table.WithColumns([]table.Column{
+			{Title: "Session ID"},
+			{Title: "Channel"},
+			{Title: "Sender"},
+			{Title: "State"},
+			{Title: "Turns"},
+		}),
+		table.WithRows(rows),
+	)
+
+	if len(rows) == 0 {
+		fmt.Println(mutedStyle.Render("No pending approvals"))
+	} else {
+		fmt.Println(t.View())
+	}
+
+	var sessionId string
+
+	if err := huh.NewInput().
+		Title("Inspect session ID").
+		Description("blank to return").
+		Value(&sessionId).
+		Run(); err != nil {
+		return err
+	}
+
+	if sessionId == "" {
+		return nil
+	}
+
+	detail, err := ui.client.GetSession(ctx, sessionId)
+	if err != nil || (detail.Session == nil) {
+		fmt.Println(mutedStyle.Render("Session not found"))
+		pause()
+		return nil
+	}
+
+	panelTexts := []string{}
+	for _, v := range detail.Session.History[max(0, len(detail.Session.History)-12):] {
+		panelTexts = append(panelTexts, fmt.Sprintf("%s: %s", v.Role, v.Content))
+	}
+
+	panelText := "(empty session)"
+	if len(panelTexts) > 0 {
+		panelText = strings.Join(panelTexts, "\n\n")
+	}
+	fmt.Println(panel(detail.Session.Id, panelText))
+
+	fmt.Println(mutedStyle.Render(fmt.Sprintf("Active preset:[/] %s", detail.Metadata.ActivePresetId)))
+
+	update, err := confirm("Update this session's preset?", false)
+	if err != nil {
+		return err
+	}
+
+	if update {
+		presets, err := ui.client.ListToolPresets(ctx)
+		if err != nil {
+			return err
+		}
+		var selected string
+		options := []huh.Option[string]{}
+		for _, choice := range presets.Items {
+			options = append(options, huh.NewOption(choice.PresetId, choice.PresetId))
+		}
+
+		if err := huh.NewSelect[string]().
+			Title("Preset").
+			Options(options...).
+			Value(&selected).
+			Run(); err != nil {
+			return err
+		}
+
+		request := core.SessionMetadataUpdateRequest{
+			ActivePresetId: selected,
+		}
+		if detail.Metadata != nil {
+			request.Starred = &detail.Metadata.Starred
+			request.Tags = detail.Metadata.Tags
+			request.TodoItems = detail.Metadata.TodoItems
+		}
+
+		ui.client.UpdateSessionMetadata(ctx, detail.Session.Id, request)
+		fmt.Println(mutedStyle.Render(fmt.Sprintf("Preset updated to %s", selected)))
+	}
 
 	return nil
 }
