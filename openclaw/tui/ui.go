@@ -133,6 +133,8 @@ func RunAsync(ctx context.Context, baseUrl, authToken, presetId string) error {
 			ui.ShowSessions(ctx)
 		case "Session Search":
 			ui.ShowSessionSearch(ctx)
+		case "Automations":
+			ui.ShowAutomations(ctx)
 		case "Exit":
 			return nil
 		}
@@ -452,6 +454,80 @@ func (ui *TerminalUi) ShowSessionSearch(ctx context.Context) error {
 		fmt.Println(mutedStyle.Render("No session hits found"))
 	} else {
 		fmt.Println(t.View())
+	}
+
+	pause()
+	return nil
+}
+
+func (ui *TerminalUi) ShowAutomations(ctx context.Context) error {
+	automations, err := ui.client.GetAdminAutomations(ctx)
+	if err != nil {
+		return err
+	}
+	rows := []table.Row{}
+	for _, item := range automations.Items {
+		rows = append(rows, table.Row{
+			item.Id,
+			item.Name,
+			item.Schedule,
+			strconv.FormatBool(item.Enabled),
+			item.Source,
+		})
+	}
+
+	t := table.New(
+		table.WithColumns([]table.Column{
+			{Title: "ID"},
+			{Title: "Name"},
+			{Title: "Schedule"},
+			{Title: "Enabled"},
+			{Title: "Source"},
+		}),
+		table.WithRows(rows),
+	)
+
+	if len(rows) == 0 {
+		fmt.Println(mutedStyle.Render("No automations found"))
+	} else {
+		fmt.Println(t.View())
+	}
+
+	var selectedId string
+
+	if err := huh.NewInput().
+		Title("Automation ID to inspect/run ").
+		Description("blank to return[/]").
+		Value(&selectedId).
+		Run(); err != nil {
+		return err
+	}
+
+	detail, err := ui.client.GetAdminAutomation(ctx, selectedId)
+	if err != nil || detail.Automation == nil {
+		fmt.Println(mutedStyle.Render("Automation not found"))
+		pause()
+		return nil
+	}
+
+	fmt.Println(panel(detail.Automation.Prompt, fmt.Sprintf("%s [%s]", detail.Automation.Name, detail.Automation.Id)))
+
+	update, err := confirm("Queue this automation now?", false)
+	if err != nil {
+		return err
+	}
+
+	if update {
+		result, err := ui.client.RunAdminAutomation(ctx, selectedId, false)
+		if err != nil {
+			return err
+		}
+
+		if result.Success {
+			fmt.Println(mutedStyle.Render(result.Message))
+		} else {
+			fmt.Println(mutedStyle.Render(result.Error))
+		}
 	}
 
 	pause()
