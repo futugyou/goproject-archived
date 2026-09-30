@@ -131,6 +131,8 @@ func RunAsync(ctx context.Context, baseUrl, authToken, presetId string) error {
 			ui.ShowApprovals(ctx)
 		case "Sessions":
 			ui.ShowSessions(ctx)
+		case "Session Search":
+			ui.ShowSessionSearch(ctx)
 		case "Exit":
 			return nil
 		}
@@ -405,5 +407,53 @@ func (ui *TerminalUi) ShowSessions(ctx context.Context) error {
 		fmt.Println(mutedStyle.Render(fmt.Sprintf("Preset updated to %s", selected)))
 	}
 
+	pause()
+	return nil
+}
+
+func (ui *TerminalUi) ShowSessionSearch(ctx context.Context) error {
+	var search string
+
+	if err := huh.NewInput().
+		Title("Search text").
+		Value(&search).
+		Run(); err != nil {
+		return err
+	}
+
+	sessions, err := ui.client.SearchSessions(ctx, core.SessionSearchQuery{
+		Text:  search,
+		Limit: 25,
+	})
+	if err != nil {
+		return err
+	}
+	rows := []table.Row{}
+	for _, item := range sessions.Result.Items {
+		rows = append(rows, table.Row{
+			item.SessionId,
+			item.Role,
+			fmt.Sprintf("%f", item.Score),
+			item.Snippet,
+		})
+	}
+
+	t := table.New(
+		table.WithColumns([]table.Column{
+			{Title: "Session"},
+			{Title: "Role"},
+			{Title: "Score"},
+			{Title: "Snippet"},
+		}),
+		table.WithRows(rows),
+	)
+
+	if len(rows) == 0 {
+		fmt.Println(mutedStyle.Render("No session hits found"))
+	} else {
+		fmt.Println(t.View())
+	}
+
+	pause()
 	return nil
 }
