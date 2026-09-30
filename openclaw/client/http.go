@@ -1670,12 +1670,12 @@ func (c *OpenClawHttpClient) ApproveLearningProposal(ctx context.Context, propos
 	return SendHttp[any, core.LearningProposal](ctx, c, "POST", c.adminLearningProposalsUri.JoinPath(proposalId).JoinPath("approve"), nil, nil)
 }
 
-func (c *OpenClawHttpClient) RejectLearningProposal(ctx context.Context, proposalId string) (*core.LearningProposal, error) {
+func (c *OpenClawHttpClient) RejectLearningProposal(ctx context.Context, proposalId string, reason string) (*core.LearningProposal, error) {
 	if proposalId == "" {
 		return nil, fmt.Errorf("Proposal id is required")
 	}
 
-	return SendHttp[any, core.LearningProposal](ctx, c, "POST", c.adminLearningProposalsUri.JoinPath(proposalId).JoinPath("reject"), nil, nil)
+	return SendHttp[core.LearningProposalReviewRequest, core.LearningProposal](ctx, c, "POST", c.adminLearningProposalsUri.JoinPath(proposalId).JoinPath("reject"), &core.LearningProposalReviewRequest{Reason: reason}, nil)
 }
 
 func (c *OpenClawHttpClient) RollbackLearningProposal(ctx context.Context, proposalId, reason string) (*core.LearningProposal, error) {
