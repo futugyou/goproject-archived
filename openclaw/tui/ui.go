@@ -135,6 +135,8 @@ func RunAsync(ctx context.Context, baseUrl, authToken, presetId string) error {
 			ui.ShowSessionSearch(ctx)
 		case "Automations":
 			ui.ShowAutomations(ctx)
+		case "Learning Proposals":
+			ui.ShowLearningProposals(ctx)
 		case "Exit":
 			return nil
 		}
@@ -370,7 +372,7 @@ func (ui *TerminalUi) ShowSessions(ctx context.Context) error {
 	}
 	fmt.Println(panel(detail.Session.Id, panelText))
 
-	fmt.Println(mutedStyle.Render(fmt.Sprintf("Active preset:[/] %s", detail.Metadata.ActivePresetId)))
+	fmt.Println(mutedStyle.Render(fmt.Sprintf("Active preset: %s", detail.Metadata.ActivePresetId)))
 
 	update, err := confirm("Update this session's preset?", false)
 	if err != nil {
@@ -497,7 +499,7 @@ func (ui *TerminalUi) ShowAutomations(ctx context.Context) error {
 
 	if err := huh.NewInput().
 		Title("Automation ID to inspect/run ").
-		Description("blank to return[/]").
+		Description("blank to return").
 		Value(&selectedId).
 		Run(); err != nil {
 		return err
@@ -533,3 +535,167 @@ func (ui *TerminalUi) ShowAutomations(ctx context.Context) error {
 	pause()
 	return nil
 }
+
+func (ui *TerminalUi) ShowLearningProposals(ctx context.Context) error {
+	proposals, err := ui.client.ListLearningProposals(ctx, "pending", "")
+	if err != nil {
+		return err
+	}
+	rows := []table.Row{}
+	for _, item := range proposals.Items {
+		rows = append(rows, table.Row{
+			item.Id,
+			item.Kind,
+			item.RiskLevel,
+			item.Title,
+			fmt.Sprintf("%f", item.Confidence),
+		})
+	}
+
+	t := table.New(
+		table.WithColumns([]table.Column{
+			{Title: "ID"},
+			{Title: "Kind"},
+			{Title: "Risk"},
+			{Title: "Title"},
+			{Title: "Confidence"},
+		}),
+		table.WithRows(rows),
+	)
+
+	if len(rows) == 0 {
+		fmt.Println(mutedStyle.Render("No pending learning proposals"))
+	} else {
+		fmt.Println(t.View())
+	}
+
+	var proposalId string
+
+	if err := huh.NewInput().
+		Title("Proposal ID to review").
+		Description("blank to return").
+		Value(&proposalId).
+		Run(); err != nil || proposalId == "" {
+		return err
+	}
+
+	var proposal *core.LearningProposal
+	for _, v := range proposals.Items {
+		if proposalId == v.Id {
+			proposal = &v
+			break
+		}
+	}
+
+	if proposal == nil {
+		fmt.Println(mutedStyle.Render("Proposal not found in current listing."))
+		pause()
+		return nil
+	}
+
+	detail, _ := ui.client.GetLearningProposalDetail(ctx, proposalId)
+	if detail != nil && detail.Proposal != nil {
+		proposal = detail.Proposal
+	}
+
+	sb := &strings.Builder{}
+	fmt.Fprintf(sb, "Risk: %s\n", proposal.RiskLevel)
+	fmt.Fprintf(sb, "Repeated count: %d\n", proposal.RepeatedCount)
+	fmt.Fprintf(sb, "Sources: %s\n", strings.Join(proposal.SourceSessionIds, ", "))
+	if len(proposal.ValidationWarnings) == 0 {
+		sb.WriteString("Warnings: none\n")
+	} else {
+		fmt.Fprintf(sb, "Warnings: %s\n", strings.Join(proposal.ValidationWarnings, "; "))
+	}
+
+	if harness := proposal.HarnessEvolution; harness != nil {
+		sb.WriteString("\n")
+		fmt.Fprintf(sb, "Component: %s\n", harness.Component)
+		fmt.Fprintf(sb, "Failure mode: %s\n", harness.FailureMode)
+		fmt.Fprintf(sb, "Proposed change: %s\n", harness.ProposedChange)
+		fmt.Fprintf(sb, "Apply mode: %s\n", harness.ApplyMode)
+		fmt.Fprintf(sb, "Regression: %s\n", strings.Join(harness.RegressionCategories, ", "))
+		fmt.Fprintf(sb, "Rollback plan: %s\n", harness.RollbackPlan)
+	}
+
+	sb.WriteString("\n")
+
+	sum := proposal.DraftContent
+	if sum == "" {
+		sum = proposal.DraftPreview
+	}
+	if sum == "" && proposal.AutomationDraft != nil {
+		sum = proposal.AutomationDraft.Prompt
+	}
+	if sum == "" && proposal.ProfileUpdate != nil {
+		sum = proposal.ProfileUpdate.Summary
+	}
+
+	sb.WriteString("\n")
+	if sum != "" {
+		sb.WriteString(sum)
+		sb.WriteString("\n")
+	}
+
+	fmt.Println(panel(proposal.Title, sb.String()))
+
+	var action string
+	options := []huh.Option[string]{}
+	if detail != nil && detail.CanRollback {
+		for _, v := range []string{"Approve", "Reject", "Rollback", "Return"} {
+			options = append(options, huh.NewOption(v, v))
+		}
+	} else {
+		for _, v := range []string{"Approve", "Reject", "Return"} {
+			options = append(options, huh.NewOption(v, v))
+		}
+	}
+
+	if err := huh.NewSelect[string]().
+		Title("Review action").
+		Options(options...).
+		Value(&action).
+		Run(); err != nil {
+		return err
+	}
+
+	switch action {
+	case "Approve":
+		ui.client.ApproveLearningProposal(ctx, proposalId)
+		fmt.Println(mutedStyle.Render("Proposal approved."))
+	case "Reject":
+		var reason string
+
+		if err := huh.NewInput().
+			Title("Reason").
+			Description("optional").
+			Value(&reason).
+			Run(); err != nil {
+			return err
+		}
+
+		ui.client.RejectLearningProposal(ctx, proposalId, reason)
+		fmt.Println(mutedStyle.Render("Proposal rejected."))
+
+	case "Rollback":
+		var reason string
+
+		if err := huh.NewInput().
+			Title("Rollback reason").
+			Description("optional").
+			Value(&reason).
+			Run(); err != nil {
+			return err
+		}
+
+		ui.client.RollbackLearningProposal(ctx, proposalId, reason)
+		fmt.Println(mutedStyle.Render("Proposal rolled back."))
+
+	}
+
+	pause()
+	return nil
+
+}
+
+// current.DraftContent ?? current.DraftPreview ?? current.AutomationDraft?.Prompt ?? current.ProfileUpdate?.Summary
