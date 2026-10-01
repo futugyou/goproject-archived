@@ -777,7 +777,7 @@ func (ui *TerminalUi) ShowLiveSession(ctx context.Context, authToken string) err
 
 	modalitiesMap := map[string]struct{}{}
 	modalities := []string{}
-	for _, v := range strings.Split(modalitiesRaw, ",") {
+	for v := range strings.SplitSeq(modalitiesRaw, ",") {
 		v = strings.ToLower(v)
 		if _, ok := modalitiesMap[v]; !ok {
 			modalitiesMap[v] = struct{}{}
@@ -793,7 +793,25 @@ func (ui *TerminalUi) ShowLiveSession(ctx context.Context, authToken string) err
 	live.OnEnvelopeReceived = func(envelope *core.LiveServerEnvelope) {
 		switch envelope.Type {
 		case "opened":
-
+			fmt.Println(mutedStyle.Render(fmt.Sprintf("Live session opened: %s", envelope.Text)))
+		case "text":
+			fmt.Println(envelope.Text)
+		case "turn_complete":
+			fmt.Println("")
+		case "audio":
+			fmt.Println(mutedStyle.Render(fmt.Sprintf("Audio chunk received: %s", envelope.MimeType)))
+		case "input_transcription":
+			fmt.Println(mutedStyle.Render(fmt.Sprintf("You: %s", envelope.MimeType)))
+		case "output_transcription":
+			fmt.Println(mutedStyle.Render(fmt.Sprintf("Model: %s", envelope.Text)))
+		case "interrupted":
+			fmt.Println(mutedStyle.Render("Live generation interrupted"))
+		case "error":
+			msg := envelope.Error
+			if msg == "" {
+				msg = "Live session error"
+			}
+			fmt.Println(mutedStyle.Render(msg))
 		}
 	}
 
