@@ -137,6 +137,8 @@ func RunAsync(ctx context.Context, baseUrl, authToken, presetId string) error {
 			ui.ShowAutomations(ctx)
 		case "Learning Proposals":
 			ui.ShowLearningProposals(ctx)
+		case "Profiles":
+			ui.ShowProfiles(ctx)
 		case "Exit":
 			return nil
 		}
@@ -698,4 +700,104 @@ func (ui *TerminalUi) ShowLearningProposals(ctx context.Context) error {
 
 }
 
-// current.DraftContent ?? current.DraftPreview ?? current.AutomationDraft?.Prompt ?? current.ProfileUpdate?.Summary
+func (ui *TerminalUi) ShowProfiles(ctx context.Context) error {
+	profiles, err := ui.client.ListProfiles(ctx)
+	if err != nil {
+		return err
+	}
+	rows := []table.Row{}
+	for i, item := range profiles.Items {
+		if i >= 25 {
+			break
+		}
+		rows = append(rows, table.Row{
+			item.ActorId,
+			item.Tone,
+			item.Summary,
+		})
+	}
+
+	t := table.New(
+		table.WithColumns([]table.Column{
+			{Title: "Actor"},
+			{Title: "Tone"},
+			{Title: "Summary"},
+		}),
+		table.WithRows(rows),
+	)
+
+	if len(rows) == 0 {
+		fmt.Println(mutedStyle.Render("No profiles found."))
+	} else {
+		fmt.Println(t.View())
+	}
+
+	var actorId string
+
+	if err := huh.NewInput().
+		Title("Actor ID to inspect/edit").
+		Description("blank to return").
+		Value(&actorId).
+		Run(); err != nil || actorId == "" {
+		return err
+	}
+
+	response, err := ui.client.GetProfile(ctx, actorId)
+	if err != nil || response == nil || response.Profile == nil {
+		fmt.Println(mutedStyle.Render("Profile not found"))
+		pause()
+		return nil
+	}
+
+	var profile = response.Profile
+
+	content := profile.Summary
+	if content == "" {
+		content = "(no summary)"
+	}
+	fmt.Println(panel(profile.ActorId, content))
+
+	update, err := confirm("Edit this profile?", false)
+	if err != nil {
+		return err
+	}
+
+	if !update {
+		return nil
+	}
+
+	var updatedSummary string
+
+	if err := huh.NewInput().
+		Title("Summary").
+		Value(&updatedSummary).
+		Run(); err != nil || updatedSummary == "" {
+		return err
+	}
+
+	var updatedTone string
+
+	if err := huh.NewInput().
+		Title("Tone").
+		Value(&updatedTone).
+		Run(); err != nil || updatedTone == "" {
+		return err
+	}
+
+	ui.client.SaveProfile(ctx, actorId, core.UserProfile{
+		ActorId:        profile.ActorId,
+		ChannelId:      profile.ChannelId,
+		SenderId:       profile.SenderId,
+		Summary:        updatedSummary,
+		Tone:           updatedTone,
+		Facts:          profile.Facts,
+		Preferences:    profile.Preferences,
+		ActiveProjects: profile.ActiveProjects,
+		RecentIntents:  profile.RecentIntents,
+		UpdatedAtUtc:   time.Now(),
+	})
+
+	fmt.Println(mutedStyle.Render("Profile saved."))
+	pause()
+	return nil
+}
