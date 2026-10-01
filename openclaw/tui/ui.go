@@ -92,6 +92,8 @@ func RunAsync(ctx context.Context, baseUrl, authToken, presetId string) error {
 			ui.ShowToolPresets(ctx)
 		case "Live Session":
 			ui.ShowLiveSession(ctx, authToken)
+		case "Chat":
+			ui.ShowChat(ctx, presetId)
 		case "Exit":
 			return nil
 		}
@@ -880,4 +882,56 @@ loop:
 	live.CloseSession(context.Background())
 	pause()
 	return nil
+}
+
+func (ui *TerminalUi) ShowChat(ctx context.Context, defaultPresetId string) error {
+	system, err := ask("System prompt", "blank for default")
+	if err != nil {
+		return err
+	}
+	model, err := ask("Model override", "blank for default")
+	if err != nil {
+		return err
+	}
+	presetId, err := ask("Preset", "blank for default")
+	if err != nil {
+		return err
+	}
+	if presetId == "" {
+		presetId = defaultPresetId
+	}
+
+	for {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		default:
+		}
+		prompt, err := ask("Prompt", "blank for default")
+		if err != nil || prompt == "" {
+			return err
+		}
+
+		messages := []*core.OpenAiMessage{
+			{Role: "user", Content: core.OpenAiMessageContentFromText(prompt)},
+		}
+		if system != "" {
+			messages = []*core.OpenAiMessage{
+				{Role: "system", Content: core.OpenAiMessageContentFromText(system)},
+				{Role: "user", Content: core.OpenAiMessageContentFromText(prompt)},
+			}
+		}
+
+		request := core.OpenAiChatCompletionRequest{
+			Model:    model,
+			Stream:   true,
+			Messages: messages,
+		}
+
+		fmt.Println(mutedStyle.Render("Streaming response..."))
+		ui.client.StreamChatCompletion(ctx, request, func(s string) {
+			fmt.Println(s)
+		}, &presetId)
+		fmt.Println("")
+	}
 }

@@ -53,6 +53,10 @@ func DefaultOpenAiMessageContentPart() *OpenAiMessageContentPart {
 	}
 }
 
+func OpenAiMessageContentFromText(text string) *OpenAiMessageContent {
+	return &OpenAiMessageContent{Text: text}
+}
+
 func (c *OpenAiMessageContent) MarshalJSON() ([]byte, error) {
 	if len(c.Parts) == 0 {
 		return json.Marshal(c.Text)
@@ -96,7 +100,7 @@ func (c *OpenAiMessageContent) UnmarshalJSON(data []byte) error {
 		return nil
 	}
 
-	var rawParts []map[string]interface{}
+	var rawParts []map[string]any
 	if err := json.Unmarshal(data, &rawParts); err != nil {
 		return errors.New("open_ai_message_content must be a string or an array of content parts")
 	}
@@ -121,7 +125,7 @@ func (c *OpenAiMessageContent) UnmarshalJSON(data []byte) error {
 			if imgUrlProp, ok := raw["image_url"]; ok {
 				if strVal, ok := imgUrlProp.(string); ok {
 					imageUrl = strVal
-				} else if mapVal, ok := imgUrlProp.(map[string]interface{}); ok {
+				} else if mapVal, ok := imgUrlProp.(map[string]any); ok {
 					if urlVal, ok := mapVal["url"].(string); ok {
 						imageUrl = urlVal
 					}
