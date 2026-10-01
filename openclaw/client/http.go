@@ -267,6 +267,10 @@ func NewOpenClawHttpClient(baseUrl string, authToken string, customHTTPClient *h
 	return c, nil
 }
 
+func (c *OpenClawHttpClient) GetLiveWebSocketUri() (*url.URL, error) {
+	return BuildWebSocketURI(c.baseUri.String())
+}
+
 func (c *OpenClawHttpClient) nextRequestId() int64 {
 	return c.mcpRequestId.Add(1)
 }

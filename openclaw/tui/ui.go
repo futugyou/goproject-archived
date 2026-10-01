@@ -2,7 +2,10 @@ package tui
 
 import (
 	"context"
+	"encoding/base64"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -87,6 +90,8 @@ func RunAsync(ctx context.Context, baseUrl, authToken, presetId string) error {
 			ui.ShowProfiles(ctx)
 		case "Tool Presets":
 			ui.ShowToolPresets(ctx)
+		case "Live Session":
+			ui.ShowLiveSession(ctx, authToken)
 		case "Exit":
 			return nil
 		}
@@ -736,6 +741,143 @@ func (ui *TerminalUi) ShowToolPresets(ctx context.Context) error {
 	)
 
 	fmt.Println(t.View())
+	pause()
+	return nil
+}
+
+func (ui *TerminalUi) ShowLiveSession(ctx context.Context, authToken string) error {
+	provider, err := ask("Live provider", "blank for default")
+	if err != nil {
+		return err
+	}
+	if provider == "" {
+		provider = "gemini"
+	}
+	model, err := ask("Live model", "blank for default")
+	if err != nil {
+		return err
+	}
+	system, err := ask("System instruction", "blank for default")
+	if err != nil {
+		return err
+	}
+	modalitiesRaw, err := ask("Response modalities", "TEXT or TEXT,AUDIO")
+	if err != nil {
+		return err
+	}
+	if modalitiesRaw == "" {
+		modalitiesRaw = "TEXT"
+	}
+	voice, err := ask("Voice", "blank for default")
+	if err != nil {
+		return err
+	}
+
+	modalitiesMap := map[string]struct{}{}
+	modalities := []string{}
+	for _, v := range strings.Split(modalitiesRaw, ",") {
+		v = strings.ToLower(v)
+		if _, ok := modalitiesMap[v]; !ok {
+			modalitiesMap[v] = struct{}{}
+			modalities = append(modalities, v)
+		}
+	}
+
+	if len(modalities) > 0 {
+		modalities = []string{"TEXT"}
+	}
+
+	live := client.NewOpenClawLiveClient(0)
+	live.OnEnvelopeReceived = func(envelope *core.LiveServerEnvelope) {
+		switch envelope.Type {
+		case "opened":
+
+		}
+	}
+
+	live.OnError = func(err error) {
+		fmt.Println(mutedStyle.Render(err.Error()))
+	}
+
+	url, err := ui.client.GetLiveWebSocketUri()
+	if err != nil {
+		return nil
+	}
+
+	if err := live.Connect(ctx, url, authToken, core.LiveSessionOpenRequest{
+		Provider:           provider,
+		Model:              model,
+		SystemInstruction:  system,
+		VoiceName:          voice,
+		ResponseModalities: modalities,
+	}); err != nil {
+		return nil
+	}
+
+	fmt.Println(mutedStyle.Render("Live session ready. Commands: /interrupt, /audio-file <path> [mime], /exit"))
+
+loop:
+	for {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		default:
+		}
+		line, err := ask("Live input", "blank for default")
+		if err != nil {
+			return err
+		}
+
+		if line == "" || strings.EqualFold(line, "/exit") {
+			break loop
+		}
+		if strings.EqualFold(line, "/interrupt") {
+			live.Interrupt(ctx)
+			continue
+		}
+
+		if strings.HasPrefix(line, "/audio-file ") {
+			tail := strings.TrimSpace(strings.Replace(line, "/audio-file ", "", 0))
+			if tail == "" {
+				fmt.Println(mutedStyle.Render("Usage: /audio-file <path> [mime]"))
+				continue
+			}
+
+			fields := strings.Fields(tail)
+			if len(fields) == 0 {
+				continue
+			}
+
+			filePath := fields[0]
+			mime := "audio/pcm"
+			if len(fields) > 1 {
+				mime = strings.Join(fields[1:], " ")
+			}
+
+			absPath, err := filepath.Abs(filePath)
+			if err != nil {
+				fmt.Printf("Invalid path: %s\n", filePath)
+				continue
+			}
+
+			if _, err := os.Stat(absPath); os.IsNotExist(err) {
+				fmt.Println(mutedStyle.Render(fmt.Sprintf("File not found: %s\n", absPath)))
+				continue
+			}
+
+			fileBytes, err := os.ReadFile(absPath)
+			if err != nil {
+				return err
+			}
+
+			base64Str := base64.StdEncoding.EncodeToString(fileBytes)
+
+			live.SendAudio(ctx, base64Str, mime, true)
+		}
+		live.SendText(ctx, line, true)
+	}
+
+	live.CloseSession(context.Background())
 	pause()
 	return nil
 }
