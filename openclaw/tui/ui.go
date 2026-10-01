@@ -139,6 +139,8 @@ func RunAsync(ctx context.Context, baseUrl, authToken, presetId string) error {
 			ui.ShowLearningProposals(ctx)
 		case "Profiles":
 			ui.ShowProfiles(ctx)
+		case "Tool Presets":
+			ui.ShowToolPresets(ctx)
 		case "Exit":
 			return nil
 		}
@@ -798,6 +800,44 @@ func (ui *TerminalUi) ShowProfiles(ctx context.Context) error {
 	})
 
 	fmt.Println(mutedStyle.Render("Profile saved."))
+	pause()
+	return nil
+}
+
+func (ui *TerminalUi) ShowToolPresets(ctx context.Context) error {
+	presets, err := ui.client.ListToolPresets(ctx)
+	if err != nil || len(presets.Items) == 0 {
+
+		fmt.Println(mutedStyle.Render("No presets available"))
+		pause()
+		return nil
+	}
+
+	rows := []table.Row{}
+	for _, item := range presets.Items {
+		re := "required"
+		if !item.RequireToolApproval {
+			re = "not required"
+		}
+		rows = append(rows, table.Row{
+			item.PresetId,
+			item.EffectiveAutonomyMode,
+			re,
+			item.Description,
+		})
+	}
+
+	t := table.New(
+		table.WithColumns([]table.Column{
+			{Title: "Preset"},
+			{Title: "Autonomy"},
+			{Title: "Approval"},
+			{Title: "Description"},
+		}),
+		table.WithRows(rows),
+	)
+
+	fmt.Println(t.View())
 	pause()
 	return nil
 }
