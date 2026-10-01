@@ -1,10 +1,8 @@
 package tui
 
 import (
-	"bufio"
 	"context"
 	"fmt"
-	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -15,58 +13,6 @@ import (
 	"github.com/futugyou/openclaw/client"
 	"github.com/futugyou/openclaw/core"
 )
-
-var mutedStyle = lipgloss.NewStyle().
-	Foreground(lipgloss.Color("240"))
-
-func pause() {
-	fmt.Println(mutedStyle.Render("Press enter to continue..."))
-	_, _ = bufio.NewReader(os.Stdin).ReadString('\n')
-}
-
-var box = lipgloss.NewStyle().
-	Border(lipgloss.RoundedBorder()).
-	Padding(0, 1)
-
-func titledTable(title string, t table.Model) string {
-	content := lipgloss.JoinVertical(
-		lipgloss.Left,
-		lipgloss.NewStyle().Bold(true).Render(title),
-		t.View(),
-	)
-	return box.Render(content)
-}
-
-func panel(title, content string) string {
-	titleStyle := lipgloss.NewStyle().
-		Bold(true).
-		Padding(0, 1)
-
-	bodyStyle := lipgloss.NewStyle().
-		Padding(1, 2)
-
-	border := lipgloss.NewStyle().
-		Border(lipgloss.RoundedBorder())
-
-	return border.Render(
-		lipgloss.JoinVertical(
-			lipgloss.Left,
-			titleStyle.Render(title),
-			bodyStyle.Render(content),
-		),
-	)
-}
-
-func confirm(title string, defaultValue bool) (bool, error) {
-	value := defaultValue
-
-	err := huh.NewConfirm().
-		Title(title).
-		Value(&value).
-		Run()
-
-	return value, err
-}
 
 type TerminalUi struct {
 	client *client.OpenClawHttpClient
@@ -296,13 +242,8 @@ func (ui *TerminalUi) ShowApprovals(ctx context.Context) error {
 }
 
 func (ui *TerminalUi) ShowSessions(ctx context.Context) error {
-	var search string
-
-	if err := huh.NewInput().
-		Title("Session filter").
-		Description("blank for all").
-		Value(&search).
-		Run(); err != nil {
+	search, err := ask("Session filter", "blank for all")
+	if err != nil {
 		return err
 	}
 
@@ -344,13 +285,8 @@ func (ui *TerminalUi) ShowSessions(ctx context.Context) error {
 		fmt.Println(t.View())
 	}
 
-	var sessionId string
-
-	if err := huh.NewInput().
-		Title("Inspect session ID").
-		Description("blank to return").
-		Value(&sessionId).
-		Run(); err != nil {
+	sessionId, err := ask("Inspect session ID", "blank to return")
+	if err != nil {
 		return err
 	}
 
@@ -420,12 +356,8 @@ func (ui *TerminalUi) ShowSessions(ctx context.Context) error {
 }
 
 func (ui *TerminalUi) ShowSessionSearch(ctx context.Context) error {
-	var search string
-
-	if err := huh.NewInput().
-		Title("Search text").
-		Value(&search).
-		Run(); err != nil {
+	search, err := ask("Search text", "")
+	if err != nil {
 		return err
 	}
 
@@ -499,13 +431,8 @@ func (ui *TerminalUi) ShowAutomations(ctx context.Context) error {
 		fmt.Println(t.View())
 	}
 
-	var selectedId string
-
-	if err := huh.NewInput().
-		Title("Automation ID to inspect/run ").
-		Description("blank to return").
-		Value(&selectedId).
-		Run(); err != nil {
+	selectedId, err := ask("Automation ID to inspect/run", "blank to return")
+	if err != nil {
 		return err
 	}
 
@@ -573,13 +500,8 @@ func (ui *TerminalUi) ShowLearningProposals(ctx context.Context) error {
 		fmt.Println(t.View())
 	}
 
-	var proposalId string
-
-	if err := huh.NewInput().
-		Title("Proposal ID to review").
-		Description("blank to return").
-		Value(&proposalId).
-		Run(); err != nil || proposalId == "" {
+	proposalId, err := ask("Proposal ID to review", "blank to return")
+	if err != nil {
 		return err
 	}
 
@@ -668,13 +590,8 @@ func (ui *TerminalUi) ShowLearningProposals(ctx context.Context) error {
 		ui.client.ApproveLearningProposal(ctx, proposalId)
 		fmt.Println(mutedStyle.Render("Proposal approved."))
 	case "Reject":
-		var reason string
-
-		if err := huh.NewInput().
-			Title("Reason").
-			Description("optional").
-			Value(&reason).
-			Run(); err != nil {
+		reason, err := ask("Reason", "optional")
+		if err != nil {
 			return err
 		}
 
@@ -682,13 +599,8 @@ func (ui *TerminalUi) ShowLearningProposals(ctx context.Context) error {
 		fmt.Println(mutedStyle.Render("Proposal rejected."))
 
 	case "Rollback":
-		var reason string
-
-		if err := huh.NewInput().
-			Title("Rollback reason").
-			Description("optional").
-			Value(&reason).
-			Run(); err != nil {
+		reason, err := ask("Rollback reason", "optional")
+		if err != nil {
 			return err
 		}
 
@@ -734,13 +646,8 @@ func (ui *TerminalUi) ShowProfiles(ctx context.Context) error {
 		fmt.Println(t.View())
 	}
 
-	var actorId string
-
-	if err := huh.NewInput().
-		Title("Actor ID to inspect/edit").
-		Description("blank to return").
-		Value(&actorId).
-		Run(); err != nil || actorId == "" {
+	actorId, err := ask("Actor ID to inspect/edit", "blank to return")
+	if err != nil {
 		return err
 	}
 
@@ -768,21 +675,13 @@ func (ui *TerminalUi) ShowProfiles(ctx context.Context) error {
 		return nil
 	}
 
-	var updatedSummary string
-
-	if err := huh.NewInput().
-		Title("Summary").
-		Value(&updatedSummary).
-		Run(); err != nil || updatedSummary == "" {
+	updatedSummary, err := ask("Summary", "")
+	if err != nil {
 		return err
 	}
 
-	var updatedTone string
-
-	if err := huh.NewInput().
-		Title("Tone").
-		Value(&updatedTone).
-		Run(); err != nil || updatedTone == "" {
+	updatedTone, err := ask("Tone", "")
+	if err != nil {
 		return err
 	}
 
@@ -807,7 +706,6 @@ func (ui *TerminalUi) ShowProfiles(ctx context.Context) error {
 func (ui *TerminalUi) ShowToolPresets(ctx context.Context) error {
 	presets, err := ui.client.ListToolPresets(ctx)
 	if err != nil || len(presets.Items) == 0 {
-
 		fmt.Println(mutedStyle.Render("No presets available"))
 		pause()
 		return nil
