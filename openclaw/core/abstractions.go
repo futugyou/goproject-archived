@@ -326,6 +326,8 @@ type IGoalService interface {
 	CreateGoal(ctx context.Context, sessionId, objective string, tokenBudget, tokensAtStart int64) (*SessionGoal, error)
 	GetGoal(ctx context.Context, sessionId string) (*SessionGoal, error)
 	UpdateStatus(ctx context.Context, sessionId string, newStatus GoalStatus, note string) error
+	BeginTurn(ctx context.Context, sessionId string) error
+	UpdateModelStatus(ctx context.Context, sessionId string, newStatus GoalStatus, note string) error
 	UpdateTokenUsage(ctx context.Context, sessionId string, sessionTotalTokens int64) error
 	IncrementContinuationCount(ctx context.Context, sessionId string) int
 	RecordTurnHash(ctx context.Context, sessionId, normalizedText string) bool

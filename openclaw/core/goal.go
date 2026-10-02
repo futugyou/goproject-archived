@@ -96,6 +96,46 @@ func (i *InMemoryGoalService) GetGoal(ctx context.Context, sessionId string) (*S
 	return goal, nil
 }
 
+// BeginTurn implements [IGoalService].
+func (i *InMemoryGoalService) BeginTurn(ctx context.Context, sessionId string) error {
+	val, exists := i.goals.Load(sessionId)
+	if !exists {
+		return nil
+	}
+
+	goal := val.(*SessionGoal)
+
+	goal.mu.Lock()
+	defer goal.mu.Unlock()
+
+	goal.ContinuationCount = 0
+
+	return nil
+}
+
+// UpdateModelStatus implements [IGoalService].
+func (i *InMemoryGoalService) UpdateModelStatus(ctx context.Context, sessionId string, newStatus GoalStatus, note string) error {
+	val, exists := i.goals.Load(sessionId)
+	if !exists {
+		return nil
+	}
+
+	goal := val.(*SessionGoal)
+
+	goal.mu.Lock()
+	defer goal.mu.Unlock()
+
+	if newStatus != GoalStatus_Blocked && newStatus != GoalStatus_Complete {
+		return errors.New("The model can only complete or block goals.")
+	}
+
+	if newStatus == GoalStatus_Blocked && goal.ConsecutiveBlockerCount < 3 {
+		return errors.New("Blocking requires three consecutive observations of the same blocker. Continue working or report the blocker for this turn.")
+	}
+
+	return i.UpdateStatus(ctx, sessionId, newStatus, note)
+}
+
 // HasActiveGoal implements [IGoalService].
 func (i *InMemoryGoalService) HasActiveGoal(ctx context.Context, sessionId string) bool {
 	val, exists := i.goals.Load(sessionId)
@@ -369,6 +409,37 @@ func (p *PostgresGoalService) IncrementContinuationCount(ctx context.Context, se
 	}
 
 	return updatedCount
+}
+
+// BeginTurn implements [IGoalService].
+func (p *PostgresGoalService) BeginTurn(ctx context.Context, sessionId string) error {
+	return p.db.WithContext(ctx).
+		Model(&SessionGoal{}).
+		Where("session_id = ?", sessionId).
+		Updates(map[string]any{
+			"continuation_count": 0,
+		}).
+		Error
+}
+
+// UpdateModelStatus implements [IGoalService].
+func (p *PostgresGoalService) UpdateModelStatus(ctx context.Context, sessionId string, newStatus GoalStatus, note string) error {
+	return p.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		goal, err := gorm.G[SessionGoal](tx).Where("session_id = ? ", sessionId).First(ctx)
+		if err != nil {
+			return err
+		}
+
+		if newStatus != GoalStatus_Blocked && newStatus != GoalStatus_Complete {
+			return errors.New("The model can only complete or block goals.")
+		}
+
+		if newStatus == GoalStatus_Blocked && goal.ConsecutiveBlockerCount < 3 {
+			return errors.New("Blocking requires three consecutive observations of the same blocker. Continue working or report the blocker for this turn.")
+		}
+
+		return p.UpdateStatus(ctx, sessionId, newStatus, note)
+	})
 }
 
 // RecordGoalHistory implements [IGoalService].

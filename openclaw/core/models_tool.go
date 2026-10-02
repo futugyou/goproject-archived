@@ -352,8 +352,9 @@ type ToolActionDescriptor struct {
 }
 
 type ToolExecutionContext struct {
-	Session     *Session     `json:"session"`
-	TurnContext *TurnContext `json:"turn_context"`
+	IdempotencyKey string
+	Session        *Session     `json:"session"`
+	TurnContext    *TurnContext `json:"turn_context"`
 }
 
 type ToolHookContext struct {
