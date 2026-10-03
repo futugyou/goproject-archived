@@ -646,6 +646,8 @@ func (s *ReliabilityScorer) processRecommendations(recs []ReliabilityRecommendat
 	return uniqueRecs
 }
 
+var MaintenanceCoordinatorInstance = &MaintenanceCoordinator{}
+
 type MaintenanceCoordinator struct{}
 
 func (m *MaintenanceCoordinator) createAutomationStore(config *GatewayConfig) (IAutomationStore, error) {
