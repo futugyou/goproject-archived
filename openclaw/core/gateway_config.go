@@ -1,5 +1,7 @@
 package core
 
+import "strings"
+
 // TokenCostRateConfig
 type TokenCostRateConfig struct {
 	InputUsdPer1K  float64 `json:"input_usd_per_1k"`
@@ -931,6 +933,7 @@ type TelegramChannelConfig struct {
 	DmPolicy              string   `json:"dm_policy"`
 	BotToken              string   `json:"bot_token"`
 	BotTokenRef           string   `json:"bot_token_ref"`
+	UpdateMode            string   `json:"update_mode"`
 	WebhookPath           string   `json:"webhook_path"`
 	WebhookPublicBaseUrl  string   `json:"webhook_public_base_url"`
 	AllowedFromUserIds    []string `json:"allowed_from_user_ids"`
@@ -952,7 +955,20 @@ func DefaultTelegramChannelConfig() TelegramChannelConfig {
 		MaxRequestBytes:       64 * 1024,
 		ValidateSignature:     false,
 		WebhookSecretTokenRef: "env:TELEGRAM_WEBHOOK_SECRET",
+		UpdateMode:            "webhook",
 	}
+}
+
+func (t *TelegramChannelConfig) UsesWebhook() bool {
+	return t.matchesUpdateMode("webhook")
+}
+
+func (t *TelegramChannelConfig) UsesLongPolling() bool {
+	return t.matchesUpdateMode("long-polling")
+}
+
+func (t *TelegramChannelConfig) matchesUpdateMode(expected string) bool {
+	return strings.TrimSpace(t.UpdateMode) == expected
 }
 
 // SlackChannelConfig represents the Slack channel configuration.

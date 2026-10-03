@@ -18,6 +18,8 @@ import (
 	"github.com/futugyou/openclaw/util"
 )
 
+var GatewayConfigFileInstance = &GatewayConfigFile{}
+
 type GatewayConfigFile struct{}
 
 func (g GatewayConfigFile) Load(configPath string) (*GatewayConfig, error) {
