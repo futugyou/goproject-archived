@@ -17,7 +17,7 @@ import (
 type CapabilityBindingReplayFixture struct {
 	SchemaVersion int                              `json:"schemaVersion"`
 	Recorded      core.CapabilityBindingTrajectory `json:"recorded"`
-	SessionID     string                           `json:"sessionId"`
+	SessionId     string                           `json:"sessionId"`
 	Expected      core.CapabilityBindingTrajectory `json:"expected"`
 }
 
@@ -29,7 +29,7 @@ func NewCapabilityBindingReplayFixture() *CapabilityBindingReplayFixture {
 	}
 }
 
-func FromMetaRun(run *core.SessionMetaRunRecord, sessionID string) (*CapabilityBindingReplayFixture, error) {
+func FromMetaRun(run *core.SessionMetaRunRecord, sessionId string) (*CapabilityBindingReplayFixture, error) {
 	if run == nil {
 		return nil, fmt.Errorf("run record cannot be nil")
 	}
@@ -58,7 +58,7 @@ func FromMetaRun(run *core.SessionMetaRunRecord, sessionID string) (*CapabilityB
 
 	return &CapabilityBindingReplayFixture{
 		SchemaVersion: 2,
-		SessionID:     sessionID,
+		SessionId:     sessionId,
 		Expected:      *expected,
 		Recorded:      *recorded,
 	}, nil
@@ -134,10 +134,10 @@ func (r *CapabilityBindingReplay) Run(ctx context.Context) (*CapabilityBindingRe
 
 	// 模拟缓存命中（若 recorded 中包含缓存命中标识）
 	if r.fixture.Recorded.CacheHit {
-		executor.Execute(ctx, capRef, "{}", r.fixture.SessionID, noExecution, "", nil)
+		executor.Execute(ctx, capRef, "{}", r.fixture.SessionId, noExecution, "", nil)
 	}
 
-	result := executor.Execute(ctx, capRef, "{}", r.fixture.SessionID, noExecution, "", nil)
+	result := executor.Execute(ctx, capRef, "{}", r.fixture.SessionId, noExecution, "", nil)
 
 	reproduced := result.BindingTrajectory
 	if reproduced == nil {
@@ -223,8 +223,8 @@ func (r *CapabilityBindingReplay) buildCapabilityRef() *core.MetaCapabilityRefDe
 
 	keywords := []string{}
 	if expected.KeyWords != nil && *expected.KeyWords != "" {
-		rawWords := strings.Split(*expected.KeyWords, ",")
-		for _, w := range rawWords {
+		rawWords := strings.SplitSeq(*expected.KeyWords, ",")
+		for w := range rawWords {
 			trimmed := strings.TrimSpace(w)
 			if trimmed != "" {
 				keywords = append(keywords, trimmed)
