@@ -187,7 +187,6 @@ func buildVirtualCardRequest(root map[string]any, provider, environment string) 
 		minutesVal = *validMinutes
 	}
 
-	// C# Math.Clamp(val, 1, 1440)
 	clampedMinutes := util.Clamp(minutesVal, 1, 1440)
 
 	return VirtualCardRequest{

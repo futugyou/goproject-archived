@@ -63,6 +63,93 @@ type HarnessRegressionScenarioResult struct {
 	RelatedContractId string    `json:"relatedContractId,omitempty"`
 }
 
+func BuildNoScenariosResult(category string) *HarnessRegressionScenarioResult {
+	summary := "No harness regression scenarios are registered."
+	if category != "" {
+		summary = fmt.Sprintf("No harness regression scenarios matched category '%s'", category)
+	}
+	now := time.Now()
+	return &HarnessRegressionScenarioResult{
+		Id:             "harness.no_scenarios",
+		Name:           "No scenarios selected",
+		Category:       HarnessRegressionCategoryHarness,
+		Status:         HarnessRegressionScenarioStatusFailed,
+		Severity:       HarnessRegressionSeverityMedium,
+		Required:       true,
+		Summary:        summary,
+		StartedAtUtc:   now,
+		CompletedAtUtc: now,
+	}
+}
+
+func NormalizeHarnessRegressionScenarioResult(scenario IHarnessRegressionScenario, result HarnessRegressionScenarioResult) *HarnessRegressionScenarioResult {
+	startedAt := result.StartedAtUtc
+	if startedAt.IsZero() {
+		startedAt = time.Now().UTC()
+	}
+
+	completedAt := result.CompletedAtUtc
+	if completedAt.IsZero() {
+		completedAt = startedAt
+	}
+
+	id := result.Id
+	if strings.TrimSpace(id) == "" {
+		id = scenario.Id()
+	}
+
+	name := result.Name
+	if strings.TrimSpace(name) == "" {
+		name = scenario.Name()
+	}
+
+	status := result.Status
+	if strings.TrimSpace(status) == "" {
+		status = StatusNotApplicable
+	} else {
+		status = normalize(status)
+	}
+
+	severity := result.Severity
+	if strings.TrimSpace(severity) == "" {
+		severity = SeverityInfo
+	} else {
+		severity = normalize(severity)
+	}
+
+	durationMs := result.DurationMs
+	if durationMs <= 0 {
+		durationMs = completedAt.Sub(startedAt).Milliseconds()
+		if durationMs < 0 {
+			durationMs = 0
+		}
+	}
+
+	return &HarnessRegressionScenarioResult{
+		Id:                id,
+		Name:              name,
+		Category:          normalizeOrFallback(result.Category, scenario.Category()),
+		Status:            status,
+		Severity:          severity,
+		Required:          scenario.Required(),
+		Summary:           result.Summary,
+		Details:           result.Details,
+		Error:             result.Error,
+		StartedAtUtc:      startedAt,
+		CompletedAtUtc:    completedAt,
+		DurationMs:        durationMs,
+		EvidenceBundleId:  result.EvidenceBundleId,
+		RelatedContractId: result.RelatedContractId,
+	}
+
+}
+func normalizeOrFallback(val, fallback string) string {
+	if strings.TrimSpace(val) == "" {
+		return normalize(fallback)
+	}
+	return normalize(val)
+}
+
 type IHarnessRegressionScenario interface {
 	Id() string
 	Name() string

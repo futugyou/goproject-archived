@@ -18,7 +18,7 @@ func killProcessTree(cmd *exec.Cmd) {
 	}
 }
 
-// 在 Windows 下，配置隐藏窗口（对应 C# 的 CreateNoWindow = true）
+// 在 Windows 下，配置隐藏窗口
 func configureSysProcAttr(cmd *exec.Cmd) {
 	cmd.SysProcAttr = &syscall.SysProcAttr{
 		HideWindow: true,

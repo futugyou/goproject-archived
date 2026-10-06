@@ -677,11 +677,7 @@ func (s *SetupVerificationService) buildModelDoctorCheck(response *ModelSelectio
 	status := s.GetModelDoctorStatus(response)
 
 	if status == "fail" {
-		// 模拟 C# LINQ 的 Take(8) 和 string.Join
-		limit := len(response.Errors)
-		if limit > 8 {
-			limit = 8
-		}
+		limit := min(len(response.Errors), 8)
 
 		formattedErrors := make([]string, limit)
 		for i := 0; i < limit; i++ {

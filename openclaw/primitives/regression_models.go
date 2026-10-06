@@ -38,12 +38,12 @@ const (
 )
 
 type HarnessRegressionOptions struct {
-	ConfigPath *string `json:"configPath,omitempty"`
-	Category   *string `json:"category,omitempty"`
-	Offline    bool    `json:"offline"`
-	Strict     bool    `json:"strict"`
-	ProposalID *string `json:"proposalId,omitempty"`
-	OutputPath *string `json:"outputPath,omitempty"`
+	ConfigPath string `json:"configPath"`
+	Category   string `json:"category"`
+	Offline    bool   `json:"offline"`
+	Strict     bool   `json:"strict"`
+	ProposalId string `json:"proposalId"`
+	OutputPath string `json:"outputPath"`
 }
 
 func NewHarnessRegressionOptions() HarnessRegressionOptions {
@@ -57,8 +57,8 @@ type HarnessRegressionReport struct {
 	StartedAtUTC    time.Time                         `json:"startedAtUtc"`
 	CompletedAtUTC  time.Time                         `json:"completedAtUtc"`
 	DurationMs      int64                             `json:"durationMs"`
-	ConfigPath      *string                           `json:"configPath,omitempty"`
-	ProposalId      *string                           `json:"proposalId,omitempty"`
+	ConfigPath      string                            `json:"configPath"`
+	ProposalId      string                            `json:"proposalId"`
 	Offline         bool                              `json:"offline"`
 	Strict          bool                              `json:"strict"`
 	OverallStatus   string                            `json:"overallStatus"`
@@ -67,9 +67,8 @@ type HarnessRegressionReport struct {
 	Recommendations []HarnessRegressionRecommendation `json:"recommendations"`
 }
 
-// NewHarnessRegressionReport 提供带有 C# 默认初始值的构造函数
-func NewHarnessRegressionReport() HarnessRegressionReport {
-	return HarnessRegressionReport{
+func NewHarnessRegressionReport() *HarnessRegressionReport {
+	return &HarnessRegressionReport{
 		OverallStatus:   HarnessRegressionScenarioStatusPassed,
 		Results:         make([]HarnessRegressionScenarioResult, 0),
 		Recommendations: make([]HarnessRegressionRecommendation, 0),
@@ -105,6 +104,25 @@ func (h *HarnessRegressionReport) ToText() string {
 		}
 	}
 	return sb.String()
+}
+
+func (h *HarnessRegressionReport) GetExitCode() int {
+	if h == nil {
+		return -1
+	}
+	for _, result := range h.Results {
+		if result.Required && result.Status == HarnessRegressionScenarioStatusFailed {
+			return 1
+		}
+	}
+	if h.Strict {
+		for _, result := range h.Results {
+			if result.Required && (result.Status == HarnessRegressionScenarioStatusSkipped || result.Status == HarnessRegressionScenarioStatusWarning) {
+				return 1
+			}
+		}
+	}
+	return 0
 }
 
 func ScenarioResultStatusLable(status string) string {

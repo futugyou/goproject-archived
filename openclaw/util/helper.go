@@ -220,7 +220,7 @@ func Percentile(sortedValues []int64, percentile float64) int64 {
 	// math.Ceil 返回的是 float64，我们需要转换为 int
 	index := int(math.Ceil(float64(length-1) * percentile))
 
-	// 限制索引边界，防止越界 (相当于 C# 的 Math.Clamp)
+	// 限制索引边界，防止越界
 	if index < 0 {
 		index = 0
 	} else if index > length-1 {

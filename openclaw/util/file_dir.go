@@ -110,7 +110,7 @@ func PathGetFullPath(path string) string {
 func LoadAllFile[T any](ctx context.Context, directory string) ([]T, error) {
 	files, err := os.ReadDir(directory)
 	if err != nil {
-		return []T{}, nil // C# 中 catch 块返回空数组
+		return []T{}, nil //
 	}
 
 	var results []T

@@ -668,7 +668,7 @@ func DefaultPaymentConfig() *PaymentConfig {
 type PaymentPolicyConfig struct {
 	AllowTestModeWithoutApproval   bool   `json:"allow_test_mode_without_approval"`
 	DenyLiveWithoutApprovalService bool   `json:"deny_live_without_approval_service"`
-	MaxLiveAmountMinor             *int64 `json:"max_live_amount_minor"` // C# 的 long? 对应 *int64
+	MaxLiveAmountMinor             *int64 `json:"max_live_amount_minor"`
 }
 
 func DefaultPaymentPolicyConfig() *PaymentPolicyConfig {

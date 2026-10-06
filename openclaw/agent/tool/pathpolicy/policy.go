@@ -134,7 +134,7 @@ func tryResolveLinkTarget(path string) (string, error) {
 		target = filepath.Join(filepath.Dir(path), target)
 	}
 
-	// 递归解析最终目标（等价于 C# 中 returnFinalTarget: true）
+	// 递归解析最终目标
 	finalTarget, err := filepath.EvalSymlinks(target)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {

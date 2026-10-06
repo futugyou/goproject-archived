@@ -267,7 +267,6 @@ func (c *ChatCommandProcessor) TryProcessCommand(ctx context.Context, session *S
 		return false, "", nil
 	}
 
-	// 模拟 C# 的 text.Split(' ', 2, StringSplitOptions.RemoveEmptyEntries)
 	parts := strings.SplitN(text, " ", 2)
 	command := strings.ToLower(parts[0])
 	args := ""

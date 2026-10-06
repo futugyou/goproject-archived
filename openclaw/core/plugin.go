@@ -319,8 +319,7 @@ func (p *PluginConfigValidator) validateString(value string, schema map[string]a
 
 	// 正则匹配
 	if patternStr, ok := schema["pattern"].(string); ok {
-		// Go 没有原生的正则超时控制，通常借助 context 或 channel 来实现超时。
-		// 这里采用简单的 channel 包装来还原 C# 的 1 秒超时逻辑。
+		// 借助 context 或 channel 来实现超时
 		ch := make(chan bool, 1)
 		go func() {
 			matched, err := regexp.MatchString(patternStr, value)

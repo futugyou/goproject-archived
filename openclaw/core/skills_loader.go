@@ -2515,7 +2515,6 @@ func (s *SkillLoader) LoadAll(config *SkillsConfig, workspacePath string, plugin
 		var managedDir string
 		if strings.TrimSpace(config.Load.ManagedRoot) == "" {
 			if homeDir, err := os.UserHomeDir(); err == nil {
-				// 对应 C# 的 Environment.SpecialFolder.UserProfile
 				managedDir = filepath.Join(homeDir, ".openclaw", "skills")
 			}
 		} else {

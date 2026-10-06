@@ -61,7 +61,6 @@ var (
 	complaintKeywords    = []string{"不对", "太泛了", "重新写", "wrong", "too vague", "redo", "try again", "not right"}
 )
 
-// Compiled regular expressions matching C#'s GeneratedRegex attributes.
 var (
 	codeBlockRegex = regexp.MustCompile("(?m)```[\\s\\S]*?```")
 	filePathRegex  = regexp.MustCompile(`(?m)(?:^|[\s"'` + "`" + `(])([a-zA-Z_][\w.-]*/[\w./-]+\.[\w]+)`)
