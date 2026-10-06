@@ -2,6 +2,7 @@ package primitives
 
 import (
 	"fmt"
+	"path/filepath"
 	"strings"
 	"time"
 )
@@ -163,4 +164,38 @@ func NewHarnessRegressionRecommendation() HarnessRegressionRecommendation {
 	return HarnessRegressionRecommendation{
 		Severity: HarnessRegressionSeverityInfo,
 	}
+}
+
+func HarnessRegressionScenarioTextJoin(values []string) string {
+	var filtered []string
+	for _, v := range values {
+		if strings.TrimSpace(v) != "" {
+			filtered = append(filtered, v)
+		}
+	}
+	return strings.Join(filtered, "\n")
+}
+
+func HarnessRegressionPathsChild(root, childName string) (string, error) {
+	fullRoot, err := filepath.Abs(root)
+	if err != nil {
+		return "", err
+	}
+
+	baseChild := filepath.Base(childName)
+	fullChild, err := filepath.Abs(filepath.Join(fullRoot, baseChild))
+	if err != nil {
+		return "", err
+	}
+
+	rootPrefix := fullRoot
+	if !strings.HasSuffix(rootPrefix, string(filepath.Separator)) {
+		rootPrefix += string(filepath.Separator)
+	}
+
+	if !strings.HasPrefix(fullChild, rootPrefix) {
+		return "", fmt.Errorf("resolved harness path escaped the temp workspace: %s", childName)
+	}
+
+	return fullChild, nil
 }

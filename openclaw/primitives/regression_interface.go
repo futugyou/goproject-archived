@@ -119,10 +119,7 @@ func NormalizeHarnessRegressionScenarioResult(scenario IHarnessRegressionScenari
 
 	durationMs := result.DurationMs
 	if durationMs <= 0 {
-		durationMs = completedAt.Sub(startedAt).Milliseconds()
-		if durationMs < 0 {
-			durationMs = 0
-		}
+		durationMs = max(completedAt.Sub(startedAt).Milliseconds(), 0)
 	}
 
 	return &HarnessRegressionScenarioResult{
@@ -279,10 +276,7 @@ func (b *BaseScenario) build(status, summary, details, severity, errorMsg string
 
 func (b *BaseScenario) complete(result HarnessRegressionScenarioResult, startedAt time.Time) HarnessRegressionScenarioResult {
 	completedAt := time.Now().UTC()
-	duration := completedAt.Sub(startedAt).Milliseconds()
-	if duration < 0 {
-		duration = 0
-	}
+	duration := max(completedAt.Sub(startedAt).Milliseconds(), 0)
 
 	status := result.Status
 	if strings.TrimSpace(status) == "" {
