@@ -340,7 +340,7 @@ func (b *BrowserTool) CreateSandboxRequest(argumentsJson string) (*core.SandboxE
 }
 
 func (b *BrowserTool) DefaultSandboxMode() core.ToolSandboxMode {
-	return core.ToolSandboxMode_Prefer
+	return core.ToolSandboxModePrefer
 }
 
 func (b *BrowserTool) FormatSandboxResult(argumentsJson string, result core.SandboxResult) string {

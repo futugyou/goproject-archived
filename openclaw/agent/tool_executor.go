@@ -639,7 +639,7 @@ func (o *OpenClawToolExecutor) ExecuteToolWithRouting(
 		}
 	}
 
-	if sandboxMode == core.ToolSandboxMode_Require && !legacySandboxRoute && route == nil {
+	if sandboxMode == core.ToolSandboxModeRequire && !legacySandboxRoute && route == nil {
 		return "", fmt.Errorf("Error: Tool '%s' requires sandboxing but no sandbox provider is configured.", tool.Name())
 	}
 
@@ -726,7 +726,7 @@ func handleToolExecutorError(
 				return "", fmt.Errorf("Error: Tool '%s' requires execution backend '%s' but the provider is unavailable.", tool.Name(), backendName)
 			}
 		}
-		if sandboxMode == core.ToolSandboxMode_Require {
+		if sandboxMode == core.ToolSandboxModeRequire {
 			return "", fmt.Errorf("Error: Tool '%s' requires sandboxing but the sandbox provider is unavailable.", tool.Name())
 		}
 		return o.ExecuteToolWithTimeout(ctx, tool, argsJson, session, turnCtx)

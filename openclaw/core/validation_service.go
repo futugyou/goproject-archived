@@ -957,7 +957,7 @@ func (s *SetupVerificationService) buildSecurityPostureCheck(config *GatewayConf
 	if publicBind && !config.Security.TrustForwardedHeaders {
 		warnings = append(warnings, "Forwarded headers are not trusted, so browser session cookies may not be marked secure behind TLS termination.")
 	}
-	if publicBind && config.Tooling.AllowShell && !IsRequireSandboxed(config, "shell", ToolSandboxMode_Prefer) {
+	if publicBind && config.Tooling.AllowShell && !IsRequireSandboxed(config, "shell", ToolSandboxModePrefer) {
 		warnings = append(warnings, "Shell is enabled on a public bind without required sandboxing.")
 	}
 

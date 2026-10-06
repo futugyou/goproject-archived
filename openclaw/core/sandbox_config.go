@@ -64,20 +64,20 @@ func IsOpenSandboxProviderConfigured(config *GatewayConfig) bool {
 func TryParseMode(value string) (ToolSandboxMode, bool) {
 	trimmed := strings.TrimSpace(value)
 	if trimmed == "" {
-		return ToolSandboxMode_None, false
+		return ToolSandboxModeNone, false
 	}
 
-	if strings.EqualFold(trimmed, string(ToolSandboxMode_None)) {
-		return ToolSandboxMode_None, true
+	if strings.EqualFold(trimmed, string(ToolSandboxModeNone)) {
+		return ToolSandboxModeNone, true
 	}
-	if strings.EqualFold(trimmed, string(ToolSandboxMode_Prefer)) {
-		return ToolSandboxMode_Prefer, true
+	if strings.EqualFold(trimmed, string(ToolSandboxModePrefer)) {
+		return ToolSandboxModePrefer, true
 	}
-	if strings.EqualFold(trimmed, string(ToolSandboxMode_Require)) {
-		return ToolSandboxMode_Require, true
+	if strings.EqualFold(trimmed, string(ToolSandboxModeRequire)) {
+		return ToolSandboxModeRequire, true
 	}
 
-	return ToolSandboxMode_None, false
+	return ToolSandboxModeNone, false
 }
 
 func ResolveMode(config *GatewayConfig, toolName string, defaultMode ToolSandboxMode) ToolSandboxMode {
@@ -86,7 +86,7 @@ func ResolveMode(config *GatewayConfig, toolName string, defaultMode ToolSandbox
 
 func ResolveModeDetailed(config *GatewayConfig, toolName string, defaultMode ToolSandboxMode) *ToolSandboxModeResolution {
 	provider := SandboxProviderNamesNormalize(config.Sandbox.Provider)
-	configuredMode := ToolSandboxMode_None
+	configuredMode := ToolSandboxModeNone
 	hasConfiguredMode := false
 
 	var toolConfig SandboxToolConfig
@@ -122,7 +122,7 @@ func ResolveModeDetailed(config *GatewayConfig, toolName string, defaultMode Too
 			ModeSource:     modeSource,
 			DefaultMode:    defaultMode,
 			ConfiguredMode: pConfiguredMode,
-			EffectiveMode:  ToolSandboxMode_None,
+			EffectiveMode:  ToolSandboxModeNone,
 			Reason:         "sandbox provider is None, the global sandbox off switch",
 		}
 	}
@@ -168,26 +168,26 @@ func ResolveTimeToLiveSeconds(config *GatewayConfig, toolName string, requestedT
 
 func IsRequireSandboxed(config *GatewayConfig, toolName string, defaultMode ToolSandboxMode) bool {
 	return IsOpenSandboxProviderConfigured(config) &&
-		ResolveMode(config, toolName, defaultMode) == ToolSandboxMode_Require
+		ResolveMode(config, toolName, defaultMode) == ToolSandboxModeRequire
 }
 
 func EnumerateBuiltInCandidates(config *GatewayConfig) []BuiltInCandidate {
 	var candidates []BuiltInCandidate
 
 	if !config.Tooling.ReadOnlyMode && config.Tooling.AllowShell {
-		candidates = append(candidates, BuiltInCandidate{ToolName: "process", DefaultMode: ToolSandboxMode_Prefer})
+		candidates = append(candidates, BuiltInCandidate{ToolName: "process", DefaultMode: ToolSandboxModePrefer})
 	}
 
 	if !config.Tooling.ReadOnlyMode && config.Tooling.AllowShell {
-		candidates = append(candidates, BuiltInCandidate{ToolName: "shell", DefaultMode: ToolSandboxMode_Prefer})
+		candidates = append(candidates, BuiltInCandidate{ToolName: "shell", DefaultMode: ToolSandboxModePrefer})
 	}
 
 	if !config.Tooling.ReadOnlyMode && config.Plugins.Native.CodeExec.Enabled {
-		candidates = append(candidates, BuiltInCandidate{ToolName: "code_exec", DefaultMode: ToolSandboxMode_Prefer})
+		candidates = append(candidates, BuiltInCandidate{ToolName: "code_exec", DefaultMode: ToolSandboxModePrefer})
 	}
 
 	if config.Tooling.EnableBrowserTool {
-		candidates = append(candidates, BuiltInCandidate{ToolName: "browser", DefaultMode: ToolSandboxMode_Prefer})
+		candidates = append(candidates, BuiltInCandidate{ToolName: "browser", DefaultMode: ToolSandboxModePrefer})
 	}
 
 	return candidates

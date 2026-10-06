@@ -90,7 +90,7 @@ func (a *CodeExecTool) ParameterSchema() string {
 }
 
 func (a *CodeExecTool) DefaultSandboxMode() core.ToolSandboxMode {
-	return core.ToolSandboxMode_Prefer
+	return core.ToolSandboxModePrefer
 }
 
 type ArgumentModel struct {

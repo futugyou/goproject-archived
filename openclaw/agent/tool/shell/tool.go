@@ -54,7 +54,7 @@ type ShellModel struct {
 }
 
 func (a *ShellTool) DefaultSandboxMode() core.ToolSandboxMode {
-	return core.ToolSandboxMode_Prefer
+	return core.ToolSandboxModePrefer
 }
 
 func (a *ShellTool) CreateSandboxRequest(argumentsJson string) (*core.SandboxExecutionRequest, error) {

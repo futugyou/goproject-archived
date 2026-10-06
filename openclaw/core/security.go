@@ -353,7 +353,7 @@ func (b *BrowserToolCapabilityEvaluator) isNonLocalBackendAvailable(config *Gate
 }
 
 func (b *BrowserToolCapabilityEvaluator) hasLegacySandboxRoute(config *GatewayConfig) bool {
-	return IsOpenSandboxProviderConfigured(config) && ResolveMode(config, "browser", ToolSandboxMode_Prefer) != ToolSandboxMode_None
+	return IsOpenSandboxProviderConfigured(config) && ResolveMode(config, "browser", ToolSandboxModePrefer) != ToolSandboxModeNone
 }
 
 func (b *BrowserToolCapabilityEvaluator) hasExecutionBackend(config *GatewayConfig) bool {

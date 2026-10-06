@@ -3,9 +3,9 @@ package core
 type ToolSandboxMode string
 
 const (
-	ToolSandboxMode_None    ToolSandboxMode = "None"
-	ToolSandboxMode_Prefer  ToolSandboxMode = "Prefer"
-	ToolSandboxMode_Require ToolSandboxMode = "Require"
+	ToolSandboxModeNone    ToolSandboxMode = "None"
+	ToolSandboxModePrefer  ToolSandboxMode = "Prefer"
+	ToolSandboxModeRequire ToolSandboxMode = "Require"
 )
 
 type SandboxExecutionRequest struct {

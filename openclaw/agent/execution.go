@@ -1008,7 +1008,7 @@ func NewToolExecutionRouter(
 }
 
 func (r *ToolExecutionRouter) TryResolveRoute(tool core.ITool) (route *core.ExecutionToolRouteConfig, template *string, legacySandboxRoute bool, sandboxMode core.ToolSandboxMode, ok bool) {
-	sandboxMode = core.ToolSandboxMode_None
+	sandboxMode = core.ToolSandboxModeNone
 
 	if cfgRoute, tmpl, found := r.tryResolveConfiguredRoute(tool.Name()); found {
 		return cfgRoute, tmpl, false, sandboxMode, true
@@ -1035,7 +1035,7 @@ func (r *ToolExecutionRouter) TryResolveRoute(tool core.ITool) (route *core.Exec
 		)
 	}
 
-	if sandboxMode == core.ToolSandboxMode_None {
+	if sandboxMode == core.ToolSandboxModeNone {
 		return nil, nil, false, sandboxMode, false
 	}
 
@@ -1103,7 +1103,7 @@ func (r *ToolExecutionRouter) ResolveBackendForProcess() *ExecutionRouteResoluti
 			FallbackBackend:  &route.FallbackBackend,
 			Template:         tmpl,
 			RequireWorkspace: route.RequireWorkspace,
-			SandboxMode:      core.ToolSandboxMode_None,
+			SandboxMode:      core.ToolSandboxModeNone,
 		}
 	}
 
@@ -1113,12 +1113,12 @@ func (r *ToolExecutionRouter) ResolveBackendForProcess() *ExecutionRouteResoluti
 			FallbackBackend:  &route.FallbackBackend,
 			Template:         tmpl,
 			RequireWorkspace: route.RequireWorkspace,
-			SandboxMode:      core.ToolSandboxMode_None,
+			SandboxMode:      core.ToolSandboxModeNone,
 		}
 	}
 
-	sandboxMode := core.ResolveMode(r.config, "process", core.ToolSandboxMode_Prefer)
-	if sandboxMode != core.ToolSandboxMode_None && core.IsOpenSandboxProviderConfigured(r.config) {
+	sandboxMode := core.ResolveMode(r.config, "process", core.ToolSandboxModePrefer)
+	if sandboxMode != core.ToolSandboxModeNone && core.IsOpenSandboxProviderConfigured(r.config) {
 		tm := core.ResolveTemplate(r.config, "process")
 		return &ExecutionRouteResolution{
 			BackendName:      "opensandbox",
@@ -1227,7 +1227,7 @@ func (s *ExecutionProcessService) Start(ctx context.Context, req *core.Execution
 		backendName = route.BackendName
 	}
 
-	if route.SandboxMode == core.ToolSandboxMode_Require {
+	if route.SandboxMode == core.ToolSandboxModeRequire {
 		if strings.EqualFold(backendName, "opensandbox") {
 			return nil, fmt.Errorf("process tool requires sandboxing, but the configured sandbox provider does not support long-running background processes")
 		}
