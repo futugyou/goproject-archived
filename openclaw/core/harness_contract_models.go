@@ -44,14 +44,14 @@ const (
 )
 
 type HarnessContract struct {
-	ID                 string                            `json:"id"`
+	Id                 string                            `json:"id"`
 	Status             string                            `json:"status"`
 	Goal               string                            `json:"goal"`
 	UserRequestSummary string                            `json:"user_request_summary,omitempty"`
 	SourceSessionID    string                            `json:"source_session_id,omitempty"`
-	ActorID            string                            `json:"actor_id,omitempty"`
-	ChannelID          string                            `json:"channel_id,omitempty"`
-	SenderID           string                            `json:"sender_id,omitempty"`
+	ActorId            string                            `json:"actor_id,omitempty"`
+	ChannelId          string                            `json:"channel_id,omitempty"`
+	SenderId           string                            `json:"sender_id,omitempty"`
 	CreatedAtUtc       time.Time                         `json:"created_at_utc"`
 	UpdatedAtUtc       time.Time                         `json:"updated_at_utc"`
 	ApprovedAtUtc      *time.Time                        `json:"approved_at_utc,omitempty"`
@@ -75,7 +75,6 @@ type HarnessContract struct {
 func DefaultHarnessContract() HarnessContract {
 	now := time.Now().UTC()
 	return HarnessContract{
-		ID:               "",
 		Status:           HarnessContractStatusDraft,
 		Goal:             "",
 		CreatedAtUtc:     now,
@@ -95,7 +94,7 @@ func DefaultHarnessContract() HarnessContract {
 }
 
 type HarnessContractAction struct {
-	ID               string                       `json:"id"`
+	Id               string                       `json:"id"`
 	Title            string                       `json:"title"`
 	Description      string                       `json:"description,omitempty"`
 	ToolName         string                       `json:"tool_name,omitempty"`
@@ -110,7 +109,6 @@ type HarnessContractAction struct {
 
 func DefaultHarnessContractAction() HarnessContractAction {
 	return HarnessContractAction{
-		Title:    "",
 		ReadSet:  []HarnessContractResourceRef{},
 		WriteSet: []HarnessContractResourceRef{},
 	}
@@ -140,7 +138,7 @@ func DefaultHarnessContractResourceRef() HarnessContractResourceRef {
 }
 
 type HarnessContractVerificationStep struct {
-	ID             string `json:"id"`
+	Id             string `json:"id"`
 	Title          string `json:"title"`
 	Kind           string `json:"kind,omitempty"`
 	Command        string `json:"command,omitempty"`
@@ -154,7 +152,6 @@ type HarnessContractVerificationStep struct {
 
 func DefaultHarnessContractVerificationStep() HarnessContractVerificationStep {
 	return HarnessContractVerificationStep{
-		Title:    "",
 		Required: true,
 	}
 }
