@@ -51,11 +51,11 @@ func NewFileEvidenceBundleStore(storagePath string) (*FileEvidenceBundleStore, e
 }
 
 func (s *FileEvidenceBundleStore) Save(ctx context.Context, bundle EvidenceBundle) error {
-	if err := s.ensureSafeId(bundle.ID); err != nil {
+	if err := s.ensureSafeId(bundle.Id); err != nil {
 		return err
 	}
 
-	fileInfo, err := s.fileForId(bundle.ID)
+	fileInfo, err := s.fileForId(bundle.Id)
 	if err != nil {
 		return err
 	}
@@ -176,19 +176,19 @@ func (s *FileEvidenceBundleStore) fileForId(id string) (string, error) {
 }
 
 func (s *FileEvidenceBundleStore) matches(bundle *EvidenceBundle, query *EvidenceBundleListQuery) bool {
-	if !s.isMatch(query.SourceSessionID, bundle.SourceSessionID, false) {
+	if !s.isMatch(query.SourceSessionId, bundle.SourceSessionId, false) {
 		return false
 	}
-	if !s.isMatch(query.HarnessContractID, bundle.HarnessContractID, false) {
+	if !s.isMatch(query.HarnessContractId, bundle.HarnessContractId, false) {
 		return false
 	}
-	if !s.isMatch(query.LearningProposalID, bundle.LearningProposalID, false) {
+	if !s.isMatch(query.LearningProposalId, bundle.LearningProposalId, false) {
 		return false
 	}
-	if !s.isMatch(query.ActorID, bundle.ActorID, false) {
+	if !s.isMatch(query.ActorId, bundle.ActorId, false) {
 		return false
 	}
-	if !s.isMatch(query.ChannelID, bundle.ChannelID, false) {
+	if !s.isMatch(query.ChannelId, bundle.ChannelId, false) {
 		return false
 	}
 	if !s.isMatch(query.Confidence, bundle.Confidence, true) {
@@ -389,24 +389,24 @@ func (p *PostgresEvidenceBundleStore) Get(ctx context.Context, id string) (*Evid
 func (p *PostgresEvidenceBundleStore) List(ctx context.Context, query EvidenceBundleListQuery) ([]EvidenceBundle, error) {
 	tx := gorm.G[EvidenceBundle](p.db).Where("1=1")
 
-	if query.SourceSessionID != "" {
-		tx = tx.Where("source_session_id = ?", query.SourceSessionID)
+	if query.SourceSessionId != "" {
+		tx = tx.Where("source_session_id = ?", query.SourceSessionId)
 	}
 
-	if query.HarnessContractID != "" {
-		tx = tx.Where("harness_contract_id = ?", query.HarnessContractID)
+	if query.HarnessContractId != "" {
+		tx = tx.Where("harness_contract_id = ?", query.HarnessContractId)
 	}
 
-	if query.LearningProposalID != "" {
-		tx = tx.Where("learning_proposal_id = ?", query.LearningProposalID)
+	if query.LearningProposalId != "" {
+		tx = tx.Where("learning_proposal_id = ?", query.LearningProposalId)
 	}
 
-	if query.ActorID != "" {
-		tx = tx.Where("actor_id = ?", query.ActorID)
+	if query.ActorId != "" {
+		tx = tx.Where("actor_id = ?", query.ActorId)
 	}
 
-	if query.ChannelID != "" {
-		tx = tx.Where("channel_id = ?", query.ChannelID)
+	if query.ChannelId != "" {
+		tx = tx.Where("channel_id = ?", query.ChannelId)
 	}
 
 	if query.Confidence != "" {

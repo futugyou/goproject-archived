@@ -49,19 +49,19 @@ const (
 )
 
 type EvidenceBundle struct {
-	ID                 string                  `json:"id"`
+	Id                 string                  `json:"id"`
 	Title              string                  `json:"title"`
 	Summary            string                  `json:"summary"`
 	CreatedAtUtc       time.Time               `json:"created_at_utc"`
 	UpdatedAtUtc       time.Time               `json:"updated_at_utc"`
-	SourceSessionID    string                  `json:"source_session_id,omitempty"`
-	HarnessContractID  string                  `json:"harness_contract_id,omitempty"`
-	LearningProposalID string                  `json:"learning_proposal_id,omitempty"`
-	ToolCallID         string                  `json:"tool_call_id,omitempty"`
-	AutomationRunID    string                  `json:"automation_run_id,omitempty"`
-	ActorID            string                  `json:"actor_id,omitempty"`
-	ChannelID          string                  `json:"channel_id,omitempty"`
-	SenderID           string                  `json:"sender_id,omitempty"`
+	SourceSessionId    string                  `json:"source_session_id,omitempty"`
+	HarnessContractId  string                  `json:"harness_contract_id,omitempty"`
+	LearningProposalId string                  `json:"learning_proposal_id,omitempty"`
+	ToolCallId         string                  `json:"tool_call_id,omitempty"`
+	AutomationRunId    string                  `json:"automation_run_id,omitempty"`
+	ActorId            string                  `json:"actor_id,omitempty"`
+	ChannelId          string                  `json:"channel_id,omitempty"`
+	SenderId           string                  `json:"sender_id,omitempty"`
 	Confidence         string                  `json:"confidence"`
 	Items              []EvidenceItem          `json:"items"`
 	Checks             []EvidenceCheck         `json:"checks"`
@@ -90,16 +90,16 @@ func DefaultEvidenceBundle() EvidenceBundle {
 }
 
 type EvidenceItem struct {
-	ID              string            `json:"id"`
+	Id              string            `json:"id"`
 	Kind            string            `json:"kind"`
 	Title           string            `json:"title"`
 	Summary         string            `json:"summary"`
 	Source          *EvidenceSource   `json:"source,omitempty"`
 	CreatedAtUtc    time.Time         `json:"created_at_utc"`
 	ToolName        string            `json:"tool_name,omitempty"`
-	ToolCallID      string            `json:"tool_call_id,omitempty"`
-	RuntimeEventID  string            `json:"runtime_event_id,omitempty"`
-	AuditEventID    string            `json:"audit_event_id,omitempty"`
+	ToolCallId      string            `json:"tool_call_id,omitempty"`
+	RuntimeEventId  string            `json:"runtime_event_id,omitempty"`
+	AuditEventId    string            `json:"audit_event_id,omitempty"`
 	Status          string            `json:"status,omitempty"`
 	InputSummary    string            `json:"input_summary,omitempty"`
 	OutputSummary   string            `json:"output_summary,omitempty"`
@@ -117,7 +117,7 @@ func DefaultEvidenceItem() EvidenceItem {
 }
 
 type EvidenceCheck struct {
-	ID             string     `json:"id"`
+	Id             string     `json:"id"`
 	Name           string     `json:"name"`
 	Kind           string     `json:"kind,omitempty"`
 	Required       bool       `json:"required"`
@@ -154,14 +154,14 @@ func DefaultEvidenceRisk() EvidenceRisk {
 }
 
 type EvidenceAssumption struct {
-	ID             string `json:"id"`
+	Id             string `json:"id"`
 	Text           string `json:"text"`
 	Verified       bool   `json:"verified"`
-	EvidenceItemID string `json:"evidence_item_id,omitempty"`
+	EvidenceItemId string `json:"evidence_item_id,omitempty"`
 }
 
 type EvidenceUntestedArea struct {
-	ID          string `json:"id"`
+	Id          string `json:"id"`
 	Description string `json:"description"`
 	Reason      string `json:"reason,omitempty"`
 	RiskLevel   string `json:"risk_level,omitempty"`
@@ -182,7 +182,7 @@ func DefaultEvidenceHumanReview() EvidenceHumanReview {
 
 type EvidenceSource struct {
 	Kind        string `json:"kind,omitempty"`
-	ID          string `json:"id,omitempty"`
+	Id          string `json:"id,omitempty"`
 	Path        string `json:"path,omitempty"`
 	Uri         string `json:"uri,omitempty"`
 	Description string `json:"description,omitempty"`
@@ -191,7 +191,7 @@ type EvidenceSource struct {
 type EvidenceBundleMetadata struct {
 	CreatedBy     string            `json:"created_by,omitempty"`
 	Source        string            `json:"source,omitempty"`
-	CorrelationID string            `json:"correlation_id,omitempty"`
+	CorrelationId string            `json:"correlation_id,omitempty"`
 	Properties    map[string]string `json:"properties"`
 }
 
@@ -202,11 +202,11 @@ func DefaultEvidenceBundleMetadata() EvidenceBundleMetadata {
 }
 
 type EvidenceBundleListQuery struct {
-	SourceSessionID    string     `json:"source_session_id,omitempty"`
-	HarnessContractID  string     `json:"harness_contract_id,omitempty"`
-	LearningProposalID string     `json:"learning_proposal_id,omitempty"`
-	ActorID            string     `json:"actor_id,omitempty"`
-	ChannelID          string     `json:"channel_id,omitempty"`
+	SourceSessionId    string     `json:"source_session_id,omitempty"`
+	HarnessContractId  string     `json:"harness_contract_id,omitempty"`
+	LearningProposalId string     `json:"learning_proposal_id,omitempty"`
+	ActorId            string     `json:"actor_id,omitempty"`
+	ChannelId          string     `json:"channel_id,omitempty"`
 	Confidence         string     `json:"confidence,omitempty"`
 	Tag                string     `json:"tag,omitempty"`
 	CreatedFromUtc     *time.Time `json:"created_from_utc,omitempty"`
