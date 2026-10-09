@@ -141,24 +141,24 @@ type SkillResource struct {
 type SkillSource uint8
 
 const (
-	SkillSource_Bundled SkillSource = iota
-	SkillSource_Managed
-	SkillSource_Workspace
-	SkillSource_Extra
-	SkillSource_Plugin
+	SkillSourceBundled SkillSource = iota
+	SkillSourceManaged
+	SkillSourceWorkspace
+	SkillSourceExtra
+	SkillSourcePlugin
 )
 
 func (s SkillSource) ToString() string {
 	switch s {
-	case SkillSource_Bundled:
+	case SkillSourceBundled:
 		return "bundled"
-	case SkillSource_Managed:
+	case SkillSourceManaged:
 		return "managed"
-	case SkillSource_Workspace:
+	case SkillSourceWorkspace:
 		return "workspace"
-	case SkillSource_Extra:
+	case SkillSourceExtra:
 		return "extra"
-	case SkillSource_Plugin:
+	case SkillSourcePlugin:
 		return "plugin"
 	}
 	return "bundled"

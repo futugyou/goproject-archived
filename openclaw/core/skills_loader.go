@@ -2495,7 +2495,7 @@ func (s *SkillLoader) LoadAll(config *SkillsConfig, workspacePath string, plugin
 	// 1. Extra dirs (最低优先级)
 	for _, dir := range config.Load.ExtraDirs {
 		if util.DirectoryExists(dir) {
-			s.ScanDirectory(dir, SkillSource_Extra, allSkills, scanSubdirectories)
+			s.ScanDirectory(dir, SkillSourceExtra, allSkills, scanSubdirectories)
 		}
 	}
 
@@ -2505,7 +2505,7 @@ func (s *SkillLoader) LoadAll(config *SkillsConfig, workspacePath string, plugin
 			baseDir := filepath.Dir(exePath)
 			bundledDir := filepath.Join(baseDir, "skills")
 			if util.DirectoryExists(bundledDir) {
-				s.ScanDirectory(bundledDir, SkillSource_Bundled, allSkills, scanSubdirectories)
+				s.ScanDirectory(bundledDir, SkillSourceBundled, allSkills, scanSubdirectories)
 			}
 		}
 	}
@@ -2522,14 +2522,14 @@ func (s *SkillLoader) LoadAll(config *SkillsConfig, workspacePath string, plugin
 		}
 
 		if managedDir != "" && util.DirectoryExists(managedDir) {
-			s.ScanDirectory(managedDir, SkillSource_Managed, allSkills, scanSubdirectories)
+			s.ScanDirectory(managedDir, SkillSourceManaged, allSkills, scanSubdirectories)
 		}
 	}
 
 	// 4. Plugin-packaged skills
 	for _, pluginDir := range pluginSkillDirs {
 		if util.DirectoryExists(pluginDir) {
-			s.ScanDirectory(pluginDir, SkillSource_Plugin, allSkills, scanSubdirectories)
+			s.ScanDirectory(pluginDir, SkillSourcePlugin, allSkills, scanSubdirectories)
 		}
 	}
 
@@ -2537,7 +2537,7 @@ func (s *SkillLoader) LoadAll(config *SkillsConfig, workspacePath string, plugin
 	if config.Load.IncludeWorkspace && strings.TrimSpace(workspacePath) != "" {
 		wsSkillsDir := filepath.Join(workspacePath, "skills")
 		if util.DirectoryExists(wsSkillsDir) {
-			s.ScanDirectory(wsSkillsDir, SkillSource_Workspace, allSkills, scanSubdirectories)
+			s.ScanDirectory(wsSkillsDir, SkillSourceWorkspace, allSkills, scanSubdirectories)
 		}
 	}
 
@@ -2549,7 +2549,7 @@ func (s *SkillLoader) LoadAll(config *SkillsConfig, workspacePath string, plugin
 		name := skill.Name
 
 		// AllowBundled 过滤器
-		if skill.Source == SkillSource_Bundled && len(config.AllowBundled) > 0 {
+		if skill.Source == SkillSourceBundled && len(config.AllowBundled) > 0 {
 			if !util.ContainsIgnoreCase(config.AllowBundled, name) {
 				continue
 			}

@@ -1131,6 +1131,8 @@ func (m *MetaSkillResolver) TryResolve(skills []SkillDefinition, userMessage str
 	return matched, matched != nil
 }
 
+var SkillInspectorInstace = &SkillInspector{}
+
 type SkillInspector struct{}
 
 func (s *SkillInspector) TryLocateSkillRoot(candidatePath string) (string, error) {
