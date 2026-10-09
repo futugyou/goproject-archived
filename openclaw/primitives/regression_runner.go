@@ -12,11 +12,36 @@ import (
 	"github.com/google/uuid"
 )
 
+func HarnessRegressionScenariosCreateDefault() []IHarnessRegressionScenario {
+	return []IHarnessRegressionScenario{
+		&QuickstartConfigLoadsScenario{},
+		&ProviderConfigShapeScenario{},
+		&PublicBindHardeningScenario{},
+		&UrlSafetyDefaultsScenario{},
+		&ToolApprovalPolicyScenario{},
+		&MemoryStoreRoundTripScenario{},
+		&SessionStoreRoundTripScenario{},
+		&HarnessContractSerializationScenario{},
+		&EvidenceBundleSerializationScenario{},
+		&GovernanceLedgerSerializationScenario{},
+		&CapabilityBindingTrajectorySerializationScenario{},
+		&McpInitializeShapeScenario{},
+		&OpenAiCompatRequestShapeScenario{},
+		&LearningProposalReviewFirstScenario{},
+		&ManagedSkillValidationScenario{},
+		&TailscaleServeProfileNonPublicScenario{},
+		&HarnessRegressionDocsScenario{},
+	}
+}
+
 type HarnessRegressionRunner struct {
 	scenarios []IHarnessRegressionScenario
 }
 
 func NewHarnessRegressionRunner(scenarios []IHarnessRegressionScenario) *HarnessRegressionRunner {
+	if len(scenarios) == 0 {
+		scenarios = HarnessRegressionScenariosCreateDefault()
+	}
 	return &HarnessRegressionRunner{
 		scenarios: scenarios,
 	}
