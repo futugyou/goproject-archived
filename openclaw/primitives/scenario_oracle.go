@@ -268,3 +268,25 @@ func (u *ApprovalRequiredOracle) Evaluate(ctx context.Context, scenario AgentSce
 
 	return ScenarioOracleFail(u.Name(), msg, ""), nil
 }
+
+type ApprovalNotRequiredOracle struct {
+	definition ScenarioOracleDefinition
+}
+
+func NewApprovalNotRequiredOracle(definition ScenarioOracleDefinition) *ApprovalNotRequiredOracle {
+	return &ApprovalNotRequiredOracle{definition: definition}
+}
+
+func (u *ApprovalNotRequiredOracle) Name() string {
+	return ScenarioOracleTypesApprovalNotRequired
+}
+
+func (u *ApprovalNotRequiredOracle) Evaluate(ctx context.Context, scenario AgentScenario, trace AgentRunTrace) (*OracleResult, error) {
+	approvals := ScenarioOracleApprovalRequests(trace)
+
+	if len(approvals) == 0 {
+		return ScenarioOraclePass(u.Name(), "No approval request was present."), nil
+	}
+
+	return ScenarioOracleFail(u.Name(), fmt.Sprintf("Expected no approval requests, but found %d", len(approvals)), ""), nil
+}
