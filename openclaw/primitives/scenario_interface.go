@@ -3,6 +3,9 @@ package primitives
 import (
 	"context"
 	"encoding/json"
+	"fmt"
+	"sort"
+	"strings"
 	"time"
 )
 
@@ -144,16 +147,30 @@ const (
 	ScenarioRunStatusesFailed    = "failed"
 )
 
-type IScenarioRunner interface {
-	Run(ctx context.Context, scenario AgentScenario) (*ScenarioRunResult, error)
+const (
+	ScenarioOracleTypesToolCalled             = "tool-called"
+	ScenarioOracleTypesToolNotCalled          = "tool-not-called"
+	ScenarioOracleTypesMaxToolCalls           = "max-tool-calls"
+	ScenarioOracleTypesFinalAnswerContains    = "final-answer-contains"
+	ScenarioOracleTypesFinalAnswerNotContains = "final-answer-not-contains"
+	ScenarioOracleTypesApprovalRequired       = "approval-required"
+	ScenarioOracleTypesApprovalNotRequired    = "approval-not-required"
+	ScenarioOracleTypesNoUnsafeTool           = "no-unsafe-tool"
+)
+
+var DefaultUnsafeTools = []string{
+	"shell",
+	"write_file",
+	"code_exec",
+	"git",
+	"process",
+	"home_assistant_write",
+	"mqtt_publish",
+	"notion_write",
 }
 
-type IScenarioOracle interface {
-	GetName() string
-
-	Evaluate(ctx context.Context,
-		scenario AgentScenario,
-		trace AgentRunTrace) (*OracleResult, error)
+type IScenarioRunner interface {
+	Run(ctx context.Context, scenario AgentScenario) (*ScenarioRunResult, error)
 }
 
 type IScenarioLoader interface {
@@ -164,4 +181,200 @@ type ITraceWriter interface {
 	Write(ctx context.Context,
 		report ScenarioRunReport,
 		outputRoot string) (*TraceWriteResult, error)
+}
+
+type IScenarioOracle interface {
+	Name() string
+
+	Evaluate(ctx context.Context,
+		scenario AgentScenario,
+		trace AgentRunTrace) (*OracleResult, error)
+}
+
+func ScenarioOraclePass(name, message string, evidence ...string) *OracleResult {
+	ev := make([]string, len(evidence))
+	copy(ev, evidence)
+	return &OracleResult{
+		Passed:   true,
+		Name:     name,
+		Message:  message,
+		Evidence: ev,
+	}
+}
+
+func ScenarioOracleFail(name, message string, evidence ...string) *OracleResult {
+	ev := make([]string, len(evidence))
+	copy(ev, evidence)
+	return &OracleResult{
+		Passed:   false,
+		Name:     name,
+		Message:  message,
+		Evidence: ev,
+	}
+}
+
+func ScenarioOracleIsKind(step TraceStep, kind string) bool {
+	return strings.EqualFold(ScenarioOracleNormalizeKind(step.Kind), ScenarioOracleNormalizeKind(kind))
+}
+
+func ScenarioOracleToolCalls(trace AgentRunTrace) []TraceStep {
+	var result []TraceStep
+	for _, step := range trace.Steps {
+		if ScenarioOracleIsKind(step, TraceStepKindsToolCall) {
+			result = append(result, step)
+		}
+	}
+	return result
+}
+
+func ScenarioOracleApprovalRequests(trace AgentRunTrace) []TraceStep {
+	var result []TraceStep
+	for _, step := range trace.Steps {
+		if ScenarioOracleIsKind(step, TraceStepKindsApprovalRequest) {
+			result = append(result, step)
+		}
+	}
+	return result
+}
+
+func ScenarioOracleToolFromDefinition(definition ScenarioOracleDefinition) *string {
+	valStr := ScenarioOracleValueAsString(definition.Value)
+	metaVal := ScenarioOracleMetadataValue(definition, "tool")
+	return ScenarioOracleFirstNonEmpty(definition.Tool, valStr, metaVal)
+}
+
+func ScenarioOracleValuesFromDefinitionOrExpected(definition ScenarioOracleDefinition, fallback []string) []string {
+	valStr := ScenarioOracleValueAsString(definition.Value)
+	metaVal := ScenarioOracleMetadataValue(definition, "value")
+	value := ScenarioOracleFirstNonEmpty(valStr, metaVal)
+
+	if value == nil || strings.TrimSpace(*value) == "" {
+		var result []string
+		for _, item := range fallback {
+			if strings.TrimSpace(item) != "" {
+				result = append(result, item)
+			}
+		}
+		return result
+	}
+	return []string{*value}
+}
+
+func ScenarioOracleIntFromDefinitionOrExpected(definition ScenarioOracleDefinition, fallback *int) *int {
+	if definition.Limit != nil {
+		return definition.Limit
+	}
+	if v := ScenarioOracleValueAsInt(definition.Value); v != nil {
+		return v
+	}
+	if v := ScenarioOracleIntFromMetadata(definition, "limit"); v != nil {
+		return v
+	}
+	if v := ScenarioOracleIntFromMetadata(definition, "value"); v != nil {
+		return v
+	}
+	return fallback
+}
+
+func ScenarioOracleMetadataValue(definition ScenarioOracleDefinition, key string) *string {
+	if definition.Metadata == nil {
+		return nil
+	}
+	if value, ok := definition.Metadata[key]; ok {
+		return &value
+	}
+	return nil
+}
+
+func ScenarioOracleFirstNonEmpty(values ...*string) *string {
+	for _, value := range values {
+		if value != nil && strings.TrimSpace(*value) != "" {
+			trimmed := strings.TrimSpace(*value)
+			return &trimmed
+		}
+	}
+	return nil
+}
+
+func ScenarioOracleJoinStable(values []string) string {
+	seen := make(map[string]bool)
+	var list []string
+	for _, value := range values {
+		if strings.TrimSpace(value) != "" {
+			trimmed := strings.TrimSpace(value)
+			lower := strings.ToLower(trimmed)
+			if !seen[lower] {
+				seen[lower] = true
+				list = append(list, trimmed)
+			}
+		}
+	}
+	sort.SliceStable(list, func(i, j int) bool {
+		return strings.ToLower(list[i]) < strings.ToLower(list[j])
+	})
+	return strings.Join(list, ",")
+}
+
+func ScenarioOracleNormalizeKind(value string) string {
+	if strings.TrimSpace(value) == "" {
+		return ""
+	}
+	r := strings.ReplaceAll(value, "-", "")
+	r = strings.ReplaceAll(r, "_", "")
+	return strings.TrimSpace(r)
+}
+
+func ScenarioOracleValueAsString(value any) *string {
+	if value == nil {
+		return nil
+	}
+	switch v := value.(type) {
+	case string:
+		return &v
+	case float64:
+		s := fmt.Sprintf("%v", v)
+		return &s
+	case int:
+		s := fmt.Sprintf("%d", v)
+		return &s
+	case bool:
+		s := fmt.Sprintf("%t", v)
+		return &s
+	default:
+		return nil
+	}
+}
+
+func ScenarioOracleValueAsInt(value any) *int {
+	if value == nil {
+		return nil
+	}
+	switch v := value.(type) {
+	case int:
+		return &v
+	case float64:
+		i := int(v)
+		return &i
+	case string:
+		var parsed int
+		_, err := fmt.Sscanf(v, "%d", &parsed)
+		if err == nil {
+			return &parsed
+		}
+	}
+	return nil
+}
+
+func ScenarioOracleIntFromMetadata(definition ScenarioOracleDefinition, key string) *int {
+	if definition.Metadata == nil {
+		return nil
+	}
+	if val, ok := definition.Metadata[key]; ok {
+		var parsed int
+		_, err := fmt.Sscanf(val, "%d", &parsed)
+		if err == nil {
+			return &parsed
+		}
+	}
+	return nil
 }
