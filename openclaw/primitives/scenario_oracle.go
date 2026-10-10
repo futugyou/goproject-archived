@@ -155,3 +155,40 @@ func (u *MaxToolCallsOracle) Evaluate(ctx context.Context, scenario AgentScenari
 
 	return ScenarioOracleFail(u.Name(), fmt.Sprintf("Tool call count %d exceeds limit %d.", count, *limit), fmt.Sprintf("toolCalls=%d", count)), nil
 }
+
+type FinalAnswerContainsOracle struct {
+	definition ScenarioOracleDefinition
+}
+
+func NewFinalAnswerContainsOracle(definition ScenarioOracleDefinition) *FinalAnswerContainsOracle {
+	return &FinalAnswerContainsOracle{definition: definition}
+}
+
+func (u *FinalAnswerContainsOracle) Name() string {
+	return ScenarioOracleTypesFinalAnswerContains
+}
+
+func (u *FinalAnswerContainsOracle) Evaluate(ctx context.Context, scenario AgentScenario, trace AgentRunTrace) (*OracleResult, error) {
+	required := ScenarioOracleValuesFromDefinitionOrExpected(u.definition, scenario.Expected.FinalAnswerContains)
+	if len(required) == 0 {
+		return ScenarioOracleFail(u.Name(), "No required final-answer text was configured."), nil
+	}
+
+	answer := ""
+	if trace.FinalAnswer != nil {
+		answer = *trace.FinalAnswer
+	}
+
+	missing := []string{}
+	for _, value := range required {
+		if !strings.Contains(answer, value) {
+			missing = append(missing, value)
+		}
+	}
+
+	if len(missing) == 0 {
+		return ScenarioOraclePass(u.Name(), "Final answer contains required text.", fmt.Sprintf("required=%s", strings.Join(required, ", "))), nil
+	}
+
+	return ScenarioOracleFail(u.Name(), fmt.Sprintf("Final answer is missing required text: %s.", strings.Join(missing, ", ")), ""), nil
+}
