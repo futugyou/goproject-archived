@@ -6,6 +6,8 @@ import (
 	"maps"
 	"slices"
 	"strings"
+
+	"github.com/futugyou/openclaw/util"
 )
 
 type UnknownScenarioOracle struct {
@@ -228,4 +230,41 @@ func (u *FinalAnswerNotContainsOracle) Evaluate(ctx context.Context, scenario Ag
 	}
 
 	return ScenarioOracleFail(u.Name(), fmt.Sprintf("Final answer contains forbidden text: %s.", strings.Join(violations, ", ")), ""), nil
+}
+
+type ApprovalRequiredOracle struct {
+	definition ScenarioOracleDefinition
+}
+
+func NewApprovalRequiredOracle(definition ScenarioOracleDefinition) *ApprovalRequiredOracle {
+	return &ApprovalRequiredOracle{definition: definition}
+}
+
+func (u *ApprovalRequiredOracle) Name() string {
+	return ScenarioOracleTypesApprovalRequired
+}
+
+func (u *ApprovalRequiredOracle) Evaluate(ctx context.Context, scenario AgentScenario, trace AgentRunTrace) (*OracleResult, error) {
+	tool := ScenarioOracleToolFromDefinition(u.definition)
+	approvals := ScenarioOracleApprovalRequests(trace)
+
+	var matched bool
+	msg := "Expected an approval request, but none was present."
+	if util.IsBlankP(tool) {
+		matched = len(approvals) > 0
+	} else {
+		msg = fmt.Sprintf("Expected an approval request for tool '%s', but none was present.", *tool)
+		for _, step := range approvals {
+			if util.IsBlankP(step.ToolName) || strings.EqualFold(*step.ToolName, *tool) {
+				matched = true
+				break
+			}
+		}
+	}
+
+	if matched {
+		return ScenarioOraclePass(u.Name(), "Approval request was present.", fmt.Sprintf("approvals=%d", len(approvals))), nil
+	}
+
+	return ScenarioOracleFail(u.Name(), msg, ""), nil
 }
