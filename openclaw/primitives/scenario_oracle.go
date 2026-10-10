@@ -120,3 +120,38 @@ func (u *ToolNotCalledOracle) Evaluate(ctx context.Context, scenario AgentScenar
 
 	return ScenarioOracleFail(u.Name(), fmt.Sprintf("Forbidden tools were called: %s.", strings.Join(violations, ", ")), fmt.Sprintf("called=%s", calledEvidence)), nil
 }
+
+type MaxToolCallsOracle struct {
+	definition ScenarioOracleDefinition
+}
+
+func NewMaxToolCallsOracle(definition ScenarioOracleDefinition) *MaxToolCallsOracle {
+	return &MaxToolCallsOracle{definition: definition}
+}
+
+func (u *MaxToolCallsOracle) Name() string {
+	return ScenarioOracleTypesMaxToolCalls
+}
+
+func (u *MaxToolCallsOracle) Evaluate(ctx context.Context, scenario AgentScenario, trace AgentRunTrace) (*OracleResult, error) {
+	limit := ScenarioOracleIntFromDefinitionOrExpected(u.definition, scenario.Expected.MaxToolCalls)
+
+	if limit == nil {
+		return ScenarioOracleFail(u.Name(), "No max tool call limit was configured."), nil
+	}
+
+	called := map[string]struct{}{}
+	for _, v := range ScenarioOracleToolCalls(trace) {
+		if v.ToolName != nil {
+			if _, ok := called[*v.ToolName]; !ok {
+				called[*v.ToolName] = struct{}{}
+			}
+		}
+	}
+	count := len(ScenarioOracleToolCalls(trace))
+	if count <= *limit {
+		return ScenarioOraclePass(u.Name(), fmt.Sprintf("Tool call count %d is within limit %d.", count, *limit), fmt.Sprintf("toolCalls=%d", count)), nil
+	}
+
+	return ScenarioOracleFail(u.Name(), fmt.Sprintf("Tool call count %d exceeds limit %d.", count, *limit), fmt.Sprintf("toolCalls=%d", count)), nil
+}
