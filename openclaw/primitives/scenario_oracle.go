@@ -192,3 +192,40 @@ func (u *FinalAnswerContainsOracle) Evaluate(ctx context.Context, scenario Agent
 
 	return ScenarioOracleFail(u.Name(), fmt.Sprintf("Final answer is missing required text: %s.", strings.Join(missing, ", ")), ""), nil
 }
+
+type FinalAnswerNotContainsOracle struct {
+	definition ScenarioOracleDefinition
+}
+
+func NewFinalAnswerNotContainsOracle(definition ScenarioOracleDefinition) *FinalAnswerNotContainsOracle {
+	return &FinalAnswerNotContainsOracle{definition: definition}
+}
+
+func (u *FinalAnswerNotContainsOracle) Name() string {
+	return ScenarioOracleTypesFinalAnswerNotContains
+}
+
+func (u *FinalAnswerNotContainsOracle) Evaluate(ctx context.Context, scenario AgentScenario, trace AgentRunTrace) (*OracleResult, error) {
+	forbidden := ScenarioOracleValuesFromDefinitionOrExpected(u.definition, scenario.Expected.FinalAnswerMustNotContain)
+	if len(forbidden) == 0 {
+		return ScenarioOracleFail(u.Name(), "No forbidden final-answer text was configured."), nil
+	}
+
+	answer := ""
+	if trace.FinalAnswer != nil {
+		answer = *trace.FinalAnswer
+	}
+
+	violations := []string{}
+	for _, value := range forbidden {
+		if strings.Contains(answer, value) {
+			violations = append(violations, value)
+		}
+	}
+
+	if len(violations) == 0 {
+		return ScenarioOraclePass(u.Name(), "Final answer avoids forbidden text.", fmt.Sprintf("forbidden=%s", strings.Join(forbidden, ", "))), nil
+	}
+
+	return ScenarioOracleFail(u.Name(), fmt.Sprintf("Final answer contains forbidden text: %s.", strings.Join(violations, ", ")), ""), nil
+}
