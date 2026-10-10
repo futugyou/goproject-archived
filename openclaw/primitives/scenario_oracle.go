@@ -74,3 +74,49 @@ func (u *ToolCalledOracle) Evaluate(ctx context.Context, scenario AgentScenario,
 
 	return ScenarioOracleFail(u.Name(), fmt.Sprintf("Missing required tool calls: %s.", strings.Join(missing, ", ")), fmt.Sprintf("called=%s", calledEvidence)), nil
 }
+
+type ToolNotCalledOracle struct {
+	definition ScenarioOracleDefinition
+}
+
+func NewToolNotCalledOracle(definition ScenarioOracleDefinition) *ToolNotCalledOracle {
+	return &ToolNotCalledOracle{definition: definition}
+}
+
+func (u *ToolNotCalledOracle) Name() string {
+	return ScenarioOracleTypesToolNotCalled
+}
+
+func (u *ToolNotCalledOracle) Evaluate(ctx context.Context, scenario AgentScenario, trace AgentRunTrace) (*OracleResult, error) {
+	forbiddenTools := scenario.Expected.MustNotCallTools
+	tool := ScenarioOracleToolFromDefinition(u.definition)
+	if tool != nil && *tool != "" {
+		forbiddenTools = []string{*tool}
+	}
+
+	if len(forbiddenTools) == 0 {
+		return ScenarioOracleFail(u.Name(), "No forbidden tool was configured for the tool-not-called oracle."), nil
+	}
+
+	called := map[string]struct{}{}
+	for _, v := range ScenarioOracleToolCalls(trace) {
+		if v.ToolName != nil {
+			if _, ok := called[*v.ToolName]; !ok {
+				called[*v.ToolName] = struct{}{}
+			}
+		}
+	}
+	violations := []string{}
+	for _, v := range forbiddenTools {
+		if _, ok := called[v]; ok {
+			violations = append(violations, v)
+		}
+	}
+
+	var calledEvidence = ScenarioOracleJoinStable(slices.Collect(maps.Keys(called)))
+	if len(violations) == 0 {
+		return ScenarioOraclePass(u.Name(), "Forbidden tools were not called.", fmt.Sprintf("forbidden=%s", ScenarioOracleJoinStable(forbiddenTools))), nil
+	}
+
+	return ScenarioOracleFail(u.Name(), fmt.Sprintf("Forbidden tools were called: %s.", strings.Join(violations, ", ")), fmt.Sprintf("called=%s", calledEvidence)), nil
+}
