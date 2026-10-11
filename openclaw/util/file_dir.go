@@ -526,3 +526,37 @@ func AddFileToZip(w *zip.Writer, srcPath, entryName string) error {
 	_, err = io.Copy(fw, file)
 	return err
 }
+
+func FindLatestModifyDirectory(outputRoot string) (string, error) {
+	entries, err := os.ReadDir(outputRoot)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return "", nil
+		}
+		return "", err
+	}
+
+	var latestDir string
+	var latestTime time.Time
+	hasDirs := false
+
+	for _, entry := range entries {
+		if entry.IsDir() {
+			info, err := entry.Info()
+			if err != nil {
+				continue
+			}
+			modTime := info.ModTime().UTC()
+			if !hasDirs || modTime.After(latestTime) {
+				latestTime = modTime
+				latestDir = filepath.Join(outputRoot, entry.Name())
+				hasDirs = true
+			}
+		}
+	}
+
+	if !hasDirs {
+		return "", nil
+	}
+	return latestDir, nil
+}
