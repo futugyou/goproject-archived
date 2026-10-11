@@ -1,7 +1,11 @@
 package primitives
 
 import (
+	"context"
+	"encoding/json"
 	"fmt"
+	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 	"time"
@@ -129,4 +133,108 @@ func maxBacktickRun(value string) int {
 		}
 	}
 	return max
+}
+
+type JsonTraceWriter struct {
+}
+
+func (j *JsonTraceWriter) Write(ctx context.Context, report ScenarioRunReport, outputRoot string) (*TraceWriteResult, error) {
+	if err := validateRunId(report.RunId); err != nil {
+		return nil, err
+	}
+
+	outputRootFullPath, err := filepath.Abs(outputRoot)
+	if err != nil {
+		return nil, err
+	}
+	runDirectory := filepath.Join(outputRootFullPath, report.RunId)
+	traceDirectory := filepath.Join(runDirectory, "traces")
+	if err := os.MkdirAll(traceDirectory, 0700); err != nil {
+		return nil, err
+	}
+
+	tracePaths := []string{}
+	for _, result := range report.Results {
+		traceFileName, err := getTraceFileName(result.Scenario.Id)
+		if err != nil {
+			return nil, err
+		}
+		tracePath := filepath.Join(traceDirectory, traceFileName)
+		data, err := json.Marshal(result.Trace)
+		if err != nil {
+			return nil, err
+		}
+		if err := os.WriteFile(tracePath, data, 0644); err != nil {
+			return nil, err
+		}
+
+		tracePaths = append(tracePaths, tracePath)
+	}
+
+	reportWithMarkdown := report
+	if util.IsBlank(report.Markdown) {
+		reportWithMarkdown = ScenarioRunReport{
+			RunId:          report.RunId,
+			StartedAtUtc:   report.StartedAtUtc,
+			CompletedAtUtc: report.CompletedAtUtc,
+			Summary:        report.Summary,
+			Results:        report.Results,
+			Markdown:       ScenarioMarkdownReportBuild(report),
+		}
+
+	}
+
+	resultsPath := filepath.Join(runDirectory, "results.json")
+	reportPath := filepath.Join(runDirectory, "report.md")
+	data, err := json.Marshal(reportWithMarkdown)
+	if err != nil {
+		return nil, err
+	}
+	if err := os.WriteFile(resultsPath, data, 0644); err != nil {
+		return nil, err
+	}
+	if err := os.WriteFile(reportPath, []byte(reportWithMarkdown.Markdown), 0644); err != nil {
+		return nil, err
+	}
+
+	return &TraceWriteResult{
+		RunId:         report.RunId,
+		DirectoryPath: runDirectory,
+		ResultsPath:   resultsPath,
+		ReportPath:    reportPath,
+		TracePaths:    tracePaths,
+	}, nil
+}
+
+func validateRunId(runId string) error {
+	trimmed := strings.TrimSpace(runId)
+	if trimmed == "" || filepath.IsAbs(runId) || runId != filepath.Base(runId) || runId == "." || runId == ".." {
+		return &os.PathError{Op: "ValidateRunId", Path: runId, Err: os.ErrInvalid}
+	}
+	return nil
+}
+
+func getTraceFileName(scenarioId string) (string, error) {
+	safeName := safeFileName(scenarioId)
+	traceFileName := filepath.Base(safeName + ".trace.json")
+	if strings.TrimSpace(traceFileName) == "" || filepath.IsAbs(traceFileName) || traceFileName == "." || traceFileName == ".." {
+		return "", &os.PathError{Op: "GetTraceFileName", Path: scenarioId, Err: os.ErrInvalid}
+	}
+	return traceFileName, nil
+}
+
+func safeFileName(value string) string {
+	if strings.TrimSpace(value) == "" {
+		return "scenario"
+	}
+
+	// Windows invalid file name characters + general cross-platform safety
+	invalidChars := []string{"<", ">", ":", "\"", "/", "\\", "|", "?", "*"}
+	fileName := value
+	for _, char := range invalidChars {
+		fileName = strings.ReplaceAll(fileName, char, "_")
+	}
+
+	// Also handle control characters or replace generic path separators if needed
+	return fileName
 }

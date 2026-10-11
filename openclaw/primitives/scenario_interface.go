@@ -115,7 +115,7 @@ type ScenarioRunReport struct {
 	CompletedAtUtc time.Time           `json:"completedAtUtc"`
 	Summary        ScenarioRunSummary  `json:"summary"`
 	Results        []ScenarioRunResult `json:"results"`
-	Markdown       *string             `json:"markdown,omitempty"`
+	Markdown       string              `json:"markdown,omitempty"`
 }
 
 type ScenarioRunSummary struct {
