@@ -238,3 +238,32 @@ func safeFileName(value string) string {
 	// Also handle control characters or replace generic path separators if needed
 	return fileName
 }
+
+type LatestScenarioRunReport struct {
+	Report        ScenarioRunReport
+	DirectoryPath string
+}
+
+func LoadLatestReportWithDirectory(ctx context.Context, outputRoot string) (*LatestScenarioRunReport, error) {
+	latest, err := util.FindLatestModifyDirectory(outputRoot)
+	if err != nil {
+		return nil, err
+	}
+
+	var resultsPath = filepath.Join(latest, "results.json")
+	report, err := util.LoadOneFile[ScenarioRunReport](ctx, resultsPath)
+	if err != nil {
+		return nil, err
+	}
+
+	return &LatestScenarioRunReport{Report: *report, DirectoryPath: latest}, nil
+}
+
+func LoadLatestReport(ctx context.Context, outputRoot string) (*ScenarioRunReport, error) {
+	result, err := LoadLatestReportWithDirectory(ctx, outputRoot)
+	if err != nil {
+		return nil, err
+	}
+
+	return &result.Report, nil
+}
