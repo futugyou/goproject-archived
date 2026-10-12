@@ -9,7 +9,7 @@ require (
 	github.com/grpc-ecosystem/grpc-gateway v1.16.0
 	github.com/opentracing/opentracing-go v1.2.0
 	github.com/uber/jaeger-client-go v2.30.0+incompatible
-	golang.org/x/net v0.59.0
+	golang.org/x/net v0.60.0
 	google.golang.org/genproto v0.0.0-20230410155749-daa745c078e1
 	google.golang.org/grpc v1.84.0
 	google.golang.org/protobuf v1.36.12
