@@ -8,7 +8,7 @@ require (
 	charm.land/bubbles/v2 v2.2.1
 	charm.land/huh/v2 v2.0.3
 	charm.land/lipgloss/v2 v2.0.6
-	github.com/Microsoft/go-winio v0.6.2
+	github.com/Microsoft/go-winio v0.6.3
 	github.com/eclipse/paho.golang v0.23.0
 	github.com/emersion/go-imap/v2 v2.0.0-beta.8
 	github.com/flosch/pongo2/v7 v7.0.0-alpha.1
