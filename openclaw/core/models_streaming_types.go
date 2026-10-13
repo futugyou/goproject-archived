@@ -3,12 +3,12 @@ package core
 type AgentStreamEventType uint8
 
 const (
-	TextDelta AgentStreamEventType = iota
-	ToolStart
-	ToolDelta
-	ToolResult
-	Error
-	Done
+	AgentStreamEventTypeTextDelta AgentStreamEventType = iota
+	AgentStreamEventTypeToolStart
+	AgentStreamEventTypeToolDelta
+	AgentStreamEventTypeToolResult
+	AgentStreamEventTypeError
+	AgentStreamEventTypeDone
 )
 
 var ToolResultStatuses = struct {
@@ -31,14 +31,14 @@ type AgentStreamEvent struct {
 
 func NewTextDelta(text string) AgentStreamEvent {
 	return AgentStreamEvent{
-		Type:    TextDelta,
+		Type:    AgentStreamEventTypeTextDelta,
 		Content: text,
 	}
 }
 
 func NewToolStarted(toolName string, arguments string) AgentStreamEvent {
 	return AgentStreamEvent{
-		Type:          ToolStart,
+		Type:          AgentStreamEventTypeToolStart,
 		Content:       toolName,
 		ToolName:      toolName,
 		ToolArguments: arguments,
@@ -47,7 +47,7 @@ func NewToolStarted(toolName string, arguments string) AgentStreamEvent {
 
 func NewToolDelta(toolName string, chunk string) AgentStreamEvent {
 	return AgentStreamEvent{
-		Type:     ToolDelta,
+		Type:     AgentStreamEventTypeToolDelta,
 		Content:  chunk,
 		ToolName: toolName,
 	}
@@ -67,7 +67,7 @@ func NewToolCompleted(
 	}
 
 	return AgentStreamEvent{
-		Type:           ToolResult,
+		Type:           AgentStreamEventTypeToolResult,
 		Content:        result,
 		ToolName:       toolName,
 		ResultStatus:   status,
@@ -79,7 +79,7 @@ func NewToolCompleted(
 
 func NewErrorOccurred(err string, errorCode string) AgentStreamEvent {
 	return AgentStreamEvent{
-		Type:      Error,
+		Type:      AgentStreamEventTypeError,
 		Content:   err,
 		ErrorCode: errorCode,
 	}
@@ -87,24 +87,24 @@ func NewErrorOccurred(err string, errorCode string) AgentStreamEvent {
 
 func NewComplete() AgentStreamEvent {
 	return AgentStreamEvent{
-		Type:    Done,
+		Type:    AgentStreamEventTypeDone,
 		Content: "",
 	}
 }
 
 func (e AgentStreamEvent) EnvelopeType() string {
 	switch e.Type {
-	case TextDelta:
+	case AgentStreamEventTypeTextDelta:
 		return "assistant_chunk"
-	case ToolStart:
+	case AgentStreamEventTypeToolStart:
 		return "tool_start"
-	case ToolDelta:
+	case AgentStreamEventTypeToolDelta:
 		return "tool_chunk"
-	case ToolResult:
+	case AgentStreamEventTypeToolResult:
 		return "tool_result"
-	case Error:
+	case AgentStreamEventTypeError:
 		return "error"
-	case Done:
+	case AgentStreamEventTypeDone:
 		return "assistant_done"
 	default:
 		return "assistant_chunk"
