@@ -7,6 +7,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/futugyou/extensions_ai/abstractions/chatcompletion"
 	"github.com/futugyou/openclaw/agent"
 	"github.com/futugyou/openclaw/core"
 	"github.com/futugyou/openclaw/util"
@@ -19,6 +20,16 @@ type RuntimeScenarioRunner struct {
 	oracles        *ScenarioOracleRegistry
 
 	mu sync.Mutex
+}
+
+func NewRuntimeScenarioRunner(runtimeFactory RuntimeScenarioFactory,
+	approval agent.ToolApprovalCallback,
+	oracles *ScenarioOracleRegistry) *RuntimeScenarioRunner {
+	return &RuntimeScenarioRunner{
+		runtimeFactory: runtimeFactory,
+		approval:       approval,
+		oracles:        oracles,
+	}
 }
 
 func (r *RuntimeScenarioRunner) Run(ctx context.Context, scenario AgentScenario) (*ScenarioRunResult, error) {
@@ -124,4 +135,53 @@ func (r *RuntimeScenarioRunner) Run(ctx context.Context, scenario AgentScenario)
 	}
 	runResult.FailureSummary = new(strings.Join(summary, "; "))
 	return runResult, nil
+}
+
+func RuntimeScenarioRunReplay(ctx context.Context, fixture TrajectoryReplayFixture, assertions []ScenarioOracleDefinition,
+	createRuntime func(chatcompletion.IChatClient, []core.ITool) agent.IAgentRuntime,
+	approval agent.ToolApprovalCallback) (*ScenarioRunResult, error) {
+	replay, err := NewTrajectoryReplay(fixture)
+	if err != nil {
+		return nil, err
+	}
+	scenario := AgentScenario{
+		Id: "trajectory-replay", Input: ScenarioInput{UserMessage: fixture.Prompt}, Oracles: assertions,
+	}
+	runner := NewRuntimeScenarioRunner(func(AgentScenario) agent.IAgentRuntime {
+		return createRuntime(replay, replay.Tools)
+	}, approval, nil)
+	result, err := runner.Run(ctx, scenario)
+	if err != nil {
+		return nil, err
+	}
+	divergence := ""
+	if err := replay.VerifyComplete(); err != nil {
+		divergence = err.Error()
+	}
+
+	message := "All recorded responses and tools were consumed."
+	if divergence != "" {
+		message = divergence
+	}
+	oracleResult := OracleResult{
+		Name:    "replay-consumed",
+		Passed:  divergence == "",
+		Message: message,
+	}
+
+	outcomes := append(result.OracleResults, oracleResult)
+	passed := true
+	summary := []string{}
+	for _, v := range outcomes {
+		if !v.Passed {
+			passed = false
+			summary = append(summary, v.Message)
+		}
+	}
+
+	return &ScenarioRunResult{
+		Scenario: result.Scenario, Trace: result.Trace, OracleResults: outcomes,
+		Passed: passed, StartedAtUtc: result.StartedAtUtc, CompletedAtUtc: result.CompletedAtUtc,
+		FailureSummary: new(strings.Join(summary, "; ")),
+	}, nil
 }
