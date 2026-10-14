@@ -2,8 +2,57 @@ package core
 
 import "time"
 
+const (
+	CodebaseMapCategoriesAll       = "all"
+	CodebaseMapCategoriesProjects  = "projects"
+	CodebaseMapCategoriesEndpoints = "endpoints"
+	CodebaseMapCategoriesTools     = "tools"
+	CodebaseMapCategoriesProviders = "providers"
+	CodebaseMapCategoriesChannels  = "channels"
+	CodebaseMapCategoriesConfig    = "config"
+	CodebaseMapCategoriesTests     = "tests"
+)
+
+const (
+	CodebaseMapModuleKindsGateway   = "gateway"
+	CodebaseMapModuleKindsCore      = "core"
+	CodebaseMapModuleKindsAgent     = "agent"
+	CodebaseMapModuleKindsCli       = "cli"
+	CodebaseMapModuleKindsCompanion = "companion"
+	CodebaseMapModuleKindsTui       = "tui"
+	CodebaseMapModuleKindsClient    = "client"
+	CodebaseMapModuleKindsPlugin    = "plugin"
+	CodebaseMapModuleKindsAdapter   = "adapter"
+	CodebaseMapModuleKindsTests     = "tests"
+	CodebaseMapModuleKindsDocs      = "docs"
+	CodebaseMapModuleKindsSamples   = "samples"
+	CodebaseMapModuleKindsSkills    = "skills"
+	CodebaseMapModuleKindsUnknown   = "unknown"
+)
+
+const (
+	CodebaseMapArtifactKindsSolution = "solution"
+	CodebaseMapArtifactKindsProject  = "project"
+	CodebaseMapArtifactKindsSource   = "source"
+	CodebaseMapArtifactKindsConfig   = "config"
+	CodebaseMapArtifactKindsDocs     = "docs"
+	CodebaseMapArtifactKindsTest     = "test"
+	CodebaseMapArtifactKindsSample   = "sample"
+	CodebaseMapArtifactKindsWorkflow = "workflow"
+	CodebaseMapArtifactKindsScript   = "script"
+	CodebaseMapArtifactKindsSkill    = "skill"
+	CodebaseMapArtifactKindsPlugin   = "plugin"
+	CodebaseMapArtifactKindsUnknown  = "unknown"
+)
+
+const (
+	CodebaseMapDiagnosticSeverityInfo    = "info"
+	CodebaseMapDiagnosticSeverityWarning = "warning"
+	CodebaseMapDiagnosticSeverityError   = "error"
+)
+
 type CodebaseHarnessMap struct {
-	ID                string                     `json:"id"`
+	Id                string                     `json:"id"`
 	RepositoryRoot    string                     `json:"repository_root"`
 	RepositoryName    string                     `json:"repository_name"`
 	GeneratedAtUtc    time.Time                  `json:"generated_at_utc"`
@@ -68,10 +117,11 @@ type CodebaseMapSummary struct {
 // --- CodebaseProject ---
 
 type CodebaseProject struct {
-	ID                string   `json:"id"`
+	Id                string   `json:"id"`
 	Name              string   `json:"name"`
 	Path              string   `json:"path"`
 	ProjectType       string   `json:"project_type"`
+	GoVersion         string   `json:"go_version"`
 	TargetFrameworks  []string `json:"target_frameworks"`
 	IsTestProject     bool     `json:"is_test_project"`
 	PackageReferences []string `json:"package_references"`
@@ -286,7 +336,7 @@ func DefaultCodebaseMapOptions() CodebaseMapOptions {
 		MaxFiles:                5000,
 		MaxDepth:                12,
 		RecentDays:              30,
-		Category:                "All",
+		Category:                "all",
 	}
 }
 

@@ -1,6 +1,7 @@
 package primitives
 
 import (
+	"encoding/json"
 	"fmt"
 	"path/filepath"
 	"strings"
@@ -76,6 +77,18 @@ func NewHarnessRegressionReport() *HarnessRegressionReport {
 	}
 }
 
+func (h *HarnessRegressionReport) ToJson() string {
+	if h == nil {
+		return ""
+	}
+	data, err := json.Marshal(h)
+	if err != nil {
+		return ""
+	}
+
+	return string(data)
+}
+
 func (h *HarnessRegressionReport) ToText() string {
 	if h == nil {
 		return ""
@@ -98,9 +111,9 @@ func (h *HarnessRegressionReport) ToText() string {
 		sb.WriteString("Next steps:\n")
 		for _, recommendation := range h.Recommendations {
 			if recommendation.Command == "" {
-				sb.WriteString(fmt.Sprintf("- %s\n", recommendation.Summary))
+				fmt.Fprintf(sb, "- %s\n", recommendation.Summary)
 			} else {
-				sb.WriteString(fmt.Sprintf("- %s\n", recommendation.Command))
+				fmt.Fprintf(sb, "- %s\n", recommendation.Command)
 			}
 		}
 	}
