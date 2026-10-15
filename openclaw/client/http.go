@@ -2045,3 +2045,19 @@ func (c *OpenClawHttpClient) StreamChannelAuth(
 
 	return scanner.Err()
 }
+
+func (c *OpenClawHttpClient) ExecuteFractalMemoryWorkflow(ctx context.Context, operation string, arguments map[string]any) (*core.StructuredMemoryWorkflowResult, error) {
+	workflow := core.FindFractalMemoryWorkflow(operation)
+	if workflow == nil {
+		return nil, fmt.Errorf("Unknown Fractal Memory workflow: %s", operation)
+	}
+
+	errstr := workflow.Validate(arguments)
+	if errstr != nil {
+		return nil, errors.New(*errstr)
+	}
+
+	resultUri := c.baseUri.JoinPath("/admin/memory/fractal/workflows").JoinPath(workflow.Operation)
+	var paramAny any = arguments
+	return SendHttp[any, core.StructuredMemoryWorkflowResult](ctx, c, "POST", resultUri, &paramAny, nil)
+}
