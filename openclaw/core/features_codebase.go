@@ -534,6 +534,10 @@ func detectProjects(root string, files []ScannedFile, diagnostics *[]CodebaseMap
 
 type CodebaseHarnessMapService struct{}
 
+func NewCodebaseHarnessMapService() *CodebaseHarnessMapService {
+	return &CodebaseHarnessMapService{}
+}
+
 func (c *CodebaseHarnessMapService) Generate(ctx context.Context, repositoryRoot string, options *CodebaseMapOptions) (*CodebaseHarnessMap, error) {
 	started := time.Now()
 	_ = normalizeOptions(options)

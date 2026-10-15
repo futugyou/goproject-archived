@@ -7,7 +7,6 @@ import (
 	"os"
 	"strings"
 
-	"github.com/futugyou/openclaw/client"
 	"github.com/futugyou/openclaw/core"
 )
 
@@ -208,22 +207,6 @@ func getOption(parsed *CliArgs, name string) string {
 		return vals[0]
 	}
 	return ""
-}
-
-func createClient(parsed *CliArgs) (*client.OpenClawHttpClient, error) {
-	baseURL := getOption(parsed, "--url")
-	if baseURL == "" {
-		baseURL = os.Getenv(EnvBaseUrl)
-	}
-	if baseURL == "" {
-		baseURL = DefaultBaseUrl
-	}
-
-	token := getOption(parsed, "--token")
-	if token == "" {
-		token = os.Getenv(EnvAuthToken)
-	}
-	return client.NewOpenClawHttpClient(baseURL, token, nil)
 }
 
 func writeOutput[T any](val T, isJSON bool, textFormatter func(T)) {
