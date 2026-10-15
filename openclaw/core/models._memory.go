@@ -174,3 +174,17 @@ func DefaultStructuredMemoryContextResult() *StructuredMemoryContextResult {
 type StructuredMemoryPathRequest struct {
 	Path string `json:"path"`
 }
+
+type StructuredMemoryWorkflowResult struct {
+	Success   bool                           `json:"success"`
+	Data      map[string]any                 `json:"data"`
+	Text      string                         `json:"text"`
+	Resources []StructuredMemoryResourceLink `json:"resources"`
+	Error     string                         `json:"error"`
+}
+
+type StructuredMemoryResourceLink struct {
+	Uri      string `json:"uri"`
+	Name     string `json:"name"`
+	MimeType string `json:"mime_type"`
+}
