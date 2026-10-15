@@ -11,10 +11,10 @@ import (
 	"github.com/futugyou/openclaw/core"
 )
 
-func MaintenanceCommandsRun(args []string, stdout io.Writer, stderr io.Writer) int {
+func MaintenanceCommandsRun(args []string, stdout io.Writer, stderr io.Writer) (int, error) {
 	if len(args) == 0 {
 		fmt.Fprintln(stdout, "Usage: openclaw maintenance <scan|fix> [options]")
-		return 2
+		return 2, nil
 	}
 
 	subcommand := strings.ToLower(strings.TrimSpace(args[0]))
@@ -27,13 +27,13 @@ func MaintenanceCommandsRun(args []string, stdout io.Writer, stderr io.Writer) i
 	configPath, err := filepath.Abs(core.GatewaySetupPathsIntance.ExpandPath(*configPathOpt))
 	if err != nil {
 		fmt.Fprintln(stderr, err.Error())
-		return 1
+		return 1, err
 	}
 
 	config, err := core.GatewayConfigFileInstance.Load(configPath)
 	if err != nil {
 		fmt.Fprintln(stderr, err.Error())
-		return 1
+		return 1, err
 	}
 
 	inputs := &core.MaintenanceScanInputs{
@@ -48,20 +48,20 @@ func MaintenanceCommandsRun(args []string, stdout io.Writer, stderr io.Writer) i
 		report, err := core.MaintenanceCoordinatorInstance.Scan(ctx, config, inputs)
 		if err != nil {
 			fmt.Fprintln(stderr, err.Error())
-			return 1
+			return 1, err
 		}
 
 		if parsed.HasFlag("--json") {
 			data, _ := json.Marshal(report)
 			fmt.Fprintln(stdout, string(data))
 		} else {
-			WriteReport(stdout, report)
+			writeReport(stdout, report)
 		}
 
 		if strings.EqualFold(report.OverallStatus, core.SetupCheckStatesFail) {
-			return 1
+			return 1, nil
 		}
-		return 0
+		return 0, nil
 	}
 
 	if subcommand == "fix" {
@@ -78,26 +78,27 @@ func MaintenanceCommandsRun(args []string, stdout io.Writer, stderr io.Writer) i
 		response, err := core.MaintenanceCoordinatorInstance.Fix(ctx, config, fixReq, inputs)
 		if err != nil {
 			fmt.Fprintln(stderr, err.Error())
-			return 1
+			return 1, err
 		}
 
 		if parsed.HasFlag("--json") {
 			data, _ := json.Marshal(response)
 			fmt.Fprintln(stdout, string(data))
 		} else {
-			WriteFixResponse(stdout, response)
+			writeFixResponse(stdout, response)
 		}
 
 		if response.Success {
-			return 0
+			return 0, nil
 		}
-		return 1
+		return 1, nil
 	}
 
 	fmt.Fprintln(stdout, "Usage: openclaw maintenance <scan|fix> [options]")
-	return 2
+	return 2, nil
 }
-func WriteFixResponse(output io.Writer, response *core.MaintenanceFixResponse) {
+
+func writeFixResponse(output io.Writer, response *core.MaintenanceFixResponse) {
 	msg := "Maintenance fix:"
 	if response.DryRun {
 		msg = "Maintenance dry-run:"
@@ -121,7 +122,7 @@ func WriteFixResponse(output io.Writer, response *core.MaintenanceFixResponse) {
 	fmt.Fprintf(output, "Reliability: %d/100 (%s)\n", response.Reliability.Score, response.Reliability.Status)
 }
 
-func WriteReport(output io.Writer, report *core.MaintenanceReportResponse) {
+func writeReport(output io.Writer, report *core.MaintenanceReportResponse) {
 	fmt.Fprintf(output, "Maintenance status: %s\n", report.OverallStatus)
 	fmt.Fprintf(output, "Generated at: %s\n", report.GeneratedAtUtc.Format("2006-01-02T15:04:05.0000000Z07:00"))
 	fmt.Fprintf(output, "Reliability: %d/100 (%s)\n", report.Reliability.Score, report.Reliability.Status)

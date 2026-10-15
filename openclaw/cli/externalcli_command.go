@@ -16,16 +16,16 @@ const (
 	EnvAuthToken   = "OPENCLAW_AUTH_TOKEN"
 )
 
-func ExternalCliCommandRun(ctx context.Context, args []string) int {
+func ExternalCliCommandRun(ctx context.Context, args []string) (int, error) {
 	if len(args) == 0 || args[0] == "-h" || args[0] == "--help" || args[0] == "help" {
 		externalCliCommandsPrintHelp()
-		return 0
+		return 0, nil
 	}
 
 	parsed := CliArgsParse(args)
 	if parsed.ShowHelp || len(parsed.Positionals) == 0 {
 		externalCliCommandsPrintHelp()
-		return 0
+		return 0, nil
 	}
 
 	command := parsed.Positionals[0]
@@ -36,13 +36,13 @@ func ExternalCliCommandRun(ctx context.Context, args []string) int {
 			Items: core.ExternalCliPresetCatalogInstance.List(),
 		}
 		writeOutput(response, jsonOutput, textPresets)
-		return 0
+		return 0, nil
 	}
 
 	client, err := createClient(parsed)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "Error:", err)
-		return 1
+		return 1, err
 	}
 
 	switch command {
@@ -50,72 +50,72 @@ func ExternalCliCommandRun(ctx context.Context, args []string) int {
 		response, err := client.ListExternalCliConnectors(ctx)
 		if err != nil {
 			fmt.Fprintln(os.Stderr, "Error:", err)
-			return 1
+			return 1, err
 		}
 		writeOutput(response, jsonOutput, textConnectors)
-		return 0
+		return 0, nil
 
 	case "status":
 		connector, err := requiredPosition(parsed, 1, "connector")
 		if err != nil {
 			fmt.Fprintln(os.Stderr, err)
-			return 1
+			return 1, err
 		}
 		response, err := client.GetExternalCliConnectorStatus(ctx, connector)
 		if err != nil {
 			fmt.Fprintln(os.Stderr, "Error:", err)
-			return 1
+			return 1, err
 		}
 		writeOutput(response, jsonOutput, textStatus)
-		return 0
+		return 0, nil
 
 	case "commands":
 		connector, err := requiredPosition(parsed, 1, "connector")
 		if err != nil {
 			fmt.Fprintln(os.Stderr, err)
-			return 1
+			return 1, err
 		}
 		response, err := client.ListExternalCliCommands(ctx, connector)
 		if err != nil {
 			fmt.Fprintln(os.Stderr, "Error:", err)
-			return 1
+			return 1, err
 		}
 		writeOutput(response, jsonOutput, textCommands)
-		return 0
+		return 0, nil
 
 	case "preview":
 		req, err := buildPreviewRequest(parsed)
 		if err != nil {
 			fmt.Fprintln(os.Stderr, err)
-			return 1
+			return 1, err
 		}
 		response, err := client.PreviewExternalCli(ctx, req)
 		if err != nil {
 			fmt.Fprintln(os.Stderr, "Error:", err)
-			return 1
+			return 1, err
 		}
 		writeOutput(response, jsonOutput, textPreview)
-		return 0
+		return 0, nil
 
 	case "execute":
 		req, err := buildPreviewRequest(parsed)
 		if err != nil {
 			fmt.Fprintln(os.Stderr, err)
-			return 1
+			return 1, err
 		}
 		req.ExecuteDryRun = false
 
 		preview, err := client.PreviewExternalCli(ctx, req)
 		if err != nil {
 			fmt.Fprintln(os.Stderr, "Error:", err)
-			return 1
+			return 1, err
 		}
 
 		yesFlag := parsed.HasFlag("--yes")
 		if preview.Preview.RequiresApproval && !yesFlag {
 			fmt.Fprintln(os.Stderr, "External CLI command requires approval. Re-run with --yes after reviewing preview:")
 			textPreview(preview)
-			return 3
+			return 3, nil
 		}
 
 		var approvedFingerprint string
@@ -135,18 +135,18 @@ func ExternalCliCommandRun(ctx context.Context, args []string) int {
 		response, err := client.ExecuteExternalCli(ctx, execReq)
 		if err != nil {
 			fmt.Fprintln(os.Stderr, "Error:", err)
-			return 1
+			return 1, err
 		}
 
 		writeOutput(response, jsonOutput, textExecution)
 		if response.Success {
-			return 0
+			return 0, nil
 		}
-		return 1
+		return 1, nil
 
 	default:
 		externalCliCommandsPrintHelp()
-		return 2
+		return 2, nil
 	}
 }
 

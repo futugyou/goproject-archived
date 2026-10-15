@@ -48,61 +48,61 @@ func (e *UsageError) Error() string {
 	return e.Message
 }
 
-func ClawHubCommandRun(ctx context.Context, args []string) int {
-	parsed, err := ParseArgs(args)
+func ClawHubCommandRun(ctx context.Context, args []string) (int, error) {
+	parsed, err := parseArgs(args)
 	if err != nil {
 		if usageErr, ok := errors.AsType[*UsageError](err); ok {
 			fmt.Fprintln(os.Stderr, usageErr.Error())
 			fmt.Fprintln(os.Stderr, "Run: openclaw clawhub --help")
-			return 2
+			return 2, nil
 		}
 		fmt.Fprintln(os.Stderr, err.Error())
-		return 1
+		return 1, err
 	}
 
 	if parsed.ShowHelp {
-		ClawHubPrintHelp()
-		return 0
+		clawHubPrintHelp()
+		return 0, nil
 	}
 
 	home, err := getHomeDir()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Failed to determine user home directory: %v\n", err)
-		return 1
+		return 1, err
 	}
 
 	workspaceEnv := os.Getenv(envWorkspace)
-	workdir, err := ResolveWorkdir(parsed, workspaceEnv, home)
+	workdir, err := resolveWorkdir(parsed, workspaceEnv, home)
 	if err != nil {
 		if usageErr, ok := errors.AsType[*UsageError](err); ok {
 			fmt.Fprintln(os.Stderr, usageErr.Error())
 			fmt.Fprintln(os.Stderr, "Run: openclaw clawhub --help")
-			return 2
+			return 2, nil
 		}
 		fmt.Fprintln(os.Stderr, err.Error())
-		return 1
+		return 1, err
 	}
 
 	if err := os.MkdirAll(workdir, 0755); err != nil {
 		fmt.Fprintf(os.Stderr, "Failed to create workdir '%s': %v\n", workdir, err)
-		return 2
+		return 2, nil
 	}
 
-	spec, err := BuildInvocationSpec(parsed, workdir)
+	spec, err := buildInvocationSpec(parsed, workdir)
 	if err != nil {
 		if usageErr, ok := errors.AsType[*UsageError](err); ok {
 			fmt.Fprintln(os.Stderr, usageErr.Error())
 			fmt.Fprintln(os.Stderr, "Run: openclaw clawhub --help")
-			return 2
+			return 2, nil
 		}
 		fmt.Fprintln(os.Stderr, err.Error())
-		return 1
+		return 1, err
 	}
 
-	return RunClawHub(ctx, spec)
+	return runClawHub(ctx, spec), nil
 }
 
-func ParseArgs(args []string) (*WrapperArgs, error) {
+func parseArgs(args []string) (*WrapperArgs, error) {
 	var (
 		showHelp   bool
 		workdir    string
@@ -179,7 +179,7 @@ func ParseArgs(args []string) (*WrapperArgs, error) {
 	}, nil
 }
 
-func ResolveWorkdir(args *WrapperArgs, openclawWorkspace, userProfilePath string) (string, error) {
+func resolveWorkdir(args *WrapperArgs, openclawWorkspace, userProfilePath string) (string, error) {
 	if strings.TrimSpace(args.Workdir) != "" {
 		abs, err := filepath.Abs(args.Workdir)
 		if err != nil {
@@ -205,7 +205,7 @@ func ResolveWorkdir(args *WrapperArgs, openclawWorkspace, userProfilePath string
 	}
 }
 
-func BuildInvocationSpec(args *WrapperArgs, resolvedWorkdir string) (*InvocationSpec, error) {
+func buildInvocationSpec(args *WrapperArgs, resolvedWorkdir string) (*InvocationSpec, error) {
 	if len(args.ForwardArgs) == 0 {
 		return nil, &UsageError{Message: "Missing ClawHub args. Example: openclaw clawhub search \"calendar\""}
 	}
@@ -230,11 +230,11 @@ func BuildInvocationSpec(args *WrapperArgs, resolvedWorkdir string) (*Invocation
 	}, nil
 }
 
-func RunClawHub(ctx context.Context, spec *InvocationSpec) int {
+func runClawHub(ctx context.Context, spec *InvocationSpec) int {
 	cmd := exec.CommandContext(ctx, spec.FileName, spec.Arguments...)
 
 	// Configure environment variables
-	envMap := BuildChildEnvironment(spec.Workdir, spec.Telemetry)
+	envMap := buildChildEnvironment(spec.Workdir, spec.Telemetry)
 	cmd.Env = mergeEnvironment(os.Environ(), envMap)
 
 	// Stream stdout and stderr directly
@@ -250,7 +250,7 @@ func RunClawHub(ctx context.Context, spec *InvocationSpec) int {
 
 		// Check if binary is missing (equivalent to Win32Exception NativeErrorCode == 2)
 		if errors.Is(err, exec.ErrNotFound) {
-			PrintMissingClawHub(spec.FileName)
+			printMissingClawHub(spec.FileName)
 			return 127
 		}
 
@@ -261,7 +261,7 @@ func RunClawHub(ctx context.Context, spec *InvocationSpec) int {
 	return 0
 }
 
-func BuildChildEnvironment(workdir string, telemetry TelemetryMode) map[string]*string {
+func buildChildEnvironment(workdir string, telemetry TelemetryMode) map[string]*string {
 	env := make(map[string]*string)
 
 	env[envClawHubWorkdir] = &workdir
@@ -315,7 +315,7 @@ func getHomeDir() (string, error) {
 	return "", err
 }
 
-func PrintMissingClawHub(attemptedExecutable string) {
+func printMissingClawHub(attemptedExecutable string) {
 	fmt.Fprintf(os.Stderr, "ClawHub CLI not found on PATH (tried '%s').\n", attemptedExecutable)
 	fmt.Fprintln(os.Stderr, "Install it with one of:")
 	fmt.Fprintln(os.Stderr, "  npm i -g clawhub")
@@ -323,7 +323,7 @@ func PrintMissingClawHub(attemptedExecutable string) {
 	fmt.Fprintln(os.Stderr, "Then re-run: openclaw clawhub -- --help")
 }
 
-func ClawHubPrintHelp() {
+func clawHubPrintHelp() {
 	helpText := fmt.Sprintf(`openclaw clawhub — ClawHub CLI wrapper
 
 Usage:

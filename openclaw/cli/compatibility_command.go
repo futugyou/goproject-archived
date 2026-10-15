@@ -11,14 +11,14 @@ import (
 	"github.com/futugyou/openclaw/core"
 )
 
-func CompatibilityCommandRun(args []string) int {
+func CompatibilityCommandRun(args []string) (int, error) {
 	return RunWithWriters(args, os.Stdout, os.Stderr)
 }
 
-func RunWithWriters(args []string, output, errWriter io.Writer) int {
+func RunWithWriters(args []string, output, errWriter io.Writer) (int, error) {
 	if len(args) == 0 || args[0] == "-h" || args[0] == "--help" {
 		printHelp(output)
-		return 0
+		return 0, nil
 	}
 
 	subcommand := args[0]
@@ -32,7 +32,7 @@ func RunWithWriters(args []string, output, errWriter io.Writer) int {
 	}
 }
 
-func listCatalog(args []string, output io.Writer) int {
+func listCatalog(args []string, output io.Writer) (int, error) {
 	status := getOptionValue(args, "--status")
 	kind := getOptionValue(args, "--kind")
 	category := getOptionValue(args, "--category")
@@ -41,21 +41,21 @@ func listCatalog(args []string, output io.Writer) int {
 	catalog, err := core.PublicCompatibilityCatalogInstance.GetCatalog(status, kind, category)
 	if err != nil {
 		fmt.Fprintln(output, err.Error())
-		return 0
+		return 0, nil
 	}
 	if asJSON {
 		encoder := json.NewEncoder(output)
 		encoder.SetIndent("", "  ")
 		if err := encoder.Encode(catalog); err != nil {
-			return 1
+			return 1, err
 		}
-		return 0
+		return 0, nil
 	}
 
 	fmt.Fprintf(output, "Compatibility catalog v%d (%d scenarios)\n", catalog.Version, len(catalog.Items))
 	if len(catalog.Items) == 0 {
 		fmt.Fprintln(output, "No compatibility scenarios matched the requested filters.")
-		return 0
+		return 0, nil
 	}
 
 	for _, item := range catalog.Items {
@@ -84,7 +84,7 @@ func listCatalog(args []string, output io.Writer) int {
 		}
 	}
 
-	return 0
+	return 0, nil
 }
 
 func getOptionValue(args []string, optionName string) string {
@@ -101,10 +101,10 @@ func containsOption(args []string, optionName string) bool {
 	return slices.Contains(args, optionName)
 }
 
-func unknownSubcommand(subcommand string, output, errWriter io.Writer) int {
+func unknownSubcommand(subcommand string, output, errWriter io.Writer) (int, error) {
 	fmt.Fprintf(errWriter, "Unknown compatibility subcommand: %s\n", subcommand)
 	printHelp(output)
-	return 2
+	return 2, nil
 }
 
 func printHelp(output io.Writer) {

@@ -16,24 +16,24 @@ func ChannelSetupCommandRun(
 	input io.Reader,
 	output io.Writer,
 	errwirter io.Writer,
-	canPrompt bool) int {
+	canPrompt bool) (int, error) {
 
 	if len(args) == 0 || args[0] == "-h" || args[0] == "--help" || args[0] == "help" {
 		PrintHelp(output)
-		return 0
+		return 0, nil
 	}
 
 	var channelId = strings.ToLower(strings.TrimSpace(args[0]))
 	if channelId != "telegram" && channelId != "slack" && channelId != "discord" && channelId != "teams" && channelId != "whatsapp" {
 		fmt.Fprintf(errwirter, "Unsupported channel: %s\n", channelId)
 		fmt.Fprintln(errwirter, "Supported channels: telegram, slack, discord, teams, whatsapp")
-		return 2
+		return 2, nil
 	}
 
 	var parsed = CliArgsParse(args[1:])
 	if parsed.ShowHelp {
 		PrintHelp(output)
-		return 0
+		return 0, nil
 	}
 
 	rootPath := core.DefaultConfigPath
@@ -45,7 +45,7 @@ func ChannelSetupCommandRun(
 	configPath, err := filepath.Abs(expanded)
 	if err != nil {
 		fmt.Fprintln(errwirter, err.Error())
-		return 1
+		return 1, err
 	}
 
 	config, err := core.GatewayConfigFileInstance.Load(configPath)
@@ -53,13 +53,13 @@ func ChannelSetupCommandRun(
 	if err != nil {
 		fmt.Fprintln(errwirter, err.Error())
 		fmt.Fprintln(errwirter, "Run 'openclaw setup' first to create the base config, or pass --config <path>.")
-		return 1
+		return 1, err
 	}
 
 	var nonInteractive = parsed.HasFlag("--non-interactive")
 	if !nonInteractive && !canPrompt {
 		fmt.Fprintln(errwirter, "Interactive channel setup requires a terminal. Re-run with explicit flags and --non-interactive.")
-		return 2
+		return 2, nil
 	}
 
 	switch channelId {
@@ -77,7 +77,7 @@ func ChannelSetupCommandRun(
 
 	if err != nil {
 		fmt.Fprintln(errwirter, err.Error())
-		return 2
+		return 2, err
 	}
 
 	var validationErrors = core.ConfigValidatorInstance.Validate(config)
@@ -86,13 +86,13 @@ func ChannelSetupCommandRun(
 		for _, validationError := range validationErrors {
 			fmt.Fprintf(errwirter, "- %s\n", validationError)
 		}
-		return 1
+		return 1, nil
 	}
 
 	err = core.GatewayConfigFileInstance.Save(config, configPath)
 	if err != nil {
 		fmt.Fprintln(errwirter, err.Error())
-		return 1
+		return 1, err
 	}
 	fmt.Fprintf(errwirter, "Updated channel '%s' in %s\n", channelId, configPath)
 	fmt.Fprintln(errwirter, "Next steps:")
@@ -104,7 +104,7 @@ func ChannelSetupCommandRun(
 		fmt.Fprintf(errwirter, "- %s\n", line)
 	}
 
-	return 0
+	return 0, nil
 }
 
 func ConfigureTelegram(config *core.GatewayConfig, parsed *CliArgs, input io.Reader, output io.Writer, nonInteractive bool) error {
