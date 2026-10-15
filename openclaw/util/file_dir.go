@@ -560,3 +560,40 @@ func FindLatestModifyDirectory(outputRoot string) (string, error) {
 	}
 	return latestDir, nil
 }
+
+func IsDirNotEmptyFast(dirPath string) bool {
+	f, err := os.Open(dirPath)
+	if err != nil {
+		return false // 目录不存在或无法打开
+	}
+	defer f.Close()
+
+	// 尝试读取最多 1 个条目
+	_, err = f.Readdirnames(1)
+
+	// 如果 err == nil，说明成功读取到了至少一个条目（非空）
+	// 如果 err == io.EOF，说明目录是空的
+	return err == nil
+}
+
+func IsDirNotEmpty(dirPath string) bool {
+	// 1. 检查目录是否存在以及是否为目录
+	info, err := os.Stat(dirPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return false // 目录不存在
+		}
+		return false // 其他错误（如权限问题）
+	}
+	if !info.IsDir() {
+		return false // 路径存在但不是目录
+	}
+
+	// 2. 读取目录内容检查是否为空
+	entries, err := os.ReadDir(dirPath)
+	if err != nil {
+		return false
+	}
+
+	return len(entries) > 0
+}
