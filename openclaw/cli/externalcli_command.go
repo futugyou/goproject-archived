@@ -18,13 +18,13 @@ const (
 
 func ExternalCliCommandRun(ctx context.Context, args []string) (int, error) {
 	if len(args) == 0 || args[0] == "-h" || args[0] == "--help" || args[0] == "help" {
-		externalCliCommandsPrintHelp()
+		externalCliCommandPrintHelp()
 		return 0, nil
 	}
 
 	parsed := CliArgsParse(args)
 	if parsed.ShowHelp || len(parsed.Positionals) == 0 {
-		externalCliCommandsPrintHelp()
+		externalCliCommandPrintHelp()
 		return 0, nil
 	}
 
@@ -145,7 +145,7 @@ func ExternalCliCommandRun(ctx context.Context, args []string) (int, error) {
 		return 1, nil
 
 	default:
-		externalCliCommandsPrintHelp()
+		externalCliCommandPrintHelp()
 		return 2, nil
 	}
 }
@@ -285,7 +285,7 @@ func textExecution(res *core.ExternalCliExecutionResult) {
 	}
 }
 
-func externalCliCommandsPrintHelp() {
+func externalCliCommandPrintHelp() {
 	fmt.Print(`openclaw external
 
 Usage:
