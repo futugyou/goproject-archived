@@ -1,6 +1,10 @@
 package main
 
 import (
+	"encoding/json"
+	"fmt"
+	"maps"
+	"slices"
 	"strconv"
 	"strings"
 )
@@ -72,4 +76,40 @@ func (k *K8sUsage) DecodeCapacity(cap_input string) float32 {
 	cap_val, _ := strconv.ParseFloat(cap_value, 32)
 	KOA_LOGGER.Debug(cap_value)
 	return capacityQuantities[cap_unit] * float32(cap_val)
+}
+
+type InitUsageDTO struct {
+	Items []struct {
+		Metadata struct {
+			Name string `json:"name"`
+		} `json:"metadata"`
+	} `json:"items"`
+}
+
+type InitUsageItem struct {
+}
+
+func (k *K8sUsage) ExtractNamespacesAndInitializeUsage(data string) {
+	// exit if not valid data
+	data = strings.TrimSpace(data)
+	if data == "" {
+		return
+	}
+
+	var jsondata InitUsageDTO
+	if err := json.Unmarshal([]byte(data), &jsondata); err != nil {
+		return
+	}
+
+	for _, item := range jsondata.Items {
+		name := item.Metadata.Name
+		if !KOA_CONFIG.AllowNamespace(name) {
+			continue
+		}
+
+		k.usageByNamespace[name] = ResourceCapacities{}
+		k.requestByNamespace[name] = ResourceCapacities{}
+	}
+
+	KOA_LOGGER.Debug(fmt.Sprintf("Found namespaces: %s", strings.Join(slices.Collect(maps.Keys(k.usageByNamespace)), ",")))
 }
