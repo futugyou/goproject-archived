@@ -281,3 +281,39 @@ func (k *K8sUsage) ExtractPods(data []byte) {
 		k.pods[pod.Name] = pod
 	}
 }
+
+func (k *K8sUsage) ExtractPodMetrics(data []byte) {
+	//exit if not valid data
+	if len(data) == 0 {
+		return
+	}
+
+	// process likely valid data
+	var jsondata MetricsPodsResponse
+	if err := json.Unmarshal(data, &jsondata); err != nil {
+		return
+	}
+
+	for _, item := range jsondata.Items {
+		if !KOA_CONFIG.AllowNamespace(item.Metadata.Namespace) {
+			continue
+		}
+
+		pod_name := fmt.Sprintf("%s.%s", item.Metadata.Name, item.Metadata.Namespace)
+
+		pod, ok := k.pods[pod_name]
+		if !ok {
+			continue
+		}
+
+		pod.CpuUsage = 0.0
+		pod.MemUsage = 0.0
+
+		for _, cond := range item.Containers {
+			pod.CpuRequest += k.DecodeCapacity(cond.Usage.Cpu)
+			pod.MemRequest += k.DecodeCapacity(cond.Usage.Memory)
+		}
+
+		k.pods[pod_name] = pod
+	}
+}

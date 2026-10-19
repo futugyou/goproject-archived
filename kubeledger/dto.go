@@ -99,3 +99,26 @@ type PodMetadata struct {
 	Namespace string `json:"namespace"`
 	Uid       string `json:"uid"`
 }
+
+type MetricsPodsResponse struct {
+	Items []MetricsPodItem `json:"items"`
+}
+
+type MetricsPodItem struct {
+	Metadata   MetricsPodMetadata    `json:"metadata"`
+	Containers []MetricsPodContainer `json:"containers"`
+}
+
+type MetricsPodMetadata struct {
+	Name      string `json:"name"`
+	Namespace string `json:"namespace"`
+}
+
+type MetricsPodContainer struct {
+	Usage MetricsPodUsage `json:"usage"`
+}
+
+type MetricsPodUsage struct {
+	Cpu    string `json:"cpu"`
+	Memory string `json:"memory"`
+}
