@@ -59,6 +59,10 @@ func hasSuffixAny(s string, suffixes []string) bool {
 }
 
 func (k *K8sUsage) DecodeCapacity(cap_input string) float32 {
+	if cap_input == "" {
+		cap_input = "0"
+	}
+
 	data_length := len(cap_input)
 	cap_unit := "None"
 	cap_value := cap_input
@@ -78,15 +82,14 @@ func (k *K8sUsage) DecodeCapacity(cap_input string) float32 {
 	return capacityQuantities[cap_unit] * float32(cap_val)
 }
 
-func (k *K8sUsage) ExtractNamespacesAndInitializeUsage(data string) {
+func (k *K8sUsage) ExtractNamespacesAndInitializeUsage(data []byte) {
 	// exit if not valid data
-	data = strings.TrimSpace(data)
-	if data == "" {
+	if len(data) == 0 {
 		return
 	}
 
 	var jsondata NodeListResponse
-	if err := json.Unmarshal([]byte(data), &jsondata); err != nil {
+	if err := json.Unmarshal(data, &jsondata); err != nil {
 		return
 	}
 
@@ -101,4 +104,93 @@ func (k *K8sUsage) ExtractNamespacesAndInitializeUsage(data string) {
 	}
 
 	KOA_LOGGER.Debug(fmt.Sprintf("Found namespaces: %s", strings.Join(slices.Collect(maps.Keys(k.usageByNamespace)), ",")))
+}
+
+func determineNodeState(conditions []NodeCondition) (state, message string) {
+	conditionMap := make(map[string]NodeCondition, len(conditions))
+	for _, cond := range conditions {
+		conditionMap[cond.Type] = cond
+	}
+
+	ready, exists := conditionMap["Ready"]
+	if !exists {
+		return "Unknown", "Ready condition is missing"
+	}
+
+	switch ready.Status {
+	case "False":
+		return "NotReady", ready.Message
+	case "Unknown":
+		return "Unknown", ready.Message
+	case "True":
+		// Ready=True，继续检查其他健康条件。
+	default:
+		return "Unknown", ready.Message
+	}
+
+	// 按优先级检查异常条件。
+	for _, conditionType := range []string{
+		"KernelDeadlock",
+		"NetworkUnavailable",
+		"MemoryPressure",
+		"DiskPressure",
+		"PIDPressure",
+		"OutOfDisk",
+	} {
+		cond, exists := conditionMap[conditionType]
+		if !exists {
+			continue
+		}
+
+		switch cond.Status {
+		case "True":
+			return conditionType, cond.Message
+		case "Unknown":
+			return "Unknown", cond.Message
+		}
+	}
+
+	return "Ready", ready.Message
+}
+
+func (k *K8sUsage) ExtractNodes(data []byte) {
+	//exit if not valid data
+	if len(data) == 0 {
+		return
+	}
+
+	// process likely valid data
+	var jsondata NodeListResponse
+	if err := json.Unmarshal(data, &jsondata); err != nil {
+		return
+	}
+
+	for _, item := range jsondata.Items {
+		node := Node{}
+		node.PodsRunning = []Pod{}
+		node.PodsNotRunning = []Pod{}
+
+		metadata := item.Metadata
+		if metadata != nil {
+			node.Id = metadata.UID
+			node.Name = metadata.Name
+		}
+
+		status := item.Status
+		if status != nil {
+			node.ContainerRuntime = status.NodeInfo.ContainerRuntimeVersion
+			node.CpuCapacity = k.DecodeCapacity(status.Capacity["cpu"])
+			node.CpuAllocatable = k.DecodeCapacity(status.Allocatable["cpu"])
+			node.MemCapacity = k.DecodeCapacity(status.Capacity["memory"])
+			node.MemAllocatable = k.DecodeCapacity(status.Allocatable["memory"])
+			node.GpuCapacity = k.DecodeCapacity(status.Capacity["nvidia.com/gpu"])
+			node.GpuAllocatable = k.DecodeCapacity(status.Allocatable["nvidia.com/gpu"])
+
+			state, message := determineNodeState(status.Conditions)
+			node.State = state
+			node.Message = message
+		}
+
+		k.nodes[node.Name] = node
+	}
 }

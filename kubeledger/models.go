@@ -19,10 +19,12 @@ type Node struct {
 	InstanceType     string
 	HourlyPrice      float32
 	// GPU metrics aggregated from pods running on this node
-	GpuCount    int
-	GpuUsage    float32 // GPU compute utilization percentage
-	GpuMemUsage float32 // GPU memory usage in bytes
-	GpuMemFree  float32 // GPU memory free in bytes
+	GpuCount       int
+	GpuUsage       float32 // GPU compute utilization percentage
+	GpuMemUsage    float32 // GPU memory usage in bytes
+	GpuMemFree     float32 // GPU memory free in bytes
+	GpuCapacity    float32
+	GpuAllocatable float32
 }
 
 type Pod struct {
