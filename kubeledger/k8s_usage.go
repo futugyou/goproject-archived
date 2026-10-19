@@ -88,7 +88,7 @@ func (k *K8sUsage) ExtractNamespacesAndInitializeUsage(data []byte) {
 		return
 	}
 
-	var jsondata NodeListResponse
+	var jsondata NamespacesResponse
 	if err := json.Unmarshal(data, &jsondata); err != nil {
 		return
 	}
@@ -160,7 +160,7 @@ func (k *K8sUsage) ExtractNodes(data []byte) {
 	}
 
 	// process likely valid data
-	var jsondata NodeListResponse
+	var jsondata NodesResponse
 	if err := json.Unmarshal(data, &jsondata); err != nil {
 		return
 	}
@@ -190,6 +190,31 @@ func (k *K8sUsage) ExtractNodes(data []byte) {
 			node.State = state
 			node.Message = message
 		}
+
+		k.nodes[node.Name] = node
+	}
+}
+
+func (k *K8sUsage) ExtractNodeMetrics(data []byte) {
+	//exit if not valid data
+	if len(data) == 0 {
+		return
+	}
+
+	// process likely valid data
+	var jsondata MetricsNodesResponse
+	if err := json.Unmarshal(data, &jsondata); err != nil {
+		return
+	}
+
+	for _, item := range jsondata.Items {
+		node, ok := k.nodes[item.Metadata.Name]
+		if !ok {
+			continue
+		}
+
+		node.CpuUsage = k.DecodeCapacity(item.Usage.Cpu)
+		node.MemUsage = k.DecodeCapacity(item.Usage.Memory)
 
 		k.nodes[node.Name] = node
 	}
