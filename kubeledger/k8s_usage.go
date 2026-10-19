@@ -106,8 +106,8 @@ func (k *K8sUsage) ExtractNamespacesAndInitializeUsage(data []byte) {
 	KOA_LOGGER.Debug(fmt.Sprintf("Found namespaces: %s", strings.Join(slices.Collect(maps.Keys(k.usageByNamespace)), ",")))
 }
 
-func determineNodeState(conditions []NodeCondition) (state, message string) {
-	conditionMap := make(map[string]NodeCondition, len(conditions))
+func determineNodeState(conditions []Condition) (state, message string) {
+	conditionMap := make(map[string]Condition, len(conditions))
 	for _, cond := range conditions {
 		conditionMap[cond.Type] = cond
 	}
@@ -217,5 +217,67 @@ func (k *K8sUsage) ExtractNodeMetrics(data []byte) {
 		node.MemUsage = k.DecodeCapacity(item.Usage.Memory)
 
 		k.nodes[node.Name] = node
+	}
+}
+
+func (k *K8sUsage) ExtractPods(data []byte) {
+	//exit if not valid data
+	if len(data) == 0 {
+		return
+	}
+
+	// process likely valid data
+	var jsondata PodsResponse
+	if err := json.Unmarshal(data, &jsondata); err != nil {
+		return
+	}
+
+	for _, item := range jsondata.Items {
+		if !KOA_CONFIG.AllowNamespace(item.Metadata.Namespace) {
+			continue
+		}
+		pod := Pod{}
+		pod.Namespace = item.Metadata.Namespace
+		pod.Name = fmt.Sprintf("%s.%s", item.Metadata.Name, pod.Namespace)
+		pod.Id = item.Metadata.Uid
+		pod.Phase = item.Status.Phase
+		pod.State = "PodNotScheduled"
+
+		if len(item.Status.Conditions) == 0 {
+			KOA_LOGGER.Debug(fmt.Sprintf("[puller] phase of pod %s in namespace %s is %s", pod.Name, pod.Namespace, pod.Phase))
+		}
+
+		for _, cond := range item.Status.Conditions {
+			if cond.Type == "Ready" && cond.Status == "True" {
+				pod.State = "Ready"
+				break
+			}
+			if cond.Type == "ContainersReady" && cond.Status == "True" {
+				pod.State = "ContainersReady"
+				break
+			}
+			if cond.Type == "PodScheduled" && cond.Status == "True" {
+				pod.State = "PodScheduled"
+				break
+			}
+			if cond.Type == "Initialized" && cond.Status == "True" {
+				pod.State = "Initialized"
+				break
+			}
+		}
+
+		if pod.State != "PodNotScheduled" {
+			pod.NodeName = item.Spec.NodeName
+			for _, cond := range item.Spec.Containers {
+				if cond.Resources == nil || cond.Resources.Request == nil {
+					continue
+				}
+
+				pod.CpuRequest += k.DecodeCapacity(cond.Resources.Request.Cpu)
+				pod.MemRequest += k.DecodeCapacity(cond.Resources.Request.Memory)
+			}
+		}
+
+		k.pods[pod.Name] = pod
 	}
 }

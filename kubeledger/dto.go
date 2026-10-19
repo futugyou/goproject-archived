@@ -30,14 +30,14 @@ type NodeStatus struct {
 	NodeInfo    NodeInfo          `json:"nodeInfo"`
 	Capacity    map[string]string `json:"capacity"`
 	Allocatable map[string]string `json:"allocatable"`
-	Conditions  []NodeCondition   `json:"conditions"`
+	Conditions  []Condition       `json:"conditions"`
 }
 
 type NodeInfo struct {
 	ContainerRuntimeVersion string `json:"containerRuntimeVersion"`
 }
 
-type NodeCondition struct {
+type Condition struct {
 	Type    string `json:"type"`
 	Status  string `json:"status"`
 	Message string `json:"message"`
@@ -59,4 +59,43 @@ type MetricsNodeMetadata struct {
 type MetricsNodeUsage struct {
 	Cpu    string `json:"cpu"`
 	Memory string `json:"memory"`
+}
+
+type PodsResponse struct {
+	Items []PodItem `json:"items"`
+}
+
+type PodItem struct {
+	Metadata PodMetadata `json:"metadata"`
+	Status   PodStatus   `json:"status"`
+	Spec     PodSpec     `json:"spec"`
+}
+
+type PodSpec struct {
+	NodeName   string         `json:"nodeName"`
+	Containers []PodContainer `json:"containers"`
+}
+
+type PodContainer struct {
+	Resources *PodResource `json:"resources"`
+}
+
+type PodResource struct {
+	Request *PodResourceSpec `json:"requests"`
+}
+
+type PodResourceSpec struct {
+	Cpu    string `json:"cpu"`
+	Memory string `json:"memory"`
+}
+
+type PodStatus struct {
+	Conditions []Condition `json:"conditions"`
+	Phase      string      `json:"phase"`
+}
+
+type PodMetadata struct {
+	Name      string `json:"name"`
+	Namespace string `json:"namespace"`
+	Uid       string `json:"uid"`
 }
