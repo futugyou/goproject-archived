@@ -78,17 +78,6 @@ func (k *K8sUsage) DecodeCapacity(cap_input string) float32 {
 	return capacityQuantities[cap_unit] * float32(cap_val)
 }
 
-type InitUsageDTO struct {
-	Items []struct {
-		Metadata struct {
-			Name string `json:"name"`
-		} `json:"metadata"`
-	} `json:"items"`
-}
-
-type InitUsageItem struct {
-}
-
 func (k *K8sUsage) ExtractNamespacesAndInitializeUsage(data string) {
 	// exit if not valid data
 	data = strings.TrimSpace(data)
@@ -96,7 +85,7 @@ func (k *K8sUsage) ExtractNamespacesAndInitializeUsage(data string) {
 		return
 	}
 
-	var jsondata InitUsageDTO
+	var jsondata NodeListResponse
 	if err := json.Unmarshal([]byte(data), &jsondata); err != nil {
 		return
 	}
