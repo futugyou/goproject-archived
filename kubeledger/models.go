@@ -43,3 +43,26 @@ type Pod struct {
 	GpuMemUsage float32
 	GpuCount    int
 }
+
+// Data class to store NVIDIA GPU metrics collected from DCGM exporter.
+// Metrics are aggregated per pod (identified by namespace + pod name).
+// Multiple GPUs on the same pod will have their metrics summed.
+type GpuMetrics struct {
+	Namespace string
+	Pod       string
+	// GPU compute utilization percentage (from DCGM_FI_DEV_GPU_UTIL)
+	GpuCpuUsage float32
+	// GPU memory bandwidth utilization percentage (from DCGM_FI_DEV_MEM_COPY_UTIL)
+	GpuMemBandwidth float32
+	// GPU framebuffer memory used in MiB (from DCGM_FI_DEV_FB_USED)
+	GpuMemUsage float32
+	// GPU framebuffer memory free in MiB (from DCGM_FI_DEV_FB_FREE)
+	GpuMemFree float32
+	// Number of GPUs contributing to this aggregated metric
+	GpuCount int
+}
+
+type ResourceCapacities struct {
+	Cpu float32
+	Mem float32
+}

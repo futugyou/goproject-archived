@@ -122,3 +122,14 @@ type MetricsPodUsage struct {
 	Cpu    string `json:"cpu"`
 	Memory string `json:"memory"`
 }
+
+type MetricData struct {
+	Labels MetricDataLabels `json:"labels"`
+	Value  float32          `json:"value"`
+}
+
+type MetricDataLabels struct {
+	Namespace string `json:"namespace"`
+	Pod       string `json:"pod"`
+	Uuid      string `json:"UUID"`
+}

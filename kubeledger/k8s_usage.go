@@ -9,11 +9,6 @@ import (
 	"strings"
 )
 
-type ResourceCapacities struct {
-	Cpu float32
-	Mem float32
-}
-
 var capacityQuantities = map[string]float32{
 	"Ki":   1024,
 	"Mi":   1048576,
@@ -47,6 +42,7 @@ type K8sUsage struct {
 	memCapacity        float32
 	cpuAllocatable     float32
 	memAllocatable     float32
+	gpuMetricsByPod    map[string]GpuMetrics
 }
 
 func hasSuffixAny(s string, suffixes []string) bool {
@@ -316,4 +312,98 @@ func (k *K8sUsage) ExtractPodMetrics(data []byte) {
 
 		k.pods[pod_name] = pod
 	}
+}
+
+var metric_mapping = map[string]string{
+	"DCGM_FI_DEV_GPU_UTIL":      "gpuCpuUsage",
+	"DCGM_FI_DEV_MEM_COPY_UTIL": "gpuMemBandwidth",
+	"DCGM_FI_DEV_FB_USED":       "gpuMemUsage",
+	"DCGM_FI_DEV_FB_FREE":       "gpuMemFree",
+}
+
+// Extract GPU metrics from DCGM exporter JSON data.
+//
+// Processes the following DCGM metrics:
+//   - DCGM_FI_DEV_GPU_UTIL: GPU compute utilization percentage -> gpuCpuUsage
+//   - DCGM_FI_DEV_MEM_COPY_UTIL: Memory bandwidth utilization percentage -> gpuMemBandwidth
+//   - DCGM_FI_DEV_FB_USED: Framebuffer memory used (MiB) -> gpuMemUsage
+//   - DCGM_FI_DEV_FB_FREE: Framebuffer memory free (MiB) -> gpuMemFree
+//
+// Metrics are aggregated per pod using namespace and pod labels.
+//
+// Multiple GPUs on the same pod will have their metrics summed.
+//
+// :param data: Raw JSON string from DCGM exporter endpoint
+func (k *K8sUsage) ExtractGpuMetrics(data []byte) {
+	//exit if not valid data
+	if len(data) == 0 {
+		return
+	}
+
+	// process likely valid data
+	var jsondata map[string][]MetricData
+	if err := json.Unmarshal(data, &jsondata); err != nil {
+		return
+	}
+
+	gpus_per_pod := make(map[string]map[string]struct{})
+	for metric_name := range metric_mapping {
+		metric_data, ok := jsondata[metric_name]
+		if !ok {
+			continue
+		}
+
+		for _, entry := range metric_data {
+			namespace := entry.Labels.Namespace
+			pod := entry.Labels.Pod
+			gpu_uuid := entry.Labels.Uuid
+			value := entry.Value
+
+			if namespace == "" || pod == "" {
+				KOA_LOGGER.Debug(fmt.Sprintf("Skipping DCGM metric %s entry without namespace/pod labels", metric_name))
+				continue
+			}
+
+			if !KOA_CONFIG.AllowNamespace(namespace) {
+				continue
+			}
+
+			pod_key := fmt.Sprintf("%s.%s", pod, namespace)
+
+			if _, ok := k.gpuMetricsByPod[pod_key]; !ok {
+				gpu_metrics := GpuMetrics{}
+				gpu_metrics.Namespace = namespace
+				gpu_metrics.Pod = pod
+				k.gpuMetricsByPod[pod_key] = gpu_metrics
+				gpus_per_pod[pod_key] = make(map[string]struct{})
+			}
+
+			if _, ok := gpus_per_pod[pod_key]; ok && gpu_uuid != "" {
+				gpus_per_pod[pod_key][gpu_uuid] = struct{}{}
+			}
+
+			gpu_metrics := k.gpuMetricsByPod[pod_key]
+
+			switch metric_name {
+			case "DCGM_FI_DEV_GPU_UTIL":
+				gpu_metrics.GpuCpuUsage += value
+			case "DCGM_FI_DEV_MEM_COPY_UTIL":
+				gpu_metrics.GpuMemBandwidth += value
+			case "DCGM_FI_DEV_FB_USED":
+				gpu_metrics.GpuMemUsage += value
+			case "DCGM_FI_DEV_FB_FREE":
+				gpu_metrics.GpuMemFree += value
+			}
+			k.gpuMetricsByPod[pod_key] = gpu_metrics
+		}
+	}
+
+	for pod_key, gpu_uuids := range gpus_per_pod {
+		if m, ok := k.gpuMetricsByPod[pod_key]; ok {
+			m.GpuCount = len(gpu_uuids)
+			k.gpuMetricsByPod[pod_key] = m
+		}
+	}
+
+	KOA_LOGGER.Debug(fmt.Sprintf("[puller] Extracted GPU metrics for %d pods", len(k.gpuMetricsByPod)))
 }
