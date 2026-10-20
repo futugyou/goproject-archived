@@ -428,3 +428,46 @@ func (k *K8sUsage) DumpGpuMetrics() error {
 
 	return os.WriteFile(path, data, 0644)
 }
+
+// Consolidate namespace usage
+func (k *K8sUsage) ConsolidateNsUsage() {
+	k.cpuUsageAllPods = 0.0
+	k.memUsageAllPods = 0.0
+	for _, pod := range k.pods {
+		if pod.NodeName != "" {
+			k.cpuUsageAllPods += pod.CpuUsage
+			k.memUsageAllPods += pod.MemUsage
+
+			if ns_pod_usage, ok := k.usageByNamespace[pod.Namespace]; ok {
+				ns_pod_usage.Cpu += pod.CpuUsage
+				ns_pod_usage.Mem += pod.MemUsage
+				k.usageByNamespace[pod.Namespace] = ns_pod_usage
+			}
+
+			if ns_pod_request, ok := k.requestByNamespace[pod.Namespace]; ok {
+				ns_pod_request.Cpu += pod.CpuRequest
+				ns_pod_request.Mem += pod.MemRequest
+				k.requestByNamespace[pod.Namespace] = ns_pod_request
+			}
+
+			if pod_node, ok := k.nodes[pod.NodeName]; ok {
+				pods := append(pod_node.PodsNotRunning, pod)
+				pod_node.PodsRunning = pods
+				k.nodes[pod.NodeName] = pod_node
+			}
+		}
+	}
+
+	// TODO: += or ==
+	k.cpuCapacity = 0.0
+	k.memCapacity = 0.0
+	k.cpuAllocatable = 0.0
+	k.memAllocatable = 0.0
+	for _, node := range k.nodes {
+		k.cpuCapacity += node.CpuCapacity
+		k.memCapacity += node.MemCapacity
+		k.cpuAllocatable += node.CpuAllocatable
+		k.memAllocatable += node.MemAllocatable
+	}
+
+}
