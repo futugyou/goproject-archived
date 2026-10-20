@@ -1,10 +1,13 @@
 package main
 
 import (
+	"crypto/tls"
 	"encoding/json"
 	"fmt"
+	"io"
 	"maps"
 	"math"
+	"net/http"
 	"os"
 	"slices"
 	"strconv"
@@ -542,5 +545,48 @@ func (k *K8sUsage) CalculateNodeUsage() {
 		}
 
 		k.nodes[nodeName] = node
+	}
+}
+
+// Fetch GPU metrics from NVIDIA DCGM exporter endpoint.
+//
+//	The DCGM exporter provides metrics in JSON format when queried at /metrics/json.
+//	Returns the raw JSON data or None if the endpoint is not configured or on error.
+func PullDcgmMetrics() []byte {
+	data := []byte{}
+
+	if KOA_CONFIG.NvidiaDcgmEndpoint == "" {
+		return data
+	}
+	apiEndpoint := KOA_CONFIG.NvidiaDcgmEndpoint
+
+	tr := &http.Transport{
+		TLSClientConfig: &tls.Config{
+			InsecureSkipVerify: !KOA_CONFIG.KoaVerifySslOption.K8sVerifySsl,
+		},
+	}
+
+	client := &http.Client{
+		Transport: tr,
+	}
+
+	resp, err := client.Get(apiEndpoint)
+	if err != nil {
+		KOA_LOGGER.Error(fmt.Sprintf("DCGM endpoint %s returned error: %s", apiEndpoint, err.Error()))
+		return data
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		KOA_LOGGER.Error(fmt.Sprintf("DCGM endpoint %s readed error: %s", apiEndpoint, err.Error()))
+		return data
+	}
+
+	if resp.StatusCode == http.StatusOK {
+		return body
+	} else {
+		KOA_LOGGER.Error(fmt.Sprintf("DCGM endpoint %s readed error: %s", apiEndpoint, string(body)))
+		return data
 	}
 }

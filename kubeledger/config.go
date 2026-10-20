@@ -58,8 +58,13 @@ type Config struct {
 	NvidiaDcgmEndpoint    string
 	BillingHourlyRate     float64
 	ListenerPort          int
-	KoaVerifySslOption    any // string or bool
+	KoaVerifySslOption    KoaVerifySslOption
 	K8sRbacAuthToken      string
+}
+
+type KoaVerifySslOption struct {
+	K8sSslCacert string
+	K8sVerifySsl bool
 }
 
 func NewConfig() *Config {
@@ -155,12 +160,12 @@ func NewConfig() *Config {
 
 	if cfg.K8sVerifySsl && cfg.K8sSslCacert != "" {
 		if _, err := os.Stat(cfg.K8sSslCacert); err == nil {
-			cfg.KoaVerifySslOption = cfg.K8sSslCacert
+			cfg.KoaVerifySslOption = KoaVerifySslOption{K8sVerifySsl: true, K8sSslCacert: cfg.K8sSslCacert}
 		} else {
-			cfg.KoaVerifySslOption = cfg.K8sVerifySsl
+			cfg.KoaVerifySslOption = KoaVerifySslOption{K8sVerifySsl: true}
 		}
 	} else {
-		cfg.KoaVerifySslOption = cfg.K8sVerifySsl
+		cfg.KoaVerifySslOption = KoaVerifySslOption{K8sVerifySsl: cfg.K8sVerifySsl}
 	}
 
 	return cfg
