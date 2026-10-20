@@ -125,7 +125,7 @@ type MetricsPodUsage struct {
 
 type MetricData struct {
 	Labels MetricDataLabels `json:"labels"`
-	Value  float32          `json:"value"`
+	Value  float64          `json:"value"`
 }
 
 type MetricDataLabels struct {

@@ -14,7 +14,7 @@ import (
 	"strings"
 )
 
-var capacityQuantities = map[string]float32{
+var capacityQuantities = map[string]float64{
 	"Ki":   1024,
 	"Mi":   1048576,
 	"Gi":   1073741824,
@@ -41,12 +41,12 @@ type K8sUsage struct {
 	requestByNamespace map[string]ResourceCapacities
 	popupContent       string
 	nodeHtmlList       string
-	cpuUsageAllPods    float32
-	memUsageAllPods    float32
-	cpuCapacity        float32
-	memCapacity        float32
-	cpuAllocatable     float32
-	memAllocatable     float32
+	cpuUsageAllPods    float64
+	memUsageAllPods    float64
+	cpuCapacity        float64
+	memCapacity        float64
+	cpuAllocatable     float64
+	memAllocatable     float64
 	gpuMetricsByPod    map[string]GpuMetrics
 }
 
@@ -59,7 +59,7 @@ func hasSuffixAny(s string, suffixes []string) bool {
 	return false
 }
 
-func (k *K8sUsage) DecodeCapacity(cap_input string) float32 {
+func (k *K8sUsage) DecodeCapacity(cap_input string) float64 {
 	if cap_input == "" {
 		cap_input = "0"
 	}
@@ -80,7 +80,7 @@ func (k *K8sUsage) DecodeCapacity(cap_input string) float32 {
 
 	cap_val, _ := strconv.ParseFloat(cap_value, 32)
 	KOA_LOGGER.Debug(cap_value)
-	return capacityQuantities[cap_unit] * float32(cap_val)
+	return capacityQuantities[cap_unit] * float64(cap_val)
 }
 
 func (k *K8sUsage) ExtractNamespacesAndInitializeUsage(data []byte) {
@@ -528,20 +528,20 @@ func (k *K8sUsage) CalculateNodeUsage() {
 
 		// Calculate usage percentages
 		if node.CpuAllocatable > 0 {
-			node.CpuUsagePercent = float32(math.Round(float64(node.CpuUsage/node.CpuAllocatable) * 100))
+			node.CpuUsagePercent = math.Round(node.CpuUsage / node.CpuAllocatable * 100)
 		} else {
 			node.CpuUsagePercent = 0.0
 		}
 
 		if node.MemAllocatable > 0 {
-			node.MemUsagePercent = float32(math.Round(float64(node.MemUsage/node.MemAllocatable) * 100))
+			node.MemUsagePercent = math.Round(node.MemUsage / node.MemAllocatable * 100)
 		} else {
 			node.MemUsagePercent = 0.0
 		}
 
 		// Calculate average GPU usage if there are GPUs on this node
 		if node.GpuCount > 0 {
-			node.GpuUsage = float32(math.Round(float64(node.GpuUsage/float32(node.GpuCount)) * 100))
+			node.GpuUsage = math.Round(node.GpuUsage / float64(node.GpuCount) * 100)
 		}
 
 		k.nodes[nodeName] = node
