@@ -8,6 +8,10 @@ type Node struct {
 	CpuCapacity      float32
 	CpuAllocatable   float32
 	CpuUsage         float32
+	CpuRequest       float32
+	CpuUsagePercent  float32
+	MemUsagePercent  float32
+	MemRequest       float32
 	MemCapacity      float32
 	MemAllocatable   float32
 	MemUsage         float32

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"maps"
+	"math"
 	"os"
 	"slices"
 	"strconv"
@@ -469,5 +470,63 @@ func (k *K8sUsage) ConsolidateNsUsage() {
 		k.cpuAllocatable += node.CpuAllocatable
 		k.memAllocatable += node.MemAllocatable
 	}
+}
 
+// Calculate individual node CPU, memory, and GPU usage from running pods.
+func (k *K8sUsage) CalculateNodeUsage() {
+	for nodeName, node := range k.nodes {
+		node.CpuUsage = 0.0
+		node.MemUsage = 0.0
+		node.CpuRequest = 0.0
+		node.MemRequest = 0.0
+		node.GpuCount = 0
+		node.GpuUsage = 0.0
+		node.GpuMemUsage = 0.0
+		node.GpuMemFree = 0.0
+
+		// Sum up usage from all pods running on this node
+		for i := range node.PodsRunning {
+			pod := &node.PodsRunning[i]
+
+			node.CpuUsage += pod.CpuUsage
+			node.MemUsage += pod.MemUsage
+			node.CpuRequest += pod.CpuRequest
+			node.MemRequest += pod.MemRequest
+
+			// Aggregate GPU metrics from pod and copy to pod object
+			// pod.name is already "podname.namespace"
+			if gpu_metrics, ok := k.gpuMetricsByPod[pod.Name]; ok {
+				// Copy GPU metrics to pod for frontend display
+				pod.GpuUsage = gpu_metrics.GpuCpuUsage
+				pod.GpuMemUsage = gpu_metrics.GpuMemUsage
+				pod.GpuCount = gpu_metrics.GpuCount
+
+				// Aggregate to node level
+				node.GpuCount += gpu_metrics.GpuCount
+				node.GpuUsage += gpu_metrics.GpuCpuUsage
+				node.GpuMemUsage += gpu_metrics.GpuMemUsage
+				node.GpuMemFree += gpu_metrics.GpuMemFree
+			}
+		}
+
+		// Calculate usage percentages
+		if node.CpuAllocatable > 0 {
+			node.CpuUsagePercent = float32(math.Round(float64(node.CpuUsage/node.CpuAllocatable) * 100))
+		} else {
+			node.CpuUsagePercent = 0.0
+		}
+
+		if node.MemAllocatable > 0 {
+			node.MemUsagePercent = float32(math.Round(float64(node.MemUsage/node.MemAllocatable) * 100))
+		} else {
+			node.MemUsagePercent = 0.0
+		}
+
+		// Calculate average GPU usage if there are GPUs on this node
+		if node.GpuCount > 0 {
+			node.GpuUsage = float32(math.Round(float64(node.GpuUsage/float32(node.GpuCount)) * 100))
+		}
+
+		k.nodes[nodeName] = node
+	}
 }
