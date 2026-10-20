@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"maps"
+	"os"
 	"slices"
 	"strconv"
 	"strings"
@@ -406,4 +407,24 @@ func (k *K8sUsage) ExtractGpuMetrics(data []byte) {
 	}
 
 	KOA_LOGGER.Debug(fmt.Sprintf("[puller] Extracted GPU metrics for %d pods", len(k.gpuMetricsByPod)))
+}
+
+// Dump GPU metrics to a JSON file for frontend consumption.
+func (k *K8sUsage) DumpGpuMetrics() error {
+	if len(k.gpuMetricsByPod) == 0 {
+		return nil
+	}
+
+	data, err := json.Marshal(k.gpuMetricsByPod)
+	if err != nil {
+		return err
+	}
+
+	path := fmt.Sprintf("%s/gpu_metrics.json", KOA_CONFIG.FrontendDataLocation)
+
+	if err := os.MkdirAll(path, 0755); err != nil {
+		return err
+	}
+
+	return os.WriteFile(path, data, 0644)
 }

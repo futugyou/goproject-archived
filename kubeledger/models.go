@@ -48,18 +48,18 @@ type Pod struct {
 // Metrics are aggregated per pod (identified by namespace + pod name).
 // Multiple GPUs on the same pod will have their metrics summed.
 type GpuMetrics struct {
-	Namespace string
-	Pod       string
+	Namespace string `json:"namespace"`
+	Pod       string `json:"pod"`
 	// GPU compute utilization percentage (from DCGM_FI_DEV_GPU_UTIL)
-	GpuCpuUsage float32
+	GpuCpuUsage float32 `json:"gpuCpuUsage"`
 	// GPU memory bandwidth utilization percentage (from DCGM_FI_DEV_MEM_COPY_UTIL)
-	GpuMemBandwidth float32
+	GpuMemBandwidth float32 `json:"gpuMemBandwidth"`
 	// GPU framebuffer memory used in MiB (from DCGM_FI_DEV_FB_USED)
-	GpuMemUsage float32
+	GpuMemUsage float32 `json:"gpuMemUsage"`
 	// GPU framebuffer memory free in MiB (from DCGM_FI_DEV_FB_FREE)
-	GpuMemFree float32
+	GpuMemFree float32 `json:"gpuMemFree"`
 	// Number of GPUs contributing to this aggregated metric
-	GpuCount int
+	GpuCount int `json:"gpuCount"`
 }
 
 type ResourceCapacities struct {
