@@ -1,51 +1,51 @@
 package main
 
 type Node struct {
-	Id               string
-	Name             string
-	State            string
-	Message          string
-	CpuCapacity      float32
-	CpuAllocatable   float32
-	CpuUsage         float32
-	CpuRequest       float32
-	CpuUsagePercent  float32
-	MemUsagePercent  float32
-	MemRequest       float32
-	MemCapacity      float32
-	MemAllocatable   float32
-	MemUsage         float32
-	ContainerRuntime string
-	PodsRunning      []Pod
-	PodsNotRunning   []Pod
-	Region           string
-	Os               string
-	InstanceType     string
-	HourlyPrice      float32
+	Id               string  `json:"id"`
+	Name             string  `json:"name"`
+	State            string  `json:"state"`
+	Message          string  `json:"message"`
+	CpuCapacity      float32 `json:"cpuCapacity"`
+	CpuAllocatable   float32 `json:"cpuAllocatable"`
+	CpuUsage         float32 `json:"cpuUsage"`
+	CpuRequest       float32 `json:"cpuRequest"`
+	CpuUsagePercent  float32 `json:"cpuUsagePercent"`
+	MemUsagePercent  float32 `json:"memUsagePercent"`
+	MemRequest       float32 `json:"memRequest"`
+	MemCapacity      float32 `json:"memCapacity"`
+	MemAllocatable   float32 `json:"memAllocatable"`
+	MemUsage         float32 `json:"memUsage"`
+	ContainerRuntime string  `json:"containerRuntime"`
+	PodsRunning      []Pod   `json:"podsRunning"`
+	PodsNotRunning   []Pod   `json:"podsNotRunning"`
+	Region           string  `json:"region"`
+	Os               string  `json:"os"`
+	InstanceType     string  `json:"instanceType"`
+	HourlyPrice      float32 `json:"hourlyPrice"`
 	// GPU metrics aggregated from pods running on this node
-	GpuCount       int
-	GpuUsage       float32 // GPU compute utilization percentage
-	GpuMemUsage    float32 // GPU memory usage in bytes
-	GpuMemFree     float32 // GPU memory free in bytes
-	GpuCapacity    float32
-	GpuAllocatable float32
+	GpuCount       int     `json:"gpuCount"`
+	GpuUsage       float32 `json:"gpuUsage"`    // GPU compute utilization percentage
+	GpuMemUsage    float32 `json:"gpuMemUsage"` // GPU memory usage in bytes
+	GpuMemFree     float32 `json:"gpuMemFree"`  // GPU memory free in bytes
+	GpuCapacity    float32 `json:"gpuCapacity"`
+	GpuAllocatable float32 `json:"gpuAllocatable"`
 }
 
 type Pod struct {
-	Name       string
-	Namespace  string
-	Id         string
-	NodeName   string
-	Phase      string
-	State      string // "PodNotScheduled"
-	CpuUsage   float32
-	MemUsage   float32
-	CpuRequest float32
-	MemRequest float32
+	Name       string  `json:"name"`
+	Namespace  string  `json:"namespace"`
+	Id         string  `json:"id"`
+	NodeName   string  `json:"nodeName"`
+	Phase      string  `json:"phase"`
+	State      string  `json:"state"` // "PodNotScheduled"
+	CpuUsage   float32 `json:"cpuUsage"`
+	MemUsage   float32 `json:"memUsage"`
+	CpuRequest float32 `json:"cpuRequest"`
+	MemRequest float32 `json:"memRequest"`
 	// GPU metrics (populated from gpuMetricsByPod)
-	GpuUsage    float32
-	GpuMemUsage float32
-	GpuCount    int
+	GpuUsage    float32 `json:"gpuUsage"`
+	GpuMemUsage float32 `json:"gpuMemUsage"`
+	GpuCount    int     `json:"gpuCount"`
 }
 
 // Data class to store NVIDIA GPU metrics collected from DCGM exporter.
@@ -67,6 +67,6 @@ type GpuMetrics struct {
 }
 
 type ResourceCapacities struct {
-	Cpu float32
-	Mem float32
+	Cpu float32 `json:"cpu"`
+	Mem float32 `json:"mem"`
 }

@@ -429,6 +429,20 @@ func (k *K8sUsage) DumpGpuMetrics() error {
 
 	return os.WriteFile(path, data, 0644)
 }
+func (k *K8sUsage) DumpNodes() error {
+	data, err := json.Marshal(k.nodes)
+	if err != nil {
+		return err
+	}
+
+	path := fmt.Sprintf("%s/nodes.json", KOA_CONFIG.FrontendDataLocation)
+
+	if err := os.MkdirAll(path, 0755); err != nil {
+		return err
+	}
+
+	return os.WriteFile(path, data, 0644)
+}
 
 // Consolidate namespace usage
 func (k *K8sUsage) ConsolidateNsUsage() {
