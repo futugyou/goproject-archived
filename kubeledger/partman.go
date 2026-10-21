@@ -3,7 +3,9 @@ package main
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
+	"math"
 	"time"
 
 	_ "github.com/jackc/pgx/v5/stdlib"
@@ -37,8 +39,8 @@ func OpenDB(ctx context.Context, dsn string) (*sql.DB, error) {
 
 type Point struct {
 	Timestamp int64
-	CPU       sql.NullFloat64
-	Memory    sql.NullFloat64
+	CPU       float64
+	Memory    float64
 }
 
 type Partman struct {
@@ -147,21 +149,42 @@ func (s *Partman) Fetch(
 		return nil, fmt.Errorf("end must not be before start")
 	}
 
-	// The query covers [startEpoch, endEpoch].
-	// Bucket boundaries are aligned to Unix epoch.
+	// 使用 generate_series 生成对齐到 step 边界的完整时间轴，
+	// 并通过 LEFT JOIN 确保即使某一个时间段没有数据，也会返回这一行（值为 NULL）。
 	query := `
-        SELECT
-            (floor(extract(epoch FROM time) / $4) * $4)::bigint
-                AS bucket_epoch,
-            AVG(cpu_usage) AS cpu_avg,
-            AVG(mem_usage) AS mem_avg
-        FROM public.node_metrics
-        WHERE node_id = $1
-          AND time >= to_timestamp($2)
-          AND time <= to_timestamp($3)
-        GROUP BY bucket_epoch
-        ORDER BY bucket_epoch
-    `
+		WITH aligned_bounds AS (
+			SELECT 
+				($2 / $4) * $4 AS start_ts,
+				($3 / $4) * $4 AS end_ts
+		),
+		time_buckets AS (
+			SELECT generate_series(
+				to_timestamp(ab.start_ts),
+				to_timestamp(ab.end_ts),
+				($4 * interval '1 second')
+			) AS bucket_time
+			FROM aligned_bounds ab
+		),
+		aggregated_metrics AS (
+			SELECT
+				(floor(extract(epoch FROM time) / $4) * $4)::bigint AS bucket_epoch,
+				AVG(cpu_usage) AS cpu_avg,
+				AVG(mem_usage) AS mem_avg
+			FROM public.node_metrics
+			WHERE node_id = $1
+			  AND time >= (SELECT to_timestamp(start_ts) FROM aligned_bounds)
+			  AND time <= (SELECT to_timestamp(end_ts) FROM aligned_bounds)
+			GROUP BY bucket_epoch
+		)
+		SELECT
+			extract(epoch FROM t.bucket_time)::bigint AS bucket_epoch,
+			m.cpu_avg,
+			m.mem_avg
+		FROM time_buckets t
+		LEFT JOIN aggregated_metrics m 
+			ON extract(epoch FROM t.bucket_time)::bigint = m.bucket_epoch
+		ORDER BY bucket_epoch
+	`
 
 	rows, err := s.db.QueryContext(
 		ctx,
@@ -178,13 +201,21 @@ func (s *Partman) Fetch(
 
 	points := make([]Point, 0)
 	for rows.Next() {
-		var p Point
+		var timestamp int64
+		var cpuSql, memSql sql.NullFloat64
+
 		if err := rows.Scan(
-			&p.Timestamp,
-			&p.CPU,
-			&p.Memory,
+			&timestamp,
+			&cpuSql,
+			&memSql,
 		); err != nil {
 			return nil, fmt.Errorf("scan metric: %w", err)
+		}
+
+		p := Point{
+			Timestamp: timestamp,
+			CPU:       getIntOrZero(cpuSql),
+			Memory:    getIntOrZero(memSql),
 		}
 		points = append(points, p)
 	}
@@ -194,4 +225,87 @@ func (s *Partman) Fetch(
 	}
 
 	return points, nil
+}
+
+func getIntOrZero(ns sql.NullFloat64) float64 {
+	if ns.Valid {
+		return ns.Float64
+	}
+	return 0.0
+}
+
+func getDateGroup(timeUTC time.Time, period int) string {
+	if period == PERIOD_YEAR_SEC {
+		return timeUTC.Format("200601")
+	}
+	return timeUTC.Format("20060102")
+}
+
+func round(val float64, decimals int) float64 {
+	pow := math.Pow(10, float64(decimals))
+	return math.Round(val*pow) / pow
+}
+
+func (s *Partman) AddSample(ctx context.Context,
+	timestampEpoch int64,
+	cpuUsage float64,
+	memUsage float64) {
+	KOA_LOGGER.Debug(fmt.Sprintf("[puller][sample] node_metrics, %f, %f", cpuUsage, memUsage))
+
+	cpu_rounded := round(cpuUsage, KOA_CONFIG.DbRoundDecimals)
+	mem_rounded := round(memUsage, KOA_CONFIG.DbRoundDecimals)
+	if err := s.Update(ctx, timestampEpoch, cpu_rounded, mem_rounded); err != nil {
+		KOA_LOGGER.Error(fmt.Sprintf("failing adding rrd sample => %s", err.Error()))
+	}
+}
+
+func (s *Partman) DumpTrendData(ctx context.Context, period, step_in int) ([]TrendDataDTO, []TrendDataDTO, error) {
+	now_epoch_utc := time.Now().Unix()
+	step := step_in
+	if step < 0 {
+		step = PERIOD_1_HOUR_SEC
+	}
+
+	rrd_end_ts_in := now_epoch_utc / int64(step) * int64(step)
+	rrd_start_ts_in := rrd_end_ts_in - int64(period)
+	rrd_result, err := s.Fetch(ctx, rrd_start_ts_in, rrd_end_ts_in, int64(step))
+	if err != nil {
+		return nil, nil, err
+	}
+
+	cpu_usage := []TrendDataDTO{}
+	mem_usage := []TrendDataDTO{}
+	sum_res_usage := map[string]float64{}
+	for i := range rrd_result {
+		cdp := rrd_result[i]
+		current_cpu_usage := round(100*cdp.CPU, KOA_CONFIG.DbRoundDecimals) / 100
+		current_mem_usage := round(100*cdp.Memory, KOA_CONFIG.DbRoundDecimals) / 100
+		dateUTC := time.Unix(cdp.Timestamp, 0).Format("2006-01-02T15:04:05")
+
+		cpu_usage = append(cpu_usage, TrendDataDTO{
+			Name:    "node_metrics",
+			DateUTC: dateUTC,
+			Usage:   current_cpu_usage,
+		})
+		mem_usage = append(mem_usage, TrendDataDTO{
+			Name:    "node_metrics",
+			DateUTC: dateUTC,
+			Usage:   current_mem_usage,
+		})
+		sum_res_usage["cpu"] = sum_res_usage["cpu"] + current_cpu_usage
+		sum_res_usage["mem"] = sum_res_usage["mem"] + current_mem_usage
+
+		if cdp.Timestamp == now_epoch_utc/PERIOD_1_HOUR_SEC*PERIOD_1_HOUR_SEC {
+			PROMETHEUS_HOURLY_USAGE_EXPORTER.WithLabelValues("node_metrics", "CPU").Set(current_cpu_usage)
+			PROMETHEUS_HOURLY_USAGE_EXPORTER.WithLabelValues("node_metrics", "MEMORY").Set(current_mem_usage)
+		}
+	}
+
+	if sum_res_usage["cpu"] > 0 && sum_res_usage["mem"] > 0 {
+		return cpu_usage, mem_usage, nil
+	} else if step_in > 0 {
+		return s.DumpTrendData(ctx, period, PERIOD_5_MINS_SEC)
+	}
+
+	return nil, nil, errors.New("some error in DumpTrendData()")
 }
