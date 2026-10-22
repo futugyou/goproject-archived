@@ -309,3 +309,30 @@ func (s *Partman) DumpTrendData(ctx context.Context, period, step_in int) ([]Tre
 
 	return nil, nil, errors.New("some error in DumpTrendData()")
 }
+
+func (s *Partman) DumpHistogramData(ctx context.Context, period, step_in int) (map[string]float64, map[string]float64, error) {
+	step := step_in
+	if step < 0 {
+		step = PERIOD_1_HOUR_SEC
+	}
+
+	rrd_end_ts_in := time.Now().Unix() / int64(step) * int64(step)
+	rrd_start_ts_in := rrd_end_ts_in - int64(period)
+	rrd_result, err := s.Fetch(ctx, rrd_start_ts_in, rrd_end_ts_in, int64(step))
+	if err != nil {
+		return nil, nil, err
+	}
+
+	periodic_cpu_usage := map[string]float64{}
+	periodic_mem_usage := map[string]float64{}
+	for i := range rrd_result {
+		cdp := rrd_result[i]
+		date_group := getDateGroup(time.Now(), period)
+		current_cpu_usage := round(100*cdp.CPU, KOA_CONFIG.DbRoundDecimals) / 100
+		current_mem_usage := round(100*cdp.Memory, KOA_CONFIG.DbRoundDecimals) / 100
+		periodic_cpu_usage[date_group] += current_cpu_usage
+		periodic_mem_usage[date_group] += current_mem_usage
+	}
+
+	return periodic_cpu_usage, periodic_mem_usage, nil
+}
