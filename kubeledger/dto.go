@@ -139,3 +139,9 @@ type TrendDataDTO struct {
 	DateUTC string  `json:"dateUTC"`
 	Usage   float64 `json:"usage"`
 }
+
+type AnalyticsTDO struct {
+	Stack string  `json:"stack"`
+	Usage float64 `json:"usage"`
+	Date  string  `json:"date"`
+}
