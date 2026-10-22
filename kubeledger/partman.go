@@ -3,9 +3,11 @@ package main
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"math"
+	"os"
 	"time"
 
 	_ "github.com/jackc/pgx/v5/stdlib"
@@ -376,4 +378,45 @@ func (s *Partman) DumpHistogramData(ctx context.Context, period, step_in int) (m
 	}
 
 	return periodic_cpu_usage, periodic_mem_usage, nil
+}
+
+func DumpTrendAnalytics(ctx context.Context, db *sql.DB, subCategory string, prefix string, categories []string) {
+	sum_cpu_usage := []TrendDataDTO{}
+	sum_mem_usage := []TrendDataDTO{}
+	for _, category := range categories {
+		if category == KOA_CONFIG.DbBillingHourlyRate && !KOA_CONFIG.EnableDebug {
+			continue
+		}
+		rrd, err := NewPartman(db, category, PERIOD_1_HOUR_SEC)
+		if err != nil {
+			KOA_LOGGER.Error(err.Error())
+			continue
+		}
+
+		cpu_usage, mem_usage, err := rrd.DumpTrendData(ctx, PERIOD_7_DAYS_SEC, 0)
+		if err != nil {
+			KOA_LOGGER.Error(err.Error())
+			continue
+		}
+		KOA_LOGGER.Debug(fmt.Sprintf("[dump_trend_analytics] category=%s, cpu_data_len=%d, mem_data_len=%d", category, len(cpu_usage), len(mem_usage)))
+		sum_cpu_usage = append(sum_cpu_usage, cpu_usage...)
+		sum_mem_usage = append(sum_mem_usage, mem_usage...)
+	}
+
+	mem_label := "mem"
+	if prefix == "" {
+		mem_label = "memory"
+	}
+	cpupath := fmt.Sprintf("%s/%scpu_%s_trends.json", KOA_CONFIG.FrontendDataLocation, prefix, subCategory)
+	mempath := fmt.Sprintf("%s/%s%s_%s_trends.json", KOA_CONFIG.FrontendDataLocation, prefix, mem_label, subCategory)
+
+	cpudata, err := json.Marshal(sum_cpu_usage)
+	if err == nil && len(cpudata) > 0 {
+		os.WriteFile(cpupath, cpudata, 0644)
+	}
+
+	memdata, err := json.Marshal(sum_mem_usage)
+	if err == nil && len(memdata) > 0 {
+		os.WriteFile(mempath, memdata, 0644)
+	}
 }
