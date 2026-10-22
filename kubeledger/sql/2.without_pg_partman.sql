@@ -1,14 +1,19 @@
 
 -- 1. base table
+create table if not exists public.node_metrics_categories ( 
+    category text not null, 
+
+    constraint node_metrics_categories_pkey primary key (category), 
+) partition by range (category);
 
 CREATE TABLE IF NOT EXISTS public.node_metrics (
     time        timestamptz NOT NULL,
-    node_id     text NOT NULL,
+    category    text NOT NULL,
     cpu_usage   double precision,
     mem_usage   double precision,
 
     CONSTRAINT node_metrics_pkey
-        PRIMARY KEY (time, node_id),
+        PRIMARY KEY (time, category),
 
     CONSTRAINT node_metrics_cpu_range
         CHECK (
@@ -24,7 +29,7 @@ CREATE TABLE IF NOT EXISTS public.node_metrics (
 ) PARTITION BY RANGE (time);
 
 CREATE INDEX IF NOT EXISTS node_metrics_node_time_idx
-    ON public.node_metrics (node_id, time DESC);
+    ON public.node_metrics (category, time DESC);
 
 
 
@@ -119,15 +124,15 @@ SELECT cron.schedule(
 
 CREATE TABLE IF NOT EXISTS public.node_metrics_3m (
     bucket_time timestamptz NOT NULL,
-    node_id     text NOT NULL,
+    category     text NOT NULL,
     cpu_avg     double precision,
     mem_avg     double precision,
 
-    PRIMARY KEY (bucket_time, node_id)
+    PRIMARY KEY (bucket_time, category)
 ) PARTITION BY RANGE (bucket_time);
 
 CREATE INDEX IF NOT EXISTS node_metrics_3m_node_time_idx
-    ON public.node_metrics_3m (node_id, bucket_time DESC);
+    ON public.node_metrics_3m (category, bucket_time DESC);
 
 SELECT public.ensure_weekly_partitions(
     'public.node_metrics_3m'::regclass,
@@ -158,7 +163,7 @@ BEGIN
 
     INSERT INTO public.node_metrics_3m (
         bucket_time,
-        node_id,
+        category,
         cpu_avg,
         mem_avg
     )
@@ -168,14 +173,14 @@ BEGIN
             time,
             timestamptz '2000-01-01 00:00:00+00'
         ),
-        node_id,
+        category,
         avg(cpu_usage),
         avg(mem_usage)
     FROM public.node_metrics
     WHERE time >= v_from
       AND time < v_until
     GROUP BY 1, 2
-    ON CONFLICT (bucket_time, node_id)
+    ON CONFLICT (bucket_time, category)
     DO UPDATE SET
         cpu_avg = EXCLUDED.cpu_avg,
         mem_avg = EXCLUDED.mem_avg;

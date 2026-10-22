@@ -7,14 +7,20 @@ create extension if not exists pg_partman
 
 create extension if not exists pg_cron;
 
--- 监控系统有多个节点，使用 node_id 区分。
+-- 监控系统有多个节点，使用 category 区分。
+create table if not exists public.node_metrics_categories ( 
+    category text not null, 
+
+    constraint node_metrics_categories_pkey primary key (category), 
+) partition by range (category);
+
 create table if not exists public.node_metrics (
     time        timestamptz not null,
-    node_id     text        not null,
+    category    text        not null,
     cpu_usage   double precision,
     mem_usage   double precision,
 
-    constraint node_metrics_pkey primary key (time, node_id),
+    constraint node_metrics_pkey primary key (time, category),
 
     constraint node_metrics_cpu_range
         check (cpu_usage is null or
@@ -37,7 +43,7 @@ select partman.create_parent(
 
 -- 2. index
 create index if not exists node_metrics_node_time_idx
-    on public.node_metrics (node_id, time desc);
+    on public.node_metrics (category, time desc);
 
 -- 3. maintenance
 
@@ -57,10 +63,10 @@ select cron.schedule(
 
 create table if not exists public.node_metrics_3m (
     bucket_time timestamptz not null,
-    node_id     text not null,
+    category     text not null,
     cpu_avg     double precision,
     mem_avg     double precision,
-    primary key (bucket_time, node_id)
+    primary key (bucket_time, category)
 ) partition by range (bucket_time);
 
 select partman.create_parent(
@@ -72,7 +78,7 @@ select partman.create_parent(
 );
 
 create index if not exists node_metrics_3m_node_time_idx
-    on public.node_metrics_3m (node_id, bucket_time desc); 
+    on public.node_metrics_3m (category, bucket_time desc); 
 
 -- 5. archive_metrics
 
@@ -97,7 +103,7 @@ BEGIN
 
     INSERT INTO public.node_metrics_3m (
         bucket_time,
-        node_id,
+        category,
         cpu_avg,
         mem_avg
     )
@@ -107,14 +113,14 @@ BEGIN
             time,
             timestamptz '2000-01-01 00:00:00+00'
         ),
-        node_id,
+        category,
         AVG(cpu_usage),
         AVG(mem_usage)
     FROM public.node_metrics
     WHERE time >= v_from
       AND time < v_until
     GROUP BY 1, 2
-    ON CONFLICT (bucket_time, node_id)
+    ON CONFLICT (bucket_time, category)
     DO UPDATE SET
         cpu_avg = EXCLUDED.cpu_avg,
         mem_avg = EXCLUDED.mem_avg;

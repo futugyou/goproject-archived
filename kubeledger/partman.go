@@ -37,6 +37,45 @@ func OpenDB(ctx context.Context, dsn string) (*sql.DB, error) {
 	return db, nil
 }
 
+func UpsertMetricsCategory(ctx context.Context, db *sql.DB, category string) {
+	_, err := db.ExecContext(ctx, `
+        INSERT INTO public.node_metrics_categories
+            (category)
+        VALUES ($1)
+        ON CONFLICT (category)
+        DO UPDATE SET
+    `, category)
+
+	if err != nil {
+		KOA_LOGGER.Error(fmt.Sprintf("insert node_metrics_categories at %s: %s", time.Now(), err.Error()))
+	}
+}
+
+func GetMetricsCategories(ctx context.Context, db *sql.DB) []string {
+	query := `SELECT category FROM public.node_metrics_categories`
+	rows, err := db.QueryContext(ctx, query)
+	if err != nil {
+		KOA_LOGGER.Error(fmt.Sprintf("fetch metrics: %s", err.Error()))
+		return nil
+	}
+
+	defer rows.Close()
+
+	categories := make([]string, 0)
+	for rows.Next() {
+		var category string
+
+		if err := rows.Scan(&category); err != nil {
+			KOA_LOGGER.Error(fmt.Sprintf("scan metrics_categories: %s", err.Error()))
+			return nil
+		}
+
+		categories = append(categories, category)
+	}
+
+	return categories
+}
+
 type Point struct {
 	Timestamp int64
 	CPU       float64
@@ -44,26 +83,28 @@ type Point struct {
 }
 
 type Partman struct {
-	db     *sql.DB
-	nodeID string
-	step   int64 // seconds, equivalent to RRD --step
+	db       *sql.DB
+	category string
+	step     int64 // seconds, equivalent to RRD --step
 }
 
-func NewPartman(db *sql.DB, nodeID string, step int64) (*Partman, error) {
+func NewPartman(db *sql.DB, category string, step int64) (*Partman, error) {
 	if db == nil {
 		return nil, fmt.Errorf("db is nil")
 	}
-	if nodeID == "" {
-		return nil, fmt.Errorf("nodeID is empty")
+	if category == "" {
+		return nil, fmt.Errorf("category is empty")
 	}
 	if step <= 0 {
 		return nil, fmt.Errorf("step must be positive")
 	}
 
+	UpsertMetricsCategory(context.Background(), db, category)
+
 	return &Partman{
-		db:     db,
-		nodeID: nodeID,
-		step:   step,
+		db:       db,
+		category: category,
+		step:     step,
 	}, nil
 }
 
@@ -122,13 +163,13 @@ func (s *Partman) Update(
 
 	_, err := s.db.ExecContext(ctx, `
         INSERT INTO public.node_metrics
-            (time, node_id, cpu_usage, mem_usage)
+            (time, category, cpu_usage, mem_usage)
         VALUES ($1, $2, $3, $4)
-        ON CONFLICT (time, node_id)
+        ON CONFLICT (time, category)
         DO UPDATE SET
             cpu_usage = EXCLUDED.cpu_usage,
             mem_usage = EXCLUDED.mem_usage
-    `, ts, s.nodeID, cpuUsage, memUsage)
+    `, ts, s.category, cpuUsage, memUsage)
 
 	if err != nil {
 		return fmt.Errorf("insert metric at %d: %w", timestampEpoch, err)
@@ -171,7 +212,7 @@ func (s *Partman) Fetch(
 				AVG(cpu_usage) AS cpu_avg,
 				AVG(mem_usage) AS mem_avg
 			FROM public.node_metrics
-			WHERE node_id = $1
+			WHERE category = $1
 			  AND time >= (SELECT to_timestamp(start_ts) FROM aligned_bounds)
 			  AND time <= (SELECT to_timestamp(end_ts) FROM aligned_bounds)
 			GROUP BY bucket_epoch
@@ -189,7 +230,7 @@ func (s *Partman) Fetch(
 	rows, err := s.db.QueryContext(
 		ctx,
 		query,
-		s.nodeID,
+		s.category,
 		startEpoch,
 		endEpoch,
 		step,
