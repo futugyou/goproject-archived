@@ -336,21 +336,15 @@ var metric_mapping = map[string]string{
 // Multiple GPUs on the same pod will have their metrics summed.
 //
 // :param data: Raw JSON string from DCGM exporter endpoint
-func (k *K8sUsage) ExtractGpuMetrics(data []byte) {
+func (k *K8sUsage) ExtractGpuMetrics(data map[string][]MetricData) {
 	//exit if not valid data
 	if len(data) == 0 {
 		return
 	}
 
-	// process likely valid data
-	var jsondata map[string][]MetricData
-	if err := json.Unmarshal(data, &jsondata); err != nil {
-		return
-	}
-
 	gpus_per_pod := make(map[string]map[string]struct{})
 	for metric_name := range metric_mapping {
-		metric_data, ok := jsondata[metric_name]
+		metric_data, ok := data[metric_name]
 		if !ok {
 			continue
 		}
