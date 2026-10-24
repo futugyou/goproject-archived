@@ -154,7 +154,6 @@ func CreateMetricsPuller(parentCtx context.Context, db *sql.DB) {
 					}
 				}
 			}
-
 		}()
 
 		select {

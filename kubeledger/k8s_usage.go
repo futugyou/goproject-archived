@@ -423,6 +423,7 @@ func (k *K8sUsage) DumpGpuMetrics() error {
 
 	return os.WriteFile(path, data, 0644)
 }
+
 func (k *K8sUsage) DumpNodes() error {
 	data, err := json.Marshal(k.nodes)
 	if err != nil {
