@@ -1,0 +1,53 @@
+.container{
+    width: 98%;
+}
+.navbar-header{
+    min-height: 55px;
+}
+.navbar-brand {
+    padding: 5px;
+}
+.chart-container {
+    min-height: 400px;
+    margin-top: 16px;
+}
+
+.btn.menu-export {
+    border: 0;
+}
+
+.tricolon:after {
+    content: '⁝';
+}
+
+.chart-download:before {
+    content: '\2193 ';
+}
+
+.chart-download:after {
+    content: ' \2193';
+}
+
+legend {
+    /* margin-top: .5rem; */
+    color: rgba(0, 0, 0, 0.65);
+}
+
+
+.britecharts-tooltip {
+    width: 64rem !important;  /* Adjust the value as needed */
+    max-width: 100rem;
+}
+
+.heatmap-tooltip {
+    position: absolute;
+    text-align: left;
+    padding: 8px;
+    font-size: 12px;
+    background: rgba(0, 0, 0, 0.85);
+    color: #fff;
+    border-radius: 4px;
+    pointer-events: none;
+    z-index: 10000;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+}
