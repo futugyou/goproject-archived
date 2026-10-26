@@ -3,10 +3,12 @@ package mcp
 import (
 	"encoding/json"
 	"fmt"
+	"math"
 	"os"
 	"path/filepath"
 	"slices"
 	"strings"
+	"time"
 )
 
 func getEnv(name string, defaultValue string) string {
@@ -151,4 +153,52 @@ func LoadCostModel(dataDir string) (*CostModelInfo, []string) {
 		Currency:  data.Currency,
 		Unit:      unit,
 	}, warnings
+}
+
+func uniqueCount(payload []map[string]string, key string) int {
+	c := map[string]struct{}{}
+	for _, v := range payload {
+		if val, ok := v[key]; ok {
+			if _, ok := c[val]; !ok {
+				c[val] = struct{}{}
+			}
+		}
+	}
+	return len(c)
+}
+
+func isoUtc(epochSeconds int64) string {
+	return time.Unix(epochSeconds, 0).UTC().Format(time.RFC3339Nano)
+}
+
+func trendsDepth(payload []byte) (string, int) {
+	var data []TrendDataDTO
+	if err := json.Unmarshal(payload, &data); err != nil && len(data) == 0 {
+		return "", 0
+	}
+	timestamps := []string{}
+	for _, v := range data {
+		timestamps = append(timestamps, v.DateUTC)
+	}
+
+	points := len(timestamps)
+	if len(timestamps) < 2 {
+		return "1 hour", points
+	}
+	first, err := time.Parse("2006-01-02T15:04:05", timestamps[0])
+	if err != nil {
+		return "", 0
+	}
+	last, err := time.Parse("2006-01-02T15:04:05", timestamps[len(timestamps)-1])
+	if err != nil {
+		return "", 0
+	}
+
+	spanHours := float64(last.Sub(first) * time.Second / 3600.0)
+	spanDays := spanHours / 24.0
+	if spanDays >= 1.5 {
+		return fmt.Sprintf("%f days", math.Round(spanDays)), points
+	}
+
+	return fmt.Sprintf("%f hours", math.Round(spanHours)), points
 }

@@ -50,3 +50,9 @@ type DatasetInfo struct {
 	DataFreshnessUtc  string
 	Warnings          []string
 }
+
+type TrendDataDTO struct {
+	Name    string  `json:"name"`
+	DateUTC string  `json:"dateUTC"`
+	Usage   float64 `json:"usage"`
+}
