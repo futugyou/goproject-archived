@@ -384,3 +384,144 @@ func DiscoverDataset(dataDir string) DatasetInfo {
 		Warnings:          warnings,
 	}
 }
+
+func ClassifyNamespace(name string) string {
+	if _, ok := SPECIAL_ENTRIES[name]; ok {
+		return "special"
+	}
+
+	for _, prefix := range SYSTEM_NAMESPACE_PREFIXES {
+		if strings.HasPrefix(name, prefix) {
+			return "system"
+		}
+	}
+
+	return "application"
+}
+
+func iterDataFilenames(includeGpu *bool) []string {
+	if includeGpu == nil {
+		includeGpu = new(true)
+	}
+	out := []string{}
+	gpuVariants := []bool{false}
+	if *includeGpu {
+		gpuVariants = []bool{false, true}
+	}
+
+	for _, metric := range METRICS {
+		for _, period := range []int{PERIOD_14_DAYS_SEC, PERIOD_YEAR_SEC} {
+			for _, dimension := range DIMENSIONS {
+				for _, gpu := range gpuVariants {
+					filename, err := HistogramFilename(metric, dimension, period, gpu)
+					if err != nil {
+						continue
+					}
+
+					out = append(out, filename)
+				}
+			}
+		}
+
+		for _, category := range []string{"usage", "rf"} {
+			for _, gpu := range gpuVariants {
+				if gpu && category == "rf" {
+					continue
+				}
+				filename, err := TrendsFilename(metric, category, gpu)
+				if err != nil {
+					continue
+				}
+				out = append(out, filename)
+			}
+		}
+	}
+
+	return out
+}
+
+func collectNamespaceNames(dataDir string) (map[string]struct{}, []string, *time.Time) {
+	root := dataDir
+	if root != "" {
+		root = getDataDir()
+	}
+
+	names := map[string]struct{}{}
+	warnings := []string{}
+	mtimes := []time.Time{}
+
+	for _, fname := range iterDataFilenames(nil) {
+		result := ReadJsonFile(fname, root)
+		if !result.Exists {
+			continue
+		}
+
+		if result.MtimeUtc != nil {
+			mtimes = append(mtimes, *result.MtimeUtc)
+		}
+
+		if !result.Ok() {
+			warnings = append(warnings, fmt.Sprintf("%s: %s", fname, result.ErrorMsg))
+			continue
+		}
+
+		var list []map[string]string
+		if err := json.Unmarshal(result.Payload, &list); err != nil {
+			continue
+		}
+
+		for _, entry := range list {
+			if stack, ok := entry["stack"]; ok {
+				names[stack] = struct{}{}
+			}
+			if name, ok := entry["name"]; ok {
+				names[name] = struct{}{}
+			}
+		}
+	}
+
+	slices.SortFunc(mtimes, func(a, b time.Time) int {
+		return a.Compare(b)
+	})
+
+	if len(mtimes) > 0 {
+		return names, warnings, &mtimes[len(mtimes)-1]
+	}
+	return names, warnings, nil
+}
+
+func BuildMetadata(costModel *CostModelInfo, warnings []string, metric string, scale string, dataWindow map[string]any, sourceFile string, generatedAtMtime *time.Time, unitOverride string) map[string]any {
+	outWarnings := warnings
+	generatedAtUtc := ""
+	if generatedAtMtime != nil {
+		generatedAtUtc = isoUtc(generatedAtMtime.Unix())
+		ageSec := time.Until(*generatedAtMtime) * time.Second
+		if ageSec > FRESHNESS_WARN_AFTER_SECONDS {
+			outWarnings = append(outWarnings, fmt.Sprintf("stale data: most recent file is %d minutes old", ageSec/60))
+		}
+	}
+
+	costM := ""
+	currency := ""
+	unit := ""
+	if costModel != nil {
+		costM = costModel.CostModel
+		currency = costModel.Currency
+		unit = costModel.Unit
+	}
+	if unit == "" {
+		unit = unitOverride
+	}
+
+	return map[string]any{
+		"cost_model":       costM,
+		"currency":         currency,
+		"unit":             unit,
+		"metric":           metric,
+		"scale":            scale,
+		"data_window":      dataWindow,
+		"source_file":      sourceFile,
+		"generated_at_utc": generatedAtUtc,
+		"warnings":         outWarnings,
+	}
+}
