@@ -202,3 +202,185 @@ func trendsDepth(payload []byte) (string, int) {
 
 	return fmt.Sprintf("%f hours", math.Round(spanHours)), points
 }
+
+func DiscoverDataset(dataDir string) DatasetInfo {
+	root := dataDir
+	if root == "" {
+		root = getDataDir()
+	}
+	costModel, warnings := LoadCostModel(root)
+	probed := map[string]FileReadResult{}
+
+	probe := func(filename string) FileReadResult {
+		if _, ok := probed[filename]; !ok {
+			probed[filename] = ReadJsonFile(filename, dataDir)
+		}
+
+		return probed[filename]
+	}
+
+	metricsAvailable := []string{}
+	for _, metric := range METRICS {
+		for _, scale := range []string{SCALE_DAILY_14D, SCALE_MONTHLY_12M} {
+			fname, _ := HistogramFilename(metric, "usage", SCALE_TO_PERIOD[scale], false)
+			if len(fname) > 0 && probe(fname).Exists {
+				if !slices.Contains(metricsAvailable, metric) {
+					metricsAvailable = append(metricsAvailable, metric)
+				}
+				break
+			}
+		}
+	}
+
+	gpuAvailable := false
+	for _, metric := range METRICS {
+		for _, scale := range []string{SCALE_DAILY_14D, SCALE_MONTHLY_12M} {
+			fname, err := HistogramFilename(metric, "usage", SCALE_TO_PERIOD[scale], true)
+			if err != nil {
+				continue
+			}
+			r := probe(fname)
+			if r.Ok() && len(r.Payload) > 0 {
+				gpuAvailable = true
+				break
+			}
+		}
+		if gpuAvailable {
+			break
+		}
+	}
+	dimensions := []string{}
+	if len(metricsAvailable) > 0 {
+	outer:
+		for _, m := range metricsAvailable {
+			for _, s := range []string{SCALE_DAILY_14D, SCALE_MONTHLY_12M} {
+				filename, err := HistogramFilename(m, "usage", SCALE_TO_PERIOD[s], false)
+				if err != nil {
+					continue
+				}
+				if probe(filename).Exists {
+					dimensions = append(dimensions, "usage")
+					break outer
+				}
+			}
+		}
+	outer2:
+		for _, m := range metricsAvailable {
+			for _, s := range []string{SCALE_DAILY_14D, SCALE_MONTHLY_12M} {
+				filename, err := HistogramFilename(m, "requests", SCALE_TO_PERIOD[s], false)
+				if err != nil {
+					continue
+				}
+				if probe(filename).Exists {
+					dimensions = append(dimensions, "requests")
+					break outer2
+				}
+			}
+		}
+	}
+
+	scales := map[string]ScaleInfo{}
+	for _, scale := range []string{SCALE_DAILY_14D, SCALE_MONTHLY_12M} {
+		var sample *FileReadResult
+		for _, metric := range append(metricsAvailable, METRICS...) {
+			filename, err := HistogramFilename(metric, "usage", SCALE_TO_PERIOD[scale], false)
+			if err != nil {
+				continue
+			}
+			r := probe(filename)
+			if r.Ok() && len(r.Payload) > 0 {
+				sample = &r
+				break
+			}
+		}
+		if sample == nil {
+			continue
+		}
+
+		var data []map[string]string
+		if err := json.Unmarshal(sample.Payload, &data); err != nil {
+			continue
+		}
+		points := uniqueCount(data, "date")
+		scales[scale] = ScaleInfo{
+			Granularity:        SCALE_GRANULARITY[scale],
+			Depth:              SCALE_DEFAULT_DEPTH[scale],
+			PointsPerNamespace: points,
+		}
+	}
+
+	var trends *TrendsInfo
+	for _, metric := range append(metricsAvailable, METRICS...) {
+		fielname, err := TrendsFilename(metric, "usage", false)
+		if err != nil {
+			continue
+		}
+
+		r := probe(fielname)
+		if r.Ok() && len(r.Payload) > 0 {
+			depth, points := trendsDepth(r.Payload)
+			if depth == "" {
+				depth = "unknown"
+			}
+			trends = &TrendsInfo{
+				Granularity:        "hourly",
+				Depth:              depth,
+				PointsPerNamespace: points,
+			}
+			break
+		}
+	}
+
+	aggregatedEfficiency := slices.Contains(dimensions, "requests")
+	hourlyRf := false
+
+	for _, m := range append(metricsAvailable, METRICS...) {
+		filename, err := TrendsFilename(m, "rf", false)
+		if err != nil {
+			continue
+		}
+		if probe(filename).Exists {
+			hourlyRf = true
+			break
+		}
+	}
+
+	efficiency := EfficiencyInfo{
+		Aggregated:      aggregatedEfficiency,
+		HourlyTimeserie: hourlyRf,
+	}
+
+	mtimes := []time.Time{}
+	for fname, r := range probed {
+		if r.MtimeUtc != nil && fname != BACKEND_CONFIG_FILENAME {
+			mtimes = append(mtimes, *r.MtimeUtc)
+		}
+	}
+
+	slices.SortFunc(mtimes, func(a, b time.Time) int {
+		return a.Compare(b)
+	})
+
+	var dataFreshnessUtc *time.Time
+	if len(mtimes) > 0 {
+		dataFreshnessUtc = &mtimes[len(mtimes)-1]
+	}
+
+	var billingHourlyRate float64 = 0
+	if costModel != nil && costModel.CostModel == "costs" {
+		warnings = append(warnings, "billing_hourly_rate is not exposed in the current static data set; backend.json carries only cost_model and currency.")
+	}
+
+	return DatasetInfo{
+		MetricsAvailable:  metricsAvailable,
+		GpuAvailable:      gpuAvailable,
+		Scales:            scales,
+		Trends:            trends,
+		Dimensions:        dimensions,
+		Efficiency:        efficiency,
+		CostModel:         costModel,
+		BillingHourlyRate: billingHourlyRate,
+		DataFreshnessUtc:  dataFreshnessUtc,
+		Warnings:          warnings,
+	}
+}

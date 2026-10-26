@@ -47,7 +47,7 @@ type DatasetInfo struct {
 	Efficiency        EfficiencyInfo
 	CostModel         *CostModelInfo
 	BillingHourlyRate float64
-	DataFreshnessUtc  string
+	DataFreshnessUtc  *time.Time
 	Warnings          []string
 }
 
