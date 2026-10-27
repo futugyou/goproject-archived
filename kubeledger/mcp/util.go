@@ -1,18 +1,14 @@
 package mcp
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
-	"maps"
 	"math"
 	"os"
 	"path/filepath"
 	"slices"
 	"strings"
 	"time"
-
-	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
 func getEnv(name string, defaultValue string) string {
@@ -528,58 +524,4 @@ func BuildMetadata(costModel *CostModelInfo, warnings []string, metric string, s
 		"generated_at_utc": generatedAtUtc,
 		"warnings":         outWarnings,
 	}
-}
-
-func ListNamespaces(ctx context.Context, req *mcp.CallToolRequest, _ struct{}) (*mcp.CallToolResult, map[string]any, error) {
-	root := getDataDir()
-	names, warnings, latestMtime := collectNamespaceNames(root)
-	costModel, cmWarnings := LoadCostModel(root)
-	warnings = append(warnings, cmWarnings...)
-
-	namespaces := []map[string]string{}
-	counts := map[string]int{"application": 0, "system": 0, "special": 0}
-
-	namekeys := slices.Collect(maps.Keys(names))
-	slices.Sort(namekeys)
-	for _, name := range namekeys {
-		kind := ClassifyNamespace(name)
-		if kind == "special" {
-			continue
-		}
-		namespaces = append(namespaces, map[string]string{"name": name, "type": kind})
-		counts[kind] += 1
-	}
-
-	specialEntries := []map[string]string{}
-	for entryName, meta := range SPECIAL_ENTRIES {
-		specialEntries = append(specialEntries, map[string]string{
-			"name":        entryName,
-			"role":        meta["role"],
-			"description": meta["description"],
-		})
-	}
-	counts["special"] = len(specialEntries)
-
-	return nil, map[string]any{
-		"namespaces":     namespaces,
-		"specialEntries": specialEntries,
-		"counts":         counts,
-		"metadata": BuildMetadata(
-			costModel,
-			warnings,
-			"",
-			"",
-			nil,
-			"",
-			latestMtime,
-			"",
-		),
-	}, nil
-}
-
-func BuildMcpApp() *mcp.Server {
-	server := mcp.NewServer(&mcp.Implementation{Name: "greeter", Version: "v1.0.0"}, nil)
-	mcp.AddTool(server, &mcp.Tool{Name: "list_namespaces", Description: "List available namespaces (application / system) and the known special entries."}, ListNamespaces)
-
-	return server
 }
