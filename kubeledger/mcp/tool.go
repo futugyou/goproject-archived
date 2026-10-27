@@ -364,6 +364,207 @@ func GetTopConsumers(ctx context.Context, req *mcp.CallToolRequest, input Consum
 	}, nil
 }
 
+type NamespaceBreakdownInput struct {
+	Metric        string `json:"metric" jsonschema:"get CPU or MEMORY Metric data"`
+	Scale         string `json:"scale" jsonschema:"the scanning range, daily_14d or monthly_12m"`
+	Date          string `json:"date" jsonschema:"selected date (last available by default)"`
+	ExcludeSystem *bool  `json:"exclude_system" jsonschema:"controls whether system namespaces appear, default True"`
+}
+
+func GetNamespaceBreakdown(ctx context.Context, req *mcp.CallToolRequest, input NamespaceBreakdownInput) (*mcp.CallToolResult, map[string]any, error) {
+	metric := input.Scale
+	scale := input.Scale
+	date := input.Date
+	excludeSystem := true
+	if input.ExcludeSystem != nil {
+		excludeSystem = *input.ExcludeSystem
+	}
+
+	if err := validateMetric(metric); err != nil {
+		return nil, nil, err
+	}
+	if err := validateScale(scale); err != nil {
+		return nil, nil, err
+	}
+
+	costModel, warnings := LoadCostModel("")
+	entries, fname, mtime, errMsg := loadHistogramPayload(metric, scale, "usage", false, "")
+
+	if len(entries) == 0 {
+		warnings = append(warnings, fmt.Sprintf("%s: %s", fname, errMsg))
+		return nil, map[string]any{
+			"metric":           metric,
+			"scale":            scale,
+			"date":             date,
+			"breakdown":        []any{},
+			"concentration":    map[string]float64{"top_3_share_pct": 0.0, "top_10_share_pct": 0.0, "total_namespaces": 0},
+			"cluster_overhead": nil,
+			"metadata": BuildMetadata(
+				costModel,
+				warnings,
+				metric,
+				scale,
+				nil,
+				fname,
+				mtime,
+				"",
+			),
+		}, nil
+	}
+
+	var data []map[string]any
+	if err := json.Unmarshal(entries, &data); err != nil {
+		return nil, nil, err
+	}
+
+	dates := uniqueDatesInOrder(data)
+	targetDate := date
+	if targetDate == "" && len(dates) > 0 {
+		targetDate = dates[len(dates)-1]
+	}
+
+	if targetDate == "" {
+		warnings = append(warnings, fmt.Sprintf("no date available in %s", fname))
+		return nil, map[string]any{
+			"metric":           metric,
+			"scale":            scale,
+			"date":             nil,
+			"breakdown":        []any{},
+			"concentration":    map[string]float64{"top_3_share_pct": 0.0, "top_10_share_pct": 0.0, "total_namespaces": 0},
+			"cluster_overhead": nil,
+			"metadata": BuildMetadata(
+				costModel,
+				warnings,
+				metric,
+				scale,
+				nil,
+				fname,
+				mtime,
+				"",
+			),
+		}, nil
+	}
+
+	if date != "" && !slices.Contains(dates, date) {
+		warnings = append(warnings, fmt.Sprintf("date %s not present in %s (available: %s)", date, fname, strings.Join(dates, ",")))
+	}
+
+	type namespaceValue struct {
+		stack string
+		value float64
+	}
+
+	var nonAllocatableValue *float64
+	namespaceValues := []namespaceValue{}
+	var namespaceTotal float64 = 0
+
+	for _, entry := range data {
+		if d, ok := entry["date"].(string); !ok || d != targetDate {
+			continue
+		}
+
+		stack, ok := entry["stack"].(string)
+		if !ok {
+			continue
+		}
+		value := coerceValue(entry)
+		if value == nil {
+			continue
+		}
+
+		if stack == "non-allocatable" {
+			nonAllocatableValue = value
+			continue
+		}
+		if isSpecial(stack) {
+			continue
+		}
+		if excludeSystem && isSystem(stack) {
+			continue
+		}
+
+		namespaceTotal += *value
+		namespaceValues = append(namespaceValues, namespaceValue{
+			stack: stack,
+			value: *value,
+		})
+	}
+
+	slices.SortFunc(namespaceValues, func(a, b namespaceValue) int {
+		return cmp.Compare(b.value, a.value)
+	})
+
+	breakdown := []map[string]any{}
+	var top_3_sum float64 = 0
+	var top_10_sum float64 = 0
+	for i, v := range namespaceValues {
+		ns := v.stack
+		value := v.value
+		if i < 3 {
+			top_3_sum += value
+		}
+		if i < 10 {
+			top_10_sum += value
+		}
+		var sharePct float64 = 0
+		if namespaceTotal > 0 {
+			sharePct = (100.0 * value / namespaceTotal)
+		}
+		breakdown = append(breakdown, map[string]any{
+			"namespace": ns,
+			"value":     math.Round(value),
+			"share_pct": math.Round(sharePct),
+		})
+	}
+
+	top_3_share_pct := 0.0
+	top_10_share_pct := 0.0
+	if namespaceTotal != 0 {
+		top_3_share_pct = math.Round(100.0 * top_3_sum / namespaceTotal)
+		top_10_share_pct = math.Round(100.0 * top_10_sum / namespaceTotal)
+	}
+
+	concentration := map[string]float64{
+		"top_3_share_pct":  top_3_share_pct,
+		"top_10_share_pct": top_10_share_pct,
+		"total_namespaces": float64(len(breakdown)),
+	}
+
+	clusterOverhead := map[string]any{}
+	if nonAllocatableValue != nil {
+		totalCluster := *nonAllocatableValue + namespaceTotal
+		if totalCluster > 0 {
+			clusterOverhead = map[string]any{
+				"non_allocatable_value":     math.Round(*nonAllocatableValue),
+				"non_allocatable_share_pct": math.Round(100.0 * *nonAllocatableValue / totalCluster),
+				"allocatable_share_pct":     math.Round(100.0 * namespaceTotal / totalCluster),
+			}
+		} else {
+			warnings = append(warnings, "non-allocatable present but total cluster value is zero; cluster_overhead omitted")
+		}
+	} else {
+		warnings = append(warnings, fmt.Sprintf("non-allocatable absent from data for date %s; cluster_overhead omitted", targetDate))
+	}
+	return nil, map[string]any{
+		"metric":           metric,
+		"scale":            scale,
+		"date":             targetDate,
+		"breakdown":        breakdown,
+		"concentration":    concentration,
+		"cluster_overhead": clusterOverhead,
+		"metadata": BuildMetadata(
+			costModel,
+			warnings,
+			metric,
+			scale,
+			buildDataWindow(scale, dates, targetDate),
+			fname,
+			mtime,
+			"",
+		),
+	}, nil
+}
+
 func BuildMcpApp() *mcp.Server {
 	server := mcp.NewServer(&mcp.Implementation{Name: "greeter", Version: "v1.0.0"}, nil)
 
@@ -371,6 +572,7 @@ func BuildMcpApp() *mcp.Server {
 	mcp.AddTool(server, &mcp.Tool{Name: "describe_dataset", Description: "Announce dataset capabilities: metrics, GPU availability, scales, efficiency, cost_model."}, DescribeDataset)
 	mcp.AddTool(server, &mcp.Tool{Name: "get_usage", Description: "Usage per namespace for a given metric and scale (time series of points)."}, GetUsage)
 	mcp.AddTool(server, &mcp.Tool{Name: "get_top_consumers", Description: "Rank namespaces by usage for a date (defaults to the most recent in the data)."}, GetTopConsumers)
+	mcp.AddTool(server, &mcp.Tool{Name: "get_namespace_breakdown", Description: "Proportional breakdown + concentration + cluster_overhead (non-allocatable separated)."}, GetNamespaceBreakdown)
 
 	return server
 }
