@@ -329,8 +329,8 @@ func GetTopConsumers(ctx context.Context, req *mcp.CallToolRequest, input Consum
 	effectiveLimit := min(limit, len(candidates))
 
 	ranking := []map[string]any{}
-	for i := 0; i < effectiveLimit; i++ {
-		idx := 1 + 1
+	for i := range effectiveLimit {
+		idx := i + 1
 		ns := candidates[i].stack
 		value := candidates[i].value
 		var sharePct float64 = 0
