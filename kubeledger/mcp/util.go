@@ -3,10 +3,12 @@ package mcp
 import (
 	"encoding/json"
 	"fmt"
+	"maps"
 	"math"
 	"os"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -523,5 +525,113 @@ func BuildMetadata(costModel *CostModelInfo, warnings []string, metric string, s
 		"source_file":      sourceFile,
 		"generated_at_utc": generatedAtUtc,
 		"warnings":         outWarnings,
+	}
+}
+
+func isSpecial(name string) bool {
+	_, ok := SPECIAL_ENTRIES[name]
+	return ok
+}
+
+func isSystem(name string) bool {
+	for _, v := range SYSTEM_NAMESPACE_PREFIXES {
+		if strings.HasPrefix(name, v) {
+			return true
+		}
+	}
+
+	return false
+}
+
+func validateMetric(metric string) error {
+	if slices.Contains(METRICS, metric) {
+		return nil
+	}
+
+	return fmt.Errorf("unknown metric %s: expected one of %s", metric, strings.Join(METRICS, ","))
+}
+
+func validateScale(scale string) error {
+	if _, ok := SCALE_TO_PERIOD[scale]; ok {
+		return nil
+	}
+
+	return fmt.Errorf("unknown scale %s: expected one of %s", scale, strings.Join(slices.Collect(maps.Keys(SCALE_TO_PERIOD)), ","))
+}
+
+func loadHistogramPayload(
+	metric string,
+	scale string,
+	dimension string,
+	gpu bool,
+	dataDir string,
+) ([]byte, string, *time.Time, string) {
+	if dimension == "" {
+		dimension = "usage"
+	}
+	period := SCALE_TO_PERIOD[scale]
+	fname, err := HistogramFilename(metric, dimension, period, gpu)
+	if err != nil {
+		return nil, "", nil, err.Error()
+	}
+	result := ReadJsonFile(fname, dataDir)
+	if !result.Ok() {
+		return nil, fname, result.MtimeUtc, result.ErrorMsg
+	}
+
+	return result.Payload, fname, result.MtimeUtc, ""
+}
+
+func uniqueDatesInOrder(entries []map[string]any) []string {
+	seen := []string{}
+	seenSet := map[string]struct{}{}
+	for _, e := range entries {
+		if str, ok := e["date"].(string); ok {
+			if _, ok := seenSet[str]; ok {
+				continue
+			}
+			seenSet[str] = struct{}{}
+			seen = append(seen, str)
+		}
+	}
+	return seen
+}
+
+func coerceValue(entry map[string]any) *float64 {
+	val := entry["usage"]
+	switch v := val.(type) {
+	case float64:
+		return &v
+	case string:
+		if f, err := strconv.ParseFloat(v, 64); err == nil {
+			return &f
+		}
+	}
+	return nil
+}
+
+func buildDataWindow(scale string, datesInOrder []string, selectedDate string) map[string]any {
+	if selectedDate != "" {
+		return map[string]any{
+			"granularity": SCALE_GRANULARITY[scale],
+			"start":       selectedDate,
+			"end":         selectedDate,
+			"points":      1,
+			"timezone":    "UTC",
+		}
+	}
+
+	start := ""
+	end := ""
+	if len(datesInOrder) > 0 {
+		start = datesInOrder[0]
+		end = datesInOrder[len(datesInOrder)-1]
+	}
+	return map[string]any{
+		"granularity": SCALE_GRANULARITY[scale],
+		"start":       start,
+		"end":         end,
+		"points":      len(datesInOrder),
+		"timezone":    "UTC",
 	}
 }
