@@ -1,12 +1,14 @@
 package mcp
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"fmt"
 	"maps"
 	"math"
 	"slices"
+	"strings"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -201,12 +203,174 @@ func GetUsage(ctx context.Context, req *mcp.CallToolRequest, input UsageInput) (
 	}, nil
 }
 
+type ConsumerInput struct {
+	Metric        string `json:"metric" jsonschema:"get CPU or MEMORY Metric data"`
+	Scale         string `json:"scale" jsonschema:"the scanning range, daily_14d or monthly_12m"`
+	Limit         int    `json:"limit" jsonschema:"scanning data limit"`
+	ExcludeSystem *bool  `json:"exclude_system" jsonschema:"controls whether system namespaces appear, default True"`
+	Date          string `json:"date" jsonschema:"selected date (last available by default)"`
+}
+
+func GetTopConsumers(ctx context.Context, req *mcp.CallToolRequest, input ConsumerInput) (*mcp.CallToolResult, map[string]any, error) {
+	metric := input.Metric
+	scale := input.Scale
+	limit := input.Limit
+	excludeSystem := true
+	if input.ExcludeSystem != nil {
+		excludeSystem = *input.ExcludeSystem
+	}
+
+	date := input.Date
+
+	if limit < 1 {
+		limit = 10
+	}
+
+	if err := validateMetric(metric); err != nil {
+		return nil, nil, err
+	}
+	if err := validateScale(scale); err != nil {
+		return nil, nil, err
+	}
+
+	costModel, warnings := LoadCostModel("")
+	entries, fname, mtime, errMsg := loadHistogramPayload(metric, scale, "usage", false, "")
+	if len(entries) == 0 {
+		warnings = append(warnings, fmt.Sprintf("%s: %s", fname, errMsg))
+		return nil, map[string]any{
+			"metric": metric,
+			"scale":  scale,
+			"date":   date,
+			"metadata": BuildMetadata(
+				costModel,
+				warnings,
+				metric,
+				scale,
+				nil,
+				fname,
+				mtime,
+				"",
+			),
+		}, nil
+	}
+
+	var data []map[string]any
+	if err := json.Unmarshal(entries, &data); err != nil {
+		return nil, nil, err
+	}
+
+	dates := uniqueDatesInOrder(data)
+	targetDate := date
+	if targetDate == "" && len(dates) > 0 {
+		targetDate = dates[len(dates)-1]
+	}
+
+	if targetDate == "" {
+		warnings = append(warnings, fmt.Sprintf("no date available in %s", fname))
+		return nil, map[string]any{
+			"metric": metric,
+			"scale":  scale,
+			"date":   nil,
+			"metadata": BuildMetadata(
+				costModel,
+				warnings,
+				metric,
+				scale,
+				nil,
+				fname,
+				mtime,
+				"",
+			),
+		}, nil
+	}
+
+	if date != "" && !slices.Contains(dates, date) {
+		warnings = append(warnings, fmt.Sprintf("date %s not present in %s (available: %s)", date, fname, strings.Join(dates, ",")))
+	}
+
+	type candidate struct {
+		stack string
+		value float64
+	}
+
+	candidates := []candidate{}
+	var total float64 = 0
+	for _, entry := range data {
+		if d, ok := entry["date"].(string); !ok || d != targetDate {
+			continue
+		}
+
+		stack, ok := entry["stack"].(string)
+		if !ok {
+			continue
+		}
+
+		if isSpecial(stack) {
+			continue
+		}
+		if excludeSystem && isSystem(stack) {
+			continue
+		}
+		value := coerceValue(entry)
+		if value == nil {
+			continue
+		}
+		total += *value
+		candidates = append(candidates, candidate{
+			stack: stack,
+			value: *value,
+		})
+	}
+
+	slices.SortFunc(candidates, func(a, b candidate) int {
+		return cmp.Compare(b.value, a.value)
+	})
+
+	effectiveLimit := min(limit, len(candidates))
+
+	ranking := []map[string]any{}
+	for i := 0; i < effectiveLimit; i++ {
+		idx := 1 + 1
+		ns := candidates[i].stack
+		value := candidates[i].value
+		var sharePct float64 = 0
+		if total > 0 {
+			sharePct = (100.0 * value / total)
+		}
+		ranking = append(ranking, map[string]any{
+			"rank":      idx,
+			"namespace": ns,
+			"value":     math.Round(value),
+			"share_pct": math.Round(sharePct),
+		})
+
+	}
+
+	return nil, map[string]any{
+		"metric":  metric,
+		"scale":   scale,
+		"date":    targetDate,
+		"ranking": ranking,
+		"metadata": BuildMetadata(
+			costModel,
+			warnings,
+			metric,
+			scale,
+			buildDataWindow(scale, dates, targetDate),
+			fname,
+			mtime,
+			"",
+		),
+	}, nil
+}
+
 func BuildMcpApp() *mcp.Server {
 	server := mcp.NewServer(&mcp.Implementation{Name: "greeter", Version: "v1.0.0"}, nil)
 
 	mcp.AddTool(server, &mcp.Tool{Name: "list_namespaces", Description: "List available namespaces (application / system) and the known special entries."}, ListNamespaces)
 	mcp.AddTool(server, &mcp.Tool{Name: "describe_dataset", Description: "Announce dataset capabilities: metrics, GPU availability, scales, efficiency, cost_model."}, DescribeDataset)
 	mcp.AddTool(server, &mcp.Tool{Name: "get_usage", Description: "Usage per namespace for a given metric and scale (time series of points)."}, GetUsage)
+	mcp.AddTool(server, &mcp.Tool{Name: "get_top_consumers", Description: "Rank namespaces by usage for a date (defaults to the most recent in the data)."}, GetTopConsumers)
 
 	return server
 }
