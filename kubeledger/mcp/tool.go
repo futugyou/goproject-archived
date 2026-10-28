@@ -773,6 +773,96 @@ func getInnerTimeseries(_ context.Context, _ *mcp.CallToolRequest, input Timeser
 	}, nil
 }
 
+type ComparePeriodsInput struct {
+	Namespace string `json:"namespace" jsonschema:"k8s namespace"`
+	Metric    string `json:"metric" jsonschema:"get CPU or MEMORY Metric data"`
+}
+
+func ComparePeriods(ctx context.Context, req *mcp.CallToolRequest, input ComparePeriodsInput) (*mcp.CallToolResult, map[string]any, error) {
+	metric := input.Metric
+	namespace := input.Namespace
+
+	if err := validateMetric(metric); err != nil {
+		return nil, nil, err
+	}
+
+	if namespace == "" {
+		return nil, nil, errors.New("namespace can not be empty")
+	}
+
+	costModel, warnings := LoadCostModel("")
+	dailyEntries, dailyFname, dailyMtime, dailyErr := loadHistogramPayload(metric, SCALE_DAILY_14D, "usage", false, "")
+
+	dailyBlock := map[string]any{}
+	if len(dailyEntries) == 0 {
+		warnings = append(warnings, fmt.Sprintf("%s: %s", dailyFname, dailyErr))
+	} else {
+		total, dates := namespacePeriodAggregate(dailyEntries, namespace)
+		if len(dates) == 0 {
+			warnings = append(warnings, fmt.Sprintf("namespace %s not present in %s", namespace, dailyFname))
+		}
+		start := ""
+		end := ""
+		if len(dates) > 0 {
+			start = dates[0]
+			end = dates[len(dates)-1]
+		}
+		dailyBlock = map[string]any{
+			"aggregate":    math.Round(total),
+			"window_start": start,
+			"window_end":   end,
+			"points":       len(dates),
+		}
+	}
+
+	monthlyEntries, monthlyFname, monthlyMtime, monthlyErr := loadHistogramPayload(metric, SCALE_MONTHLY_12M, "usage", false, "")
+	monthlyBlock := map[string]any{}
+	if len(monthlyEntries) == 0 {
+		warnings = append(warnings, fmt.Sprintf("%s: %s", monthlyFname, monthlyErr))
+	} else {
+		series, values := namespaceMonthlyTrajectory(monthlyEntries, namespace)
+		if len(values) == 0 {
+			warnings = append(warnings, fmt.Sprintf("namespace %s not present in %s", namespace, monthlyFname))
+		}
+		monthlyBlock = map[string]any{
+			"series":          series,
+			"trend_direction": classifyTrend(values),
+		}
+	}
+
+	var latestMtime *time.Time
+	for _, mt := range []*time.Time{dailyMtime, monthlyMtime} {
+		if mt != nil {
+			if latestMtime == nil {
+				latestMtime = mt
+			}
+
+			if mt.After(*latestMtime) {
+				latestMtime = mt
+			}
+		}
+	}
+
+	sourceFile := fmt.Sprintf("%s, %s", dailyFname, monthlyFname)
+
+	return nil, map[string]any{
+		"namespace":   namespace,
+		"metric":      metric,
+		"daily_14d":   dailyBlock,
+		"monthly_12m": monthlyBlock,
+		"metadata": BuildMetadata(
+			costModel,
+			warnings,
+			metric,
+			"",
+			nil,
+			sourceFile,
+			latestMtime,
+			"",
+		),
+	}, nil
+}
+
 func BuildMcpApp() *mcp.Server {
 	server := mcp.NewServer(&mcp.Implementation{Name: "greeter", Version: "v1.0.0"}, nil)
 
@@ -784,6 +874,7 @@ func BuildMcpApp() *mcp.Server {
 	mcp.AddTool(server, &mcp.Tool{Name: "get_efficiency", Description: "Return usage/requests ratio per (namespace, metric): descriptive classification."}, GetEfficiency)
 	mcp.AddTool(server, &mcp.Tool{Name: "get_timeseries", Description: "Hourly usage series over the trends window for a single namespace, with min/max/mean."}, GetTimeseries)
 	mcp.AddTool(server, &mcp.Tool{Name: "get_efficiency_timeseries", Description: "Hourly efficiency factor (rf = usage/requests) series: not bounded at 1."}, GetTimeseries)
+	mcp.AddTool(server, &mcp.Tool{Name: "compare_periods", Description: "Compare 14-day aggregate against monthly trajectory; descriptive trend direction."}, ComparePeriods)
 
 	return server
 }
