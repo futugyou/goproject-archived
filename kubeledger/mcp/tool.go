@@ -3,7 +3,6 @@ package mcp
 import (
 	"cmp"
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"maps"
@@ -155,11 +154,7 @@ func GetUsage(ctx context.Context, req *mcp.CallToolRequest, input UsageInput) (
 	}
 
 	series := []map[string]any{}
-	var data []map[string]any
-	if err := json.Unmarshal(entries, &data); err != nil {
-		return nil, nil, err
-	}
-	for _, entry := range data {
+	for _, entry := range entries {
 		stack, ok := entry["stack"].(string)
 		if !ok {
 			continue
@@ -186,7 +181,7 @@ func GetUsage(ctx context.Context, req *mcp.CallToolRequest, input UsageInput) (
 		})
 	}
 
-	dates := uniqueDatesInOrder(data)
+	dates := uniqueDatesInOrder(entries)
 	return nil, map[string]any{
 		"metric":    metric,
 		"scale":     scale,
@@ -256,12 +251,7 @@ func GetTopConsumers(ctx context.Context, req *mcp.CallToolRequest, input Consum
 		}, nil
 	}
 
-	var data []map[string]any
-	if err := json.Unmarshal(entries, &data); err != nil {
-		return nil, nil, err
-	}
-
-	dates := uniqueDatesInOrder(data)
+	dates := uniqueDatesInOrder(entries)
 	targetDate := date
 	if targetDate == "" && len(dates) > 0 {
 		targetDate = dates[len(dates)-1]
@@ -297,7 +287,7 @@ func GetTopConsumers(ctx context.Context, req *mcp.CallToolRequest, input Consum
 
 	candidates := []candidate{}
 	var total float64 = 0
-	for _, entry := range data {
+	for _, entry := range entries {
 		if d, ok := entry["date"].(string); !ok || d != targetDate {
 			continue
 		}
@@ -414,12 +404,7 @@ func GetNamespaceBreakdown(ctx context.Context, req *mcp.CallToolRequest, input 
 		}, nil
 	}
 
-	var data []map[string]any
-	if err := json.Unmarshal(entries, &data); err != nil {
-		return nil, nil, err
-	}
-
-	dates := uniqueDatesInOrder(data)
+	dates := uniqueDatesInOrder(entries)
 	targetDate := date
 	if targetDate == "" && len(dates) > 0 {
 		targetDate = dates[len(dates)-1]
@@ -460,7 +445,7 @@ func GetNamespaceBreakdown(ctx context.Context, req *mcp.CallToolRequest, input 
 	namespaceValues := []namespaceValue{}
 	var namespaceTotal float64 = 0
 
-	for _, entry := range data {
+	for _, entry := range entries {
 		if d, ok := entry["date"].(string); !ok || d != targetDate {
 			continue
 		}
@@ -605,10 +590,6 @@ func GetEfficiency(ctx context.Context, req *mcp.CallToolRequest, input Efficien
 			warnings = append(warnings, fmt.Sprintf("%s: %s", usageFname, usageErr))
 			continue
 		}
-		var usagemap []map[string]any
-		if err := json.Unmarshal(usageEntries, &usagemap); err != nil {
-			continue
-		}
 
 		sourceFiles = append(sourceFiles, usageFname)
 		if usageMtime != nil {
@@ -626,10 +607,6 @@ func GetEfficiency(ctx context.Context, req *mcp.CallToolRequest, input Efficien
 			continue
 		}
 
-		var reqmap []map[string]any
-		if err := json.Unmarshal(reqEntries, &reqmap); err != nil {
-			continue
-		}
 		sourceFiles = append(sourceFiles, reqFname)
 		if reqMtime != nil {
 			if latestMtime == nil {
@@ -641,12 +618,12 @@ func GetEfficiency(ctx context.Context, req *mcp.CallToolRequest, input Efficien
 		}
 
 		if len(dataWindow) == 0 {
-			dates := uniqueDatesInOrder(usagemap)
+			dates := uniqueDatesInOrder(usageEntries)
 			dataWindow = buildDataWindow(scale, dates, "")
 		}
 
-		usageTotals := aggregateByNamespace(usagemap)
-		requestsTotals := aggregateByNamespace(reqmap)
+		usageTotals := aggregateByNamespace(usageEntries)
+		requestsTotals := aggregateByNamespace(reqEntries)
 
 		allNamespaces := []string{}
 		for key := range usageTotals {

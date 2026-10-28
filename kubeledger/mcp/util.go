@@ -565,7 +565,7 @@ func loadHistogramPayload(
 	dimension string,
 	gpu bool,
 	dataDir string,
-) ([]byte, string, *time.Time, string) {
+) ([]map[string]any, string, *time.Time, string) {
 	if dimension == "" {
 		dimension = "usage"
 	}
@@ -579,7 +579,11 @@ func loadHistogramPayload(
 		return nil, fname, result.MtimeUtc, result.ErrorMsg
 	}
 
-	return result.Payload, fname, result.MtimeUtc, ""
+	var data []map[string]any
+	if err := json.Unmarshal(result.Payload, &data); err != nil {
+		return nil, fname, result.MtimeUtc, err.Error()
+	}
+	return data, fname, result.MtimeUtc, ""
 }
 
 func uniqueDatesInOrder(entries []map[string]any) []string {
@@ -807,4 +811,54 @@ func classifyTrend(values []float64) string {
 		return "decreasing"
 	}
 	return "stable"
+}
+
+func namespaceMonthlyTrajectory(entries []map[string]any, namespace string) ([]map[string]any, []float64) {
+	series := []map[string]any{}
+	values := []float64{}
+	for _, entry := range entries {
+		if stack, ok := entry["stack"].(string); !ok || stack != namespace {
+			continue
+		}
+
+		dt, ok := entry["date"].(string)
+		if !ok {
+			continue
+		}
+		v := coerceValue(entry)
+		if v == nil {
+			continue
+		}
+
+		series = append(series, map[string]any{
+			"date": dt, "value": math.Round(*v),
+		})
+		values = append(values, *v)
+	}
+
+	return series, values
+}
+
+func namespacePeriodAggregate(entries []map[string]any, namespace string) (float64, []string) {
+	var total float64 = 0.0
+	dates := []string{}
+	seen := map[string]struct{}{}
+	for _, entry := range entries {
+		if stack, ok := entry["stack"].(string); !ok || stack != namespace {
+			continue
+		}
+		v := coerceValue(entry)
+		if v == nil {
+			continue
+		}
+		total += *v
+		dt, ok := entry["date"].(string)
+		if ok {
+			if _, ok := seen[dt]; !ok {
+				seen[dt] = struct{}{}
+				dates = append(dates, dt)
+			}
+		}
+	}
+	return total, dates
 }
