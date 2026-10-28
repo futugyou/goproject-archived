@@ -729,6 +729,14 @@ type TimeseriesInput struct {
 }
 
 func GetTimeseries(ctx context.Context, req *mcp.CallToolRequest, input TimeseriesInput) (*mcp.CallToolResult, map[string]any, error) {
+	return getInnerTimeseries(ctx, req, input, "usage", "")
+}
+
+func GetEfficiencyTimeseries(ctx context.Context, req *mcp.CallToolRequest, input TimeseriesInput) (*mcp.CallToolResult, map[string]any, error) {
+	return getInnerTimeseries(ctx, req, input, "rf", "efficiency_ratio")
+}
+
+func getInnerTimeseries(_ context.Context, _ *mcp.CallToolRequest, input TimeseriesInput, category, unitOverride string) (*mcp.CallToolResult, map[string]any, error) {
 	metric := input.Metric
 	namespace := input.Namespace
 
@@ -741,7 +749,7 @@ func GetTimeseries(ctx context.Context, req *mcp.CallToolRequest, input Timeseri
 	}
 
 	costModel, warnings := LoadCostModel("")
-	entries, fname, mtime, errMsg := loadTrendsPayload(metric, "usage", false)
+	entries, fname, mtime, errMsg := loadTrendsPayload(metric, category, false)
 	if len(entries) == 0 {
 		warnings = append(warnings, fmt.Sprintf("%s: %s", fname, errMsg))
 		emptyStats := computeTrendStats(nil, nil)
@@ -758,7 +766,7 @@ func GetTimeseries(ctx context.Context, req *mcp.CallToolRequest, input Timeseri
 				nil,
 				fname,
 				mtime,
-				"",
+				unitOverride,
 			),
 		}, nil
 	}
@@ -783,7 +791,7 @@ func GetTimeseries(ctx context.Context, req *mcp.CallToolRequest, input Timeseri
 			trendsDataWindow(stats),
 			fname,
 			mtime,
-			"",
+			unitOverride,
 		),
 	}, nil
 }
@@ -798,6 +806,7 @@ func BuildMcpApp() *mcp.Server {
 	mcp.AddTool(server, &mcp.Tool{Name: "get_namespace_breakdown", Description: "Proportional breakdown + concentration + cluster_overhead (non-allocatable separated)."}, GetNamespaceBreakdown)
 	mcp.AddTool(server, &mcp.Tool{Name: "get_efficiency", Description: "Return usage/requests ratio per (namespace, metric): descriptive classification."}, GetEfficiency)
 	mcp.AddTool(server, &mcp.Tool{Name: "get_timeseries", Description: "Hourly usage series over the trends window for a single namespace, with min/max/mean."}, GetTimeseries)
+	mcp.AddTool(server, &mcp.Tool{Name: "get_efficiency_timeseries", Description: "Hourly efficiency factor (rf = usage/requests) series: not bounded at 1."}, GetTimeseries)
 
 	return server
 }
