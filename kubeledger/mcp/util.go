@@ -1,6 +1,7 @@
 package mcp
 
 import (
+	"cmp"
 	"encoding/json"
 	"fmt"
 	"maps"
@@ -861,4 +862,26 @@ func namespacePeriodAggregate(entries []map[string]any, namespace string) (float
 		}
 	}
 	return total, dates
+}
+
+type Member struct {
+	Namespace string  `json:"namespace"`
+	Value     float64 `json:"value"`
+}
+
+func sortMembersByValue(membersMap map[string]float64) []Member {
+	members := make([]Member, 0, len(membersMap))
+
+	for ns, v := range membersMap {
+		members = append(members, Member{
+			Namespace: ns,
+			Value:     math.Round(v),
+		})
+	}
+
+	slices.SortFunc(members, func(i, j Member) int {
+		return cmp.Compare(j.Value, i.Value)
+	})
+
+	return members
 }

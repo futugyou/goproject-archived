@@ -863,6 +863,149 @@ func ComparePeriods(ctx context.Context, req *mcp.CallToolRequest, input Compare
 	}, nil
 }
 
+type NamespacesInput struct {
+	Metric  string `json:"metric" jsonschema:"get CPU or MEMORY Metric data"`
+	Scale   string `json:"scale" jsonschema:"the scanning range, daily_14d or monthly_12m"`
+	Pattern string `json:"pattern" jsonschema:"fatch pattern"`
+	Date    string `json:"date" jsonschema:"target date"`
+}
+
+func GroupNamespaces(ctx context.Context, req *mcp.CallToolRequest, input NamespacesInput) (*mcp.CallToolResult, map[string]any, error) {
+	metric := strings.TrimSpace(input.Metric)
+	scale := strings.TrimSpace(input.Scale)
+	pattern := strings.TrimSpace(input.Pattern)
+	date := strings.TrimSpace(input.Date)
+
+	if err := validateMetric(metric); err != nil {
+		return nil, nil, err
+	}
+	if err := validateScale(scale); err != nil {
+		return nil, nil, err
+	}
+
+	if pattern == "" {
+		return nil, nil, errors.New("pattern must be a non-empty string")
+	}
+	if len(pattern) > GROUP_PATTERN_MAX_LENGTH {
+		return nil, nil, fmt.Errorf("pattern length %d exceeds maximum of %d", len(pattern), GROUP_PATTERN_MAX_LENGTH)
+	}
+
+	costModel, warnings := LoadCostModel("")
+	entries, fname, mtime, errMsg := loadHistogramPayload(metric, scale, "usage", false, "")
+	if len(entries) == 0 {
+		warnings = append(warnings, fmt.Sprintf("%s: %s", fname, errMsg))
+		return nil, map[string]any{
+			"metric":        metric,
+			"scale":         scale,
+			"pattern":       pattern,
+			"date":          date,
+			"group_total":   0.0,
+			"matched_count": 0,
+			"members":       map[string]any{},
+			"metadata": BuildMetadata(
+				costModel,
+				warnings,
+				metric,
+				scale,
+				nil,
+				fname,
+				mtime,
+				"",
+			),
+		}, nil
+	}
+
+	dates := uniqueDatesInOrder(entries)
+	targetDate := date
+	if targetDate == "" && len(dates) > 0 {
+		targetDate = dates[len(dates)-1]
+	}
+	if targetDate == "" {
+		warnings = append(warnings, fmt.Sprintf("no date available in %s", fname))
+		return nil, map[string]any{
+			"metric":        metric,
+			"scale":         scale,
+			"pattern":       pattern,
+			"date":          "",
+			"group_total":   0.0,
+			"matched_count": 0,
+			"members":       []Member{},
+			"metadata": BuildMetadata(
+				costModel,
+				warnings,
+				metric,
+				scale,
+				nil,
+				fname,
+				mtime,
+				"",
+			),
+		}, nil
+	}
+
+	if date != "" && !slices.Contains(dates, date) {
+		warnings = append(warnings, fmt.Sprintf("date %s not present in %s (available: %s)", date, fname, strings.Join(dates, ",")))
+	}
+
+	membersMap := map[string]float64{}
+	var groupTotal float64
+	for _, entry := range entries {
+		if d, ok := entry["date"].(string); !ok || d != targetDate {
+			continue
+		}
+		stack, ok := entry["stack"].(string)
+		if !ok {
+			continue
+		}
+
+		if isSpecial(stack) {
+			continue
+		}
+
+		// TODO:
+		// matched, err := filepath.Match(pattern, stack)
+		// if err != nil {
+		// 	continue
+		// }
+		// if !matched {
+		// 	continue
+		// }
+
+		value := coerceValue(entry)
+		if value == nil {
+			continue
+		}
+
+		membersMap[stack] = membersMap[stack] + *value
+		groupTotal += *value
+	}
+
+	members := sortMembersByValue(membersMap)
+	if len(members) == 0 {
+		warnings = append(warnings, fmt.Sprintf("pattern %s matched no namespace at date %s", pattern, targetDate))
+	}
+
+	return nil, map[string]any{
+		"metric":        metric,
+		"scale":         scale,
+		"pattern":       pattern,
+		"date":          targetDate,
+		"group_total":   math.Round(groupTotal),
+		"matched_count": len(members),
+		"members":       members,
+		"metadata": BuildMetadata(
+			costModel,
+			warnings,
+			metric,
+			scale,
+			buildDataWindow(scale, dates, targetDate),
+			fname,
+			mtime,
+			"",
+		),
+	}, nil
+}
+
 func BuildMcpApp() *mcp.Server {
 	server := mcp.NewServer(&mcp.Implementation{Name: "greeter", Version: "v1.0.0"}, nil)
 
@@ -875,6 +1018,7 @@ func BuildMcpApp() *mcp.Server {
 	mcp.AddTool(server, &mcp.Tool{Name: "get_timeseries", Description: "Hourly usage series over the trends window for a single namespace, with min/max/mean."}, GetTimeseries)
 	mcp.AddTool(server, &mcp.Tool{Name: "get_efficiency_timeseries", Description: "Hourly efficiency factor (rf = usage/requests) series: not bounded at 1."}, GetTimeseries)
 	mcp.AddTool(server, &mcp.Tool{Name: "compare_periods", Description: "Compare 14-day aggregate against monthly trajectory; descriptive trend direction."}, ComparePeriods)
+	mcp.AddTool(server, &mcp.Tool{Name: "group_namespaces", Description: "Aggregate namespaces matching a glob pattern (fnmatch): sum + per-member detail."}, GroupNamespaces)
 
 	return server
 }
