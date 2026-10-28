@@ -635,3 +635,32 @@ func buildDataWindow(scale string, datesInOrder []string, selectedDate string) m
 		"timezone":    "UTC",
 	}
 }
+
+func classifyEfficiency(ratio float64) string {
+	if ratio < EFFICIENCY_OVER_PROVISIONED_BELOW {
+		return "over_provisioned"
+	}
+	if ratio > EFFICIENCY_UNDER_PROVISIONED_ABOVE {
+		return "under_provisioned"
+	}
+	return "balanced"
+}
+
+func aggregateByNamespace(entries []map[string]any) map[string]float64 {
+	totals := map[string]float64{}
+	for _, entry := range entries {
+		stack, ok := entry["stack"].(string)
+		if !ok {
+			continue
+		}
+		if isSpecial(stack) {
+			continue
+		}
+		value := coerceValue(entry)
+		if value == nil {
+			continue
+		}
+		totals[stack] += *value
+	}
+	return totals
+}

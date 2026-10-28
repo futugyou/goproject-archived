@@ -9,6 +9,7 @@ import (
 	"math"
 	"slices"
 	"strings"
+	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -565,6 +566,162 @@ func GetNamespaceBreakdown(ctx context.Context, req *mcp.CallToolRequest, input 
 	}, nil
 }
 
+type EfficiencyInput struct {
+	Scale     string `json:"scale" jsonschema:"the scanning range, daily_14d or monthly_12m"`
+	Namespace string `json:"namespace" jsonschema:"k8s namespace"`
+	Metric    string `json:"metric" jsonschema:"get CPU or MEMORY Metric data"`
+}
+
+func GetEfficiency(ctx context.Context, req *mcp.CallToolRequest, input EfficiencyInput) (*mcp.CallToolResult, map[string]any, error) {
+	scale := input.Scale
+	namespace := input.Namespace
+	metric := input.Metric
+
+	if err := validateScale(scale); err != nil {
+		return nil, nil, err
+	}
+
+	if metric != "" {
+		if err := validateMetric(metric); err != nil {
+			return nil, nil, err
+		}
+	}
+
+	metricsFilter := METRICS
+	if metric != "" {
+		metricsFilter = []string{metric}
+	}
+
+	costModel, warnings := LoadCostModel("")
+	efficiency := []map[string]any{}
+	sourceFiles := []string{}
+	var latestMtime *time.Time
+	dataWindow := map[string]any{}
+
+	for _, currentMetric := range metricsFilter {
+		usageEntries, usageFname, usageMtime, usageErr := loadHistogramPayload(currentMetric, scale, "usage", false, "")
+		if len(usageEntries) == 0 {
+			warnings = append(warnings, fmt.Sprintf("%s: %s", usageFname, usageErr))
+			continue
+		}
+		var usagemap []map[string]any
+		if err := json.Unmarshal(usageEntries, &usagemap); err != nil {
+			continue
+		}
+
+		sourceFiles = append(sourceFiles, usageFname)
+		if usageMtime != nil {
+			if latestMtime == nil {
+				latestMtime = usageMtime
+			}
+			if usageMtime.After(*latestMtime) {
+				latestMtime = usageMtime
+			}
+		}
+
+		reqEntries, reqFname, reqMtime, reqErr := loadHistogramPayload(currentMetric, scale, "requests", false, "")
+		if reqEntries == nil {
+			warnings = append(warnings, fmt.Sprintf("%s: %s", reqFname, reqErr))
+			continue
+		}
+
+		var reqmap []map[string]any
+		if err := json.Unmarshal(reqEntries, &reqmap); err != nil {
+			continue
+		}
+		sourceFiles = append(sourceFiles, reqFname)
+		if reqMtime != nil {
+			if latestMtime == nil {
+				latestMtime = reqMtime
+			}
+			if reqMtime.After(*latestMtime) {
+				latestMtime = reqMtime
+			}
+		}
+
+		if len(dataWindow) == 0 {
+			dates := uniqueDatesInOrder(usagemap)
+			dataWindow = buildDataWindow(scale, dates, "")
+		}
+
+		usageTotals := aggregateByNamespace(usagemap)
+		requestsTotals := aggregateByNamespace(reqmap)
+
+		allNamespaces := []string{}
+		for key, _ := range usageTotals {
+			if !slices.Contains(allNamespaces, key) {
+				allNamespaces = append(allNamespaces, key)
+			}
+		}
+		for key, _ := range requestsTotals {
+			if !slices.Contains(allNamespaces, key) {
+				allNamespaces = append(allNamespaces, key)
+			}
+		}
+
+		if len(allNamespaces) > 0 {
+			if !slices.Contains(allNamespaces, namespace) {
+				warnings = append(warnings, fmt.Sprintf("namespace %s not present in %s histograms", namespace, currentMetric))
+				continue
+			}
+			allNamespaces = []string{namespace}
+		}
+
+		slices.Sort(allNamespaces)
+		for _, ns := range allNamespaces {
+			usageValue := usageTotals[ns]
+			requestsValue := requestsTotals[ns]
+
+			var ratio float64
+			classification := ""
+			if requestsValue < REQUESTS_ZERO_THRESHOLD {
+				warnings = append(warnings, fmt.Sprintf("%s/%s: requests aggregate below {REQUESTS_ZERO_THRESHOLD:g} threshold;efficiency_ratio set to null", ns, currentMetric))
+			} else {
+				ratio = usageValue / requestsValue
+				classification = classifyEfficiency(ratio)
+			}
+
+			efficiency = append(efficiency, map[string]any{
+				"namespace":        ns,
+				"metric":           currentMetric,
+				"usage":            math.Round(usageValue),
+				"requests":         math.Round(requestsValue),
+				"efficiency_ratio": math.Round(ratio),
+				"classification":   classification,
+			})
+
+		}
+	}
+
+	slices.SortFunc(efficiency, func(a, b map[string]any) int {
+		r := cmp.Compare(a["namespace"].(string), b["namespace"].(string))
+		if r != 0 {
+			return r
+		}
+
+		return cmp.Compare(a["metric"].(string), b["metric"].(string))
+	})
+
+	sourceFile := strings.Join(sourceFiles, ", ")
+
+	return nil, map[string]any{
+		"scale":      scale,
+		"namespace":  namespace,
+		"metric":     metric,
+		"efficiency": efficiency,
+		"metadata": BuildMetadata(
+			costModel,
+			warnings,
+			metric,
+			scale,
+			dataWindow,
+			sourceFile,
+			latestMtime,
+			"efficiency_ratio",
+		),
+	}, nil
+}
+
 func BuildMcpApp() *mcp.Server {
 	server := mcp.NewServer(&mcp.Implementation{Name: "greeter", Version: "v1.0.0"}, nil)
 
@@ -573,6 +730,7 @@ func BuildMcpApp() *mcp.Server {
 	mcp.AddTool(server, &mcp.Tool{Name: "get_usage", Description: "Usage per namespace for a given metric and scale (time series of points)."}, GetUsage)
 	mcp.AddTool(server, &mcp.Tool{Name: "get_top_consumers", Description: "Rank namespaces by usage for a date (defaults to the most recent in the data)."}, GetTopConsumers)
 	mcp.AddTool(server, &mcp.Tool{Name: "get_namespace_breakdown", Description: "Proportional breakdown + concentration + cluster_overhead (non-allocatable separated)."}, GetNamespaceBreakdown)
+	mcp.AddTool(server, &mcp.Tool{Name: "get_efficiency", Description: "Return usage/requests ratio per (namespace, metric): descriptive classification."}, GetEfficiency)
 
 	return server
 }
