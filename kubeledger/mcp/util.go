@@ -38,7 +38,7 @@ func FileExists(path string) bool {
 	return !info.IsDir()
 }
 
-func ReadJsonFile(filename, dataDir string) FileReadResult {
+func readJsonFile(filename, dataDir string) FileReadResult {
 	if strings.Contains(filename, "/") || strings.Contains(filename, "\\") || strings.Contains(filename, "..") || strings.HasPrefix(filename, ".") {
 		return FileReadResult{
 			Filename: filename,
@@ -111,7 +111,7 @@ func HistogramFilename(metric, dimension string, periodSec int, gpu bool) (strin
 	return fmt.Sprintf("%s%s_%s_period_%d.json", prefix, res, dimension, periodSec), nil
 }
 
-func TrendsFilename(metric, category string, gpu bool) (string, error) {
+func trendsFilename(metric, category string, gpu bool) (string, error) {
 	if slices.Contains(METRICS, metric) {
 		return "", fmt.Errorf("unknown metric: %s (expected one of %s)", metric, strings.Join(METRICS, ","))
 	}
@@ -131,7 +131,7 @@ func TrendsFilename(metric, category string, gpu bool) (string, error) {
 
 func LoadCostModel(dataDir string) (*CostModelInfo, []string) {
 	warnings := []string{}
-	result := ReadJsonFile(BACKEND_CONFIG_FILENAME, dataDir)
+	result := readJsonFile(BACKEND_CONFIG_FILENAME, dataDir)
 	if !result.Ok() {
 		warnings = append(warnings, fmt.Sprintf("backend.json unreadable: %s", result.ErrorMsg))
 		return nil, warnings
@@ -215,7 +215,7 @@ func DiscoverDataset(dataDir string) DatasetInfo {
 
 	probe := func(filename string) FileReadResult {
 		if _, ok := probed[filename]; !ok {
-			probed[filename] = ReadJsonFile(filename, dataDir)
+			probed[filename] = readJsonFile(filename, dataDir)
 		}
 
 		return probed[filename]
@@ -313,7 +313,7 @@ func DiscoverDataset(dataDir string) DatasetInfo {
 
 	var trends *TrendsInfo
 	for _, metric := range append(metricsAvailable, METRICS...) {
-		fielname, err := TrendsFilename(metric, "usage", false)
+		fielname, err := trendsFilename(metric, "usage", false)
 		if err != nil {
 			continue
 		}
@@ -337,7 +337,7 @@ func DiscoverDataset(dataDir string) DatasetInfo {
 	hourlyRf := false
 
 	for _, m := range append(metricsAvailable, METRICS...) {
-		filename, err := TrendsFilename(m, "rf", false)
+		filename, err := trendsFilename(m, "rf", false)
 		if err != nil {
 			continue
 		}
@@ -430,7 +430,7 @@ func iterDataFilenames(includeGpu *bool) []string {
 				if gpu && category == "rf" {
 					continue
 				}
-				filename, err := TrendsFilename(metric, category, gpu)
+				filename, err := trendsFilename(metric, category, gpu)
 				if err != nil {
 					continue
 				}
@@ -453,7 +453,7 @@ func collectNamespaceNames(dataDir string) (map[string]struct{}, []string, *time
 	mtimes := []time.Time{}
 
 	for _, fname := range iterDataFilenames(nil) {
-		result := ReadJsonFile(fname, root)
+		result := readJsonFile(fname, root)
 		if !result.Exists {
 			continue
 		}
@@ -574,7 +574,7 @@ func loadHistogramPayload(
 	if err != nil {
 		return nil, "", nil, err.Error()
 	}
-	result := ReadJsonFile(fname, dataDir)
+	result := readJsonFile(fname, dataDir)
 	if !result.Ok() {
 		return nil, fname, result.MtimeUtc, result.ErrorMsg
 	}
@@ -663,4 +663,148 @@ func aggregateByNamespace(entries []map[string]any) map[string]float64 {
 		totals[stack] += *value
 	}
 	return totals
+}
+
+func loadTrendsPayload(metric string, category string, gpu bool) ([]map[string]any, string, *time.Time, string) {
+	if category == "" {
+		category = "usage"
+	}
+
+	fname, err := trendsFilename(metric, category, gpu)
+	if err != nil {
+		return nil, "", nil, err.Error()
+	}
+
+	result := readJsonFile(fname, "")
+	if !result.Ok() {
+		return nil, fname, result.MtimeUtc, result.ErrorMsg
+	}
+
+	var data []map[string]any
+	if err := json.Unmarshal(result.Payload, &data); err != nil {
+		return nil, fname, result.MtimeUtc, result.ErrorMsg
+	}
+	return data, fname, result.MtimeUtc, ""
+}
+
+func filterTrendsNamespace(entries []map[string]any, namespace string) ([]map[string]any, []float64) {
+	series := []map[string]any{}
+	values := []float64{}
+	for _, entry := range entries {
+		if name, ok := entry["name"].(string); !ok || name != namespace {
+			continue
+		}
+
+		dt, ok := entry["dateUTC"].(string)
+		if !ok {
+			continue
+		}
+		var value float64 = 0
+		val := entry["usage"]
+		switch v := val.(type) {
+		case float64:
+			value = v
+		case string:
+			if f, err := strconv.ParseFloat(v, 64); err == nil {
+				value = f
+			}
+		}
+
+		series = append(series, map[string]any{
+			"dateUTC": dt, "usage": math.Round(value),
+		})
+		values = append(values, value)
+	}
+	return series, values
+}
+
+func computeTrendStats(series []map[string]any, values []float64) map[string]any {
+	if len(series) == 0 || len(values) == 0 {
+		return map[string]any{
+			"min":              0,
+			"max":              0,
+			"mean":             0,
+			"points":           0,
+			"window_start_utc": "",
+			"window_end_utc":   "",
+		}
+	}
+
+	var m float64 = 0
+	var n float64 = 0
+	var s float64 = 0
+	for _, v := range values {
+		m = min(m, v)
+		n = min(n, v)
+		s += v
+	}
+
+	return map[string]any{
+		"min":              math.Round(n),
+		"max":              math.Round(m),
+		"mean":             math.Round(s / float64(len(values))),
+		"points":           len(values),
+		"window_start_utc": series[0]["dateUTC"],
+		"window_end_utc":   series[len(series)-1]["dateUTC"],
+	}
+}
+
+func trendsDataWindow(stats map[string]any) map[string]any {
+	if points, ok := stats["points"].(int); ok && points <= 0 {
+		return nil
+	}
+
+	return map[string]any{
+		"granularity": "hourly",
+		"start":       stats["window_start_utc"],
+		"end":         stats["window_end_utc"],
+		"points":      stats["points"],
+		"timezone":    "UTC",
+	}
+}
+
+// Return an indicative direction for a monthly series: descriptive only.
+//
+//	Splits the series into halves and compares means with a 10 % relative
+//	threshold against the first half's magnitude. Returns one of
+//	``"growing"``, ``"stable"``, ``"decreasing"``, or ``"insufficient_data"``
+//	when there are fewer than two points.
+func classifyTrend(values []float64) string {
+	if len(values) < 2 {
+		return "insufficient_data"
+	}
+
+	mid := len(values) // 2
+	firstHalf := values[:mid]
+	secondHalf := values[mid:]
+	if len(firstHalf) == 0 || len(secondHalf) == 0 {
+		return "insufficient_data"
+	}
+
+	var firstsum float64 = 0
+	var secondsum float64 = 0
+	for _, v := range firstHalf {
+		firstsum += v
+	}
+	for _, v := range secondHalf {
+		secondsum += v
+	}
+
+	firstMean := firstsum / float64(len(firstHalf))
+	secondMean := secondsum / float64(len(secondHalf))
+	if firstMean == 0 {
+		if secondMean > 0 {
+			return "growing"
+		}
+		return "stable"
+	}
+
+	deltaRatio := (secondMean - firstMean) / math.Abs(firstMean)
+	if deltaRatio > TREND_CHANGE_THRESHOLD {
+		return "growing"
+	}
+	if deltaRatio < -TREND_CHANGE_THRESHOLD {
+		return "decreasing"
+	}
+	return "stable"
 }

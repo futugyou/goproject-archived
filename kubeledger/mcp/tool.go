@@ -4,6 +4,7 @@ import (
 	"cmp"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"maps"
 	"math"
@@ -648,12 +649,12 @@ func GetEfficiency(ctx context.Context, req *mcp.CallToolRequest, input Efficien
 		requestsTotals := aggregateByNamespace(reqmap)
 
 		allNamespaces := []string{}
-		for key, _ := range usageTotals {
+		for key := range usageTotals {
 			if !slices.Contains(allNamespaces, key) {
 				allNamespaces = append(allNamespaces, key)
 			}
 		}
-		for key, _ := range requestsTotals {
+		for key := range requestsTotals {
 			if !slices.Contains(allNamespaces, key) {
 				allNamespaces = append(allNamespaces, key)
 			}
@@ -722,6 +723,71 @@ func GetEfficiency(ctx context.Context, req *mcp.CallToolRequest, input Efficien
 	}, nil
 }
 
+type TimeseriesInput struct {
+	Namespace string `json:"namespace" jsonschema:"k8s namespace"`
+	Metric    string `json:"metric" jsonschema:"get CPU or MEMORY Metric data"`
+}
+
+func GetTimeseries(ctx context.Context, req *mcp.CallToolRequest, input TimeseriesInput) (*mcp.CallToolResult, map[string]any, error) {
+	metric := input.Metric
+	namespace := input.Namespace
+
+	if err := validateMetric(metric); err != nil {
+		return nil, nil, err
+	}
+
+	if namespace == "" {
+		return nil, nil, errors.New("namespace can not be empty")
+	}
+
+	costModel, warnings := LoadCostModel("")
+	entries, fname, mtime, errMsg := loadTrendsPayload(metric, "usage", false)
+	if len(entries) == 0 {
+		warnings = append(warnings, fmt.Sprintf("%s: %s", fname, errMsg))
+		emptyStats := computeTrendStats(nil, nil)
+		return nil, map[string]any{
+			"namespace": namespace,
+			"metric":    metric,
+			"series":    []float64{},
+			"stats":     emptyStats,
+			"metadata": BuildMetadata(
+				costModel,
+				warnings,
+				metric,
+				"",
+				nil,
+				fname,
+				mtime,
+				"",
+			),
+		}, nil
+	}
+
+	series, values := filterTrendsNamespace(entries, namespace)
+	if len(series) == 0 {
+		warnings = append(warnings, fmt.Sprintf("namespace %s not present in %s (no data points)", namespace, fname))
+	}
+
+	stats := computeTrendStats(series, values)
+
+	return nil, map[string]any{
+		"namespace": namespace,
+		"metric":    metric,
+		"series":    series,
+		"stats":     stats,
+		"metadata": BuildMetadata(
+			costModel,
+			warnings,
+			metric,
+			"",
+			trendsDataWindow(stats),
+			fname,
+			mtime,
+			"",
+		),
+	}, nil
+}
+
 func BuildMcpApp() *mcp.Server {
 	server := mcp.NewServer(&mcp.Implementation{Name: "greeter", Version: "v1.0.0"}, nil)
 
@@ -731,6 +797,7 @@ func BuildMcpApp() *mcp.Server {
 	mcp.AddTool(server, &mcp.Tool{Name: "get_top_consumers", Description: "Rank namespaces by usage for a date (defaults to the most recent in the data)."}, GetTopConsumers)
 	mcp.AddTool(server, &mcp.Tool{Name: "get_namespace_breakdown", Description: "Proportional breakdown + concentration + cluster_overhead (non-allocatable separated)."}, GetNamespaceBreakdown)
 	mcp.AddTool(server, &mcp.Tool{Name: "get_efficiency", Description: "Return usage/requests ratio per (namespace, metric): descriptive classification."}, GetEfficiency)
+	mcp.AddTool(server, &mcp.Tool{Name: "get_timeseries", Description: "Hourly usage series over the trends window for a single namespace, with min/max/mean."}, GetTimeseries)
 
 	return server
 }
