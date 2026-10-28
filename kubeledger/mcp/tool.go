@@ -5,8 +5,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log"
 	"maps"
 	"math"
+	"net/http"
+	"os"
 	"slices"
 	"strings"
 	"time"
@@ -1006,9 +1009,7 @@ func GroupNamespaces(ctx context.Context, req *mcp.CallToolRequest, input Namesp
 	}, nil
 }
 
-func BuildMcpApp() *mcp.Server {
-	server := mcp.NewServer(&mcp.Implementation{Name: "greeter", Version: "v1.0.0"}, nil)
-
+func BuildMcpApp(server *mcp.Server) {
 	mcp.AddTool(server, &mcp.Tool{Name: "list_namespaces", Description: "List available namespaces (application / system) and the known special entries."}, ListNamespaces)
 	mcp.AddTool(server, &mcp.Tool{Name: "describe_dataset", Description: "Announce dataset capabilities: metrics, GPU availability, scales, efficiency, cost_model."}, DescribeDataset)
 	mcp.AddTool(server, &mcp.Tool{Name: "get_usage", Description: "Usage per namespace for a given metric and scale (time series of points)."}, GetUsage)
@@ -1019,6 +1020,26 @@ func BuildMcpApp() *mcp.Server {
 	mcp.AddTool(server, &mcp.Tool{Name: "get_efficiency_timeseries", Description: "Hourly efficiency factor (rf = usage/requests) series: not bounded at 1."}, GetTimeseries)
 	mcp.AddTool(server, &mcp.Tool{Name: "compare_periods", Description: "Compare 14-day aggregate against monthly trajectory; descriptive trend direction."}, ComparePeriods)
 	mcp.AddTool(server, &mcp.Tool{Name: "group_namespaces", Description: "Aggregate namespaces matching a glob pattern (fnmatch): sum + per-member detail."}, GroupNamespaces)
+}
 
-	return server
+func StartMcpServer() {
+	server := mcp.NewServer(&mcp.Implementation{Name: "kubeledger", Version: "v1.0.0"}, nil)
+
+	BuildMcpApp(server)
+
+	handler := mcp.NewStreamableHTTPHandler(func(req *http.Request) *mcp.Server {
+		return server
+	}, nil)
+
+	url := os.Getenv("MCP_LISTEN_HOST")
+	if url == "" {
+		url = "localhost:8100"
+	}
+
+	log.Printf("MCP server listening on %s", url)
+
+	// Start the HTTP server.
+	if err := http.ListenAndServe(url, handler); err != nil {
+		log.Fatalf("Server failed: %v", err)
+	}
 }
