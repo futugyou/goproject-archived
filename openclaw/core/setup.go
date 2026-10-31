@@ -504,6 +504,8 @@ type LocalModelInstallResult struct {
 	Status  *LocalModelPackageStatus `json:"status"`
 }
 
+var LocalModelCacheInstace = &LocalModelCache{}
+
 type LocalModelCache struct {
 }
 
