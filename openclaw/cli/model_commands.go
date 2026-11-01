@@ -25,7 +25,7 @@ func ModelCommandRun(subcommand string, args []string, output io.Writer, stderr 
 		packageId = packids[0]
 	}
 
-	parsed := CliArgsParse(args[1:])
+	parsed := CliArgsParse(args)
 	modelsRoot := util.Deref(parsed.GetOption("--models-root"))
 
 	switch subcommand {
