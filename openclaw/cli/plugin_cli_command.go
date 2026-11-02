@@ -7,6 +7,8 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"slices"
@@ -289,4 +291,44 @@ func TryPluginCliCommandRun(ctx context.Context, command string, args []string, 
 		match.Config,
 		bridgeScript,
 		append([]string{command}, args...))
+}
+
+func ResolveBridgeScriptPath() string {
+	var packaged = filepath.Join("Plugins", "plugin-bridge.mjs")
+	if util.FileExists(packaged) {
+		return packaged
+	}
+
+	return ""
+}
+
+func PluginCliCommandRun(ctx context.Context, command string, args []string) (int, error) {
+	if command == "" || strings.HasPrefix(command, "-") {
+		return 1, nil
+	}
+
+	configPathValue := os.Getenv("OPENCLAW_CONFIG_PATH")
+	expanded := core.GatewaySetupPathsIntance.ExpandPath(configPathValue)
+	configPath, err := filepath.Abs(expanded)
+	if err != nil {
+		return 1, err
+	}
+
+	config, err := core.GatewayConfigFileInstance.Load(configPath)
+	if err != nil {
+		return 1, err
+	}
+
+	if !config.Plugins.Enabled {
+		return 1, err
+	}
+
+	bridgeScript := ResolveBridgeScriptPath()
+	if bridgeScript == "" {
+		return 1, errors.New("Plugin bridge script was not found. Reinstall or republish the OpenClaw CLI.")
+	}
+
+	blockedPluginIds := loadBlockedPluginIds(config.Memory.StoragePath)
+
+	return TryPluginCliCommandRun(ctx, command, args, config.Plugins, os.Getenv("OPENCLAW_WORKSPACE"), slices.Collect(maps.Keys(blockedPluginIds)), bridgeScript)
 }
