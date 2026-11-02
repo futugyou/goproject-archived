@@ -9,6 +9,7 @@ import (
 	"io"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 
@@ -83,7 +84,7 @@ func readCapped(stdoutPipe io.ReadCloser) *string {
 	return &result
 }
 
-func createProcess(entryPath, pluginId, config, bridgeScript, mode string, argv []string) (*exec.Cmd, error) {
+func createProcess(entryPath, pluginId string, config *json.RawMessage, bridgeScript, mode string, argv []string) (*exec.Cmd, error) {
 	entry, err := filepath.Abs(entryPath)
 	if err != nil {
 		return nil, err
@@ -99,7 +100,11 @@ func createProcess(entryPath, pluginId, config, bridgeScript, mode string, argv 
 	var envString strings.Builder
 	fmt.Fprintf(&envString, "%s=%s ", "OPENCLAW_PLUGIN_CLI_ENTRY", entry)
 	fmt.Fprintf(&envString, "%s=%s ", "OPENCLAW_PLUGIN_CLI_ID", pluginId)
-	fmt.Fprintf(&envString, "%s=%s ", "OPENCLAW_PLUGIN_CLI_CONFIG_BASE64", config)
+	if config != nil {
+		var pluginConfig string
+		json.Unmarshal(*config, &pluginConfig)
+		fmt.Fprintf(&envString, "%s=%s ", "OPENCLAW_PLUGIN_CLI_CONFIG_BASE64", pluginConfig)
+	}
 
 	args = append(args, envString.String())
 
@@ -109,7 +114,7 @@ func createProcess(entryPath, pluginId, config, bridgeScript, mode string, argv 
 	return cmd, nil
 }
 
-func PluginCliCommandDescribe(ctx context.Context, entryPath, pluginId, config, bridgeScript string) *PluginCliDescribeResult {
+func PluginCliCommandDescribe(ctx context.Context, entryPath, pluginId string, config *json.RawMessage, bridgeScript string) *PluginCliDescribeResult {
 	cmd, err := createProcess(entryPath, pluginId, config, bridgeScript, "--cli-describe", nil)
 	if err != nil {
 		return FailurePluginCliDescribeResult(fmt.Sprintf("Unable to start Node.js for plugin CLI discovery: %s", err.Error()))
@@ -179,4 +184,109 @@ func PluginCliCommandDescribe(ctx context.Context, entryPath, pluginId, config, 
 	}
 
 	return FailurePluginCliDescribeResult("Plugin CLI discovery returned unreadable metadata.")
+}
+
+func pluginCliCommandExecute(ctx context.Context, entryPath, pluginId string, config *json.RawMessage, bridgeScript string, argv []string) (int, error) {
+	cmd, err := createProcess(entryPath, pluginId, config, bridgeScript, "--cli-run", argv)
+	if err != nil {
+		return 1, err
+	}
+
+	if err := cmd.Start(); err != nil {
+		fmt.Printf("Unable to start plugin CLI command: (%T).\n", err)
+		return 1, err
+	}
+
+	ct, cancel := context.WithCancel(ctx)
+	if util.IsInputRedirected() {
+		ct, cancel = context.WithTimeout(ctx, ExecuteTimeout)
+	}
+
+	defer cancel()
+
+	err = cmd.Wait()
+	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		tryKill(cmd)
+		return 124, err
+	}
+
+	if err := ct.Err(); err != nil {
+		tryKill(cmd)
+		return 1, err
+	}
+
+	return cmd.ProcessState.ExitCode(), nil
+}
+
+type PluginCliCommandMatche struct {
+	Plugin core.DiscoveredPlugin
+	Config *json.RawMessage
+}
+
+func TryPluginCliCommandRun(ctx context.Context, command string, args []string, pluginsConfig core.PluginsConfig, workspacePath string, blockedPluginIds []string, bridgeScript string) (int, error) {
+	var discovered = core.PluginDiscoveryInstance.Filter(core.PluginDiscoveryInstance.Discover(&pluginsConfig, workspacePath), &pluginsConfig)
+	matches := []PluginCliCommandMatche{}
+	manifestIds := []string{}
+	for _, plugin := range discovered {
+		if plugin.Format == "bundle" ||
+			slices.Contains(blockedPluginIds, "*") ||
+			slices.Contains(blockedPluginIds, plugin.Manifest.Id) ||
+			plugin.EntryPath == "" {
+			continue
+		}
+
+		entryConfig, ok := pluginsConfig.Entries[plugin.Manifest.Id]
+
+		var pluginConfig *json.RawMessage
+		if ok && entryConfig != nil {
+			pluginConfig = entryConfig.Config
+		}
+		diagnostics := append(
+			core.ValidateDiscoveredPlugin(plugin),
+			core.PluginConfigValidatorinstance.Validate(plugin.Manifest, util.Deref(pluginConfig))...,
+		)
+
+		needcontinue := false
+		for _, item := range diagnostics {
+			if item.Severity == "error" {
+				needcontinue = true
+				break
+			}
+		}
+		if needcontinue {
+			continue
+		}
+
+		description := PluginCliCommandDescribe(ctx, plugin.EntryPath, plugin.Manifest.Id, pluginConfig, bridgeScript)
+		if !description.Success {
+			fmt.Printf("Plugin '%s' did not report CLI commands: %s\n", plugin.Manifest.Id, description.Error)
+			continue
+		}
+
+		for _, com := range description.Commands {
+			if com.Name == command {
+				matches = append(matches, PluginCliCommandMatche{Plugin: plugin, Config: pluginConfig})
+			}
+		}
+
+		manifestIds = append(manifestIds, plugin.Manifest.Id)
+	}
+
+	if len(matches) == 0 {
+		return -1, nil
+	}
+
+	if len(matches) > 1 {
+		fmt.Printf("Plugin CLI command '%s' is ambiguous; registered by: %s\n", command, strings.Join(manifestIds, ", "))
+		return 2, nil
+	}
+
+	match := matches[0]
+	return pluginCliCommandExecute(
+		ctx,
+		match.Plugin.EntryPath,
+		match.Plugin.Manifest.Id,
+		match.Config,
+		bridgeScript,
+		append([]string{command}, args...))
 }

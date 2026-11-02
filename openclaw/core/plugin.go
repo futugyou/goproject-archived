@@ -669,7 +669,7 @@ func (p *PluginDiscovery) tryAddPluginPack(dir, packageJsonPath string, seen map
 
 		var entryManifestPath = filepath.Join(entryDir, ManifestFileName)
 		var manifest PluginManifest = PluginManifest{
-			ID: pluginId,
+			Id: pluginId,
 		}
 
 		data, err := os.ReadFile(entryManifestPath)
@@ -677,9 +677,9 @@ func (p *PluginDiscovery) tryAddPluginPack(dir, packageJsonPath string, seen map
 			json.Unmarshal(data, &manifest)
 		}
 
-		if util.IsBlank(manifest.ID) {
+		if util.IsBlank(manifest.Id) {
 			manifest = PluginManifest{
-				ID: pluginId,
+				Id: pluginId,
 			}
 		}
 
@@ -713,21 +713,21 @@ func (p *PluginDiscovery) tryAddPluginFromManifest(pluginRoot, manifestPath stri
 		return
 	}
 
-	if util.IsBlank(manifest.ID) {
+	if util.IsBlank(manifest.Id) {
 		return
 	}
 
-	_, found := seen[manifest.ID]
-	seen[manifest.ID] = struct{}{}
+	_, found := seen[manifest.Id]
+	seen[manifest.Id] = struct{}{}
 
 	if found {
 		result.Reports = append(result.Reports, PluginLoadReport{
-			PluginId:   manifest.ID,
+			PluginId:   manifest.Id,
 			SourcePath: util.PathGetFullPath(pluginRoot),
 			Diagnostics: []PluginCompatibilityDiagnostic{
 				{
 					Code:    "duplicate_plugin_id",
-					Message: fmt.Sprintf("plugin id '%s' was discovered more than once. Later entries are skipped", manifest.ID),
+					Message: fmt.Sprintf("plugin id '%s' was discovered more than once. Later entries are skipped", manifest.Id),
 					Path:    util.PathGetFullPath(manifestPath),
 				},
 			},
@@ -739,7 +739,7 @@ func (p *PluginDiscovery) tryAddPluginFromManifest(pluginRoot, manifestPath stri
 	var entryPath, entryDiagnostic = p.findEntryFile(pluginRoot)
 	if util.IsBlank(entryPath) {
 		code := "entry_not_found"
-		message := fmt.Sprintf("no plugin entry file was found for '%s'. Expected index.ts, index.js, index.mjs, src/index.*, or a package.json openclaw.extensions entry", manifest.ID)
+		message := fmt.Sprintf("no plugin entry file was found for '%s'. Expected index.ts, index.js, index.mjs, src/index.*, or a package.json openclaw.extensions entry", manifest.Id)
 		path := util.PathGetFullPath(pluginRoot)
 
 		if entryDiagnostic != nil {
@@ -755,7 +755,7 @@ func (p *PluginDiscovery) tryAddPluginFromManifest(pluginRoot, manifestPath stri
 		}
 
 		result.Reports = append(result.Reports, PluginLoadReport{
-			PluginId:   manifest.ID,
+			PluginId:   manifest.Id,
 			SourcePath: util.PathGetFullPath(pluginRoot),
 			Diagnostics: []PluginCompatibilityDiagnostic{
 				{
@@ -775,13 +775,13 @@ func (p *PluginDiscovery) tryAddPluginFromManifest(pluginRoot, manifestPath stri
 		containedEntryPath, ok = p.TryResolveContainedPath(pluginRoot, rel)
 		if !ok {
 			result.Reports = append(result.Reports, PluginLoadReport{
-				PluginId:   manifest.ID,
+				PluginId:   manifest.Id,
 				SourcePath: util.PathGetFullPath(pluginRoot),
 				EntryPath:  util.PathGetFullPath(entryPath),
 				Diagnostics: []PluginCompatibilityDiagnostic{
 					{
 						Code:    "entry_outside_root",
-						Message: fmt.Sprintf("plugin entry file for '%s' resolves outside the plugin root", manifest.ID),
+						Message: fmt.Sprintf("plugin entry file for '%s' resolves outside the plugin root", manifest.Id),
 						Path:    util.PathGetFullPath(entryPath),
 					},
 				},
@@ -817,7 +817,7 @@ func (p *PluginDiscovery) tryAddPluginFromFile(path string, seen map[string]stru
 		}
 
 		result.Plugins = append(result.Plugins, DiscoveredPlugin{
-			Manifest:  PluginManifest{ID: id},
+			Manifest:  PluginManifest{Id: id},
 			RootPath:  dir,
 			EntryPath: util.PathGetFullPath(path),
 		})
@@ -892,7 +892,7 @@ func (p *PluginDiscovery) Filter(discovered []DiscoveredPlugin, pluginsConfig *P
 	var result = []DiscoveredPlugin{}
 
 	for _, plugin := range discovered {
-		var id = plugin.Manifest.ID
+		var id = plugin.Manifest.Id
 
 		if pluginsConfig != nil {
 			if slices.Contains(pluginsConfig.Deny, id) {
@@ -986,7 +986,7 @@ func ValidateDiscoveredPlugin(plugin DiscoveredPlugin) []PluginCompatibilityDiag
 	diagnostics := ValidatePlugin(
 		plugin.PluginApiRange,
 		plugin.MinHostVersion,
-		plugin.Manifest.ID,
+		plugin.Manifest.Id,
 		plugin.RootPath,
 	)
 
@@ -994,7 +994,7 @@ func ValidateDiscoveredPlugin(plugin DiscoveredPlugin) []PluginCompatibilityDiag
 		diagnostics = append(diagnostics, PluginCompatibilityDiagnostic{
 			Severity: "error",
 			Code:     "package_integrity_unverified",
-			Message:  fmt.Sprintf("Plugin '%s' declares package integrity, but extracted plugin directories cannot currently be verified against package-manager integrity metadata.", plugin.Manifest.ID),
+			Message:  fmt.Sprintf("Plugin '%s' declares package integrity, but extracted plugin directories cannot currently be verified against package-manager integrity metadata.", plugin.Manifest.Id),
 			Surface:  "package_metadata",
 			Path:     plugin.RootPath,
 		})

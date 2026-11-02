@@ -42,7 +42,7 @@ func (m *MetaRunProposalReviewStore) getSessionPath(sessionId string) string {
 	return filepath.Join(m.reviewsPath, fmt.Sprintf("%s.json", encodeKey(sessionId)))
 }
 
-func (m *MetaRunProposalReviewStore) saveSessionRecords(ctx context.Context, sessionId string, records []core.MetaRunProposalReviewRecord) error {
+func (m *MetaRunProposalReviewStore) saveSessionRecords(_ context.Context, sessionId string, records []core.MetaRunProposalReviewRecord) error {
 	path := m.getSessionPath(sessionId)
 	var tempPath = fmt.Sprintf("%s.tmp", path)
 	data, err := json.Marshal(records)

@@ -1305,10 +1305,10 @@ func (ph *PluginHost) Load(ctx context.Context, workspacePath *string) ([]core.I
 
 	// 逐个加载
 	for _, plugin := range enabled {
-		if _, isBlocked := ph.blockedPluginIds[plugin.Manifest.ID]; isBlocked {
-			msg := fmt.Sprintf("Plugin '%s' is disabled or quarantined by operator state.", plugin.Manifest.ID)
+		if _, isBlocked := ph.blockedPluginIds[plugin.Manifest.Id]; isBlocked {
+			msg := fmt.Sprintf("Plugin '%s' is disabled or quarantined by operator state.", plugin.Manifest.Id)
 			ph.reports = append(ph.reports, core.PluginLoadReport{
-				PluginId:      plugin.Manifest.ID,
+				PluginId:      plugin.Manifest.Id,
 				SourcePath:    plugin.RootPath,
 				EntryPath:     plugin.EntryPath,
 				Origin:        ph.getOriginFormat(plugin),
@@ -1322,7 +1322,7 @@ func (ph *PluginHost) Load(ctx context.Context, workspacePath *string) ([]core.I
 						Code:     "operator_blocked",
 						Message:  msg,
 						Surface:  "operator_state",
-						Path:     plugin.Manifest.ID,
+						Path:     plugin.Manifest.Id,
 					},
 				},
 			})
@@ -1331,7 +1331,7 @@ func (ph *PluginHost) Load(ctx context.Context, workspacePath *string) ([]core.I
 
 		if err := ph.loadPlugin(ctx, plugin); err != nil {
 			ph.reports = append(ph.reports, core.PluginLoadReport{
-				PluginId:     plugin.Manifest.ID,
+				PluginId:     plugin.Manifest.Id,
 				SourcePath:   plugin.RootPath,
 				EntryPath:    plugin.EntryPath,
 				Origin:       ph.getOriginFormat(plugin),
@@ -1339,7 +1339,7 @@ func (ph *PluginHost) Load(ctx context.Context, workspacePath *string) ([]core.I
 				Loaded:       false,
 				Error:        err.Error(),
 			})
-			ph.logger.Error("Failed to load plugin", "pluginId", plugin.Manifest.ID, "error", err.Error())
+			ph.logger.Error("Failed to load plugin", "pluginId", plugin.Manifest.Id, "error", err.Error())
 		}
 	}
 
@@ -1348,7 +1348,7 @@ func (ph *PluginHost) Load(ctx context.Context, workspacePath *string) ([]core.I
 }
 
 func (ph *PluginHost) loadPlugin(ctx context.Context, plugin core.DiscoveredPlugin) error {
-	id := plugin.Manifest.ID
+	id := plugin.Manifest.Id
 
 	if plugin.Format == "bundle" {
 		ph.loadBundle(plugin)
@@ -1566,7 +1566,7 @@ func (ph *PluginHost) loadPlugin(ctx context.Context, plugin core.DiscoveredPlug
 }
 
 func (ph *PluginHost) loadBundle(plugin core.DiscoveredPlugin) {
-	id := plugin.Manifest.ID
+	id := plugin.Manifest.Id
 	var diagnostics []core.PluginCompatibilityDiagnostic
 
 	skillDirs := ph.resolveSkillDirectories(plugin, &diagnostics)
@@ -1737,7 +1737,7 @@ func (ph *PluginHost) resolveSkillDirectories(plugin core.DiscoveredPlugin, diag
 				*diagnostics = append(*diagnostics, core.PluginCompatibilityDiagnostic{
 					Severity: "error",
 					Code:     "skill_dir_outside_root",
-					Message:  fmt.Sprintf("Plugin '%s' skill directory resolves outside the plugin root.", plugin.Manifest.ID),
+					Message:  fmt.Sprintf("Plugin '%s' skill directory resolves outside the plugin root.", plugin.Manifest.Id),
 					Surface:  "skills",
 					Path:     skillDir,
 				})
@@ -1750,7 +1750,7 @@ func (ph *PluginHost) resolveSkillDirectories(plugin core.DiscoveredPlugin, diag
 				*diagnostics = append(*diagnostics, core.PluginCompatibilityDiagnostic{
 					Severity: "error",
 					Code:     "skill_directory_missing",
-					Message:  fmt.Sprintf("Plugin '%s' declared a skill directory that does not exist.", plugin.Manifest.ID),
+					Message:  fmt.Sprintf("Plugin '%s' declared a skill directory that does not exist.", plugin.Manifest.Id),
 					Surface:  "skills",
 					Path:     resolved,
 				})
