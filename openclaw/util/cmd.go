@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"time"
@@ -148,4 +149,13 @@ func ReadLimitedClean(r io.Reader, maxBytes int64) (string, bool, error) {
 	}
 
 	return string(b), truncated, nil
+}
+
+func IsInputRedirected() bool {
+	stat, err := os.Stdin.Stat()
+	if err != nil {
+		return false
+	}
+
+	return (stat.Mode() & os.ModeCharDevice) == 0
 }
