@@ -228,7 +228,13 @@ func pluginCommandInstall(ctx context.Context, args []string) (int, error) {
 
 	os.MkdirAll(extensionsDir, 0755)
 
-	return pluginCommandInstallFromLocal(ctx, packageSpec, extensionsDir, dryRun)
+	// Check if it's a local path
+	if util.DirectoryExists(packageSpec) || util.FileExists(packageSpec) {
+		return pluginCommandInstallFromLocal(ctx, packageSpec, extensionsDir, dryRun)
+	}
+
+	// Install from npm/ClawHub
+	return pluginCommandInstallFromNpm(ctx, packageSpec, extensionsDir, dryRun)
 }
 
 func DetermineTrustLevel(sourceLabel string, sourceIsNpm bool, errorCount int, hasStructuredSurface bool) string {
@@ -950,7 +956,7 @@ func InstallPreparedDirectory(ctx context.Context, sourceDir, targetDir, sourceL
 	packageJson := filepath.Join(stagingDir, "package.json")
 	if util.FileExists(packageJson) && stagedInspection.Format != "bundle" {
 		fmt.Println("Installing dependencies in staging...")
-		npmInstall := util.RunProcess(context.Background(), "npm", []string{"install --ignore-scripts --omit=dev --omit=optional"}, stagingDir, 0, 0, 0)
+		npmInstall := util.RunProcess(ctx, "npm", []string{"install --ignore-scripts --omit=dev --omit=optional"}, stagingDir, 0, 0, 0)
 		if npmInstall.ExitCode != 0 {
 			return false, fmt.Errorf("dependency installation failed; the existing plugin was preserved: %s", npmInstall.StderrError)
 		}
@@ -969,7 +975,7 @@ func InstallPreparedDirectory(ctx context.Context, sourceDir, targetDir, sourceL
 		stagedInspection.Format != "bundle" &&
 		!hasLocalJiti(stagedInspection.EntryPath, stagingDir) {
 		fmt.Println("Installing the TypeScript runtime dependency jiti in staging...")
-		jitiInstall := util.RunProcess(context.Background(), "npm", []string{"install --ignore-scripts --no-save --omit=dev --omit=optional jiti"}, stagingDir, 0, 0, 0)
+		jitiInstall := util.RunProcess(ctx, "npm", []string{"install --ignore-scripts --no-save --omit=dev --omit=optional jiti"}, stagingDir, 0, 0, 0)
 		if jitiInstall.ExitCode != 0 {
 			return false, fmt.Errorf("TypeScript runtime dependency installation failed; the existing plugin was preserved: %s", jitiInstall.StderrError)
 		}
@@ -1032,7 +1038,7 @@ func pluginCommandInstallFromLocal(ctx context.Context, localPath, extensionsDir
 		os.MkdirAll(tempDir, 0755)
 		defer os.Remove(tempDir)
 
-		extractResult := util.RunProcess(context.Background(), "tar", []string{fmt.Sprintf("xzf %s -C %s", quote(sourcePath), quote(tempDir))}, tempDir, 0, 0, 0)
+		extractResult := util.RunProcess(ctx, "tar", []string{fmt.Sprintf("xzf %s -C %s", quote(sourcePath), quote(tempDir))}, tempDir, 0, 0, 0)
 		if extractResult.ExitCode != 0 {
 			return 1, fmt.Errorf("Failed to extract: %s", extractResult.Error)
 		}
@@ -1104,4 +1110,79 @@ func pluginCommandInstallFromLocal(ctx context.Context, localPath, extensionsDir
 	}
 
 	return 1, fmt.Errorf("Path not found: %s", localPath)
+}
+
+func pluginCommandInstallFromNpm(ctx context.Context, packageSpec, extensionsDir string, dryRun bool) (int, error) {
+	if dryRun {
+		fmt.Printf("Dry-run install for %s from npm...\n", packageSpec)
+	} else {
+		fmt.Printf("Installing %s from npm...\n", packageSpec)
+	}
+
+	// Use npm pack to download the tarball, then extract into extensions dir
+	tempDir := filepath.Join(os.TempDir(), fmt.Sprintf("openclaw-install-%s", util.CleanUUID())[:24])
+	os.MkdirAll(tempDir, 0755)
+	defer os.Remove(tempDir)
+	// Step 1: npm pack to download tarball
+	packResult := util.RunProcess(ctx, "npm", []string{fmt.Sprintf("pack %s --pack-destination %s", packageSpec, quote(tempDir))}, tempDir, 0, 0, 0)
+	if packResult.ExitCode != 0 {
+		return 1, fmt.Errorf("Failed to download package: %s", packResult.Error)
+	}
+	// Find the downloaded tarball
+	tarballs, _ := filepath.Glob(filepath.Join(tempDir, "*.tgz"))
+	if len(tarballs) == 0 {
+		return 1, errors.New("No tarball downloaded.")
+	}
+
+	tarball := tarballs[0]
+
+	// Step 2: Extract tarball into a temp staging directory
+	stagingDir := filepath.Join(tempDir, "staging")
+	os.MkdirAll(stagingDir, 0755)
+
+	extractResult := util.RunProcess(ctx, "tar", []string{fmt.Sprintf("xzf %s -C %s", quote(tarball), quote(stagingDir))}, tempDir, 0, 0, 0)
+	if extractResult.ExitCode != 0 {
+		return 1, fmt.Errorf("Failed to extract package: %s", extractResult.Error)
+	}
+
+	// npm pack creates a 'package' directory inside the tarball
+	var packageDir = filepath.Join(stagingDir, "package")
+	if !util.DirectoryExists(packageDir) {
+		dirs := util.EnumerateAllFiles(stagingDir)
+		packageDir = tempDir
+		if len(dirs) > 0 {
+			packageDir = dirs[0]
+		}
+	}
+
+	// Step 3: Inspect package before copying into extensions
+	inspection := InspectCandidate(packageDir, packageSpec, true)
+	if !inspection.Success {
+		return 1, errors.New(inspection.ErrorMessage)
+	}
+
+	pluginCommandPrintInspection(inspection)
+	if !inspection.CanInstall {
+		return 1, errors.New("can not install plugin")
+	}
+	if dryRun {
+		return 0, nil
+	}
+
+	// Step 4: Determine plugin name from manifest or package.json
+	pluginName := ResolvePluginName(packageDir)
+	if pluginName == nil {
+		pluginName = new(SanitizePackageName(packageSpec))
+	}
+
+	// Step 5: stage dependencies and atomically replace the installed plugin
+	var targetDir = filepath.Join(extensionsDir, *pluginName)
+	installResult, err := InstallPreparedDirectory(ctx, packageDir, targetDir, packageSpec, true)
+	if !installResult {
+		return 1, errors.New(err.Error())
+	}
+
+	fmt.Printf("Installed '%s' to %s\n", *pluginName, targetDir)
+	fmt.Println("Restart the gateway to load the plugin.")
+	return 0, nil
 }
