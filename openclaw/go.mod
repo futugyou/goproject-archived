@@ -23,6 +23,7 @@ require (
 	github.com/modelcontextprotocol/go-sdk v1.8.0
 	github.com/mxschmitt/playwright-go v0.6201.1
 	github.com/openai/openai-go/v3 v3.90.0
+	github.com/otiai10/copy v1.14.1
 	github.com/robfig/cron/v3 v3.0.1
 	github.com/shirou/gopsutil/v4 v4.26.10
 	github.com/wneessen/go-mail v0.8.1
@@ -75,6 +76,7 @@ require (
 	github.com/mattn/go-runewidth v0.0.27 // indirect
 	github.com/mitchellh/hashstructure/v2 v2.0.2 // indirect
 	github.com/muesli/cancelreader v0.2.2 // indirect
+	github.com/otiai10/mint v1.6.3 // indirect
 	github.com/power-devops/perfstat v0.0.0-20260805114148-88456608a4f6 // indirect
 	github.com/redis/go-redis/v9 v9.14.1 // indirect
 	github.com/rivo/uniseg v0.4.7 // indirect
