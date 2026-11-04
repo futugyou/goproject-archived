@@ -46,29 +46,45 @@ type ProcessResult struct {
 }
 
 func RunProcess(ctx context.Context, exe string, args []string, cwd string, timeoutSec, stdoutMaxbytes, stderrMaxbytes int64) ProcessResult {
+	return RunProcessWithStdin(ctx, exe, args, cwd, nil, timeoutSec, stdoutMaxbytes, stderrMaxbytes)
+}
+
+func RunProcessWithStdin(ctx context.Context, exe string, args []string, cwd string, stdinInput []byte, timeoutSec, stdoutMaxbytes, stderrMaxbytes int64) ProcessResult {
 	result := ProcessResult{}
 	if stdoutMaxbytes <= 0 {
 		stdoutMaxbytes = 8192
 	}
-	if stdoutMaxbytes <= 0 {
-		stdoutMaxbytes = 8192
+	if stderrMaxbytes <= 0 {
+		stderrMaxbytes = 8192
 	}
-	// 创建带有超时的 Context
+	if timeoutSec <= 0 {
+		timeoutSec = 20
+	}
+
 	timeoutCtx, cancel := context.WithTimeout(ctx, time.Duration(timeoutSec)*time.Second)
 	defer cancel()
 
-	// 创建 Cmd 命令
 	cmd := exec.CommandContext(timeoutCtx, exe, args...)
 
 	if cwd != "" {
 		workDir := filepath.Dir(cwd)
-		if workDir == "" {
-			workDir = "."
+		if workDir == "" || workDir == "." {
+			workDir = cwd
 		}
 		cmd.Dir = workDir
 	}
 
-	// 获取 stdout 和 stderr 的管道
+	// 如果有标准输入，获取 StdinPipe
+	var stdinPipe io.WriteCloser
+	var err error
+	if len(stdinInput) > 0 {
+		stdinPipe, err = cmd.StdinPipe()
+		if err != nil {
+			result.Error = fmt.Sprintf("Error: Failed to get stdin pipe (%T).", err)
+			return result
+		}
+	}
+
 	stdoutPipe, err := cmd.StdoutPipe()
 	if err != nil {
 		result.Error = fmt.Sprintf("Error: Failed to start execution process (%T).", err)
@@ -80,13 +96,19 @@ func RunProcess(ctx context.Context, exe string, args []string, cwd string, time
 		return result
 	}
 
-	// 启动进程
 	if err := cmd.Start(); err != nil {
 		result.Error = fmt.Sprintf("Error: Failed to start execution process (%T).", err)
 		return result
 	}
 
-	// 并发读取 stdout 和 stderr
+	// 异步写入并关闭 Stdin
+	if len(stdinInput) > 0 {
+		go func() {
+			_, _ = stdinPipe.Write(stdinInput)
+			_ = stdinPipe.Close()
+		}()
+	}
+
 	type readResult struct {
 		text string
 		err  error
@@ -111,20 +133,19 @@ func RunProcess(ctx context.Context, exe string, args []string, cwd string, time
 		stderrChan <- readResult{errOut, err}
 	}()
 
-	// 等待读取完成
 	stdoutRes := <-stdoutChan
 	stderrRes := <-stderrChan
 
-	// 等待进程结束
 	err = cmd.Wait()
 
-	// 检查是否因为超时导致 context 被取消
 	if timeoutCtx.Err() == context.DeadlineExceeded {
 		result.Error = "Error: Execution timed out."
 		return result
 	}
 
-	result.ExitCode = cmd.ProcessState.ExitCode()
+	if cmd.ProcessState != nil {
+		result.ExitCode = cmd.ProcessState.ExitCode()
+	}
 	result.StdoutError = stdoutRes.err
 	result.StdoutText = stdoutRes.text
 	result.StderrError = stderrRes.err

@@ -597,3 +597,52 @@ func IsDirNotEmpty(dirPath string) bool {
 
 	return len(entries) > 0
 }
+
+func CopyDirectory(source, destination string) error {
+	info, err := os.Stat(source)
+	if err != nil {
+		return err
+	}
+	if err := os.MkdirAll(destination, info.Mode()); err != nil {
+		return err
+	}
+
+	entries, err := os.ReadDir(source)
+	if err != nil {
+		return err
+	}
+
+	for _, entry := range entries {
+		name := entry.Name()
+		srcPath := filepath.Join(source, name)
+		dstPath := filepath.Join(destination, name)
+
+		if entry.IsDir() {
+			if name == "node_modules" || name == ".git" {
+				continue
+			}
+			if err := CopyDirectory(srcPath, dstPath); err != nil {
+				return err
+			}
+		} else {
+			in, err := os.Open(srcPath)
+			if err != nil {
+				return err
+			}
+
+			out, err := os.Create(dstPath)
+			if err != nil {
+				in.Close()
+				return err
+			}
+
+			_, err = io.Copy(out, in)
+			out.Close()
+			in.Close()
+			if err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
