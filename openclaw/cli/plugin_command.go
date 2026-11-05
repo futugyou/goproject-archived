@@ -183,9 +183,69 @@ func PluginCommandRun(ctx context.Context, command string, args []string) (int, 
 		return pluginCommandList(ctx, rest)
 	case "inspect":
 		return pluginCommandInspect(ctx, rest)
+	case "search":
+		return pluginCommandSearch(ctx, rest)
 	default:
 		return unknownPluginCommand(subcommand)
 	}
+}
+
+func pluginCommandSearch(ctx context.Context, args []string) (int, error) {
+	if len(args) == 0 {
+		return 2, errors.New("Usage: openclaw plugins search <query>")
+	}
+	dir, err := os.Getwd()
+	if err != nil {
+		return 2, err
+	}
+	query := strings.Join(args, " ")
+	fmt.Printf("Searching npm for '%s'...\n", query)
+
+	result := util.RunProcess(ctx, "npm", []string{fmt.Sprintf("search openclaw-plugin %s --json", query)}, dir, 0, 0, 0)
+	if result.ExitCode != 0 {
+		// Fallback to non-JSON search
+		textResult := util.RunProcess(ctx, "npm", []string{fmt.Sprintf("search openclaw %s", query)}, dir, 0, 0, 0)
+		errormsg := textResult.StderrText
+		if errormsg == "" {
+			errormsg = textResult.StdoutText
+		}
+
+		fmt.Println(textResult.StdoutText)
+		if textResult.ExitCode == 0 {
+			return 0, nil
+		}
+
+		return textResult.ExitCode, errors.New(errormsg)
+	}
+
+	type SearchDTO struct {
+		Name        string `json:"name"`
+		Description string `json:"description"`
+		Version     string `json:"version"`
+	}
+
+	var dtos []SearchDTO
+
+	if err := json.Unmarshal([]byte(result.StdoutText), &dtos); err != nil {
+		return 0, nil
+	}
+
+	if len(dtos) == 0 {
+		fmt.Println("No packages found.")
+		return 0, nil
+	}
+
+	fmt.Printf("Found %d package(s):\n", len(dtos))
+	for _, pkg := range dtos {
+		name := pkg.Name
+		if name == "" {
+			name = "?"
+		}
+
+		fmt.Printf("  %s@%s - %s\n", name, pkg.Version, pkg.Description)
+	}
+
+	return 0, nil
 }
 
 func pluginCommandInspect(ctx context.Context, args []string) (int, error) {
