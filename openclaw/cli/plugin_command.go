@@ -177,9 +177,36 @@ func PluginCommandRun(ctx context.Context, command string, args []string) (int, 
 	switch subcommand {
 	case "install":
 		return pluginCommandInstall(ctx, rest)
+	case "remove", "uninstall":
+		return pluginCommandRemove(ctx, rest)
 	default:
 		return unknownPluginCommand(subcommand)
 	}
+}
+
+func pluginCommandRemove(_ context.Context, args []string) (int, error) {
+	if len(args) == 0 {
+		return 2, errors.New("Usage: openclaw plugins remove <plugin-name>")
+	}
+
+	pluginName := args[0]
+	global := slices.Contains(args, "--global") || slices.Contains(args, "-g")
+	extensionsDir := resolveExtensionsDir(global)
+
+	var targetDir = filepath.Join(extensionsDir, pluginName)
+	if !util.DirectoryExists(targetDir) {
+		// Try sanitized name
+		targetDir = filepath.Join(extensionsDir, SanitizePackageName(pluginName))
+	}
+
+	if !util.DirectoryExists(targetDir) {
+		return 1, fmt.Errorf("Plugin '%s' not found in %s", pluginName, extensionsDir)
+	}
+
+	os.Remove(targetDir)
+	fmt.Printf("Removed '%s' from %s\n", pluginName, extensionsDir)
+	fmt.Println("Restart the gateway to unload the plugin.")
+	return 0, nil
 }
 
 func unknownPluginCommand(subcommand string) (int, error) {
