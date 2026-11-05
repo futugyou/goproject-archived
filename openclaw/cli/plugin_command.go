@@ -179,9 +179,61 @@ func PluginCommandRun(ctx context.Context, command string, args []string) (int, 
 		return pluginCommandInstall(ctx, rest)
 	case "remove", "uninstall":
 		return pluginCommandRemove(ctx, rest)
+	case "list", "ls":
+		return pluginCommandList(ctx, rest)
 	default:
 		return unknownPluginCommand(subcommand)
 	}
+}
+
+func pluginCommandList(_ context.Context, args []string) (int, error) {
+	global := slices.Contains(args, "--global") || slices.Contains(args, "-g")
+	extensionsDir := resolveExtensionsDir(global)
+
+	if !util.DirectoryExists(extensionsDir) {
+		return 0, errors.New("No plugins installed.")
+	}
+
+	plugins := core.PluginDiscoveryInstance.Discover(&core.PluginsConfig{
+		Load: core.PluginLoadConfig{Paths: []string{extensionsDir}},
+	}, "")
+
+	if len(plugins) == 0 {
+		return 0, errors.New("No plugins installed.")
+	}
+
+	fmt.Printf("Installed plugins (%d):\n", len(plugins))
+	for _, plugin := range plugins {
+		name := plugin.Manifest.Name
+		if name == "" {
+			name = plugin.Manifest.Id
+		}
+		if name == "" {
+			name = filepath.Base(plugin.RootPath)
+		}
+		version := plugin.Manifest.Version
+		if version == "" {
+			version = "?"
+		}
+		desc := plugin.Manifest.Description
+		hasStructuredSurface :=
+			len(plugin.Manifest.Channels) > 0 ||
+				len(plugin.Manifest.Providers) > 0 ||
+				len(plugin.Manifest.Skills) > 0 ||
+				plugin.Manifest.ConfigSchema != nil
+		trustLevel := DetermineTrustLevel(plugin.RootPath, false, 0, hasStructuredSurface)
+		fmt.Printf("  %s (%s) - %s\n", name, version, desc)
+		fmt.Printf("    Path: %s\n", plugin.RootPath)
+		fmt.Printf("    Format: %s\n", plugin.Format)
+		if plugin.Format == "bundle" {
+			fmt.Printf("    Bundle format: %s\n", plugin.BundleFormat)
+		}
+		fmt.Printf("    Trust: %s\n", trustLevel)
+		fmt.Printf("    Trust reason: %s\n", DetermineTrustReason(trustLevel, 0, hasStructuredSurface))
+		fmt.Printf("    Declared: %s\n", BuildDeclaredSurfaceSummary(plugin.Manifest, &plugin))
+	}
+
+	return 0, nil
 }
 
 func pluginCommandRemove(_ context.Context, args []string) (int, error) {
