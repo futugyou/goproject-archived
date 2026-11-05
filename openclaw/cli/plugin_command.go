@@ -181,9 +181,91 @@ func PluginCommandRun(ctx context.Context, command string, args []string) (int, 
 		return pluginCommandRemove(ctx, rest)
 	case "list", "ls":
 		return pluginCommandList(ctx, rest)
+	case "inspect":
+		return pluginCommandInspect(ctx, rest)
 	default:
 		return unknownPluginCommand(subcommand)
 	}
+}
+
+func pluginCommandInspect(ctx context.Context, args []string) (int, error) {
+	target := ""
+	for i := range args {
+		if !strings.HasPrefix(args[i], "-") {
+			target = args[i]
+			break
+		}
+	}
+
+	if target == "" {
+		return 2, errors.New("Usage: openclaw plugins inspect <plugin-name|local-directory> [--runtime]")
+	}
+
+	candidatePath := target
+	if !util.DirectoryExists(candidatePath) &&
+		!util.FileExists(candidatePath) &&
+		!filepath.IsAbs(candidatePath) {
+		extensionsDir := resolveExtensionsDir(slices.Contains(args, "--global") || slices.Contains(args, "-g"))
+		candidatePath = filepath.Join(extensionsDir, target)
+		if !util.DirectoryExists(candidatePath) {
+			candidatePath = filepath.Join(extensionsDir, SanitizePackageName(target))
+		}
+	}
+
+	if !util.DirectoryExists(candidatePath) && !util.FileExists(candidatePath) {
+		return 1, fmt.Errorf("Plugin '%s' was not found.", target)
+	}
+
+	rootPath, err := filepath.Abs(candidatePath)
+	if err != nil {
+		return 1, err
+	}
+	if !util.DirectoryExists(candidatePath) {
+		rootPath = filepath.Dir(rootPath)
+	}
+
+	inspection := InspectCandidate(rootPath, target, false)
+	if !inspection.Success {
+		return 1, errors.New(inspection.ErrorMessage)
+	}
+
+	pluginCommandPrintInspection(inspection)
+	if !inspection.CanInstall {
+		return 1, errors.New("can not install plugin")
+	}
+	if !slices.Contains(args, "--runtime") {
+		return 0, nil
+	}
+
+	if inspection.Format == "bundle" {
+		fmt.Println("Runtime: content bundle; no arbitrary bundle module was executed.")
+		return 0, nil
+	}
+
+	runtime, err := InspectRuntime(ctx, inspection.EntryPath, inspection.PluginId)
+	if err != nil {
+		return 1, err
+	}
+
+	rt := "incompatible"
+	if runtime.Compatible {
+		rt = "compatible"
+	}
+	fmt.Printf("Runtime: %s", rt)
+	fmt.Printf("Registered: tools=%d, channels=%d, commands=%d, cli=%d, providers=%d", runtime.ToolCount, runtime.ChannelCount, runtime.CommandCount, runtime.CliCommandCount, runtime.ProviderCount)
+	for _, diagnostic := range runtime.Diagnostics {
+		if diagnostic.Severity == "error" {
+			fmt.Printf("Error: [%s] %s\n", diagnostic.Code, diagnostic.Message)
+		} else {
+			fmt.Printf("Warning: [%s] %s\n", diagnostic.Code, diagnostic.Message)
+		}
+	}
+
+	if runtime.Compatible {
+		return 0, nil
+	}
+
+	return 1, errors.New(runtime.ErrorMsg)
 }
 
 func pluginCommandList(_ context.Context, args []string) (int, error) {
