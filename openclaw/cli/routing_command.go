@@ -62,9 +62,55 @@ func routingCommandRun(args []string, output, errWriter io.Writer) (int, error) 
 		return routingCommandRunOnboard(parsed, output, errWriter)
 	case "configure":
 		return routingCommandRunConfigure(parsed, output, errWriter)
+	case "providers":
+		return routingCommandRunProviders(parsed, output, errWriter)
 	default:
 		return 2, fmt.Errorf("unsupport command: %s", command)
 	}
+}
+
+func writeTier(name string, tier *core.DynamicTurnRoutingTierTarget, output io.Writer) {
+	tools := "disabled"
+	if !tier.DisableTools {
+		tools = joinOrNone(tier.AllowedTools)
+	}
+
+	msg := fmt.Sprintf("%s\tprofile=%s\tfallback=%s\treasoning=%s\tresponse=%s\timage=%s\tpromptMode=%s\ttools=%s\ttags=%s",
+		name, tier.ModelProfileId, tier.DirectModelFallbackProfileId, tier.ReasoningLevel, tier.ResponsePolicy,
+		tier.ImageCapableModelProfileId, tier.PromptMode, tools, joinOrNone(tier.PreferredTags))
+
+	output.Write([]byte(msg))
+}
+
+func joinOrNone(s []string) string {
+	if len(s) == 0 {
+		return "none"
+	}
+
+	return strings.Join(s, ",")
+}
+
+func routingCommandRunProviders(parsed *CliArgs, output, errWriter io.Writer) (int, error) {
+	path, err := resolveConfigPath(parsed)
+	if err != nil {
+		errWriter.Write([]byte(err.Error()))
+		return 1, err
+	}
+
+	config, err := core.GatewayConfigFileInstance.Load(path)
+	if err != nil {
+		errWriter.Write([]byte(err.Error()))
+		return 1, err
+	}
+
+	tiers := config.DynamicTurnRouting.Policy.Tiers
+
+	writeTier("T0", tiers.T0, output)
+	writeTier("T1", tiers.T1, output)
+	writeTier("T2", tiers.T2, output)
+	writeTier("T3", tiers.T3, output)
+
+	return 0, nil
 }
 
 func routingCommandRunConfigure(parsed *CliArgs, output, errWriter io.Writer) (int, error) {
