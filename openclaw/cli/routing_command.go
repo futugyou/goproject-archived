@@ -64,9 +64,45 @@ func routingCommandRun(args []string, output, errWriter io.Writer) (int, error) 
 		return routingCommandRunConfigure(parsed, output, errWriter)
 	case "providers":
 		return routingCommandRunProviders(parsed, output, errWriter)
+	case "status":
+		return routingCommandRunStatus(parsed, output, errWriter)
 	default:
 		return 2, fmt.Errorf("unsupport command: %s", command)
 	}
+}
+
+func routingCommandRunStatus(parsed *CliArgs, output, errWriter io.Writer) (int, error) {
+	path, err := resolveConfigPath(parsed)
+	if err != nil {
+		errWriter.Write([]byte(err.Error()))
+		return 1, err
+	}
+
+	config, err := core.GatewayConfigFileInstance.Load(path)
+	if err != nil {
+		errWriter.Write([]byte(err.Error()))
+		return 1, err
+	}
+
+	routing := config.DynamicTurnRouting
+	policy := routing.Policy
+
+	fmt.Fprintf(output, "enabled=%t\n", routing.Enabled)
+	fmt.Fprintf(output, "jevMode=%s\n", routing.Jev.Mode)
+	fmt.Fprintf(output, "jevModel=%s\n", routing.Jev.Model)
+	fmt.Fprintf(output, "layaMode=%s\n", routing.Laya.Mode)
+	fmt.Fprintf(output, "layaModel=%s\n", routing.Laya.Model)
+	fmt.Fprintf(output, "layaCalibrationId=%s\n", routing.Laya.CalibrationId)
+	fmt.Fprintf(output, "bundlePath=%s\n", routing.BundlePath)
+	fmt.Fprintf(output, "classifier=%s\n", routing.Assets.ClassifierModelPath)
+	fmt.Fprintf(output, "embedding=%s\n", routing.Assets.EmbeddingModelPath)
+	fmt.Fprintf(output, "tokenizer=%s\n", routing.Assets.TokenizerPath)
+	fmt.Fprintf(output, "diagnostics=%t\n", policy.EnableDiagnostics)
+	fmt.Fprintf(output, "marginUpgradeThreshold=%f\n", policy.MarginUpgradeThreshold)
+	fmt.Fprintf(output, "r1RescueThreshold=%f\n", policy.R1RescueThreshold)
+	fmt.Fprintf(output, "underRoutingSafetyThreshold=%f\n", policy.UnderRoutingSafetyThreshold)
+	fmt.Fprintf(output, "deepTurnThreshold=%d\n", policy.DeepConversationTurnIndexThreshold)
+	return 0, nil
 }
 
 func writeTier(name string, tier *core.DynamicTurnRoutingTierTarget, output io.Writer) {
@@ -75,11 +111,9 @@ func writeTier(name string, tier *core.DynamicTurnRoutingTierTarget, output io.W
 		tools = joinOrNone(tier.AllowedTools)
 	}
 
-	msg := fmt.Sprintf("%s\tprofile=%s\tfallback=%s\treasoning=%s\tresponse=%s\timage=%s\tpromptMode=%s\ttools=%s\ttags=%s",
+	fmt.Fprintf(output, "%s\tprofile=%s\tfallback=%s\treasoning=%s\tresponse=%s\timage=%s\tpromptMode=%s\ttools=%s\ttags=%s",
 		name, tier.ModelProfileId, tier.DirectModelFallbackProfileId, tier.ReasoningLevel, tier.ResponsePolicy,
 		tier.ImageCapableModelProfileId, tier.PromptMode, tools, joinOrNone(tier.PreferredTags))
-
-	output.Write([]byte(msg))
 }
 
 func joinOrNone(s []string) string {
@@ -221,8 +255,7 @@ func routingCommandConfigureProviders(parsed *CliArgs, output, errWriter io.Writ
 		return 1, err
 	}
 
-	msg := fmt.Sprintf("routing configure providers saved for %s (%s)", strings.ToUpper(tierName), core.GatewaySetupPathsIntance.QuoteIfNeeded(path))
-	output.Write([]byte(msg))
+	fmt.Fprintf(output, "routing configure providers saved for %s (%s)", strings.ToUpper(tierName), core.GatewaySetupPathsIntance.QuoteIfNeeded(path))
 	return 0, nil
 }
 
@@ -309,7 +342,7 @@ func routingCommandConfigureRouter(parsed *CliArgs, output, errWriter io.Writer)
 		return 2, err
 	}
 
-	output.Write([]byte(fmt.Sprintf("routing configure router saved (%s)", core.GatewaySetupPathsIntance.QuoteIfNeeded(path))))
+	fmt.Fprintf(output, "routing configure router saved (%s)", core.GatewaySetupPathsIntance.QuoteIfNeeded(path))
 	return 0, nil
 }
 
@@ -393,6 +426,6 @@ func routingCommandRunOnboard(parsed *CliArgs, output, errWriter io.Writer) (int
 		return 1, err
 	}
 
-	output.Write([]byte(fmt.Sprintf("routing onboard completed with router=%s (%s)", mode, core.GatewaySetupPathsIntance.QuoteIfNeeded(path))))
+	fmt.Fprintf(output, "routing onboard completed with router=%s (%s)", mode, core.GatewaySetupPathsIntance.QuoteIfNeeded(path))
 	return 0, nil
 }
