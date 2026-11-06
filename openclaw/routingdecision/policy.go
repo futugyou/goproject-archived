@@ -454,8 +454,8 @@ func isToolContinuation(req *agent.TurnRoutingRequest) bool {
 	return false
 }
 
-func countUserTurns(req *agent.TurnRoutingRequest) int {
-	count := 0
+func countUserTurns(req *agent.TurnRoutingRequest) int64 {
+	var count int64 = 0
 	for _, m := range req.Messages {
 		if m.Role == chatcompletion.RoleUser {
 			count++

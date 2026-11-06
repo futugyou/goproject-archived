@@ -124,10 +124,10 @@ type DynamicTurnRoutingPolicyConfig struct {
 	EnableMarginUpgrade                bool                       `json:"enable_margin_upgrade"`
 	EnableR1Rescue                     bool                       `json:"enable_r1_rescue"`
 	EnableUnderRoutingSafety           bool                       `json:"enable_under_routing_safety"`
-	MarginUpgradeThreshold             float32                    `json:"margin_upgrade_threshold"`
-	R1RescueThreshold                  float32                    `json:"r1_rescue_threshold"`
-	UnderRoutingSafetyThreshold        float32                    `json:"under_routing_safety_threshold"`
-	DeepConversationTurnIndexThreshold int                        `json:"deep_conversation_turn_index_threshold"`
+	MarginUpgradeThreshold             float64                    `json:"margin_upgrade_threshold"`
+	R1RescueThreshold                  float64                    `json:"r1_rescue_threshold"`
+	UnderRoutingSafetyThreshold        float64                    `json:"under_routing_safety_threshold"`
+	DeepConversationTurnIndexThreshold int64                      `json:"deep_conversation_turn_index_threshold"`
 }
 
 func DefaultDynamicTurnRoutingTierMap() *DynamicTurnRoutingTierMap {

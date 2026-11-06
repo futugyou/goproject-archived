@@ -84,7 +84,7 @@ type TurnRoutingSignals struct {
 }
 
 // ExtractSignals analyzes input text and turn index to construct routing signals.
-func ExtractSignals(text string, turnIndex int) TurnRoutingSignals {
+func ExtractSignals(text string, turnIndex int64) TurnRoutingSignals {
 	hasCodeBlock := codeBlockRegex.MatchString(text)
 	hasFileReference := filePathRegex.MatchString(text)
 	hasUrl := urlRegex.MatchString(text)
@@ -151,7 +151,7 @@ func ApplyFlagOverrides(tier int, signals TurnRoutingSignals) int {
 }
 
 // ApplyContextRule adjusts tier when conversation reaches a specific turn index depth.
-func ApplyContextRule(tier int, turnIndex int, turnIndexThreshold int) int {
+func ApplyContextRule(tier int, turnIndex int64, turnIndexThreshold int64) int {
 	if turnIndex >= turnIndexThreshold {
 		return max(tier, 1)
 	}
