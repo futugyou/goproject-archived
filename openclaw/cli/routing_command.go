@@ -66,21 +66,59 @@ func routingCommandRun(args []string, output, errWriter io.Writer) (int, error) 
 		return routingCommandRunProviders(parsed, output, errWriter)
 	case "status":
 		return routingCommandRunStatus(parsed, output, errWriter)
+	case "diagnostics":
+		return routingCommandRunDiagnostics(parsed, output, errWriter)
 	default:
 		return 2, fmt.Errorf("unsupport command: %s", command)
 	}
 }
 
-func routingCommandRunStatus(parsed *CliArgs, output, errWriter io.Writer) (int, error) {
+func routingCommandRunDiagnostics(parsed *CliArgs, output, errWriter io.Writer) (int, error) {
+	if len(parsed.Positionals) < 2 {
+		msg := "diagnostics mode is required. Use: openclaw routing diagnostics <on|off>"
+		fmt.Fprintf(errWriter, "%s\n", msg)
+		return 2, errors.New(msg)
+	}
+
+	mode := strings.ToLower(parsed.Positionals[1])
+	if mode != "on" && mode != "off" {
+		msg := "diagnostics mode must be on or off."
+		fmt.Fprintf(errWriter, "%s\n", msg)
+		return 2, errors.New(msg)
+	}
+
 	path, err := resolveConfigPath(parsed)
 	if err != nil {
-		errWriter.Write([]byte(err.Error()))
+		fmt.Fprintf(errWriter, "%s\n", err.Error())
 		return 1, err
 	}
 
 	config, err := core.GatewayConfigFileInstance.Load(path)
 	if err != nil {
-		errWriter.Write([]byte(err.Error()))
+		fmt.Fprintf(errWriter, "%s\n", err.Error())
+		return 1, err
+	}
+
+	config.DynamicTurnRouting.Policy.EnableDiagnostics = mode == "on"
+	if err := core.GatewayConfigFileInstance.Save(config, path); err != nil {
+		fmt.Fprintf(errWriter, "%s\n", err.Error())
+		return 1, err
+	}
+
+	fmt.Fprintf(output, "routing diagnostics set to %s (%s)\n", mode, core.GatewaySetupPathsIntance.QuoteIfNeeded(path))
+	return 0, nil
+}
+
+func routingCommandRunStatus(parsed *CliArgs, output, errWriter io.Writer) (int, error) {
+	path, err := resolveConfigPath(parsed)
+	if err != nil {
+		fmt.Fprintf(errWriter, "%s\n", err.Error())
+		return 1, err
+	}
+
+	config, err := core.GatewayConfigFileInstance.Load(path)
+	if err != nil {
+		fmt.Fprintf(errWriter, "%s\n", err.Error())
 		return 1, err
 	}
 
@@ -111,7 +149,7 @@ func writeTier(name string, tier *core.DynamicTurnRoutingTierTarget, output io.W
 		tools = joinOrNone(tier.AllowedTools)
 	}
 
-	fmt.Fprintf(output, "%s\tprofile=%s\tfallback=%s\treasoning=%s\tresponse=%s\timage=%s\tpromptMode=%s\ttools=%s\ttags=%s",
+	fmt.Fprintf(output, "%s\tprofile=%s\tfallback=%s\treasoning=%s\tresponse=%s\timage=%s\tpromptMode=%s\ttools=%s\ttags=%s\n",
 		name, tier.ModelProfileId, tier.DirectModelFallbackProfileId, tier.ReasoningLevel, tier.ResponsePolicy,
 		tier.ImageCapableModelProfileId, tier.PromptMode, tools, joinOrNone(tier.PreferredTags))
 }
@@ -127,13 +165,13 @@ func joinOrNone(s []string) string {
 func routingCommandRunProviders(parsed *CliArgs, output, errWriter io.Writer) (int, error) {
 	path, err := resolveConfigPath(parsed)
 	if err != nil {
-		errWriter.Write([]byte(err.Error()))
+		fmt.Fprintf(errWriter, "%s\n", err.Error())
 		return 1, err
 	}
 
 	config, err := core.GatewayConfigFileInstance.Load(path)
 	if err != nil {
-		errWriter.Write([]byte(err.Error()))
+		fmt.Fprintf(errWriter, "%s\n", err.Error())
 		return 1, err
 	}
 
@@ -150,7 +188,7 @@ func routingCommandRunProviders(parsed *CliArgs, output, errWriter io.Writer) (i
 func routingCommandRunConfigure(parsed *CliArgs, output, errWriter io.Writer) (int, error) {
 	if len(parsed.Positionals) < 2 {
 		msg := "configure target is required. Use: openclaw routing configure <router|providers> [options]"
-		errWriter.Write([]byte(msg))
+		fmt.Fprintf(errWriter, "%s\n", msg)
 		return 2, errors.New(msg)
 	}
 
@@ -163,7 +201,7 @@ func routingCommandRunConfigure(parsed *CliArgs, output, errWriter io.Writer) (i
 		return routingCommandConfigureProviders(parsed, output, errWriter)
 	default:
 		msg := "configure target must be router or providers."
-		errWriter.Write([]byte(msg))
+		fmt.Fprintf(errWriter, "%s\n", msg)
 		return 2, errors.New(msg)
 	}
 }
@@ -187,7 +225,7 @@ func routingCommandConfigureProviders(parsed *CliArgs, output, errWriter io.Writ
 	tierName := util.Deref(parsed.GetOption("--tier"))
 	if tierName == "" {
 		msg := "--tier <T0|T1|T2|T3> is required for provider configuration."
-		errWriter.Write([]byte(msg))
+		fmt.Fprintf(errWriter, "%s\n", msg)
 		return 2, errors.New(msg)
 	}
 	path, err := resolveConfigPath(parsed)
@@ -255,7 +293,7 @@ func routingCommandConfigureProviders(parsed *CliArgs, output, errWriter io.Writ
 		return 1, err
 	}
 
-	fmt.Fprintf(output, "routing configure providers saved for %s (%s)", strings.ToUpper(tierName), core.GatewaySetupPathsIntance.QuoteIfNeeded(path))
+	fmt.Fprintf(output, "routing configure providers saved for %s (%s)\n", strings.ToUpper(tierName), core.GatewaySetupPathsIntance.QuoteIfNeeded(path))
 	return 0, nil
 }
 
@@ -342,7 +380,7 @@ func routingCommandConfigureRouter(parsed *CliArgs, output, errWriter io.Writer)
 		return 2, err
 	}
 
-	fmt.Fprintf(output, "routing configure router saved (%s)", core.GatewaySetupPathsIntance.QuoteIfNeeded(path))
+	fmt.Fprintf(output, "routing configure router saved (%s)\n", core.GatewaySetupPathsIntance.QuoteIfNeeded(path))
 	return 0, nil
 }
 
@@ -426,6 +464,6 @@ func routingCommandRunOnboard(parsed *CliArgs, output, errWriter io.Writer) (int
 		return 1, err
 	}
 
-	fmt.Fprintf(output, "routing onboard completed with router=%s (%s)", mode, core.GatewaySetupPathsIntance.QuoteIfNeeded(path))
+	fmt.Fprintf(output, "routing onboard completed with router=%s (%s)\n", mode, core.GatewaySetupPathsIntance.QuoteIfNeeded(path))
 	return 0, nil
 }
