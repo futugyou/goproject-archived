@@ -11,6 +11,25 @@ import (
 	"fmt"
 )
 
+func ParseRsaPublicKeyFromPem(pemString string) (*rsa.PublicKey, error) {
+	block, _ := pem.Decode([]byte(pemString))
+	if block == nil {
+		return nil, errors.New("failed to parse PEM block")
+	}
+
+	pubKey, err := x509.ParsePKIXPublicKey(block.Bytes)
+	if err != nil {
+		return nil, err
+	}
+
+	rsaPub, ok := pubKey.(*rsa.PublicKey)
+	if !ok {
+		return nil, errors.New("not an RSA public key")
+	}
+
+	return rsaPub, nil
+}
+
 // 用私钥对数据进行 RSA-SHA256 (PKCS1v15) 签名
 func SignData(signingInput string, privateKeyPem string) ([]byte, error) {
 	// 1. 解析 PEM 块
