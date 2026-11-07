@@ -30,6 +30,15 @@ func ParseRsaPublicKeyFromPem(pemString string) (*rsa.PublicKey, error) {
 	return rsaPub, nil
 }
 
+func ParseDataFromRsaPublicKey(rsaPub *rsa.PublicKey) ([]byte, error) {
+	pubBytes, err := x509.MarshalPKIXPublicKey(rsaPub)
+	if err != nil {
+		return nil, err
+	}
+
+	return pem.EncodeToMemory(&pem.Block{Type: "PUBLIC KEY", Bytes: pubBytes}), nil
+}
+
 // 用私钥对数据进行 RSA-SHA256 (PKCS1v15) 签名
 func SignData(signingInput string, privateKeyPem string) ([]byte, error) {
 	// 1. 解析 PEM 块
