@@ -2,6 +2,7 @@ package core
 
 import (
 	"archive/zip"
+	"bytes"
 	"context"
 	"crypto"
 	"crypto/rsa"
@@ -11,9 +12,11 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -617,7 +620,7 @@ func (u *BundleUpdater) Install(ctx context.Context, channel string, version *st
 
 	checkFunc := u.smokeCheck
 	if checkFunc == nil {
-		checkFunc = u.smokeCheck
+		checkFunc = u.internalSmokeCheck
 	}
 	if err := checkFunc(bundleDir, ctx); err != nil {
 		return "", err
@@ -657,4 +660,117 @@ func (u *BundleUpdater) Install(ctx context.Context, channel string, version *st
 	activated = true
 
 	return destination, nil
+}
+
+func (u *BundleUpdater) Rollback() (string, error) {
+	active, err := u.ReadActivation()
+	if err != nil || active == nil {
+		return "", errors.New("no managed bundle is active")
+	}
+	if active.Previous == nil {
+		return "", errors.New("no previous bundle is available")
+	}
+
+	path := u.bundlePath(*active.Previous)
+	if err := validateBundleDir(path); err != nil {
+		return "", err
+	}
+
+	newAct := BundleActivation{
+		Current:  *active.Previous,
+		Previous: &active.Current,
+	}
+	data, _ := json.Marshal(newAct)
+	if err := writeAtomic(u.activationPath(), string(data)); err != nil {
+		return "", err
+	}
+
+	return path, nil
+}
+
+func (u *BundleUpdater) GetActiveExecutable(component string) (string, error) {
+	active, err := u.ReadActivation()
+	if err != nil || active == nil {
+		return "", errors.New("no managed bundle is active")
+	}
+	return executablePath(u.bundlePath(active.Current), component)
+}
+
+func (u *BundleUpdater) internalSmokeCheck(bundle string, ct context.Context) error {
+	cliExe, err := executablePath(bundle, "cli")
+	if err != nil {
+		return err
+	}
+	if err := runCheck(cliExe, []string{"version"}, bundle, ct); err != nil {
+		return err
+	}
+
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		return err
+	}
+	port := listener.Addr().(*net.TCPAddr).Port
+	listener.Close()
+
+	smokeConfig := filepath.Join(filepath.Dir(bundle), "smoke.json")
+	configData := map[string]any{
+		"OpenClaw": map[string]any{
+			"BindAddress": "127.0.0.1",
+			"Port":        port,
+			"Memory": map[string]any{
+				"StoragePath": filepath.Join(filepath.Dir(bundle), "smoke-memory"),
+			},
+			"Llm": map[string]any{
+				"Provider": "ollama",
+				"Model":    "llama3.2",
+			},
+		},
+	}
+	configBytes, _ := json.Marshal(configData)
+	_ = os.WriteFile(smokeConfig, configBytes, 0600)
+
+	gwExe, err := executablePath(bundle, "gateway")
+	if err != nil {
+		return err
+	}
+	return runCheck(gwExe, []string{"--config", smokeConfig, "--doctor"}, bundle, ct)
+}
+
+func runCheck(executable string, args []string, workDir string, ct context.Context) error {
+	ctx, cancel := context.WithTimeout(ct, 60*time.Second)
+	defer cancel()
+
+	cmd := exec.CommandContext(ctx, executable, args...)
+	cmd.Dir = workDir
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+
+	// Filter out sensitive environment variables if necessary
+	cmd.Env = filterEnvironment(os.Environ())
+
+	err := cmd.Run()
+	if err != nil {
+		output := tail(stdout.String()) + " " + tail(stderr.String())
+		return fmt.Errorf("staged component failed its startup check; current bundle is unchanged. Output: %s", strings.TrimSpace(output))
+	}
+	return nil
+}
+
+func filterEnvironment(env []string) []string {
+	var filtered []string
+	for _, e := range env {
+		if !strings.HasPrefix(strings.ToUpper(e), "OPENCLAW") {
+			filtered = append(filtered, e)
+		}
+	}
+	return filtered
+}
+
+func tail(val string) string {
+	val = strings.TrimSpace(val)
+	if len(val) <= 2048 {
+		return val
+	}
+	return val[len(val)-2048:]
 }
