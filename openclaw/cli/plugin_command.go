@@ -397,7 +397,7 @@ func pluginCommandRemove(_ context.Context, args []string) (int, error) {
 		return 1, fmt.Errorf("Plugin '%s' not found in %s", pluginName, extensionsDir)
 	}
 
-	os.Remove(targetDir)
+	os.RemoveAll(targetDir)
 	fmt.Printf("Removed '%s' from %s\n", pluginName, extensionsDir)
 	fmt.Println("Restart the gateway to unload the plugin.")
 	return 0, nil
@@ -1257,7 +1257,7 @@ func pluginCommandInstallFromLocal(ctx context.Context, localPath, extensionsDir
 		// Extract tarball
 		tempDir := filepath.Join(os.TempDir(), fmt.Sprintf("openclaw-install-%s", util.CleanUUID())[:24])
 		os.MkdirAll(tempDir, 0755)
-		defer os.Remove(tempDir)
+		defer os.RemoveAll(tempDir)
 
 		extractResult := util.RunProcess(ctx, "tar", []string{fmt.Sprintf("xzf %s -C %s", quote(sourcePath), quote(tempDir))}, tempDir, 0, 0, 0)
 		if extractResult.ExitCode != 0 {
@@ -1343,7 +1343,7 @@ func pluginCommandInstallFromNpm(ctx context.Context, packageSpec, extensionsDir
 	// Use npm pack to download the tarball, then extract into extensions dir
 	tempDir := filepath.Join(os.TempDir(), fmt.Sprintf("openclaw-install-%s", util.CleanUUID())[:24])
 	os.MkdirAll(tempDir, 0755)
-	defer os.Remove(tempDir)
+	defer os.RemoveAll(tempDir)
 	// Step 1: npm pack to download tarball
 	packResult := util.RunProcess(ctx, "npm", []string{fmt.Sprintf("pack %s --pack-destination %s", packageSpec, quote(tempDir))}, tempDir, 0, 0, 0)
 	if packResult.ExitCode != 0 {

@@ -126,9 +126,73 @@ func SkillCommandRun(args []string) (int, error) {
 	switch subcommand {
 	case "inspect":
 		return skillCommandInspect(rest)
+	case "install":
+		return skillCommandInstall(rest)
 	default:
 		return skillCommandUnknownSubcommand(subcommand, asJson)
 	}
+}
+
+func skillCommandInstall(args []string) (int, error) {
+	asJson := slices.Contains(args, "--json")
+	sourcePath := ""
+	for i := range args {
+		if !strings.HasPrefix(args[i], "-") {
+			sourcePath = args[i]
+			break
+		}
+	}
+
+	if sourcePath == "" {
+		writeSkillsCommandError(asJson, "skills install", "missing_source_path", "Usage: openclaw skills install <path|tarball>")
+		return 2, errors.New("Usage: openclaw skills install <path|tarball>")
+	}
+
+	dryRun := slices.Contains(args, "--dry-run")
+	managed := slices.Contains(args, "--managed")
+	workdir := getOptionValue(args, "--workdir")
+
+	inspected, tempDirectory := skillCommandInspectResolvedSource(sourcePath, true)
+	if !inspected.Success {
+		msg := inspected.ErrorMessage
+		if msg == "" {
+			msg = fmt.Sprintf("Failed to inspect source path: %s", sourcePath)
+		}
+		writeSkillsCommandError(asJson, "skills install", "install_failed", msg)
+		return 1, errors.New(msg)
+	}
+
+	if tempDirectory != "" {
+		defer os.RemoveAll(tempDirectory)
+	}
+
+	path, err := resolveSkillsDirectory(managed, workdir)
+	if err != nil {
+		return 1, err
+	}
+	skillCommandPrintInspection(inspected, path)
+	if dryRun {
+		return 0, nil
+	}
+
+	skillsDirectory, err := resolveSkillsDirectory(managed, workdir)
+	if err != nil {
+		return 1, err
+	}
+
+	os.MkdirAll(skillsDirectory, 0755)
+
+	targetDir := filepath.Join(skillsDirectory, inspected.InstallSlug)
+	if util.DirectoryExists(targetDir) {
+		os.RemoveAll(targetDir)
+	}
+
+	if err := util.CopyDirectoryWithoutSymlink(inspected.SkillRootPath, targetDir); err != nil {
+		writeSkillsCommandError(asJson, "skills install", "install_failed", err.Error())
+		return 1, err
+	}
+	fmt.Printf("Installed skill '%s' to %s\n", inspected.Definition.Name, targetDir)
+	return 0, nil
 }
 
 func skillCommandInspect(args []string) (int, error) {
@@ -259,7 +323,7 @@ func skillCommandInspectResolvedSource(sourcePath string, retainExtractedDirecto
 	if util.FileExists(resolvedSourcePath) && strings.HasSuffix(resolvedSourcePath, ".tgz") {
 		tempDir := filepath.Join(os.TempDir(), fmt.Sprintf("openclaw-skill-install-%s", util.CleanUUID())[:24])
 		os.MkdirAll(tempDir, 0755)
-		defer os.Remove(tempDir)
+		defer os.RemoveAll(tempDir)
 
 		result := util.RunProcess(context.Background(), "tar", []string{"--extract", "--gzip", "--file", resolvedSourcePath, "--directory", tempDir}, tempDir, 0, 0, 0)
 		path := ""

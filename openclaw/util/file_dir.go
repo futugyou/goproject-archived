@@ -646,3 +646,69 @@ func CopyDirectory(source, destination string) error {
 	}
 	return nil
 }
+
+func CopyDirectoryWithoutSymlink(source, destination string) error {
+	info, err := os.Lstat(source) // 注意：使用 Lstat 而不是 Stat，防止被软链接欺骗
+	if err != nil {
+		return err
+	}
+
+	// 检查是否为符号链接 / Reparse Point
+	if info.Mode()&os.ModeSymlink != 0 {
+		return fmt.Errorf("refusing to copy symlink: %s", source)
+	}
+
+	if err := os.MkdirAll(destination, info.Mode().Perm()); err != nil {
+		return err
+	}
+
+	entries, err := os.ReadDir(source)
+	if err != nil {
+		return err
+	}
+
+	for _, entry := range entries {
+		// 检查目录项本身是否为符号链接
+		if entry.Type()&os.ModeSymlink != 0 {
+			return fmt.Errorf("refusing to copy symlink: %s", filepath.Join(source, entry.Name()))
+		}
+
+		name := entry.Name()
+		srcPath := filepath.Join(source, name)
+		dstPath := filepath.Join(destination, name)
+
+		if entry.IsDir() {
+			if err := CopyDirectory(srcPath, dstPath); err != nil {
+				return err
+			}
+		} else {
+			// 注意：复制文件时，也需要对文件本身的 Lstat 进行检查，确保它不是软链接
+			fileInfo, err := os.Lstat(srcPath)
+			if err != nil {
+				return err
+			}
+			if fileInfo.Mode()&os.ModeSymlink != 0 {
+				return fmt.Errorf("refusing to copy file symlink: %s", srcPath)
+			}
+
+			in, err := os.Open(srcPath)
+			if err != nil {
+				return err
+			}
+
+			out, err := os.Create(dstPath)
+			if err != nil {
+				in.Close()
+				return err
+			}
+
+			_, err = io.Copy(out, in)
+			out.Close()
+			in.Close()
+			if err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
