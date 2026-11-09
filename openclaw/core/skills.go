@@ -1181,6 +1181,29 @@ func (s *SkillInspector) InspectPath(candidatePath string, source SkillSource) *
 	}
 }
 
+func (s *SkillInspector) InspectInstalledRoot(skillsRootPath string, source SkillSource) []SkillInspectionResult {
+	results := []SkillInspectionResult{}
+	if !util.DirectoryExists(skillsRootPath) {
+		return results
+	}
+
+	rootSkillFile := filepath.Join(skillsRootPath, "SKILL.md")
+	if util.FileExists(rootSkillFile) {
+		results = append(results, util.Deref(s.InspectPath(skillsRootPath, source)))
+	}
+
+	for _, dir := range util.EnumerateTopFiles(skillsRootPath) {
+		skillFilePath := filepath.Join(dir, "SKILL.md")
+		if !util.FileExists(skillFilePath) {
+			continue
+		}
+
+		results = append(results, util.Deref(s.InspectPath(dir, source)))
+	}
+
+	return results
+}
+
 type ProjectionScore[T any] struct {
 	Item  T
 	Score int
