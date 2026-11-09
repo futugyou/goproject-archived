@@ -46,7 +46,7 @@ Use this deterministic skill for harness regression checks.`), 0644); err != nil
 		return s.Failed(err.Error(), "", ""), err
 	}
 
-	inspection := core.SkillInspectorInstace.InspectPath(skillRoot, core.SkillSourceManaged)
+	inspection := core.SkillInspectorInstance.InspectPath(skillRoot, core.SkillSourceManaged)
 
 	if inspection != nil &&
 		inspection.Success &&

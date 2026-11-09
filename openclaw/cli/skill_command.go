@@ -128,9 +128,58 @@ func SkillCommandRun(args []string) (int, error) {
 		return skillCommandInspect(rest)
 	case "install":
 		return skillCommandInstall(rest)
+	case "list", "ls":
+		return skillCommandListInstalled(rest)
 	default:
 		return skillCommandUnknownSubcommand(subcommand, asJson)
 	}
+}
+
+func skillCommandListInstalled(args []string) (int, error) {
+	managed := slices.Contains(args, "--managed")
+	workdir := getOptionValue(args, "--workdir")
+	skillsDirectory, err := resolveSkillsDirectory(managed, workdir)
+	if err != nil {
+		return 1, err
+	}
+
+	if !util.DirectoryExists(skillsDirectory) {
+		fmt.Println("No skills installed.")
+		return 0, nil
+	}
+
+	source := core.SkillSourceWorkspace
+	if managed {
+		source = core.SkillSourceManaged
+	}
+	inspectionResults := core.SkillInspectorInstance.InspectInstalledRoot(skillsDirectory, source)
+
+	inspections := []SkillCommandInspection{}
+	for _, inspection := range inspectionResults {
+		if inspection.Success && inspection.Definition != nil {
+			inspections = append(inspections, createInspection(&inspection))
+		}
+	}
+
+	slices.SortFunc(inspections, func(a, b SkillCommandInspection) int {
+		return strings.Compare(a.Definition.Name, b.Definition.Name)
+	})
+
+	if len(inspections) == 0 {
+		fmt.Println("No skills installed.")
+		return 0, nil
+	}
+
+	fmt.Printf("Installed skills (%d):\n", len(inspections))
+	for i := 0; i < len(inspections); i++ {
+		inspection := inspections[i]
+		fmt.Printf("  %s - %s\n", inspection.Definition.Name, inspection.Definition.Description)
+		fmt.Printf("    Trust: %s\n", inspection.TrustLevel)
+		fmt.Printf("    Source: %s\n", inspection.SourceLabel)
+		fmt.Printf("    Path: %s\n", inspection.SkillRootPath)
+	}
+
+	return 0, nil
 }
 
 func skillCommandInstall(args []string) (int, error) {
@@ -308,7 +357,7 @@ func skillCommandInspectResolvedSource(sourcePath string, retainExtractedDirecto
 	}
 
 	if util.DirectoryExists(resolvedSourcePath) {
-		inspection := core.SkillInspectorInstace.InspectPath(resolvedSourcePath, core.SkillSourceExtra)
+		inspection := core.SkillInspectorInstance.InspectPath(resolvedSourcePath, core.SkillSourceExtra)
 		if inspection.Success {
 			return createInspection(inspection), ""
 		}
@@ -334,7 +383,7 @@ func skillCommandInspectResolvedSource(sourcePath string, retainExtractedDirecto
 			return SkillCommandInspectionFailure(fmt.Sprintf("Failed to extract skill tarball: %s", result.Error)), path
 		}
 
-		inspection := core.SkillInspectorInstace.InspectPath(tempDir, core.SkillSourceExtra)
+		inspection := core.SkillInspectorInstance.InspectPath(tempDir, core.SkillSourceExtra)
 		if !inspection.Success {
 			msg := inspection.ErrorMessage
 			if msg == "" {

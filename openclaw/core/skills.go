@@ -1131,7 +1131,7 @@ func (m *MetaSkillResolver) TryResolve(skills []SkillDefinition, userMessage str
 	return matched, matched != nil
 }
 
-var SkillInspectorInstace = &SkillInspector{}
+var SkillInspectorInstance = &SkillInspector{}
 
 type SkillInspector struct{}
 
