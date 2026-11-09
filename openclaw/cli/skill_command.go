@@ -132,9 +132,371 @@ func SkillCommandRun(args []string) (int, error) {
 		return skillCommandListInstalled(rest)
 	case "catalog":
 		return skillCommandListCatalog(rest)
+	case "create":
+		return skillCommandCreateSkillScaffold(rest)
 	default:
 		return skillCommandUnknownSubcommand(subcommand, asJson)
 	}
+}
+
+type ProposalDraftQuality struct {
+	ChecksPassed int
+	ChecksTotal  int
+	Checks       []ProposalDraftQualityCheck
+	Warnings     []string
+}
+
+type ProposalDraftQualityCheck struct {
+	Id             string
+	Status         string
+	Message        string
+	Recommendation string
+}
+
+func buildProposalDraftQuality(name, description, kind string) ProposalDraftQuality {
+	checks := []ProposalDraftQualityCheck{}
+	warnings := []string{}
+
+	hasName := name != ""
+	check := ProposalDraftQualityCheck{
+		Id:             "name_present",
+		Status:         "fail",
+		Message:        "Skill name is empty.",
+		Recommendation: "Provide a non-empty skill name.",
+	}
+	if hasName {
+		check.Status = "pass"
+		check.Message = "Skill name is present."
+		check.Recommendation = ""
+	}
+
+	checks = append(checks, check)
+
+	hasDescription := description != ""
+	descriptionStatus := "fail"
+	descriptionMessage := "Skill description is empty."
+	descriptionRecommendation := "Add a meaningful description that explains intent and outcomes."
+	if hasDescription {
+		descriptionStatus = "pass"
+		descriptionMessage = "Skill description is present."
+		descriptionRecommendation = ""
+	}
+
+	if hasDescription && len(description) < 16 {
+		descriptionStatus = "warn"
+		descriptionMessage = "Skill description is present but too short to guide proposal review."
+		descriptionRecommendation = "Expand description to include expected behavior and boundaries."
+		warnings = append(warnings, "description_too_short")
+	}
+
+	checks = append(checks, ProposalDraftQualityCheck{
+		Id:             "description_present",
+		Status:         descriptionStatus,
+		Message:        descriptionMessage,
+		Recommendation: descriptionRecommendation,
+	})
+
+	check = ProposalDraftQualityCheck{
+		Id:             "meta_composition_seeded",
+		Status:         "fail",
+		Message:        "Meta composition scaffold is missing.",
+		Recommendation: "Use --kind meta to seed composition scaffolding.",
+	}
+	if kind == "meta" {
+		check.Status = "pass"
+		check.Message = "Meta composition scaffold is seeded."
+		check.Recommendation = ""
+	}
+
+	checks = append(checks, check)
+	checksPassed := 0
+	for _, v := range checks {
+		if v.Status == "pass" {
+			checksPassed++
+		}
+	}
+	return ProposalDraftQuality{
+		ChecksPassed: checksPassed,
+		ChecksTotal:  len(checks),
+		Checks:       checks,
+		Warnings:     warnings,
+	}
+}
+
+func isProposalDraftQualityBlocked(quality ProposalDraftQuality) bool {
+	for _, check := range quality.Checks {
+		if check.Status != "pass" {
+			return true
+		}
+	}
+
+	return false
+}
+
+func writeCreateProposalDraftQualityError(asJson bool, quality ProposalDraftQuality) string {
+	var blockingChecks []ProposalDraftQualityCheck
+	for _, check := range quality.Checks {
+		if check.Status != "pass" {
+			blockingChecks = append(blockingChecks, check)
+		}
+	}
+
+	message := fmt.Sprintf("Proposal draft quality gate failed: %d/%d checks passed.", quality.ChecksPassed, quality.ChecksTotal)
+
+	if !asJson {
+		fmt.Fprintln(os.Stderr, message)
+		for _, check := range blockingChecks {
+			fmt.Fprintf(os.Stderr, "  - %s [%s]: %s\n", check.Id, check.Status, check.Message)
+		}
+		return message
+	}
+
+	blockingChecksList := make([]map[string]any, len(blockingChecks))
+	for i, check := range blockingChecks {
+		bc := map[string]any{
+			"id":      check.Id,
+			"status":  check.Status,
+			"message": check.Message,
+		}
+		if check.Recommendation != "" {
+			bc["recommendation"] = check.Recommendation
+		}
+		blockingChecksList[i] = bc
+	}
+
+	data := map[string]any{
+		"status":    "error",
+		"command":   "skills create",
+		"errorCode": "proposal_draft_quality_gate_failed",
+		"message":   message,
+		"quality": map[string]any{
+			"checksPassed":        quality.ChecksPassed,
+			"checksTotal":         quality.ChecksTotal,
+			"minimumChecksPassed": quality.ChecksTotal,
+			"blockingChecks":      blockingChecksList,
+			"warnings":            quality.Warnings,
+		},
+	}
+
+	jsonBytes, err := json.Marshal(data)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "Failed to marshal error JSON:", err)
+		return err.Error()
+	}
+
+	msg := string(jsonBytes)
+	fmt.Fprintln(os.Stderr, msg)
+	return msg
+}
+
+func writeCreateError(asJson bool, errorCode string, message string) {
+	if !asJson {
+		fmt.Fprintln(os.Stderr, message)
+		return
+	}
+
+	data := map[string]any{
+		"status":    "error",
+		"command":   "skills create",
+		"errorCode": errorCode,
+		"message":   message,
+	}
+
+	jsonBytes, err := json.Marshal(data)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "Failed to marshal error JSON:", err)
+		return
+	}
+
+	fmt.Fprintln(os.Stderr, string(jsonBytes))
+}
+
+func buildSkillScaffoldMarkdown(name, description, kind string) string {
+	lines := []string{
+		"---",
+		fmt.Sprintf("name: %s", name),
+		fmt.Sprintf("description: %s", description),
+	}
+
+	if kind == "meta" {
+		lines = append(lines, "kind: meta")
+		lines = append(lines, "composition: {\"steps\":[{\"id\":\"draft\",\"kind\":\"llm_chat\",\"with\":{\"prompt\":\"Summarize the user intent and propose next steps.\"}}]}")
+	}
+
+	lines = append(lines, "---")
+	lines = append(lines, "")
+	lines = append(lines, "Describe what this skill should do and how it should be used.")
+
+	return strings.Join(lines, "\n") + "\n"
+}
+
+func skillCommandCreateSkillScaffold(args []string) (int, error) {
+	asJson := slices.Contains(args, "--json")
+	force := slices.Contains(args, "--force")
+	proposalDraftRequested := slices.Contains(args, "--proposal-draft")
+	managed := slices.Contains(args, "--managed")
+	workdir := getOptionValue(args, "--workdir")
+	name := ""
+	for i := 0; i < len(args); i++ {
+		if !strings.HasPrefix(args[i], "-") {
+			name = args[i]
+			break
+		}
+	}
+	if name == "" {
+		msg := "Usage: openclaw skills create <name> [--kind <standard|meta>] [--description <text>] [--proposal-draft] [--workdir <path> | --managed] [--json] [--force]"
+		writeCreateError(asJson, "invalid_create_usage", msg)
+		return 2, errors.New(msg)
+	}
+
+	kind := getOptionValue(args, "--kind")
+	if kind == "" {
+		kind = "standard"
+	}
+	if kind != "standard" && kind != "meta" {
+		writeCreateError(asJson, "invalid_kind", "--kind must be one of: standard, meta.")
+		return 2, errors.New("--kind must be one of: standard, meta.")
+	}
+
+	normalizeSingleLineValue := func(value string) string {
+
+		replacer := strings.NewReplacer(
+			"\r", " ",
+			"\n", " ",
+		)
+		return replacer.Replace(value)
+	}
+
+	name = normalizeSingleLineValue(name)
+	if name == "" {
+		writeCreateError(asJson, "invalid_skill_name", "Skill name cannot be empty.")
+		return 2, errors.New("Skill name cannot be empty.")
+	}
+
+	slug := slugify(name)
+	if slug == "" {
+		writeCreateError(asJson, "invalid_skill_name", "Skill name does not contain any letters or digits.")
+		return 2, errors.New("Skill name does not contain any letters or digits.")
+	}
+
+	description := getOptionValue(args, "--description")
+	if description == "" {
+		description = fmt.Sprintf("%s workflow scaffold.", name)
+	}
+	description = normalizeSingleLineValue(description)
+	skillsDirectory, err := resolveSkillsDirectory(managed, workdir)
+	if err != nil {
+		return 1, err
+	}
+
+	skillDirectory := filepath.Join(skillsDirectory, slug)
+	exists := util.DirectoryExists(skillDirectory)
+	if exists && !force {
+		msg := fmt.Sprintf("Skill scaffold already exists: %s. Use --force to overwrite SKILL.md.", skillDirectory)
+		writeCreateError(asJson, "skill_already_exists", msg)
+		return 1, errors.New(msg)
+	}
+
+	kindValue := "standard"
+	if kind == "meta" {
+		kindValue = "meta"
+	}
+
+	if proposalDraftRequested && kindValue != "meta" {
+		writeCreateError(asJson, "invalid_proposal_draft_kind", "--proposal-draft is only supported for --kind meta.")
+		return 2, errors.New("--proposal-draft is only supported for --kind meta.")
+	}
+
+	var proposalDraftQuality *ProposalDraftQuality
+	if proposalDraftRequested {
+		proposalDraftQuality = new(buildProposalDraftQuality(name, description, kindValue))
+		if isProposalDraftQualityBlocked(*proposalDraftQuality) {
+			msg := writeCreateProposalDraftQualityError(asJson, *proposalDraftQuality)
+			return 1, errors.New(msg)
+		}
+	}
+
+	os.MkdirAll(skillDirectory, 0755)
+
+	skillMarkdown := buildSkillScaffoldMarkdown(name, description, kindValue)
+	os.WriteFile(filepath.Join(skillDirectory, "SKILL.md"), []byte(skillMarkdown), 0644)
+	proposalDraftId := slug
+	proposalDraftKind := "meta_skill_creator_draft"
+	proposalDraftStatus := "draft"
+	proposalDraftTitle := fmt.Sprintf("Meta skill draft proposal: %s", name)
+	proposalDraftSummary := "Draft proposal prepared from scaffold metadata. Review and refine before lifecycle actions."
+
+	if asJson {
+		response := map[string]any{
+			"name":      name,
+			"slug":      slug,
+			"kind":      kindValue,
+			"path":      skillDirectory,
+			"created":   true,
+			"overwrote": exists,
+		}
+
+		if proposalDraftRequested {
+			if proposalDraftQuality == nil {
+				return 1, errors.New("Proposal draft quality must be available when proposal draft is requested.")
+			}
+			var checks []map[string]any
+			for _, check := range proposalDraftQuality.Checks {
+				c := map[string]any{
+					"id":      check.Id,
+					"status":  check.Status,
+					"message": check.Message,
+				}
+				if strings.TrimSpace(check.Recommendation) != "" {
+					c["recommendation"] = check.Recommendation
+				}
+				checks = append(checks, c)
+			}
+
+			response["proposalDraft"] = map[string]any{
+				"available": true,
+				"id":        proposalDraftId,
+				"kind":      proposalDraftKind,
+				"status":    proposalDraftStatus,
+				"title":     proposalDraftTitle,
+				"summary":   proposalDraftSummary,
+				"quality": map[string]any{
+					"checksPassed":        proposalDraftQuality.ChecksPassed,
+					"checksTotal":         proposalDraftQuality.ChecksTotal,
+					"minimumChecksPassed": proposalDraftQuality.ChecksTotal,
+					"checks":              checks,
+					"warnings":            proposalDraftQuality.Warnings,
+				},
+			}
+		}
+
+		jsonData, err := json.Marshal(response)
+		if err != nil {
+			panic(err)
+		}
+
+		fmt.Println(string(jsonData))
+		return 0, nil
+	}
+
+	fmt.Printf("Created skill scaffold: %s [%s]\n", name, kindValue)
+	fmt.Printf("Path: %s\n", skillDirectory)
+	if exists {
+		fmt.Println("Overwrote existing SKILL.md via --force.")
+	}
+
+	if proposalDraftRequested {
+		if proposalDraftQuality == nil {
+			return 1, errors.New("Proposal draft quality must be available when proposal draft is requested.")
+		}
+
+		fmt.Printf("Proposal draft: %s\n", proposalDraftStatus)
+		fmt.Printf("Proposal kind: %s\n", proposalDraftKind)
+		fmt.Printf("Proposal id: %s\n", proposalDraftId)
+		fmt.Printf("Proposal quality: %d/%d checks passed\n", proposalDraftQuality.ChecksPassed, proposalDraftQuality.ChecksTotal)
+	}
+
+	return 0, nil
 }
 
 func skillCommandListCatalog(args []string) (int, error) {
