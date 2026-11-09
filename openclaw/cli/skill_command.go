@@ -130,9 +130,119 @@ func SkillCommandRun(args []string) (int, error) {
 		return skillCommandInstall(rest)
 	case "list", "ls":
 		return skillCommandListInstalled(rest)
+	case "catalog":
+		return skillCommandListCatalog(rest)
 	default:
 		return skillCommandUnknownSubcommand(subcommand, asJson)
 	}
+}
+
+func skillCommandListCatalog(args []string) (int, error) {
+	managed := slices.Contains(args, "--managed")
+	stable := slices.Contains(args, "--stable")
+	workdir := getOptionValue(args, "--workdir")
+	asJson := slices.Contains(args, "--json")
+	kind := getOptionValue(args, "--kind")
+
+	if kind != "" && kind != "all" && kind != "meta" {
+		writeSkillsCommandError(asJson, "skills catalog", "invalid_kind", "--kind supports only 'all' or 'meta'.")
+		return 2, errors.New("--kind supports only 'all' or 'meta'.")
+	}
+
+	catalog := []SkillCommandInspection{}
+	var skillsRootPath string
+	var source core.SkillSource
+	if stable {
+		bundledDir := filepath.Join(".", "skills")
+		if !util.DirectoryExists(bundledDir) {
+			if asJson {
+				fmt.Println("{\"count\":0,\"skills\":[]}")
+				return 0, nil
+			}
+
+			fmt.Println("Stable meta catalog (0):")
+			return 0, nil
+		}
+		skillsRootPath = bundledDir
+		source = core.SkillSourceBundled
+	} else {
+		skillsDirectory, err := resolveSkillsDirectory(managed, workdir)
+		if err != nil {
+			return 1, err
+		}
+		if !util.DirectoryExists(skillsDirectory) {
+			if asJson {
+				fmt.Println("{\"count\":0,\"skills\":[]}")
+				return 0, nil
+			}
+
+			fmt.Println("No skills installed.")
+			return 0, nil
+		}
+
+		skillsRootPath = skillsDirectory
+	}
+
+	inspectionResults := core.SkillInspectorInstance.InspectInstalledRoot(skillsRootPath, source)
+	for _, v := range inspectionResults {
+		if v.Success && v.Definition != nil {
+			inspection := createInspection(&v)
+			if kind == "" || kind == "all" || (kind == "meta" && inspection.Definition.Kind == core.SkillKind_Meta) {
+				catalog = append(catalog, inspection)
+			}
+		}
+	}
+
+	slices.SortFunc(catalog, func(a, b SkillCommandInspection) int {
+		return strings.Compare(a.Definition.Name, b.Definition.Name)
+	})
+
+	if asJson {
+		type innerDtoItem struct {
+			Name        string `json:"name"`
+			Kind        string `json:"kind"`
+			Description string `json:"description"`
+			Trust       string `json:"trust"`
+			Source      string `json:"source"`
+			Path        string `json:"path"`
+		}
+		type innerDto struct {
+			Count  int            `json:"count"`
+			Skills []innerDtoItem `json:"skill"`
+		}
+		dto := innerDto{
+			Count: len(catalog),
+		}
+		for _, item := range catalog {
+			dto.Skills = append(dto.Skills, innerDtoItem{
+				Name:        item.Definition.Name,
+				Kind:        strings.ToLower(item.Definition.Kind.ToString()),
+				Description: item.Definition.Description,
+				Trust:       item.TrustLevel,
+				Source:      item.SourceLabel,
+				Path:        item.SkillRootPath,
+			})
+		}
+
+		raw, _ := json.Marshal(dto)
+		fmt.Println(string(raw))
+		return 0, nil
+	}
+
+	header := "Skill catalog"
+	if stable {
+		header = "Stable meta catalog"
+	}
+
+	fmt.Printf("%s (%d):\n", header, len(catalog))
+	for _, item := range catalog {
+		fmt.Printf("  %s [%s] - %s\n", item.Definition.Name, strings.ToLower(item.Definition.Kind.ToString()), item.Definition.Description)
+		fmt.Printf("    Trust: %s\n", item.TrustLevel)
+		fmt.Printf("    Source: %s\n", item.SourceLabel)
+		fmt.Printf("    Path: %s\n", item.SkillRootPath)
+	}
+
+	return 0, nil
 }
 
 func skillCommandListInstalled(args []string) (int, error) {
