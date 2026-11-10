@@ -803,7 +803,7 @@ type MetaRunProposalProvenanceDetail struct {
 	RunStatus               string    `json:"run_status"`
 	RunStartedAtUtc         time.Time `json:"run_started_at_utc"`
 	RunCompletedAtUtc       time.Time `json:"run_completed_at_utc"`
-	StepCount               int       `json:"step_count"`
+	StepCount               int64     `json:"step_count"`
 	StepIds                 []string  `json:"step_ids"`
 	CheckpointPendingStepId string    `json:"checkpoint_pending_step_id"`
 	CheckpointPromptPresent bool      `json:"checkpoint_prompt_present"`
@@ -816,12 +816,12 @@ func DefaultMetaRunProposalProvenanceDetail() *MetaRunProposalProvenanceDetail {
 }
 
 type MetaRunProposalReviewRecord struct {
-	SessionId     string    `json:"session_id"`
-	ProposalId    string    `json:"proposal_id"`
-	ReviewStatus  string    `json:"review_status"`
-	Reason        string    `json:"reason"`
-	ReviewedAtUtc time.Time `json:"reviewed_at_utc"`
-	ReviewedBy    string    `json:"reviewed_by"`
+	SessionId     string     `json:"session_id"`
+	ProposalId    string     `json:"proposal_id"`
+	ReviewStatus  string     `json:"review_status"`
+	Reason        string     `json:"reason"`
+	ReviewedAtUtc *time.Time `json:"reviewed_at_utc"`
+	ReviewedBy    string     `json:"reviewed_by"`
 }
 
 type MetaRunProposalReviewMutationResponse struct {
@@ -842,7 +842,7 @@ type MetaRunProposalWorkflowDetail struct {
 	LastAction       string     `json:"last_action"`
 	LastActorId      string     `json:"last_actor_id"`
 	LastChangedAtUtc *time.Time `json:"last_changed_at_utc"`
-	TransitionCount  int        `json:"transition_count"`
+	TransitionCount  int64      `json:"transition_count"`
 }
 
 type MetaRunProposalAuditDetail struct {
@@ -859,9 +859,9 @@ func DefaultMetaRunProposalAuditDetail() *MetaRunProposalAuditDetail {
 }
 
 type MetaRunProposalReviewDetail struct {
-	Status        string    `json:"status"`
-	ReviewedAtUtc time.Time `json:"reviewed_at_utc"`
-	Reason        string    `json:"reason"`
+	Status        string     `json:"status"`
+	ReviewedAtUtc *time.Time `json:"reviewed_at_utc"`
+	Reason        string     `json:"reason"`
 }
 
 type MetaRunDerivedProposalCheckpointDetail struct {

@@ -5,14 +5,67 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
+	"time"
 	"unicode"
 
 	"github.com/futugyou/openclaw/core"
 	"github.com/futugyou/openclaw/util"
+)
+
+const (
+	MetaRunProposalMetadataSessionId                         = "meta_run_proposal_session_id"
+	MetaRunProposalMetadataProposalId                        = "meta_run_proposal_id"
+	MetaRunProposalMetadataRunId                             = "meta_run_proposal_run_id"
+	MetaRunProposalMetadataProposalStatus                    = "meta_run_proposal_status"
+	MetaRunProposalMetadataProposalKind                      = "meta_run_proposal_kind"
+	MetaRunProposalMetadataReason                            = "meta_run_proposal_reason"
+	MetaRunProposalMetadataSource                            = "meta_run_proposal_source"
+	MetaRunProposalMetadataProvenanceSnapshotVersion         = "meta_run_proposal_provenance_snapshot_version"
+	MetaRunProposalMetadataProvenanceCapturedAtUtc           = "meta_run_proposal_provenance_captured_at_utc"
+	MetaRunProposalMetadataProvenanceRunStatus               = "meta_run_proposal_provenance_run_status"
+	MetaRunProposalMetadataProvenanceRunStartedAtUtc         = "meta_run_proposal_provenance_run_started_at_utc"
+	MetaRunProposalMetadataProvenanceRunCompletedAtUtc       = "meta_run_proposal_provenance_run_completed_at_utc"
+	MetaRunProposalMetadataProvenanceStepCount               = "meta_run_proposal_provenance_step_count"
+	MetaRunProposalMetadataProvenanceStepIds                 = "meta_run_proposal_provenance_step_ids"
+	MetaRunProposalMetadataProvenanceCheckpointPendingStepId = "meta_run_proposal_provenance_checkpoint_pending_step_id"
+	MetaRunProposalMetadataProvenanceCheckpointPromptPresent = "meta_run_proposal_provenance_checkpoint_prompt_present"
+	MetaRunProposalMetadataTransitionCount                   = "meta_run_proposal_transition_count"
+	MetaRunProposalMetadataTransitionEntryPrefix             = "meta_run_proposal_transition"
+	MetaRunProposalMetadataTransitionFieldAction             = "action"
+	MetaRunProposalMetadataTransitionFieldFromStatus         = "from_status"
+	MetaRunProposalMetadataTransitionFieldToStatus           = "to_status"
+	MetaRunProposalMetadataTransitionFieldChangedAtUtc       = "changed_at_utc"
+	MetaRunProposalMetadataTransitionFieldActorId            = "actor_id"
+	MetaRunProposalMetadataTransitionFieldReason             = "reason"
+	MetaRunProposalMetadataAuditSchemaVersion                = "meta_run_proposal_audit_schema_version"
+	MetaRunProposalMetadataLastTransitionAction              = "meta_run_proposal_last_transition_action"
+	MetaRunProposalMetadataLastTransitionChangedAtUtc        = "meta_run_proposal_last_transition_changed_at_utc"
+	MetaRunProposalMetadataLastTransitionActorId             = "meta_run_proposal_last_transition_actor_id"
+	MetaRunProposalMetadataAcceptGateProfile                 = "meta_run_proposal_accept_gate_profile"
+	MetaRunProposalMetadataAcceptGatePassed                  = "meta_run_proposal_accept_gate_passed"
+	MetaRunProposalMetadataAcceptGateFailedChecks            = "meta_run_proposal_accept_gate_failed_checks"
+	MetaRunProposalMetadataAcceptGateCheckedAtUtc            = "meta_run_proposal_accept_gate_checked_at_utc"
+
+	MetaRunWorkflowMetadataSessionId                   = "meta_run_workflow_session_id"
+	MetaRunWorkflowMetadataProposalId                  = "meta_run_workflow_proposal_id"
+	MetaRunWorkflowMetadataWorkflowId                  = "meta_run_workflow_id"
+	MetaRunWorkflowMetadataStage                       = "meta_run_workflow_stage"
+	MetaRunWorkflowMetadataLastAction                  = "meta_run_workflow_last_action"
+	MetaRunWorkflowMetadataLastActorId                 = "meta_run_workflow_last_actor_id"
+	MetaRunWorkflowMetadataLastChangedAtUtc            = "meta_run_workflow_last_changed_at_utc"
+	MetaRunWorkflowMetadataTransitionCount             = "meta_run_workflow_transition_count"
+	MetaRunWorkflowMetadataTransitionEntryPrefix       = "meta_run_workflow_transition"
+	MetaRunWorkflowMetadataTransitionFieldAction       = "action"
+	MetaRunWorkflowMetadataTransitionFieldStage        = "stage"
+	MetaRunWorkflowMetadataTransitionFieldChangedAtUtc = "changed_at_utc"
+	MetaRunWorkflowMetadataTransitionFieldActorId      = "actor_id"
+	MetaRunWorkflowMetadataTransitionFieldReason       = "reason"
 )
 
 type SkillCommandInspection struct {
@@ -134,8 +187,841 @@ func SkillCommandRun(args []string) (int, error) {
 		return skillCommandListCatalog(rest)
 	case "create":
 		return skillCommandCreateSkillScaffold(rest)
+	case "proposals":
+		return skillCommandListReadOnlyProposalsEntry(rest)
 	default:
 		return skillCommandUnknownSubcommand(subcommand, asJson)
+	}
+}
+
+func skillCommandListReadOnlyProposalsEntry(args []string) (int, error) {
+	asJson := slices.Contains(args, "--json")
+	if len(args) > 0 && (args[0] == "accept" || args[0] == "dismiss" || args[0] == "rollback" || args[0] == "change") {
+		msg := "openclaw skills proposals is a read-only entry. Use `openclaw skills meta-runs proposals <accept|dismiss|rollback|change>` for lifecycle actions."
+		writeSkillsCommandError(asJson, "skills proposals", "read_only_alias_lifecycle_action", msg)
+		return 2, errors.New(msg)
+	}
+
+	if len(args) > 0 && args[0] == "show" {
+		return showMetaRunProposal(args[1:], "skills proposals")
+	}
+
+	return listMetaRunProposals(args, "skills proposals")
+}
+
+func loadMetaRunLearningReviews(ctx context.Context, store core.ILearningProposalStore, sessionid string) map[string]core.MetaRunProposalReviewRecord {
+	candidates, err := store.ListProposals(ctx, "", "meta_run_proposal")
+	if err != nil {
+		return map[string]core.MetaRunProposalReviewRecord{}
+	}
+
+	result := map[string]core.MetaRunProposalReviewRecord{}
+	for _, item := range candidates {
+		value, ok := tryGetMetaRunProposalMetadata(&item, MetaRunProposalMetadataSessionId)
+		if ok && value == sessionid {
+			_, ok := tryGetMetaRunProposalMetadata(&item, MetaRunProposalMetadataProposalId)
+			if ok {
+				result[item.Metadata[MetaRunProposalMetadataProposalId]] = util.Deref(toMetaRunProposalReviewRecord(item, sessionid, item.Metadata[MetaRunProposalMetadataProposalId]))
+			}
+		}
+	}
+	return result
+}
+
+func listMetaRunProposals(args []string, entrypoint string) (int, error) {
+	asJson := slices.Contains(args, "--json")
+	requestedRunId := getOptionValue(args, "--run")
+	sessionId := ""
+	for i := 0; i < len(args); i++ {
+		if !strings.HasPrefix(args[i], "-") {
+			sessionId = args[i]
+			break
+		}
+	}
+
+	if sessionId == "" {
+		msg := "Usage: openclaw skills meta-runs proposals <session-id> [--run <run-id>] [--storage <path>] [--json]"
+		writeSkillsCommandError(asJson, "skills meta-runs proposals", "missing_session_id", msg)
+		return 2, errors.New(msg)
+	}
+
+	storagePath := getOptionValue(args, "--storage")
+	learningProposalStore, err := openLearningProposalStore(storagePath)
+	if err != nil {
+		return 1, err
+	}
+	store, err := openMemoryStore(storagePath)
+	if err != nil {
+		return 1, err
+	}
+
+	ctx := context.Background()
+	session, err := store.GetSession(ctx, sessionId)
+	if session == nil || err != nil {
+		msg := fmt.Sprintf("Session '%s' not found.", sessionId)
+		writeSkillsCommandError(asJson, "skills meta-runs proposals", "session_not_found", msg)
+		return 1, errors.New(msg)
+	}
+
+	proposals := buildDerivedProposals(session, requestedRunId)
+	if requestedRunId != "" {
+		find := false
+		for _, run := range session.MetaRunHistory {
+			if run.RunId == requestedRunId {
+				find = true
+				break
+			}
+		}
+
+		if !find {
+			msg := fmt.Sprintf("Run '%s' not found in session '%s'.", requestedRunId, sessionId)
+			writeSkillsCommandError(asJson, "skills meta-runs proposals", "run_not_found", msg)
+			return 1, errors.New(msg)
+		}
+	}
+
+	reviews := loadMetaRunLearningReviews(ctx, learningProposalStore, sessionId)
+	proposals = applyReviewSummary(proposals, reviews)
+
+	response := core.MetaRunDerivedProposalListResponse{
+		SessionId:     sessionId,
+		Entrypoint:    entrypoint,
+		ReadOnlyAlias: entrypoint == "skills proposals",
+		Count:         len(proposals),
+		Proposals:     proposals,
+	}
+
+	if asJson {
+		date, _ := json.Marshal(response)
+		fmt.Println(string(date))
+	} else {
+		writeDerivedProposalListText(response)
+	}
+
+	return 0, nil
+}
+
+func writeDerivedProposalListText(response core.MetaRunDerivedProposalListResponse) {
+	panic("unimplemented")
+}
+
+func applyReviewSummary(proposals []core.MetaRunDerivedProposalSummary, reviews map[string]core.MetaRunProposalReviewRecord) []core.MetaRunDerivedProposalSummary {
+	if len(proposals) == 0 {
+		return proposals
+	}
+
+	result := []core.MetaRunDerivedProposalSummary{}
+	for _, proposal := range proposals {
+		review, ok := reviews[proposal.Id]
+		if !ok {
+			result = append(result, proposal)
+		} else {
+			result = append(result, core.MetaRunDerivedProposalSummary{
+				Id:               proposal.Id,
+				RunId:            proposal.RunId,
+				SkillName:        proposal.SkillName,
+				Status:           proposal.Status,
+				Kind:             proposal.Kind,
+				Title:            proposal.Title,
+				Summary:          proposal.Summary,
+				Source:           proposal.Source,
+				AvailableActions: proposal.AvailableActions,
+				ReviewStatus:     review.ReviewStatus,
+				ReviewedAtUtc:    review.ReviewedAtUtc,
+			})
+		}
+	}
+
+	return result
+}
+
+func resolveMemoryPath(storagePath string) (string, error) {
+	if storagePath != "" {
+		return filepath.Abs(storagePath)
+	}
+
+	workspace := os.Getenv(envWorkspace)
+	if workspace != "" {
+		p, err := filepath.Abs(workspace)
+		if err != nil {
+			return "", err
+		}
+		return filepath.Join(p, "memory"), nil
+	}
+
+	return filepath.Abs("./memory")
+}
+
+func looksLikeSqlitePath(path string) bool {
+	extension := filepath.Ext(path)
+	return extension == ".db" || extension == ".sqlite" || extension == ".sqlite3"
+}
+func openLearningProposalStore(storagePath string) (core.ILearningProposalStore, error) {
+	resolved, err := resolveMemoryPath(storagePath)
+	if err != nil {
+		return nil, err
+	}
+	if looksLikeSqlitePath(resolved) {
+		return core.NewSqliteFeatureStore(resolved)
+	}
+
+	return core.NewFileFeatureStore(resolved)
+}
+
+func openMemoryStore(storagePath string) (core.IMemoryStore, error) {
+	resolved, err := resolveMemoryPath(storagePath)
+	if err != nil {
+		return nil, err
+	}
+	if looksLikeSqlitePath(resolved) {
+		return core.NewSqliteMemoryStore(resolved, false, nil, false, nil, nil)
+	}
+	return core.NewFileMemoryStore(resolved, 0, nil, nil, nil)
+}
+
+func buildDerivedProposals(session *core.Session, requestedRunId string) []core.MetaRunDerivedProposalSummary {
+	result := []core.MetaRunDerivedProposalSummary{}
+	for _, run := range session.MetaRunHistory {
+		if requestedRunId == "" || run.RunId == requestedRunId {
+			proposal := tryBuildDerivedProposalSummary(run, session.MetaExecutionCheckpoint)
+			if proposal != nil {
+				result = append(result, *proposal)
+			}
+		}
+	}
+	return result
+}
+
+func tryBuildDerivedProposalSummary(run core.SessionMetaRunRecord, checkpoint *core.SessionMetaExecutionCheckpoint) *core.MetaRunDerivedProposalSummary {
+	if run.Status == "paused" {
+		pendingStepId := ""
+		if checkpoint != nil && checkpoint.SkillName == run.SkillName {
+			pendingStepId = checkpoint.PendingStepId
+		}
+		summary := fmt.Sprintf("Run %s is paused and needs operator follow-up.", run.RunId)
+		if pendingStepId != "" {
+			summary = fmt.Sprintf("Run %s is paused at step %s.", run.RunId, pendingStepId)
+		}
+
+		return &core.MetaRunDerivedProposalSummary{
+			Id:               fmt.Sprintf("meta-run:%s:paused", run.RunId),
+			RunId:            run.RunId,
+			SkillName:        run.SkillName,
+			Status:           run.Status,
+			Kind:             "paused_run_followup",
+			Title:            fmt.Sprintf("Resume paused meta run %s", run.SkillName),
+			Summary:          summary,
+			AvailableActions: []string{"show", "accept", "dismiss"},
+		}
+	}
+
+	if run.Status == "failed" {
+		summary := fmt.Sprintf("Run %s failed and needs review.", run.RunId)
+		if run.ErrorCode != "" {
+			summary = fmt.Sprintf("Run %s failed with %s.", run.RunId, run.ErrorCode)
+		}
+
+		return &core.MetaRunDerivedProposalSummary{
+			Id:               fmt.Sprintf("meta-run:%s:failed", run.RunId),
+			RunId:            run.RunId,
+			SkillName:        run.SkillName,
+			Status:           run.Status,
+			Kind:             "failed_run_review",
+			Title:            fmt.Sprintf("Review failed meta run %s", run.SkillName),
+			Summary:          summary,
+			AvailableActions: []string{"show", "accept", "dismiss"},
+		}
+	}
+
+	return nil
+}
+func buildMetaRunProposalDurableId(sessionId, proposalId string) string {
+	return fmt.Sprintf("meta-run-proposal:%s:%s", sessionId, proposalId)
+}
+func buildMetaRunWorkflowDurableId(sessionId, proposalId string) string {
+	return fmt.Sprintf("meta-run-workflow:%s:%s", sessionId, proposalId)
+}
+
+func getMetaRunLearningProposal(ctx context.Context, store core.ILearningProposalStore, sessionId, proposalId string) (*core.LearningProposal, error) {
+	return store.GetProposal(ctx, buildMetaRunProposalDurableId(sessionId, proposalId))
+}
+
+func getMetaRunReviewWorkflowDetail(ctx context.Context, store core.ILearningProposalStore, sessionId, proposalId string) *core.MetaRunProposalWorkflowDetail {
+	durableWorkflow, err := store.GetProposal(ctx, buildMetaRunWorkflowDurableId(sessionId, proposalId))
+	if durableWorkflow == nil || err != nil {
+		return nil
+	}
+
+	workflowId, ok := durableWorkflow.Metadata["meta_run_workflow_id"]
+	stage, ok1 := durableWorkflow.Metadata["meta_run_workflow_stage"]
+	lastAction, ok2 := durableWorkflow.Metadata["meta_run_workflow_last_action"]
+
+	if !ok || !ok1 || !ok2 || workflowId == "" || stage == "" || lastAction == "" {
+		return nil
+	}
+
+	lastActorId := durableWorkflow.Metadata["meta_run_workflow_last_actor_id"]
+	var lastChangedAtUtc *time.Time
+	lastChangedAtRaw := durableWorkflow.Metadata["meta_run_workflow_last_changed_at_utc"]
+
+	if lastChanged, err := time.Parse(time.RFC3339, lastChangedAtRaw); err != nil {
+		lastChangedAtUtc = new(lastChanged)
+	}
+
+	countRaw := durableWorkflow.Metadata["meta_run_workflow_transition_count"]
+	transitionCount, _ := strconv.ParseInt(countRaw, 10, 64)
+	return &core.MetaRunProposalWorkflowDetail{
+		WorkflowId:       workflowId,
+		Stage:            stage,
+		LastAction:       lastAction,
+		LastActorId:      lastActorId,
+		LastChangedAtUtc: lastChangedAtUtc,
+		TransitionCount:  transitionCount,
+	}
+}
+
+func mapLearningProposalStatusToReviewStatus(lifecycleStatus string) string {
+	switch lifecycleStatus {
+	case "approved":
+		return "approved"
+	case "rejected":
+		return "dismissed"
+	case "rolled_back":
+		return "rolled_back"
+	default:
+		return "pending"
+	}
+}
+
+func toMetaRunProposalReviewRecord(proposal core.LearningProposal, sessionId, proposalId string) *core.MetaRunProposalReviewRecord {
+	reason := proposal.ReviewNotes
+	if proposal.Status == "rolled_back" {
+		reason = proposal.RollbackReason
+	}
+	reviewedAtUtc := proposal.ReviewedAtUtc
+	if reviewedAtUtc == nil {
+		reviewedAtUtc = new(proposal.UpdatedAtUtc)
+	}
+	return &core.MetaRunProposalReviewRecord{
+		SessionId:     sessionId,
+		ProposalId:    proposalId,
+		ReviewedAtUtc: reviewedAtUtc,
+		Reason:        reason,
+		ReviewStatus:  mapLearningProposalStatusToReviewStatus(proposal.Status),
+	}
+}
+
+func buildDerivedProposalDetail(summary core.MetaRunDerivedProposalSummary, run core.SessionMetaRunRecord, checkpoint *core.SessionMetaExecutionCheckpoint) core.MetaRunDerivedProposalDetail {
+	checkpointMatches := run.Status == "paused" && checkpoint != nil && checkpoint.SkillName == run.SkillName
+	var checkpointDetail *core.MetaRunDerivedProposalCheckpointDetail
+	pendingStepId := ""
+	pendingStepIds := []string{}
+	blockedStepIds := []string{}
+	timelineStepIds := []string{}
+	steps := []core.MetaRunDerivedProposalStepDetail{}
+	if checkpointMatches {
+		pendingStepId = checkpoint.PendingStepId
+		pendingStepIds = checkpoint.PendingStepIds
+		blockedStepIds = checkpoint.BlockedStepIds
+		checkpointDetail = &core.MetaRunDerivedProposalCheckpointDetail{
+			PendingStepId:       checkpoint.PendingStepId,
+			PendingStepIds:      checkpoint.PendingStepIds,
+			BlockedStepIds:      checkpoint.BlockedStepIds,
+			PromptPresent:       checkpoint.Prompt != "",
+			OutputStepIds:       slices.Collect(maps.Keys(checkpoint.Outputs)),
+			FailureAliasStepIds: slices.Collect(maps.Keys(checkpoint.FailureAliases)),
+		}
+	}
+
+	for _, step := range run.StepResults {
+		timelineStepIds = append(timelineStepIds, step.Id)
+		steps = append(steps, core.MetaRunDerivedProposalStepDetail{
+			Id:          step.Id,
+			Kind:        step.Kind,
+			Status:      step.Status,
+			FailureCode: step.FailureCode,
+			DurationMs:  step.DurationMs,
+			Continued:   step.Continued,
+		})
+	}
+	return core.MetaRunDerivedProposalDetail{
+		Id:               summary.Id,
+		RunId:            summary.RunId,
+		SkillName:        summary.SkillName,
+		Status:           summary.Status,
+		Kind:             summary.Kind,
+		Title:            summary.Title,
+		Summary:          summary.Summary,
+		Source:           summary.Source,
+		AvailableActions: summary.AvailableActions,
+		Checkpoint:       checkpointDetail,
+		Evidence: &core.MetaRunDerivedProposalEvidenceDetail{
+			TimelineStepIds: timelineStepIds,
+			ErrorCode:       run.ErrorCode,
+			Error:           run.Error,
+			FinalText:       run.FinalText,
+		},
+		PendingStepId:   pendingStepId,
+		PendingStepIds:  pendingStepIds,
+		BlockedStepIds:  blockedStepIds,
+		TimelineStepIds: timelineStepIds,
+		Steps:           steps,
+		ErrorCode:       run.ErrorCode,
+		Error:           run.Error,
+		FinalText:       run.FinalText,
+	}
+}
+
+func tryGetMetaRunProposalMetadata(proposal *core.LearningProposal, key string) (string, bool) {
+	metadataValue, ok := proposal.Metadata[key]
+	if ok && metadataValue != "" {
+		return metadataValue, true
+	}
+
+	return "", false
+}
+
+func buildMetaRunProposalProvenanceDetail(proposal *core.LearningProposal) *core.MetaRunProposalProvenanceDetail {
+	if proposal == nil {
+		return nil
+	}
+
+	snapshotVersion, ok := tryGetMetaRunProposalMetadata(proposal, MetaRunProposalMetadataProvenanceSnapshotVersion)
+	if !ok {
+		return nil
+	}
+
+	capturedAtRaw, ok := tryGetMetaRunProposalMetadata(proposal, MetaRunProposalMetadataProvenanceCapturedAtUtc)
+	if !ok {
+		return nil
+	}
+
+	capturedAtUtc, err := time.Parse(time.RFC3339, capturedAtRaw)
+	if err != nil {
+		return nil
+	}
+
+	runStatus, ok := tryGetMetaRunProposalMetadata(proposal, MetaRunProposalMetadataProvenanceRunStatus)
+	if !ok {
+		return nil
+	}
+
+	runStartedRaw, ok := tryGetMetaRunProposalMetadata(proposal, MetaRunProposalMetadataProvenanceRunStartedAtUtc)
+	if !ok {
+		return nil
+	}
+
+	runStartedAtUtc, err := time.Parse(time.RFC3339, runStartedRaw)
+	if err != nil {
+		return nil
+	}
+
+	runCompletedRaw, ok := tryGetMetaRunProposalMetadata(proposal, MetaRunProposalMetadataProvenanceRunCompletedAtUtc)
+	if !ok {
+		return nil
+	}
+
+	runCompletedAtUtc, err := time.Parse(time.RFC3339, runCompletedRaw)
+	if err != nil {
+		return nil
+	}
+
+	stepCountRaw, ok := tryGetMetaRunProposalMetadata(proposal, MetaRunProposalMetadataProvenanceStepCount)
+	if !ok {
+		return nil
+	}
+
+	stepCount, err := strconv.ParseInt(stepCountRaw, 10, 64)
+	if err != nil {
+		return nil
+	}
+
+	stepIdsRaw := proposal.Metadata[MetaRunProposalMetadataProvenanceStepIds]
+	checkpointPendingStepId := proposal.Metadata[MetaRunProposalMetadataProvenanceCheckpointPendingStepId]
+	checkpointPromptPresentRaw := proposal.Metadata[MetaRunProposalMetadataProvenanceCheckpointPromptPresent]
+	checkpointPromptPresent := checkpointPromptPresentRaw == "true"
+
+	return &core.MetaRunProposalProvenanceDetail{
+		SnapshotVersion:         snapshotVersion,
+		CapturedAtUtc:           capturedAtUtc,
+		RunStatus:               runStatus,
+		RunStartedAtUtc:         runStartedAtUtc,
+		RunCompletedAtUtc:       runCompletedAtUtc,
+		StepCount:               stepCount,
+		StepIds:                 strings.Split(",", stepIdsRaw),
+		CheckpointPendingStepId: checkpointPendingStepId,
+		CheckpointPromptPresent: checkpointPromptPresent,
+	}
+}
+
+func buildMetaRunProposalLifecycleDetail(proposal *core.LearningProposal) *core.MetaRunProposalLifecycleDetail {
+	if proposal == nil {
+		return nil
+	}
+
+	return &core.MetaRunProposalLifecycleDetail{
+		Status:          proposal.Status,
+		RolledBack:      proposal.RolledBack,
+		ReviewedAtUtc:   proposal.ReviewedAtUtc,
+		RolledBackAtUtc: proposal.RolledBackAtUtc,
+		ReviewNotes:     proposal.ReviewNotes,
+		RollbackReason:  proposal.RollbackReason,
+	}
+}
+
+func buildMetaRunProposalAuditDetail(proposal *core.LearningProposal) *core.MetaRunProposalAuditDetail {
+	if proposal == nil {
+		return nil
+	}
+
+	schemaVersion := proposal.Metadata[MetaRunProposalMetadataAuditSchemaVersion]
+	if schemaVersion == "" {
+		schemaVersion = "v1"
+	}
+
+	actorId := proposal.Metadata[MetaRunProposalMetadataLastTransitionActorId]
+	transitionAction := proposal.Metadata[MetaRunProposalMetadataLastTransitionAction]
+	changedAtRaw := proposal.Metadata[MetaRunProposalMetadataLastTransitionChangedAtUtc]
+
+	var changedAtUtc *time.Time
+	parsed, err := time.Parse(time.RFC3339, changedAtRaw)
+	if err == nil {
+		changedAtUtc = new(parsed)
+	}
+
+	if actorId == "" && transitionAction == "" && changedAtUtc == nil {
+		return nil
+	}
+
+	return &core.MetaRunProposalAuditDetail{
+		SchemaVersion:    schemaVersion,
+		ActorId:          actorId,
+		ChangedAtUtc:     changedAtUtc,
+		TransitionAction: transitionAction,
+	}
+}
+
+func buildMetaRunProposalTransitionMetadataKey(index int64, field string) string {
+	return fmt.Sprintf("%s_%04d_%s", MetaRunProposalMetadataTransitionEntryPrefix, index, field)
+}
+
+func buildMetaRunProposalProvenanceHistory(proposal *core.LearningProposal) []core.MetaRunProposalProvenanceTransition {
+	if proposal == nil {
+		return []core.MetaRunProposalProvenanceTransition{}
+	}
+
+	countRaw := proposal.Metadata[MetaRunProposalMetadataTransitionCount]
+	count, err := strconv.ParseInt(countRaw, 10, 64)
+	if count <= 0 || err != nil {
+		return []core.MetaRunProposalProvenanceTransition{}
+	}
+
+	transitions := make([]core.MetaRunProposalProvenanceTransition, count)
+	for index := int64(0); index < count; index++ {
+		action, ok := proposal.Metadata[buildMetaRunProposalTransitionMetadataKey(index, MetaRunProposalMetadataTransitionFieldAction)]
+		if !ok || action == "" {
+			continue
+		}
+		fromStatus, ok := proposal.Metadata[buildMetaRunProposalTransitionMetadataKey(index, MetaRunProposalMetadataTransitionFieldFromStatus)]
+		if !ok || fromStatus == "" {
+			continue
+		}
+		toStatus, ok := proposal.Metadata[buildMetaRunProposalTransitionMetadataKey(index, MetaRunProposalMetadataTransitionFieldToStatus)]
+		if !ok || toStatus == "" {
+			continue
+		}
+		changedAtUtc, err := time.Parse(time.RFC3339, proposal.Metadata[buildMetaRunProposalTransitionMetadataKey(index, MetaRunProposalMetadataTransitionFieldChangedAtUtc)])
+		if err != nil {
+			continue
+		}
+
+		reason := proposal.Metadata[buildMetaRunProposalTransitionMetadataKey(index, MetaRunProposalMetadataTransitionFieldReason)]
+		transitions[index] = core.MetaRunProposalProvenanceTransition{
+			Action:       action,
+			FromStatus:   fromStatus,
+			ToStatus:     toStatus,
+			ChangedAtUtc: changedAtUtc,
+			Reason:       reason,
+		}
+	}
+
+	return transitions
+}
+
+func showMetaRunProposal(args []string, entrypoint string) (int, error) {
+	asJson := slices.Contains(args, "--json")
+	sessionId := ""
+	for i := 0; i < len(args); i++ {
+		if !strings.HasPrefix(args[i], "-") {
+			sessionId = args[i]
+			break
+		}
+	}
+	if sessionId == "" {
+		msg := "Usage: openclaw skills meta-runs proposals show <session-id> --proposal <id> [--storage <path>] [--json]"
+		writeSkillsCommandError(asJson, "skills meta-runs proposals show", "missing_session_id", msg)
+		return 2, errors.New(msg)
+	}
+
+	proposalId := getOptionValue(args, "--proposal")
+	if proposalId == "" {
+		msg := "--proposal <id> is required for meta-runs proposals show."
+		writeSkillsCommandError(asJson, "skills meta-runs proposals show", "missing_proposal_id", msg)
+		return 2, errors.New(msg)
+	}
+
+	storagePath := getOptionValue(args, "--storage")
+	learningProposalStore, err := openLearningProposalStore(storagePath)
+	if err != nil {
+		return 1, err
+	}
+	store, err := openMemoryStore(storagePath)
+	if err != nil {
+		return 1, err
+	}
+
+	ctx := context.Background()
+	session, err := store.GetSession(ctx, sessionId)
+	if session == nil || err != nil {
+		msg := fmt.Sprintf("Session '%s' not found.", sessionId)
+		writeSkillsCommandError(asJson, "skills meta-runs proposals show", "session_not_found", msg)
+		return 1, errors.New(msg)
+	}
+
+	proposals := buildDerivedProposals(session, "")
+	var summary core.MetaRunDerivedProposalSummary
+	for i := 0; i < len(proposals); i++ {
+		if proposals[i].Id == proposalId {
+			summary = proposals[i]
+			break
+		}
+	}
+
+	if summary.Id == "" {
+		msg := fmt.Sprintf("Proposal '%s' not found in session '%s'.", proposalId, sessionId)
+		writeSkillsCommandError(asJson, "skills meta-runs proposals show", "proposal_not_found", msg)
+		return 1, errors.New(msg)
+	}
+
+	var run core.SessionMetaRunRecord
+	for i := 0; i < len(session.MetaRunHistory); i++ {
+		if session.MetaRunHistory[i].RunId == summary.RunId {
+			run = session.MetaRunHistory[i]
+			break
+		}
+	}
+
+	durableProposal, err := getMetaRunLearningProposal(ctx, learningProposalStore, sessionId, summary.Id)
+	if err != nil {
+		return 1, err
+	}
+
+	workflow := getMetaRunReviewWorkflowDetail(ctx, learningProposalStore, sessionId, summary.Id)
+
+	var review *core.MetaRunProposalReviewRecord
+	if durableProposal != nil {
+		review = toMetaRunProposalReviewRecord(*durableProposal, sessionId, summary.Id)
+	}
+
+	detail := core.MetaRunDerivedProposalDetailResponse{
+		SessionId:     sessionId,
+		Entrypoint:    entrypoint,
+		ReadOnlyAlias: entrypoint == "skills proposals",
+		Proposal: applyReviewDetail(
+			buildDerivedProposalDetail(summary, run, session.MetaExecutionCheckpoint),
+			review,
+			buildMetaRunProposalProvenanceDetail(durableProposal),
+			buildMetaRunProposalLifecycleDetail(durableProposal),
+			buildMetaRunProposalAuditDetail(durableProposal),
+			workflow,
+			buildMetaRunProposalProvenanceHistory(durableProposal)),
+	}
+
+	if asJson {
+		data, _ := json.Marshal(detail)
+		fmt.Println(string(data))
+	} else {
+		writeDerivedProposalDetailText(detail)
+	}
+
+	return 0, nil
+}
+
+func writeDerivedProposalDetailText(detail core.MetaRunDerivedProposalDetailResponse) {
+	proposal := detail.Proposal
+	fmt.Printf("Session: %s\n", detail.SessionId)
+	fmt.Printf("Proposal: %s\n", proposal.Id)
+	fmt.Printf("Run: %s\n", proposal.RunId)
+	fmt.Printf("Skill: %s\n", proposal.SkillName)
+	fmt.Printf("Status: %s\n", proposal.Status)
+	fmt.Printf("Kind: %s\n", proposal.Kind)
+	fmt.Printf("Title: %s\n", proposal.Title)
+	fmt.Printf("Summary: %s\n", proposal.Summary)
+	fmt.Printf("Source: %s\n", proposal.Source)
+	fmt.Printf("Available actions: %s\n", strings.Join(proposal.AvailableActions, ", "))
+
+	if proposal.Review != nil {
+		fmt.Println("Review:")
+		fmt.Printf("Status: %s\n", proposal.Review.Status)
+		fmt.Printf("Reviewed at (UTC): %s\n", proposal.Review.ReviewedAtUtc.Format(time.RFC3339Nano))
+		if strings.TrimSpace(proposal.Review.Reason) != "" {
+			fmt.Printf("Reason: %s\n", proposal.Review.Reason)
+		}
+	}
+
+	if proposal.Checkpoint != nil {
+		fmt.Println("Checkpoint:")
+		fmt.Printf("Pending step: %s\n", proposal.Checkpoint.PendingStepId)
+		if len(proposal.Checkpoint.PendingStepIds) > 0 {
+			fmt.Printf("Pending steps: %s\n", strings.Join(proposal.Checkpoint.PendingStepIds, ", "))
+		}
+		if len(proposal.Checkpoint.BlockedStepIds) > 0 {
+			fmt.Printf("Blocked steps: %s\n", strings.Join(proposal.Checkpoint.BlockedStepIds, ", "))
+		}
+		if proposal.Checkpoint.PromptPresent {
+			fmt.Println("Prompt present: yes")
+		} else {
+			fmt.Println("Prompt present: no")
+		}
+		if len(proposal.Checkpoint.OutputStepIds) > 0 {
+			fmt.Printf("Output steps: %s\n", strings.Join(proposal.Checkpoint.OutputStepIds, ", "))
+		}
+		if len(proposal.Checkpoint.FailureAliasStepIds) > 0 {
+			fmt.Printf("Failure alias steps: %s\n", strings.Join(proposal.Checkpoint.FailureAliasStepIds, ", "))
+		}
+	}
+
+	if proposal.Evidence != nil {
+		fmt.Println("Evidence:")
+		if len(proposal.Evidence.TimelineStepIds) > 0 {
+			fmt.Printf("Evidence timeline steps: %s\n", strings.Join(proposal.Evidence.TimelineStepIds, ", "))
+		}
+		if strings.TrimSpace(proposal.Evidence.ErrorCode) != "" {
+			fmt.Printf("Evidence error code: %s\n", proposal.Evidence.ErrorCode)
+		}
+		if strings.TrimSpace(proposal.Evidence.Error) != "" {
+			fmt.Printf("Evidence error: %s\n", proposal.Evidence.Error)
+		}
+		if strings.TrimSpace(proposal.Evidence.FinalText) != "" {
+			fmt.Printf("Evidence final text: %s\n", proposal.Evidence.FinalText)
+		}
+	}
+
+	if proposal.Provenance != nil {
+		fmt.Println("Provenance:")
+		fmt.Printf("Snapshot version: %s\n", proposal.Provenance.SnapshotVersion)
+		fmt.Printf("Captured at (UTC): %s\n", proposal.Provenance.CapturedAtUtc.Format(time.RFC3339Nano))
+		fmt.Printf("Run status snapshot: %s\n", proposal.Provenance.RunStatus)
+		fmt.Printf("Step count snapshot: %d\n", proposal.Provenance.StepCount)
+		if len(proposal.Provenance.StepIds) > 0 {
+			fmt.Printf("Step ids snapshot: %s\n", strings.Join(proposal.Provenance.StepIds, ", "))
+		}
+		if strings.TrimSpace(proposal.Provenance.CheckpointPendingStepId) != "" {
+			fmt.Printf("Checkpoint pending step snapshot: %s\n", proposal.Provenance.CheckpointPendingStepId)
+		}
+		if proposal.Provenance.CheckpointPromptPresent {
+			fmt.Println("Checkpoint prompt snapshot: yes")
+		} else {
+			fmt.Println("Checkpoint prompt snapshot: no")
+		}
+	}
+
+	if proposal.Lifecycle != nil {
+		fmt.Println("Lifecycle:")
+		fmt.Printf("Status: %s\n", proposal.Lifecycle.Status)
+		if proposal.Lifecycle.RolledBack {
+			fmt.Println("Rolled back: yes")
+		} else {
+			fmt.Println("Rolled back: no")
+		}
+		if proposal.Lifecycle.ReviewedAtUtc != nil {
+			fmt.Printf("Reviewed at (UTC): %s\n", proposal.Lifecycle.ReviewedAtUtc.Format(time.RFC3339Nano))
+		}
+		if proposal.Lifecycle.RolledBackAtUtc != nil {
+			fmt.Printf("Rolled back at (UTC): %s\n", proposal.Lifecycle.RolledBackAtUtc.Format(time.RFC3339Nano))
+		}
+		if strings.TrimSpace(proposal.Lifecycle.ReviewNotes) != "" {
+			fmt.Printf("Review notes: %s\n", proposal.Lifecycle.ReviewNotes)
+		}
+		if strings.TrimSpace(proposal.Lifecycle.RollbackReason) != "" {
+			fmt.Printf("Rollback reason: %s\n", proposal.Lifecycle.RollbackReason)
+		}
+	}
+
+	if len(proposal.ProvenanceHistory) > 0 {
+		fmt.Println("Provenance history:")
+		for _, transition := range proposal.ProvenanceHistory {
+			detail := fmt.Sprintf("- %s | %s -> %s | changedAtUtc=%s", transition.Action, transition.FromStatus, transition.ToStatus, transition.ChangedAtUtc.Format(time.RFC3339Nano))
+			if strings.TrimSpace(transition.Reason) != "" {
+				detail += fmt.Sprintf(" | reason=%s", transition.Reason)
+			}
+			fmt.Println(detail)
+		}
+	}
+
+	if len(proposal.TimelineStepIds) > 0 {
+		fmt.Printf("Timeline steps: %s\n", strings.Join(proposal.TimelineStepIds, ", "))
+	}
+
+	if len(proposal.Steps) > 0 {
+		fmt.Println("Steps:")
+		for _, step := range proposal.Steps {
+			detail := fmt.Sprintf("- %s | kind=%s | status=%s", step.Id, step.Kind, step.Status)
+			if strings.TrimSpace(step.FailureCode) != "" {
+				detail += fmt.Sprintf(" | failureCode=%s", step.FailureCode)
+			}
+			detail += fmt.Sprintf(" | durationMs=%.14f", step.DurationMs)
+			detail += fmt.Sprintf(" | continued=%t", step.Continued)
+			fmt.Println(detail)
+		}
+	}
+
+	if strings.TrimSpace(proposal.ErrorCode) != "" {
+		fmt.Printf("Error code: %s\n", proposal.ErrorCode)
+	}
+	if strings.TrimSpace(proposal.Error) != "" {
+		fmt.Printf("Error: %s\n", proposal.Error)
+	}
+	if strings.TrimSpace(proposal.FinalText) != "" {
+		fmt.Printf("Final text: %s\n", proposal.FinalText)
+	}
+}
+
+func applyReviewDetail(detail core.MetaRunDerivedProposalDetail, review *core.MetaRunProposalReviewRecord, provenance *core.MetaRunProposalProvenanceDetail, lifecycle *core.MetaRunProposalLifecycleDetail, audit *core.MetaRunProposalAuditDetail, workflow *core.MetaRunProposalWorkflowDetail, provenanceHistory []core.MetaRunProposalProvenanceTransition) *core.MetaRunDerivedProposalDetail {
+	var reviewDetail *core.MetaRunProposalReviewDetail
+	if review != nil {
+		reviewDetail = &core.MetaRunProposalReviewDetail{
+			Status:        review.ReviewStatus,
+			ReviewedAtUtc: review.ReviewedAtUtc,
+			Reason:        review.Reason,
+		}
+	}
+	return &core.MetaRunDerivedProposalDetail{
+		Id:                detail.Id,
+		RunId:             detail.RunId,
+		SkillName:         detail.SkillName,
+		Status:            detail.Status,
+		Kind:              detail.Kind,
+		Title:             detail.Title,
+		Summary:           detail.Summary,
+		Source:            detail.Source,
+		AvailableActions:  detail.AvailableActions,
+		Checkpoint:        detail.Checkpoint,
+		Evidence:          detail.Evidence,
+		Provenance:        provenance,
+		Lifecycle:         lifecycle,
+		Audit:             audit,
+		Workflow:          workflow,
+		ProvenanceHistory: provenanceHistory,
+		Review:            reviewDetail,
+		PendingStepId:     detail.PendingStepId,
+		PendingStepIds:    detail.PendingStepIds,
+		BlockedStepIds:    detail.BlockedStepIds,
+		TimelineStepIds:   detail.TimelineStepIds,
+		Steps:             detail.Steps,
+		ErrorCode:         detail.ErrorCode,
+		Error:             detail.Error,
+		FinalText:         detail.FinalText,
 	}
 }
 
