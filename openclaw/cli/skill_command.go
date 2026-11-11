@@ -220,6 +220,9 @@ func skillCommandListMetaRuns(args []string) (int, error) {
 	if len(args) > 0 && args[0] == "list" {
 		return skillCommandListMetaRunsGlobal(args[1:])
 	}
+	if len(args) > 0 && args[0] == "show" {
+		return skillCommandShowMetaRunGlobal(args[1:])
+	}
 
 	asJson := slices.Contains(args, "--json")
 	verbose := slices.Contains(args, "--verbose")
@@ -330,6 +333,90 @@ func skillCommandListMetaRuns(args []string) (int, error) {
 	}
 
 	return 0, nil
+}
+
+func writeMetaRunsGlobalShowJson(sessionId string, run core.SessionMetaRunRecord) {
+	data := map[string]any{
+		"sessionId":      sessionId,
+		"runId":          run.RunId,
+		"skillName":      run.SkillName,
+		"status":         run.Status,
+		"startedAtUtc":   run.StartedAtUtc,
+		"completedAtUtc": run.CompletedAtUtc,
+		"stepCount":      len(run.StepResults),
+	}
+
+	if run.ErrorCode != "" {
+		data["errorCode"] = run.ErrorCode
+	}
+	if run.Error != "" {
+		data["error"] = run.Error
+	}
+
+	jsonData, err := json.Marshal(data)
+	if err != nil {
+		fmt.Printf("JSON marshal error: %v\n", err)
+		return
+	}
+
+	fmt.Println(string(jsonData))
+}
+
+func skillCommandShowMetaRunGlobal(args []string) (int, error) {
+	asJson := slices.Contains(args, "--json")
+	storagePath := getOptionValue(args, "--storage")
+	runId := ""
+	for i := 0; i < len(args); i++ {
+		if !strings.HasPrefix(args[i], "-") {
+			runId = args[i]
+			break
+		}
+	}
+
+	if runId == "" {
+		msg := "Usage: openclaw skills meta-runs show <run-id> [--storage <path>] [--json]"
+		writeSkillsCommandError(asJson, "skills meta-runs show", "missing_run_id", msg)
+		return 2, errors.New(msg)
+	}
+
+	store, err := openMemoryStore(storagePath)
+	if err != nil {
+		return 1, err
+	}
+
+	sessionIds := loadSessionIds(store, 1, 500)
+	for _, sessionId := range sessionIds {
+		session, err := store.GetSession(context.Background(), sessionId)
+		if session == nil || err != nil {
+			continue
+		}
+
+		var run *core.SessionMetaRunRecord
+		for i := 0; i < len(session.MetaRunHistory); i++ {
+			if session.MetaRunHistory[i].RunId == runId {
+				run = &session.MetaRunHistory[i]
+			}
+		}
+
+		if run == nil {
+			continue
+		}
+
+		if asJson {
+			writeMetaRunsGlobalShowJson(session.Id, *run)
+		} else {
+			fmt.Printf("Run: %s\n", run.RunId)
+			fmt.Printf("Session: %s\n", session.Id)
+			fmt.Printf("Skill: %s\n", run.SkillName)
+			fmt.Printf("Status: %s\n", run.Status)
+		}
+
+		return 0, nil
+	}
+
+	msg := fmt.Sprintf("Run '%s' not found.", runId)
+	writeSkillsCommandError(asJson, "skills meta-runs show", "run_not_found", msg)
+	return 1, errors.New(msg)
 }
 
 func loadSessionIds(store core.IMemoryStore, page, pageSize int) []string {
