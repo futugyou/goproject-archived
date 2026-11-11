@@ -189,9 +189,143 @@ func SkillCommandRun(args []string) (int, error) {
 		return skillCommandCreateSkillScaffold(rest)
 	case "proposals":
 		return skillCommandListReadOnlyProposalsEntry(rest)
+	case "meta-runs":
+		return skillCommandListMetaRuns(rest)
 	default:
 		return skillCommandUnknownSubcommand(subcommand, asJson)
 	}
+}
+
+func writeMetaRunsJson(sessionId string, totalCount int, runs []core.SessionMetaRunRecord) string {
+	type innerDTO struct {
+		SessionId  string                      `json:"sessionId"`
+		TotalCount int                         `json:"totalCount"`
+		ShownCount int                         `json:"shownCount"`
+		Runs       []core.SessionMetaRunRecord `json:"runs"`
+	}
+
+	dto := innerDTO{
+		SessionId:  sessionId,
+		TotalCount: totalCount,
+		ShownCount: len(runs),
+		Runs:       runs,
+	}
+	data, _ := json.Marshal(dto)
+	msg := string(data)
+	fmt.Println(msg)
+	return msg
+}
+
+func skillCommandListMetaRuns(args []string) (int, error) {
+	asJson := slices.Contains(args, "--json")
+	verbose := slices.Contains(args, "--verbose")
+	requestedRunId := getOptionValue(args, "--run")
+	sessionId := ""
+	for i := 0; i < len(args); i++ {
+		if !strings.HasPrefix(args[i], "-") {
+			sessionId = args[i]
+			break
+		}
+	}
+
+	if sessionId == "" {
+		msg := "Usage: openclaw skills meta-runs <session-id> [--storage <path>] [--limit <count>] [--run <run-id>] [--verbose] [--json]"
+		writeSkillsCommandError(asJson, "skills meta-runs", "missing_session_id", msg)
+		return 2, errors.New(msg)
+	}
+
+	storagePath := getOptionValue(args, "--storage")
+	limit := parseIntOption(args, "--limit", 20)
+	limit = util.Clamp(limit, 1, 100)
+
+	store, err := openMemoryStore(storagePath)
+	if err != nil {
+		return 1, err
+	}
+
+	ctx := context.Background()
+	session, err := store.GetSession(ctx, sessionId)
+	if session == nil || err != nil {
+		msg := fmt.Sprintf("Session '%s' not found.", sessionId)
+		writeSkillsCommandError(asJson, "skills meta-runs", "session_not_found", msg)
+		return 1, errors.New(msg)
+	}
+
+	if len(session.MetaRunHistory) == 0 {
+		if asJson {
+			writeMetaRunsJson(sessionId, len(session.MetaRunHistory), nil)
+			return 0, nil
+		}
+
+		fmt.Printf("Session: %s\n", sessionId)
+		fmt.Println("Meta runs: 0")
+		return 0, nil
+	}
+
+	runs := []core.SessionMetaRunRecord{}
+	for i := int64(0); i < limit; i++ {
+		run := session.MetaRunHistory[i]
+		if requestedRunId == "" || run.RunId == requestedRunId {
+			runs = append(runs, run)
+		}
+	}
+
+	slices.SortFunc(runs, func(a, b core.SessionMetaRunRecord) int {
+		return b.StartedAtUtc.Compare(a.CompletedAtUtc)
+	})
+
+	if requestedRunId != "" && len(runs) == 0 {
+		msg := fmt.Sprintf("Run '%s' not found in session '%s'.", requestedRunId, sessionId)
+		writeSkillsCommandError(asJson, "skills meta-runs", "run_not_found", msg)
+		return 1, errors.New(msg)
+	}
+
+	if asJson {
+		writeMetaRunsJson(sessionId, len(session.MetaRunHistory), runs)
+		return 0, nil
+	}
+
+	fmt.Printf("Session: %s\n", sessionId)
+	fmt.Printf("Meta runs: %d total, showing %d\n", len(session.MetaRunHistory), len(runs))
+	fmt.Println("")
+
+	for i := 0; i < len(runs); i++ {
+		run := runs[i]
+		fmt.Printf("Run: %s\n", run.RunId)
+		fmt.Printf("Skill: %s\n", run.SkillName)
+		fmt.Printf("Status:  %s\n", run.Status)
+		fmt.Printf("Started: %s\n", run.StartedAtUtc.Format(time.RFC3339Nano))
+		fmt.Printf("Completed: %s\n", run.CompletedAtUtc.Format(time.RFC3339Nano))
+		fmt.Printf("Steps: %d\n", len(run.StepResults))
+		if run.ErrorCode != "" {
+			fmt.Printf("Error code: %s\n", run.ErrorCode)
+		}
+		if run.Error != "" {
+			fmt.Printf("Error: %s\n", run.Error)
+		}
+		if run.FinalText != "" {
+			fmt.Printf("Final text: %s\n", run.FinalText)
+		}
+
+		if verbose {
+			for _, step := range run.StepResults {
+				line := fmt.Sprintf("- Step: %s | kind=%s | status=%s | duration_ms=%.3f", step.Id, step.Kind, step.Status, step.DurationMs)
+				if step.FailureCode != "" {
+					line += fmt.Sprintf(" | failure_code=%s", step.FailureCode)
+				}
+				if step.Continued {
+					line += " | continued=true"
+				}
+				fmt.Println(line)
+			}
+
+			fmt.Println("")
+		} else {
+			fmt.Println("")
+		}
+	}
+
+	return 0, nil
 }
 
 func skillCommandListReadOnlyProposalsEntry(args []string) (int, error) {

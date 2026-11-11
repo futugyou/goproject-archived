@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"slices"
+	"strconv"
 	"strings"
 
 	"github.com/futugyou/openclaw/core"
@@ -95,6 +96,15 @@ func getOptionValue(args []string, optionName string) string {
 		}
 	}
 	return ""
+}
+
+func parseIntOption(args []string, optionName string, defaultValue int64) int64 {
+	value := getOptionValue(args, optionName)
+	parsed, err := strconv.ParseInt(value, 10, 64)
+	if err != nil {
+		return defaultValue
+	}
+	return parsed
 }
 
 func containsOption(args []string, optionName string) bool {
