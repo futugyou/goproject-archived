@@ -217,6 +217,10 @@ func writeMetaRunsJson(sessionId string, totalCount int, runs []core.SessionMeta
 }
 
 func skillCommandListMetaRuns(args []string) (int, error) {
+	if len(args) > 0 && args[0] == "list" {
+		return skillCommandListMetaRunsGlobal(args[1:])
+	}
+
 	asJson := slices.Contains(args, "--json")
 	verbose := slices.Contains(args, "--verbose")
 	requestedRunId := getOptionValue(args, "--run")
@@ -322,6 +326,132 @@ func skillCommandListMetaRuns(args []string) (int, error) {
 			fmt.Println("")
 		} else {
 			fmt.Println("")
+		}
+	}
+
+	return 0, nil
+}
+
+func loadSessionIds(store core.IMemoryStore, page, pageSize int) []string {
+	adminStore, ok := store.(core.ISessionAdminStore)
+	if !ok {
+		return []string{}
+	}
+
+	ids := []string{}
+	current := page
+	for {
+		result, err := adminStore.ListSessions(context.Background(), current, pageSize, &core.SessionListQuery{})
+		if err != nil {
+			continue
+		}
+
+		for _, v := range result.Items {
+			ids = append(ids, v.Id)
+		}
+
+		if !result.HasMore {
+			break
+		}
+
+		current++
+	}
+
+	return ids
+}
+
+type MetaRunGlobalItem struct {
+	SessionId      string
+	RunId          string
+	SkillName      string
+	Status         string
+	StartedAtUtc   time.Time
+	CompletedAtUtc time.Time
+	StepCount      int
+	ErrorCode      string
+}
+
+func writeMetaRunsGlobalListJson(page int, pageSize int, items []MetaRunGlobalItem) {
+	itemList := make([]map[string]any, len(items))
+	for i, item := range items {
+		m := map[string]any{
+			"sessionId":      item.SessionId,
+			"runId":          item.RunId,
+			"skillName":      item.SkillName,
+			"status":         item.Status,
+			"startedAtUtc":   item.StartedAtUtc,
+			"completedAtUtc": item.CompletedAtUtc,
+			"stepCount":      item.StepCount,
+		}
+		if strings.TrimSpace(item.ErrorCode) != "" {
+			m["errorCode"] = item.ErrorCode
+		}
+		itemList[i] = m
+	}
+
+	payload := map[string]any{
+		"page":     page,
+		"pageSize": pageSize,
+		"count":    len(items),
+		"items":    itemList,
+	}
+
+	data, err := json.Marshal(payload)
+	if err != nil {
+		return
+	}
+
+	fmt.Println(string(data))
+}
+
+func skillCommandListMetaRunsGlobal(args []string) (int, error) {
+	asJson := slices.Contains(args, "--json")
+	storagePath := getOptionValue(args, "--storage")
+	page := max(1, parseIntOption(args, "--page", 1))
+	pageSize := util.Clamp(parseIntOption(args, "--page-size", 50), 1, 200)
+
+	store, err := openMemoryStore(storagePath)
+	if err != nil {
+		return 1, err
+	}
+
+	sessionIds := loadSessionIds(store, int(page), int(pageSize))
+	items := []MetaRunGlobalItem{}
+
+	for _, sessionId := range sessionIds {
+		session, err := store.GetSession(context.Background(), sessionId)
+		if err != nil || session == nil {
+			continue
+		}
+
+		runs := session.MetaRunHistory
+		slices.SortFunc(runs, func(a, b core.SessionMetaRunRecord) int {
+			return b.StartedAtUtc.Compare(a.CompletedAtUtc)
+		})
+
+		for i := 0; i < len(runs); i++ {
+			run := runs[i]
+
+			items = append(items, MetaRunGlobalItem{
+				SessionId:      session.Id,
+				RunId:          run.RunId,
+				SkillName:      run.SkillName,
+				Status:         run.Status,
+				StartedAtUtc:   run.StartedAtUtc,
+				CompletedAtUtc: run.CompletedAtUtc,
+				StepCount:      len(run.StepResults),
+				ErrorCode:      run.ErrorCode,
+			})
+
+		}
+		if asJson {
+			writeMetaRunsGlobalListJson(int(page), int(pageSize), items)
+			return 0, nil
+		}
+
+		fmt.Printf("Global meta runs: %d\n", len(items))
+		for _, item := range items {
+			fmt.Printf("- %s | session=%s | status=%s | steps=%d\n", item.RunId, item.SessionId, item.Status, item.StepCount)
 		}
 	}
 
