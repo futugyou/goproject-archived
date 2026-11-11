@@ -231,7 +231,7 @@ func skillCommandListMetaRuns(args []string) (int, error) {
 	verbose := slices.Contains(args, "--verbose")
 	requestedRunId := getOptionValue(args, "--run")
 	sessionId := ""
-	for i := 0; i < len(args); i++ {
+	for i := range args {
 		if !strings.HasPrefix(args[i], "-") {
 			sessionId = args[i]
 			break
@@ -440,7 +440,7 @@ func skillCommandShowMetaRunGlobal(args []string) (int, error) {
 	asJson := slices.Contains(args, "--json")
 	storagePath := getOptionValue(args, "--storage")
 	runId := ""
-	for i := 0; i < len(args); i++ {
+	for i := range args {
 		if !strings.HasPrefix(args[i], "-") {
 			runId = args[i]
 			break
@@ -657,7 +657,7 @@ func listMetaRunProposals(args []string, entrypoint string) (int, error) {
 	asJson := slices.Contains(args, "--json")
 	requestedRunId := getOptionValue(args, "--run")
 	sessionId := ""
-	for i := 0; i < len(args); i++ {
+	for i := range args {
 		if !strings.HasPrefix(args[i], "-") {
 			sessionId = args[i]
 			break
@@ -1176,7 +1176,7 @@ func buildMetaRunProposalProvenanceHistory(proposal *core.LearningProposal) []co
 func showMetaRunProposal(args []string, entrypoint string) (int, error) {
 	asJson := slices.Contains(args, "--json")
 	sessionId := ""
-	for i := 0; i < len(args); i++ {
+	for i := range args {
 		if !strings.HasPrefix(args[i], "-") {
 			sessionId = args[i]
 			break
@@ -1648,7 +1648,7 @@ func skillCommandCreateSkillScaffold(args []string) (int, error) {
 	managed := slices.Contains(args, "--managed")
 	workdir := getOptionValue(args, "--workdir")
 	name := ""
-	for i := 0; i < len(args); i++ {
+	for i := range args {
 		if !strings.HasPrefix(args[i], "-") {
 			name = args[i]
 			break
