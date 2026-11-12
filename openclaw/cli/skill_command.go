@@ -186,6 +186,9 @@ func skillCommandListMetaRuns(args []string) (int, error) {
 	if len(args) > 0 && args[0] == "reconstruct" {
 		return skillCommandReconstructMetaRunReplay(args[1:])
 	}
+	if len(args) > 0 && args[0] == "proposals" {
+		return skillCommandHandleMetaRunProposals(args[1:])
+	}
 
 	asJson := slices.Contains(args, "--json")
 	verbose := slices.Contains(args, "--verbose")
@@ -293,6 +296,83 @@ func skillCommandListMetaRuns(args []string) (int, error) {
 		} else {
 			fmt.Println("")
 		}
+	}
+
+	return 0, nil
+}
+
+func skillCommandHandleMetaRunProposals(args []string) (int, error) {
+	return skillCommandListMetaRunProposals(args, core.MetaRunProposalEntrypointsMetaRuns)
+}
+
+func skillCommandListMetaRunProposals(args []string, entrypoint string) (int, error) {
+	asJson := slices.Contains(args, "--json")
+	requestedRunId := getOptionValue(args, "--run")
+	sessionId := ""
+	for i := range args {
+		if !strings.HasPrefix(args[i], "-") {
+			sessionId = args[i]
+			break
+		}
+	}
+
+	if sessionId == "" {
+		msg := "Usage: openclaw skills meta-runs proposals <session-id> [--run <run-id>] [--storage <path>] [--json]"
+		writeSkillsCommandError(asJson, "skills meta-runs proposals", "missing_session_id", msg)
+		return 2, errors.New(msg)
+	}
+
+	storagePath := getOptionValue(args, "--storage")
+	learningProposalStore, err := openLearningProposalStore(storagePath)
+	if err != nil {
+		return 1, err
+	}
+
+	store, err := openMemoryStore(storagePath)
+	if err != nil {
+		return 1, err
+	}
+
+	session, err := store.GetSession(context.Background(), sessionId)
+	if session == nil || err != nil {
+		msg := fmt.Sprintf("Session '%s' not found.", sessionId)
+		writeSkillsCommandError(asJson, "skills meta-runs proposals", "session_not_found", msg)
+		return 1, errors.New(msg)
+	}
+
+	proposals := buildDerivedProposals(session, requestedRunId)
+	if requestedRunId != "" {
+		find := false
+		for _, v := range session.MetaRunHistory {
+			if v.RunId == requestedRunId {
+				find = true
+				break
+			}
+		}
+
+		if !find {
+			msg := fmt.Sprintf("Run '%s' not found in session '%s'.", requestedRunId, sessionId)
+			writeSkillsCommandError(asJson, "skills meta-runs proposals", "run_not_found", msg)
+			return 1, errors.New(msg)
+		}
+	}
+
+	reviews := loadMetaRunLearningReviews(context.Background(), learningProposalStore, sessionId)
+	proposals = applyReviewSummary(proposals, reviews)
+
+	response := core.MetaRunDerivedProposalListResponse{
+		SessionId:     sessionId,
+		Entrypoint:    entrypoint,
+		ReadOnlyAlias: entrypoint == core.MetaRunProposalEntrypointsReadOnlyAlias,
+		Count:         len(proposals),
+		Proposals:     proposals,
+	}
+
+	if asJson {
+		data, _ := json.Marshal(response)
+		fmt.Println(string(data))
+	} else {
+		writeDerivedProposalListText(response)
 	}
 
 	return 0, nil
