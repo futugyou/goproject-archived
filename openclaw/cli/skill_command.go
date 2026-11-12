@@ -183,6 +183,9 @@ func skillCommandListMetaRuns(args []string) (int, error) {
 	if len(args) > 0 && args[0] == "replay" {
 		return skillCommandPreviewMetaRunReplay(args[1:])
 	}
+	if len(args) > 0 && args[0] == "reconstruct" {
+		return skillCommandReconstructMetaRunReplay(args[1:])
+	}
 
 	asJson := slices.Contains(args, "--json")
 	verbose := slices.Contains(args, "--verbose")
@@ -293,6 +296,205 @@ func skillCommandListMetaRuns(args []string) (int, error) {
 	}
 
 	return 0, nil
+}
+
+func skillCommandReconstructMetaRunReplay(args []string) (int, error) {
+	asJson := slices.Contains(args, "--json")
+	sessionId := ""
+	for i := range args {
+		if !strings.HasPrefix(args[i], "-") {
+			sessionId = args[i]
+			break
+		}
+	}
+
+	if sessionId == "" {
+		msg := "Usage: openclaw skills meta-runs reconstruct <session-id> --run <run-id> [--storage <path>] [--json]"
+		writeSkillsCommandError(asJson, "skills meta-runs reconstruct", "missing_session_id", msg)
+		return 2, errors.New(msg)
+	}
+
+	requestedRunId := getOptionValue(args, "--run")
+	if requestedRunId == "" {
+		msg := "--run <run-id> is required for meta-runs reconstruct."
+		writeSkillsCommandError(asJson, "skills meta-runs reconstruct", "missing_run_id", msg)
+		return 2, errors.New(msg)
+	}
+
+	storagePath := getOptionValue(args, "--storage")
+	store, err := openMemoryStore(storagePath)
+	if err != nil {
+		return 1, err
+	}
+
+	session, err := store.GetSession(context.Background(), sessionId)
+	if session == nil || err != nil {
+		msg := fmt.Sprintf("Session '%s' not found.", sessionId)
+		writeSkillsCommandError(asJson, "skills meta-runs reconstruct", "session_not_found", msg)
+		return 1, errors.New(msg)
+	}
+
+	var run *core.SessionMetaRunRecord
+	for i := range session.MetaRunHistory {
+		if session.MetaRunHistory[i].RunId == requestedRunId {
+			run = &session.MetaRunHistory[i]
+			break
+		}
+	}
+
+	if run == nil {
+		msg := fmt.Sprintf("Run '%s' not found in session '%s'", requestedRunId, sessionId)
+		writeSkillsCommandError(asJson, "skills meta-runs reconstruct", "run_not_found", msg)
+		return 1, errors.New(msg)
+	}
+
+	replay := buildReplayResult(sessionId, run, session.MetaExecutionCheckpoint)
+	if asJson {
+		data, _ := json.Marshal(replay)
+		fmt.Println(string(data))
+	} else {
+		writeReplayResultText(replay)
+	}
+
+	return 0, nil
+}
+
+func formatReplayTimelineItem(item core.MetaRunReplayTimelineItem) string {
+	var line = fmt.Sprintf("- %d | step=%s | kind=%s | status=%s | duration_ms=%.3f", item.Sequence, item.StepId, item.Kind, item.Status, item.DurationMs)
+	if item.FailureCode != "" {
+		line += fmt.Sprintf(" | failure_code=%s", item.FailureCode)
+	}
+	if item.Continued {
+		line += " | continued=true"
+	}
+	if item.Notes != "" {
+		line += fmt.Sprintf(" | notes=%s", item.Notes)
+	}
+	return line
+}
+
+func writeReplayResultText(replay core.MetaRunReplayResultResponse) {
+	fmt.Printf("Replay reconstruction for run: %s\n", replay.RunId)
+	fmt.Printf("Session: %s\n", replay.SessionId)
+	fmt.Printf("Skill: %s\n", replay.SkillName)
+	fmt.Printf("Mode: %s\n", replay.Mode)
+	fmt.Printf("Source: %s\n", replay.Source)
+	fmt.Printf("Status: %s\n", replay.Status)
+
+	if strings.TrimSpace(replay.FinalText) != "" {
+		fmt.Printf("Final text: %s\n", replay.FinalText)
+	}
+	if strings.TrimSpace(replay.ErrorCode) != "" {
+		fmt.Printf("Error code: %s\n", replay.ErrorCode)
+	}
+	if strings.TrimSpace(replay.Error) != "" {
+		fmt.Printf("Error: %s\n", replay.Error)
+	}
+
+	writeReplayOperatorDiagnosticsText(replay.OperatorSummary, replay.TriageHints)
+
+	fmt.Println("Timeline:")
+	for _, item := range replay.Timeline {
+		fmt.Println(formatReplayTimelineItem(item))
+	}
+
+	if replay.Checkpoint != nil {
+		fmt.Println("Checkpoint:")
+		fmt.Printf("Pending step: %s\n", replay.Checkpoint.PendingStepId)
+		if len(replay.Checkpoint.PendingStepIds) > 0 {
+			fmt.Printf("Pending steps: %s\n", strings.Join(replay.Checkpoint.PendingStepIds, ", "))
+		}
+		if len(replay.Checkpoint.BlockedStepIds) > 0 {
+			fmt.Printf("Blocked steps: %s\n", strings.Join(replay.Checkpoint.BlockedStepIds, ", "))
+		}
+		if replay.Checkpoint.PromptPresent {
+			fmt.Println("Prompt retained: yes")
+		} else {
+			fmt.Println("Prompt retained: no")
+		}
+	}
+
+	fmt.Println("Proposal summary:")
+	if replay.ProposalSummary.Available {
+		fmt.Println("Available: yes")
+	} else {
+		fmt.Println("Available: no")
+	}
+	fmt.Printf("Reason: %s\n", replay.ProposalSummary.Reason)
+}
+
+func buildReplayResult(sessionId string, run *core.SessionMetaRunRecord, checkpoint *core.SessionMetaExecutionCheckpoint) core.MetaRunReplayResultResponse {
+	checkpointSummary := tryBuildReplayCheckpointSummary(run, checkpoint)
+	operatorSummary := buildReplayOperatorSummary(run)
+
+	source := core.MetaRunReplayExecutionSourcesHistoryOnly
+	if checkpointSummary != nil {
+		source = core.MetaRunReplayExecutionSourcesHistoryPlusCheckpoint
+	}
+
+	timeline := make([]core.MetaRunReplayTimelineItem, 0, len(run.StepResults))
+	for index, step := range run.StepResults {
+		timeline = append(timeline, core.MetaRunReplayTimelineItem{
+			Sequence:    index + 1,
+			StepId:      step.Id,
+			Kind:        step.Kind,
+			Status:      step.Status,
+			FailureCode: step.FailureCode,
+			DurationMs:  step.DurationMs,
+			Continued:   step.Continued,
+			Source:      core.MetaRunReplayTimelineSourcesRunHistory,
+			Notes:       buildReplayTimelineNotes(step),
+		})
+	}
+
+	return core.MetaRunReplayResultResponse{
+		SessionId:       sessionId,
+		RunId:           run.RunId,
+		SkillName:       run.SkillName,
+		Mode:            core.MetaRunReplayExecutionModesAuditReconstruction,
+		Status:          run.Status,
+		Source:          source,
+		FinalText:       run.FinalText,
+		Error:           run.Error,
+		ErrorCode:       run.ErrorCode,
+		Timeline:        timeline,
+		Checkpoint:      checkpointSummary,
+		ProposalSummary: &core.MetaRunProposalSummary{},
+		OperatorSummary: operatorSummary,
+		TriageHints:     buildReplayTriageHints(run, nil, operatorSummary),
+	}
+}
+
+func buildReplayTimelineNotes(step core.SessionMetaStepResult) string {
+	if !strings.EqualFold(step.Kind, "skill_exec") {
+		return ""
+	}
+
+	evidence := step.ExecutionEvidence
+	if evidence == nil {
+		return ""
+	}
+
+	return fmt.Sprintf("input_mode=%s; stdin_bytes=%d; parse_mode=%s; command=%s", evidence.InputMode, evidence.StdinBytes, evidence.ParseMode, evidence.CommandPreview)
+}
+
+func tryBuildReplayCheckpointSummary(run *core.SessionMetaRunRecord, checkpoint *core.SessionMetaExecutionCheckpoint) *core.MetaRunReplayCheckpointSummary {
+	if run.Status != "paused" || checkpoint == nil || !strings.EqualFold(checkpoint.SkillName, run.SkillName) || strings.TrimSpace(checkpoint.PendingStepId) == "" {
+		return nil
+	}
+
+	outputStepIds := slices.Collect(maps.Keys(checkpoint.Outputs))
+	slices.Sort(outputStepIds)
+	failureAliasStepIds := slices.Collect(maps.Keys(checkpoint.FailureAliases))
+	slices.Sort(failureAliasStepIds)
+	return &core.MetaRunReplayCheckpointSummary{
+		PendingStepId:       checkpoint.PendingStepId,
+		PendingStepIds:      checkpoint.PendingStepIds,
+		BlockedStepIds:      checkpoint.BlockedStepIds,
+		PromptPresent:       checkpoint.Prompt != "",
+		OutputStepIds:       outputStepIds,
+		FailureAliasStepIds: failureAliasStepIds,
+	}
 }
 
 func getReplayMissingRequirements(run *core.SessionMetaRunRecord) []core.MetaRunReplayRequirementPreview {
