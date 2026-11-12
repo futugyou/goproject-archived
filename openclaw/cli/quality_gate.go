@@ -43,7 +43,7 @@ func qualityGateAddCheck(checks []MetaRunProposalAcceptanceGateCheck, id string,
 	return append(checks, MetaRunProposalAcceptanceGateCheck{Id: id, Passed: passed})
 }
 
-func QualityGateEvaluate(proposal core.MetaRunDerivedProposalSummary, session core.Session) MetaRunProposalAcceptanceGateResult {
+func QualityGateEvaluate(proposal *core.MetaRunDerivedProposalSummary, session *core.Session) MetaRunProposalAcceptanceGateResult {
 	checks := []MetaRunProposalAcceptanceGateCheck{}
 	var run *core.SessionMetaRunRecord
 	for _, v := range session.MetaRunHistory {

@@ -830,7 +830,7 @@ type MetaRunProposalReviewMutationResponse struct {
 	ReviewStatus    string                         `json:"review_status"`
 	LifecycleStatus string                         `json:"lifecycle_status"`
 	AlreadyReviewed bool                           `json:"already_reviewed"`
-	ReviewedAtUtc   time.Time                      `json:"reviewed_at_utc"`
+	ReviewedAtUtc   *time.Time                     `json:"reviewed_at_utc"`
 	Reason          string                         `json:"reason"`
 	Audit           *MetaRunProposalAuditDetail    `json:"audit"`
 	Workflow        *MetaRunProposalWorkflowDetail `json:"workflow"`

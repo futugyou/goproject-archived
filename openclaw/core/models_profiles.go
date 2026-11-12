@@ -1,6 +1,7 @@
 package core
 
 import (
+	"strings"
 	"time"
 
 	"github.com/futugyou/extensions_ai/abstractions/chatcompletion"
@@ -347,4 +348,41 @@ type ModelSelectionResult struct {
 	Candidates         []ModelSelectionCandidate   `json:"candidates"`
 	PreferredTags      []string                    `json:"preferred_tags"`
 	Explanation        string                      `json:"explanation"`
+}
+
+func MetaRunProposalPolicyCanMutate(operatorID string) bool {
+	return strings.TrimSpace(operatorID) != ""
+}
+
+func MetaRunProposalPolicyIsAllowedTransition(fromStatus, toStatus string) bool {
+	switch [2]string{fromStatus, toStatus} {
+	case [2]string{"Pending", "Approved"},
+		[2]string{"Pending", "Rejected"},
+		[2]string{"Approved", "RolledBack"},
+		[2]string{"Rejected", "RolledBack"},
+		[2]string{"RolledBack", "Approved"},
+		[2]string{"RolledBack", "Rejected"}:
+		return true
+	default:
+		return false
+	}
+}
+
+func MetaRunProposalPolicyIsAllowedActionTransition(action, fromStatus, toStatus string) bool {
+	if !MetaRunProposalPolicyIsAllowedTransition(fromStatus, toStatus) {
+		return false
+	}
+
+	switch action {
+	case "Accept":
+		return strings.EqualFold(fromStatus, "Pending")
+	case "Dismiss":
+		return strings.EqualFold(fromStatus, "Pending")
+	case "Rollback":
+		return strings.EqualFold(toStatus, "RolledBack")
+	case "Change":
+		return strings.EqualFold(fromStatus, "RolledBack")
+	default:
+		return false
+	}
 }

@@ -3,10 +3,13 @@ package core
 import "time"
 
 const (
-	LearningProposalKindSkillDraft           = "skill_draft"
-	LearningProposalKindProfileUpdate        = "profile_update"
-	LearningProposalKindAutomationSuggestion = "automation_suggestion"
-	LearningProposalKindHarnessChange        = "harness_change"
+	LearningProposalKindSkillDraft            = "skill_draft"
+	LearningProposalKindProfileUpdate         = "profile_update"
+	LearningProposalKindAutomationSuggestion  = "automation_suggestion"
+	LearningProposalKindHarnessChange         = "harness_change"
+	LearningProposalKindMetaRunReview         = "meta_run_review"
+	LearningProposalKindMetaRunProposal       = "meta_run_proposal"
+	LearningProposalKindMetaRunReviewWorkflow = "meta_run_review_workflow"
 )
 
 // LearningProposalStatus
@@ -15,6 +18,24 @@ const (
 	LearningProposalStatusApproved   = "approved"
 	LearningProposalStatusRejected   = "rejected"
 	LearningProposalStatusRolledBack = "rolled_back"
+)
+
+const (
+	MetaRunReviewWorkflowKindsDurableKind        = "meta_run_review_workflow"
+	MetaRunReviewWorkflowStagesDecisionRecorded  = "decision_recorded"
+	MetaRunReviewWorkflowStagesRolledBack        = "rolled_back"
+	MetaRunReviewWorkflowActionsAccept           = "accept"
+	MetaRunReviewWorkflowActionsDismiss          = "dismiss"
+	MetaRunReviewWorkflowActionsRollback         = "rollback"
+	MetaRunReviewWorkflowActionsChange           = "change"
+	MetaRunReviewWorkflowMetadataSession         = "session"
+	MetaRunReviewWorkflowMetadataProposal        = "proposal"
+	MetaRunReviewWorkflowMetadataWorkflow        = "workflow"
+	MetaRunReviewWorkflowMetadataStage           = "stage"
+	MetaRunReviewWorkflowMetadataLastAction      = "last_action"
+	MetaRunReviewWorkflowMetadataLastActor       = "last_actor"
+	MetaRunReviewWorkflowMetadataLastChangedAt   = "last_changed_at"
+	MetaRunReviewWorkflowMetadataTransitionCount = "transition_count"
 )
 
 // LearningProposalRiskLevels
