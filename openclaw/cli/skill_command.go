@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -16,56 +17,6 @@ import (
 
 	"github.com/futugyou/openclaw/core"
 	"github.com/futugyou/openclaw/util"
-)
-
-const (
-	MetaRunProposalMetadataSessionId                         = "meta_run_proposal_session_id"
-	MetaRunProposalMetadataProposalId                        = "meta_run_proposal_id"
-	MetaRunProposalMetadataRunId                             = "meta_run_proposal_run_id"
-	MetaRunProposalMetadataProposalStatus                    = "meta_run_proposal_status"
-	MetaRunProposalMetadataProposalKind                      = "meta_run_proposal_kind"
-	MetaRunProposalMetadataReason                            = "meta_run_proposal_reason"
-	MetaRunProposalMetadataSource                            = "meta_run_proposal_source"
-	MetaRunProposalMetadataProvenanceSnapshotVersion         = "meta_run_proposal_provenance_snapshot_version"
-	MetaRunProposalMetadataProvenanceCapturedAtUtc           = "meta_run_proposal_provenance_captured_at_utc"
-	MetaRunProposalMetadataProvenanceRunStatus               = "meta_run_proposal_provenance_run_status"
-	MetaRunProposalMetadataProvenanceRunStartedAtUtc         = "meta_run_proposal_provenance_run_started_at_utc"
-	MetaRunProposalMetadataProvenanceRunCompletedAtUtc       = "meta_run_proposal_provenance_run_completed_at_utc"
-	MetaRunProposalMetadataProvenanceStepCount               = "meta_run_proposal_provenance_step_count"
-	MetaRunProposalMetadataProvenanceStepIds                 = "meta_run_proposal_provenance_step_ids"
-	MetaRunProposalMetadataProvenanceCheckpointPendingStepId = "meta_run_proposal_provenance_checkpoint_pending_step_id"
-	MetaRunProposalMetadataProvenanceCheckpointPromptPresent = "meta_run_proposal_provenance_checkpoint_prompt_present"
-	MetaRunProposalMetadataTransitionCount                   = "meta_run_proposal_transition_count"
-	MetaRunProposalMetadataTransitionEntryPrefix             = "meta_run_proposal_transition"
-	MetaRunProposalMetadataTransitionFieldAction             = "action"
-	MetaRunProposalMetadataTransitionFieldFromStatus         = "from_status"
-	MetaRunProposalMetadataTransitionFieldToStatus           = "to_status"
-	MetaRunProposalMetadataTransitionFieldChangedAtUtc       = "changed_at_utc"
-	MetaRunProposalMetadataTransitionFieldActorId            = "actor_id"
-	MetaRunProposalMetadataTransitionFieldReason             = "reason"
-	MetaRunProposalMetadataAuditSchemaVersion                = "meta_run_proposal_audit_schema_version"
-	MetaRunProposalMetadataLastTransitionAction              = "meta_run_proposal_last_transition_action"
-	MetaRunProposalMetadataLastTransitionChangedAtUtc        = "meta_run_proposal_last_transition_changed_at_utc"
-	MetaRunProposalMetadataLastTransitionActorId             = "meta_run_proposal_last_transition_actor_id"
-	MetaRunProposalMetadataAcceptGateProfile                 = "meta_run_proposal_accept_gate_profile"
-	MetaRunProposalMetadataAcceptGatePassed                  = "meta_run_proposal_accept_gate_passed"
-	MetaRunProposalMetadataAcceptGateFailedChecks            = "meta_run_proposal_accept_gate_failed_checks"
-	MetaRunProposalMetadataAcceptGateCheckedAtUtc            = "meta_run_proposal_accept_gate_checked_at_utc"
-
-	MetaRunWorkflowMetadataSessionId                   = "meta_run_workflow_session_id"
-	MetaRunWorkflowMetadataProposalId                  = "meta_run_workflow_proposal_id"
-	MetaRunWorkflowMetadataWorkflowId                  = "meta_run_workflow_id"
-	MetaRunWorkflowMetadataStage                       = "meta_run_workflow_stage"
-	MetaRunWorkflowMetadataLastAction                  = "meta_run_workflow_last_action"
-	MetaRunWorkflowMetadataLastActorId                 = "meta_run_workflow_last_actor_id"
-	MetaRunWorkflowMetadataLastChangedAtUtc            = "meta_run_workflow_last_changed_at_utc"
-	MetaRunWorkflowMetadataTransitionCount             = "meta_run_workflow_transition_count"
-	MetaRunWorkflowMetadataTransitionEntryPrefix       = "meta_run_workflow_transition"
-	MetaRunWorkflowMetadataTransitionFieldAction       = "action"
-	MetaRunWorkflowMetadataTransitionFieldStage        = "stage"
-	MetaRunWorkflowMetadataTransitionFieldChangedAtUtc = "changed_at_utc"
-	MetaRunWorkflowMetadataTransitionFieldActorId      = "actor_id"
-	MetaRunWorkflowMetadataTransitionFieldReason       = "reason"
 )
 
 type SkillCommandInspection struct {
@@ -229,6 +180,9 @@ func skillCommandListMetaRuns(args []string) (int, error) {
 	if len(args) > 0 && args[0] == "failures" {
 		return skillCommandListMetaRunFailuresGlobal(args[1:])
 	}
+	if len(args) > 0 && args[0] == "replay" {
+		return skillCommandPreviewMetaRunReplay(args[1:])
+	}
 
 	asJson := slices.Contains(args, "--json")
 	verbose := slices.Contains(args, "--verbose")
@@ -339,6 +293,489 @@ func skillCommandListMetaRuns(args []string) (int, error) {
 	}
 
 	return 0, nil
+}
+
+func getReplayMissingRequirements(run *core.SessionMetaRunRecord) []core.MetaRunReplayRequirementPreview {
+	var requirements = make([]core.MetaRunReplayRequirementPreview, 0)
+	requirements = append(requirements, core.MetaRunReplayRequirementPreview{
+		Name:   core.MetaRunReplayRequirementNamesPromptContext,
+		Kind:   core.MetaRunReplayRequirementKindsNotPersisted,
+		Reason: core.MetaRunReplayRequirementReasonsPromptContextNotPersisted,
+	})
+	requirements = append(requirements, core.MetaRunReplayRequirementPreview{
+		Name:   core.MetaRunReplayRequirementNamesStepInputs,
+		Kind:   core.MetaRunReplayRequirementKindsNotPersisted,
+		Reason: core.MetaRunReplayRequirementReasonsStepInputsNotPersisted,
+	})
+	requirements = append(requirements, core.MetaRunReplayRequirementPreview{
+		Name:   core.MetaRunReplayRequirementNamesToolArguments,
+		Kind:   core.MetaRunReplayRequirementKindsNotPersisted,
+		Reason: core.MetaRunReplayRequirementReasonsToolArgumentsNotPersisted,
+	})
+
+	for _, step := range run.StepResults {
+		if step.Kind == "skill_exec" && step.ExecutionEvidence != nil {
+			requirements = append(requirements, core.MetaRunReplayRequirementPreview{
+				Name:   core.MetaRunReplayRequirementNamesSkillExecInputs,
+				Kind:   core.MetaRunReplayRequirementKindsNotPersisted,
+				Reason: core.MetaRunReplayRequirementReasonsSkillExecInputsNotPersisted,
+			})
+			break
+		}
+	}
+
+	if !hasRetainedSteps(run) {
+		requirements = append(requirements, core.MetaRunReplayRequirementPreview{
+			Name:   core.MetaRunReplayRequirementNamesStepResults,
+			Kind:   core.MetaRunReplayRequirementKindsNotPersisted,
+			Reason: core.MetaRunReplayRequirementReasonsStepResultsNotRetained,
+		})
+	}
+
+	return requirements
+}
+
+func buildReplayPreview(sessionId string, run *core.SessionMetaRunRecord) core.MetaRunReplayPreviewResponse {
+	var missingRequirements = getReplayMissingRequirements(run)
+	var operatorSummary = buildReplayOperatorSummary(run)
+	return core.MetaRunReplayPreviewResponse{
+		SessionId:           sessionId,
+		RunId:               run.RunId,
+		SkillName:           run.SkillName,
+		Reason:              "Persisted meta run history does not yet include enough inputs to build an executable replay plan.",
+		AvailableArtifacts:  getReplayAvailableArtifacts(run),
+		RetainedSteps:       getReplayRetainedSteps(run),
+		Plan:                getReplayPlan(run, missingRequirements),
+		MissingRequirements: missingRequirements,
+		OperatorSummary:     operatorSummary,
+		TriageHints:         buildReplayTriageHints(run, missingRequirements, operatorSummary),
+	}
+}
+
+func buildReplayTriageHints(run *core.SessionMetaRunRecord, missingRequirements []core.MetaRunReplayRequirementPreview, summary *core.MetaRunReplayOperatorSummary) []core.MetaRunReplayTriageHint {
+	var hints []core.MetaRunReplayTriageHint
+
+	missingSkillExecInputs := false
+	for _, req := range missingRequirements {
+		if req.Name == core.MetaRunReplayRequirementNamesSkillExecInputs {
+			missingSkillExecInputs = true
+			break
+		}
+	}
+
+	if missingSkillExecInputs {
+		var stepIds []string
+		for _, step := range run.StepResults {
+			if strings.EqualFold(step.Kind, "skill_exec") && step.ExecutionEvidence == nil {
+				stepIds = append(stepIds, step.Id)
+			}
+		}
+		hints = append(hints, core.MetaRunReplayTriageHint{
+			Code:             core.MetaRunReplayTriageHintCodesSkillExecInputsNotPersisted,
+			Priority:         1,
+			Message:          "Persist skill_exec execution evidence so replay can include stdin and parse diagnostics.",
+			StepIds:          stepIds,
+			RequirementNames: []string{core.MetaRunReplayRequirementNamesSkillExecInputs},
+		})
+	}
+
+	var parseModeAnomalyStepIds []string
+	for _, step := range run.StepResults {
+		if strings.EqualFold(step.Kind, "skill_exec") && step.ExecutionEvidence != nil {
+			pm := step.ExecutionEvidence.ParseMode
+			if !strings.EqualFold(pm, "text") && !strings.EqualFold(pm, "json") {
+				parseModeAnomalyStepIds = append(parseModeAnomalyStepIds, step.Id)
+			}
+		}
+	}
+	if len(parseModeAnomalyStepIds) > 0 {
+		hints = append(hints, core.MetaRunReplayTriageHint{
+			Code:     core.MetaRunReplayTriageHintCodesSkillExecParseModeAnomaly,
+			Priority: 2,
+			Message:  "Found skill_exec parse_mode values outside supported text/json set; validate skill definitions and evidence snapshots.",
+			StepIds:  parseModeAnomalyStepIds,
+		})
+	}
+
+	var likelyTruncatedCommandStepIds []string
+	for _, step := range run.StepResults {
+		if strings.EqualFold(step.Kind, "skill_exec") && step.ExecutionEvidence != nil {
+			if isLikelyTruncatedCommandPreview(step.ExecutionEvidence.CommandPreview) {
+				likelyTruncatedCommandStepIds = append(likelyTruncatedCommandStepIds, step.Id)
+			}
+		}
+	}
+	if len(likelyTruncatedCommandStepIds) > 0 {
+		hints = append(hints, core.MetaRunReplayTriageHint{
+			Code:     core.MetaRunReplayTriageHintCodesSkillExecCommandPreviewTruncated,
+			Priority: 3,
+			Message:  "Command preview appears truncated; check original skill_exec args for full command context.",
+			StepIds:  likelyTruncatedCommandStepIds,
+		})
+	}
+
+	// 4. Check dominant failure cluster
+	if len(summary.FailureClusters) > 0 {
+		dominantFailure := summary.FailureClusters[0]
+		var stepIds []string
+		for _, step := range run.StepResults {
+			if strings.EqualFold(step.FailureCode, dominantFailure.Name) {
+				stepIds = append(stepIds, step.Id)
+			}
+		}
+		hints = append(hints, core.MetaRunReplayTriageHint{
+			Code:     core.MetaRunReplayTriageHintCodesDominantFailureCluster,
+			Priority: 4,
+			Message:  fmt.Sprintf("Dominant failure cluster is '%s' across %d step(s); prioritize this class first.", dominantFailure.Name, dominantFailure.Count),
+			StepIds:  stepIds,
+		})
+	}
+
+	// Sort hints by Priority ascending, then Code case-insensitively
+	sort.Slice(hints, func(i, j int) bool {
+		if hints[i].Priority != hints[j].Priority {
+			return hints[i].Priority < hints[j].Priority
+		}
+		return strings.Compare(strings.ToLower(hints[i].Code), strings.ToLower(hints[j].Code)) < 0
+	})
+
+	return hints
+}
+
+func isLikelyTruncatedCommandPreview(commandPreview string) bool {
+	if commandPreview == "" {
+		return false
+	}
+
+	return strings.HasSuffix(commandPreview, "...") || strings.HasSuffix(commandPreview, "…")
+}
+
+func getReplayPlan(run *core.SessionMetaRunRecord, missingRequirements []core.MetaRunReplayRequirementPreview) *core.MetaRunReplayPlanPreview {
+	steps := []core.MetaRunReplayStepReadinessPreview{}
+	for _, v := range run.StepResults {
+		steps = append(steps, getReplayStepReadiness(v))
+	}
+	return &core.MetaRunReplayPlanPreview{
+		Summary:               getReplayPlanSummary(run),
+		Mode:                  core.MetaRunReplayModesPreviewOnly,
+		ReplayableSteps:       steps,
+		BlockedByRequirements: missingRequirements,
+	}
+}
+
+func getReplayPlanSummary(run *core.SessionMetaRunRecord) string {
+	if hasRetainedSteps(run) {
+		return core.MetaRunReplayPlanSummariesAuditableNotReplayable
+	}
+
+	return core.MetaRunReplayPlanSummariesMetadataOnlyNotReplayable
+}
+
+func getReplayStepReadiness(step core.SessionMetaStepResult) core.MetaRunReplayStepReadinessPreview {
+	if (step.Status == "failed" || step.FailureCode != "") && step.Continued {
+		return core.MetaRunReplayStepReadinessPreview{
+			Id:        step.Id,
+			Readiness: core.MetaRunReplayStepReadinessKindsFailureTraceContinued,
+			Reason:    core.MetaRunReplayStepReadinessReasonsFailureTraceContinued,
+		}
+	}
+
+	if step.Status == "failed" || step.FailureCode != "" {
+		return core.MetaRunReplayStepReadinessPreview{
+			Id:        step.Id,
+			Readiness: core.MetaRunReplayStepReadinessKindsFailureTraceOnly,
+			Reason:    core.MetaRunReplayStepReadinessReasonsFailureTraceOnly,
+		}
+	}
+
+	if step.Continued {
+		return core.MetaRunReplayStepReadinessPreview{
+			Id:        step.Id,
+			Readiness: core.MetaRunReplayStepReadinessKindsContinuationTraceOnly,
+			Reason:    core.MetaRunReplayStepReadinessReasonsContinuationTraceOnly,
+		}
+	}
+
+	return core.MetaRunReplayStepReadinessPreview{
+		Id:        step.Id,
+		Readiness: core.MetaRunReplayStepReadinessKindsTraceOnly,
+		Reason:    core.MetaRunReplayStepReadinessReasonsTraceOnly,
+	}
+}
+
+func getReplayRetainedSteps(run *core.SessionMetaRunRecord) []core.MetaRunReplayStepPreview {
+	result := []core.MetaRunReplayStepPreview{}
+	for _, step := range run.StepResults {
+		result = append(result, core.MetaRunReplayStepPreview{
+			Id:          step.Id,
+			Kind:        step.Kind,
+			Status:      step.Status,
+			FailureCode: step.FailureCode,
+			DurationMs:  step.DurationMs,
+			Continued:   step.Continued,
+		})
+	}
+	return result
+}
+func getReplayAvailableArtifacts(run *core.SessionMetaRunRecord) []string {
+	artifacts := []string{}
+	if run.FinalText != "" {
+		artifacts = append(artifacts, core.MetaRunReplayArtifactNamesFinalText)
+	}
+	if run.ErrorCode != "" {
+		artifacts = append(artifacts, core.MetaRunReplayArtifactNamesErrorCode)
+	}
+	if run.Error != "" {
+		artifacts = append(artifacts, core.MetaRunReplayArtifactNamesErrorMessage)
+	}
+	if hasRetainedSteps(run) {
+		artifacts = append(artifacts, core.MetaRunReplayArtifactNamesStepResults)
+	}
+
+	return artifacts
+}
+
+func hasRetainedSteps(run *core.SessionMetaRunRecord) bool {
+	return len(run.StepResults) > 0
+}
+
+func buildReplayOperatorSummary(run *core.SessionMetaRunRecord) *core.MetaRunReplayOperatorSummary {
+	summary := &core.MetaRunReplayOperatorSummary{
+		TotalSteps: len(run.StepResults),
+	}
+
+	kindMap := make(map[string]int)
+	kindDisplay := make(map[string]string)
+	failureMap := make(map[string]int)
+
+	for _, step := range run.StepResults {
+		isFailed := strings.EqualFold(step.Status, "failed") || strings.TrimSpace(step.FailureCode) != ""
+		if isFailed {
+			summary.FailedSteps++
+		}
+
+		if step.Continued {
+			summary.ContinuedSteps++
+		}
+
+		if strings.EqualFold(step.Kind, "skill_exec") {
+			summary.SkillExecSteps++
+			if step.ExecutionEvidence == nil {
+				summary.SkillExecStepsWithoutEvidence++
+			}
+		}
+
+		if step.Kind != "" {
+			lowerKind := strings.ToLower(step.Kind)
+			if _, exists := kindMap[lowerKind]; !exists {
+				kindDisplay[lowerKind] = step.Kind
+			}
+			kindMap[lowerKind]++
+		}
+
+		if strings.TrimSpace(step.FailureCode) != "" {
+			failureMap[step.FailureCode]++
+		}
+	}
+
+	stepKinds := make([]core.MetaRunReplayCountBucket, 0, len(kindMap))
+	for lowerKind, count := range kindMap {
+		stepKinds = append(stepKinds, core.MetaRunReplayCountBucket{
+			Name:  kindDisplay[lowerKind],
+			Count: count,
+		})
+	}
+	sort.Slice(stepKinds, func(i, j int) bool {
+		if stepKinds[i].Count != stepKinds[j].Count {
+			return stepKinds[i].Count > stepKinds[j].Count
+		}
+		return strings.Compare(strings.ToLower(stepKinds[i].Name), strings.ToLower(stepKinds[j].Name)) < 0
+	})
+	summary.StepKinds = stepKinds
+
+	failureClusters := make([]core.MetaRunReplayCountBucket, 0, len(failureMap))
+	for code, count := range failureMap {
+		failureClusters = append(failureClusters, core.MetaRunReplayCountBucket{
+			Name:  code,
+			Count: count,
+		})
+	}
+	sort.Slice(failureClusters, func(i, j int) bool {
+		if failureClusters[i].Count != failureClusters[j].Count {
+			return failureClusters[i].Count > failureClusters[j].Count
+		}
+		return strings.Compare(strings.ToLower(failureClusters[i].Name), strings.ToLower(failureClusters[j].Name)) < 0
+	})
+	summary.FailureClusters = failureClusters
+
+	return summary
+}
+
+func formatReplayRequirement(requirement core.MetaRunReplayRequirementPreview) string {
+	return fmt.Sprintf("%s | kind=%s | reason=%s", requirement.Name, requirement.Kind, requirement.Reason)
+}
+
+func writeReplayOperatorDiagnosticsText(summary *core.MetaRunReplayOperatorSummary, triageHints []core.MetaRunReplayTriageHint) {
+	fmt.Println("Operator summary:")
+	fmt.Printf("Total steps: %d\n", summary.TotalSteps)
+	fmt.Printf("Failed steps: %d\n", summary.FailedSteps)
+	fmt.Printf("Continued steps: %d\n", summary.ContinuedSteps)
+	fmt.Printf("Skill exec steps: %d\n", summary.SkillExecSteps)
+	fmt.Printf("Skill exec without evidence: %d\n", summary.SkillExecStepsWithoutEvidence)
+	if len(summary.StepKinds) > 0 {
+		msgs := []string{}
+		for i := range summary.StepKinds {
+			msgs = append(msgs, fmt.Sprintf("%s=%d", summary.StepKinds[i].Name, summary.StepKinds[i].Count))
+		}
+		fmt.Printf("Step kind mix: %s", strings.Join(msgs, ","))
+	}
+
+	if len(summary.FailureClusters) > 0 {
+		msgs := []string{}
+		for i := range summary.FailureClusters {
+			msgs = append(msgs, fmt.Sprintf("%s=%d", summary.FailureClusters[i].Name, summary.FailureClusters[i].Count))
+		}
+		fmt.Printf("Failure clusters: %s", strings.Join(msgs, ","))
+	}
+	if len(triageHints) == 0 {
+		return
+	}
+
+	fmt.Println("Priority triage:")
+	for _, hint := range triageHints {
+		line := fmt.Sprintf("- P%d %s: %s", hint.Priority, hint.Code, hint.Message)
+		if len(hint.StepIds) > 0 {
+			line += fmt.Sprintf(" | steps=%s", strings.Join(hint.StepIds, ","))
+		}
+		if len(hint.RequirementNames) > 0 {
+			line += fmt.Sprintf(" | requirements=%s", strings.Join(hint.RequirementNames, ","))
+		}
+		fmt.Println(line)
+	}
+}
+
+func formatReplayRetainedStep(step core.MetaRunReplayStepPreview) string {
+	var line = fmt.Sprintf("- %s | kind=%s | status=%s | duration_ms=%.3f", step.Id, step.Kind, step.Status, step.DurationMs)
+	if step.FailureCode != "" {
+		line += fmt.Sprintf(" | failure_code=%s", step.FailureCode)
+	}
+	if step.Continued {
+		line += " | continued=true"
+	}
+	return line
+}
+
+func skillCommandPreviewMetaRunReplay(args []string) (int, error) {
+	asJson := slices.Contains(args, "--json")
+	sessionId := ""
+	for i := range args {
+		if !strings.HasPrefix(args[i], "-") {
+			sessionId = args[i]
+			break
+		}
+	}
+
+	if sessionId == "" {
+		msg := "Usage: openclaw skills meta-runs replay <session-id> --run <run-id> [--storage <path>] [--json]"
+		writeSkillsCommandError(asJson, "skills meta-runs replay", "missing_session_id", msg)
+		return 2, errors.New(msg)
+	}
+
+	requestedRunId := getOptionValue(args, "--run")
+	if requestedRunId == "" {
+		msg := "--run <run-id> is required for meta-runs replay preview."
+		writeSkillsCommandError(asJson, "skills meta-runs replay", "missing_run_id", msg)
+		return 2, errors.New(msg)
+	}
+
+	storagePath := getOptionValue(args, "--storage")
+	store, err := openMemoryStore(storagePath)
+	if err != nil {
+		return 1, err
+	}
+
+	session, err := store.GetSession(context.Background(), sessionId)
+	if session == nil || err != nil {
+		msg := fmt.Sprintf("Session '%s' not found.", sessionId)
+		writeSkillsCommandError(asJson, "skills meta-runs replay", "session_not_found", msg)
+		return 1, errors.New(msg)
+	}
+
+	var run *core.SessionMetaRunRecord
+	for i := range session.MetaRunHistory {
+		if session.MetaRunHistory[i].RunId == requestedRunId {
+			run = &session.MetaRunHistory[i]
+			break
+		}
+	}
+
+	if run == nil {
+		msg := fmt.Sprintf("Run '%s' not found in session '%s'", requestedRunId, sessionId)
+		writeSkillsCommandError(asJson, "skills meta-runs replay", "run_not_found", msg)
+		return 1, errors.New(msg)
+	}
+
+	preview := buildReplayPreview(sessionId, run)
+	if asJson {
+		data, _ := json.Marshal(preview)
+		fmt.Println(string(data))
+	} else {
+		fmt.Printf("Replay preview for run: %s\n", preview.RunId)
+		fmt.Printf("Session: %s\n", preview.SessionId)
+		fmt.Printf("Skill: %s\n", preview.SkillName)
+		if preview.ReplayAvailable {
+			fmt.Println("Replay available: yes")
+		} else {
+			fmt.Println("Replay available: no")
+		}
+
+		fmt.Printf("Reason: %s\n", preview.Reason)
+		fmt.Println("Replay plan:")
+		fmt.Printf("Summary: %s\n", preview.Plan.Summary)
+		fmt.Printf("Mode: %s\n", preview.Plan.Mode)
+		if preview.Plan.Executable {
+			fmt.Println("Executable: yes")
+		} else {
+			fmt.Println("Executable: no")
+		}
+
+		if len(preview.Plan.ReplayableSteps) > 0 {
+			msgs := []string{}
+			for i := range preview.Plan.ReplayableSteps {
+				item := preview.Plan.ReplayableSteps[i]
+				msgs = append(msgs, fmt.Sprintf("%s | readiness=%s | reason=%s", item.Id, item.Readiness, item.Reason))
+			}
+			fmt.Printf("Replayable steps: %s\n", strings.Join(msgs, ", "))
+		}
+		if len(preview.Plan.BlockedByRequirements) > 0 {
+			msgs := []string{}
+			for i := range preview.Plan.BlockedByRequirements {
+				msgs = append(msgs, formatReplayRequirement(preview.Plan.BlockedByRequirements[i]))
+			}
+			fmt.Printf("Blocked by requirements: %s\n", strings.Join(msgs, ", "))
+		}
+		writeReplayOperatorDiagnosticsText(preview.OperatorSummary, preview.TriageHints)
+		if len(preview.AvailableArtifacts) > 0 {
+			fmt.Println("Available artifacts:")
+			for _, item := range preview.AvailableArtifacts {
+				fmt.Printf("- %s\n", item)
+			}
+		}
+		if len(preview.RetainedSteps) > 0 {
+			fmt.Println("Retained steps:")
+			for _, step := range preview.RetainedSteps {
+				fmt.Println(formatReplayRetainedStep(step))
+			}
+		}
+		if len(preview.MissingRequirements) > 0 {
+			fmt.Println("Missing replay inputs:")
+			for _, item := range preview.MissingRequirements {
+				fmt.Printf("- %s\n", formatReplayRequirement(item))
+			}
+		}
+	}
+
+	return 1, fmt.Errorf("can not find session with run id: %s", requestedRunId)
 }
 
 func tryParseRelativeSinceUtc(value string) (sinceUtc *time.Time, errMsg string, result bool) {
@@ -756,11 +1193,11 @@ func loadMetaRunLearningReviews(ctx context.Context, store core.ILearningProposa
 
 	result := map[string]core.MetaRunProposalReviewRecord{}
 	for _, item := range candidates {
-		value, ok := tryGetMetaRunProposalMetadata(&item, MetaRunProposalMetadataSessionId)
+		value, ok := tryGetMetaRunProposalMetadata(&item, core.MetaRunProposalMetadataSessionId)
 		if ok && value == sessionid {
-			_, ok := tryGetMetaRunProposalMetadata(&item, MetaRunProposalMetadataProposalId)
+			_, ok := tryGetMetaRunProposalMetadata(&item, core.MetaRunProposalMetadataProposalId)
 			if ok {
-				result[item.Metadata[MetaRunProposalMetadataProposalId]] = util.Deref(toMetaRunProposalReviewRecord(item, sessionid, item.Metadata[MetaRunProposalMetadataProposalId]))
+				result[item.Metadata[core.MetaRunProposalMetadataProposalId]] = util.Deref(toMetaRunProposalReviewRecord(item, sessionid, item.Metadata[core.MetaRunProposalMetadataProposalId]))
 			}
 		}
 	}
@@ -1125,12 +1562,12 @@ func buildMetaRunProposalProvenanceDetail(proposal *core.LearningProposal) *core
 		return nil
 	}
 
-	snapshotVersion, ok := tryGetMetaRunProposalMetadata(proposal, MetaRunProposalMetadataProvenanceSnapshotVersion)
+	snapshotVersion, ok := tryGetMetaRunProposalMetadata(proposal, core.MetaRunProposalMetadataProvenanceSnapshotVersion)
 	if !ok {
 		return nil
 	}
 
-	capturedAtRaw, ok := tryGetMetaRunProposalMetadata(proposal, MetaRunProposalMetadataProvenanceCapturedAtUtc)
+	capturedAtRaw, ok := tryGetMetaRunProposalMetadata(proposal, core.MetaRunProposalMetadataProvenanceCapturedAtUtc)
 	if !ok {
 		return nil
 	}
@@ -1140,12 +1577,12 @@ func buildMetaRunProposalProvenanceDetail(proposal *core.LearningProposal) *core
 		return nil
 	}
 
-	runStatus, ok := tryGetMetaRunProposalMetadata(proposal, MetaRunProposalMetadataProvenanceRunStatus)
+	runStatus, ok := tryGetMetaRunProposalMetadata(proposal, core.MetaRunProposalMetadataProvenanceRunStatus)
 	if !ok {
 		return nil
 	}
 
-	runStartedRaw, ok := tryGetMetaRunProposalMetadata(proposal, MetaRunProposalMetadataProvenanceRunStartedAtUtc)
+	runStartedRaw, ok := tryGetMetaRunProposalMetadata(proposal, core.MetaRunProposalMetadataProvenanceRunStartedAtUtc)
 	if !ok {
 		return nil
 	}
@@ -1155,7 +1592,7 @@ func buildMetaRunProposalProvenanceDetail(proposal *core.LearningProposal) *core
 		return nil
 	}
 
-	runCompletedRaw, ok := tryGetMetaRunProposalMetadata(proposal, MetaRunProposalMetadataProvenanceRunCompletedAtUtc)
+	runCompletedRaw, ok := tryGetMetaRunProposalMetadata(proposal, core.MetaRunProposalMetadataProvenanceRunCompletedAtUtc)
 	if !ok {
 		return nil
 	}
@@ -1165,7 +1602,7 @@ func buildMetaRunProposalProvenanceDetail(proposal *core.LearningProposal) *core
 		return nil
 	}
 
-	stepCountRaw, ok := tryGetMetaRunProposalMetadata(proposal, MetaRunProposalMetadataProvenanceStepCount)
+	stepCountRaw, ok := tryGetMetaRunProposalMetadata(proposal, core.MetaRunProposalMetadataProvenanceStepCount)
 	if !ok {
 		return nil
 	}
@@ -1175,9 +1612,9 @@ func buildMetaRunProposalProvenanceDetail(proposal *core.LearningProposal) *core
 		return nil
 	}
 
-	stepIdsRaw := proposal.Metadata[MetaRunProposalMetadataProvenanceStepIds]
-	checkpointPendingStepId := proposal.Metadata[MetaRunProposalMetadataProvenanceCheckpointPendingStepId]
-	checkpointPromptPresentRaw := proposal.Metadata[MetaRunProposalMetadataProvenanceCheckpointPromptPresent]
+	stepIdsRaw := proposal.Metadata[core.MetaRunProposalMetadataProvenanceStepIds]
+	checkpointPendingStepId := proposal.Metadata[core.MetaRunProposalMetadataProvenanceCheckpointPendingStepId]
+	checkpointPromptPresentRaw := proposal.Metadata[core.MetaRunProposalMetadataProvenanceCheckpointPromptPresent]
 	checkpointPromptPresent := checkpointPromptPresentRaw == "true"
 
 	return &core.MetaRunProposalProvenanceDetail{
@@ -1213,14 +1650,14 @@ func buildMetaRunProposalAuditDetail(proposal *core.LearningProposal) *core.Meta
 		return nil
 	}
 
-	schemaVersion := proposal.Metadata[MetaRunProposalMetadataAuditSchemaVersion]
+	schemaVersion := proposal.Metadata[core.MetaRunProposalMetadataAuditSchemaVersion]
 	if schemaVersion == "" {
 		schemaVersion = "v1"
 	}
 
-	actorId := proposal.Metadata[MetaRunProposalMetadataLastTransitionActorId]
-	transitionAction := proposal.Metadata[MetaRunProposalMetadataLastTransitionAction]
-	changedAtRaw := proposal.Metadata[MetaRunProposalMetadataLastTransitionChangedAtUtc]
+	actorId := proposal.Metadata[core.MetaRunProposalMetadataLastTransitionActorId]
+	transitionAction := proposal.Metadata[core.MetaRunProposalMetadataLastTransitionAction]
+	changedAtRaw := proposal.Metadata[core.MetaRunProposalMetadataLastTransitionChangedAtUtc]
 
 	var changedAtUtc *time.Time
 	parsed, err := time.Parse(time.RFC3339, changedAtRaw)
@@ -1241,7 +1678,7 @@ func buildMetaRunProposalAuditDetail(proposal *core.LearningProposal) *core.Meta
 }
 
 func buildMetaRunProposalTransitionMetadataKey(index int64, field string) string {
-	return fmt.Sprintf("%s_%04d_%s", MetaRunProposalMetadataTransitionEntryPrefix, index, field)
+	return fmt.Sprintf("%s_%04d_%s", core.MetaRunProposalMetadataTransitionEntryPrefix, index, field)
 }
 
 func buildMetaRunProposalProvenanceHistory(proposal *core.LearningProposal) []core.MetaRunProposalProvenanceTransition {
@@ -1249,7 +1686,7 @@ func buildMetaRunProposalProvenanceHistory(proposal *core.LearningProposal) []co
 		return []core.MetaRunProposalProvenanceTransition{}
 	}
 
-	countRaw := proposal.Metadata[MetaRunProposalMetadataTransitionCount]
+	countRaw := proposal.Metadata[core.MetaRunProposalMetadataTransitionCount]
 	count, err := strconv.ParseInt(countRaw, 10, 64)
 	if count <= 0 || err != nil {
 		return []core.MetaRunProposalProvenanceTransition{}
@@ -1257,24 +1694,24 @@ func buildMetaRunProposalProvenanceHistory(proposal *core.LearningProposal) []co
 
 	transitions := make([]core.MetaRunProposalProvenanceTransition, count)
 	for index := int64(0); index < count; index++ {
-		action, ok := proposal.Metadata[buildMetaRunProposalTransitionMetadataKey(index, MetaRunProposalMetadataTransitionFieldAction)]
+		action, ok := proposal.Metadata[buildMetaRunProposalTransitionMetadataKey(index, core.MetaRunProposalMetadataTransitionFieldAction)]
 		if !ok || action == "" {
 			continue
 		}
-		fromStatus, ok := proposal.Metadata[buildMetaRunProposalTransitionMetadataKey(index, MetaRunProposalMetadataTransitionFieldFromStatus)]
+		fromStatus, ok := proposal.Metadata[buildMetaRunProposalTransitionMetadataKey(index, core.MetaRunProposalMetadataTransitionFieldFromStatus)]
 		if !ok || fromStatus == "" {
 			continue
 		}
-		toStatus, ok := proposal.Metadata[buildMetaRunProposalTransitionMetadataKey(index, MetaRunProposalMetadataTransitionFieldToStatus)]
+		toStatus, ok := proposal.Metadata[buildMetaRunProposalTransitionMetadataKey(index, core.MetaRunProposalMetadataTransitionFieldToStatus)]
 		if !ok || toStatus == "" {
 			continue
 		}
-		changedAtUtc, err := time.Parse(time.RFC3339, proposal.Metadata[buildMetaRunProposalTransitionMetadataKey(index, MetaRunProposalMetadataTransitionFieldChangedAtUtc)])
+		changedAtUtc, err := time.Parse(time.RFC3339, proposal.Metadata[buildMetaRunProposalTransitionMetadataKey(index, core.MetaRunProposalMetadataTransitionFieldChangedAtUtc)])
 		if err != nil {
 			continue
 		}
 
-		reason := proposal.Metadata[buildMetaRunProposalTransitionMetadataKey(index, MetaRunProposalMetadataTransitionFieldReason)]
+		reason := proposal.Metadata[buildMetaRunProposalTransitionMetadataKey(index, core.MetaRunProposalMetadataTransitionFieldReason)]
 		transitions[index] = core.MetaRunProposalProvenanceTransition{
 			Action:       action,
 			FromStatus:   fromStatus,
