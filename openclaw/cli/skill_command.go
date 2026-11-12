@@ -226,6 +226,9 @@ func skillCommandListMetaRuns(args []string) (int, error) {
 	if len(args) > 0 && args[0] == "steps" {
 		return skillCommandShowMetaRunStepsGlobal(args[1:])
 	}
+	if len(args) > 0 && args[0] == "failures" {
+		return skillCommandListMetaRunFailuresGlobal(args[1:])
+	}
 
 	asJson := slices.Contains(args, "--json")
 	verbose := slices.Contains(args, "--verbose")
@@ -333,6 +336,117 @@ func skillCommandListMetaRuns(args []string) (int, error) {
 		} else {
 			fmt.Println("")
 		}
+	}
+
+	return 0, nil
+}
+
+func tryParseRelativeSinceUtc(value string) (sinceUtc *time.Time, errMsg string, result bool) {
+	if value == "" {
+		result = true
+		return
+	}
+
+	raw := strings.TrimSpace(value)
+	if len(raw) < 2 {
+		errMsg = "--since must end with m/h/d, e.g. 5m, 24h, 7d."
+		return
+	}
+
+	var unit = strings.ToLower(raw[len(raw)-1:])
+	if unit != "m" && unit != "h" && unit != "d" {
+		errMsg = "--since must end with m/h/d, e.g. 5m, 24h, 7d."
+		return
+	}
+
+	amount, err := strconv.Atoi(raw[:len(raw)-1])
+	if amount <= 0 || err != nil {
+		errMsg = "--since requires a positive integer amount, e.g. 5m, 24h, 7d."
+		return
+	}
+
+	now := time.Now().UTC()
+	switch unit {
+	case "m":
+		sinceUtc = new(now.Add(-time.Duration(amount) * time.Minute))
+	case "h":
+		sinceUtc = new(now.Add(-time.Duration(amount) * time.Hour))
+	case "d":
+		sinceUtc = new(now.Add(-time.Duration(amount) * 24 * time.Hour))
+	}
+
+	result = sinceUtc != nil
+	return
+}
+
+func skillCommandListMetaRunFailuresGlobal(args []string) (int, error) {
+	asJson := slices.Contains(args, "--json")
+	storagePath := getOptionValue(args, "--storage")
+	sinceRaw := getOptionValue(args, "--since")
+	skillName := getOptionValue(args, "--name")
+	limit := util.Clamp(parseIntOption(args, "--limit", 500), 1, 2000)
+
+	sinceUtc, sinceError, ok := tryParseRelativeSinceUtc(sinceRaw)
+	if !ok {
+		msg := sinceError
+		if msg == "" {
+			msg = "--since must end with m/h/d, e.g. 5m, 24h, 7d."
+		}
+		writeSkillsCommandError(asJson, "skills meta-runs failures", "invalid_since", msg)
+		return 2, errors.New(msg)
+	}
+
+	store, err := openMemoryStore(storagePath)
+	if err != nil {
+		return 1, err
+	}
+
+	ctx := context.Background()
+	sessionIds := loadSessionIds(store, 1, 500)
+	failed := []MetaRunGlobalItem{}
+	for _, sessionId := range sessionIds {
+		session, err := store.GetSession(ctx, sessionId)
+		if session == nil || err != nil {
+			continue
+		}
+
+		for _, run := range session.MetaRunHistory {
+			if run.Status != "failed" {
+				continue
+			}
+
+			if skillName != "" && run.SkillName != skillName {
+				continue
+			}
+			if sinceUtc != nil && run.CompletedAtUtc.Before(*sinceUtc) {
+				continue
+			}
+			failed = append(failed, MetaRunGlobalItem{
+				SessionId:      session.Id,
+				RunId:          run.RunId,
+				SkillName:      run.SkillName,
+				Status:         run.Status,
+				StartedAtUtc:   run.StartedAtUtc,
+				CompletedAtUtc: run.CompletedAtUtc,
+				StepCount:      len(run.StepResults),
+				ErrorCode:      run.ErrorCode,
+			})
+		}
+	}
+
+	slices.SortFunc(failed, func(a, b MetaRunGlobalItem) int {
+		return b.CompletedAtUtc.Compare(a.CompletedAtUtc)
+	})
+
+	failed = failed[0:min(int64(len(failed)), limit)]
+	if asJson {
+		writeMetaRunsGlobalListJson(1, 500, failed)
+		return 0, nil
+	}
+
+	fmt.Printf("Failed meta runs: %d\n", len(failed))
+	for _, item := range failed {
+		fmt.Printf("- %s | session=%s | status=%s | error=%s\n", item.RunId, item.SessionId, item.Status, item.ErrorCode)
 	}
 
 	return 0, nil
@@ -587,7 +701,7 @@ func skillCommandListMetaRunsGlobal(args []string) (int, error) {
 
 		runs := session.MetaRunHistory
 		slices.SortFunc(runs, func(a, b core.SessionMetaRunRecord) int {
-			return b.StartedAtUtc.Compare(a.CompletedAtUtc)
+			return b.CompletedAtUtc.Compare(a.CompletedAtUtc)
 		})
 
 		for i := 0; i < len(runs); i++ {
