@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/futugyou/openclaw/skillkit"
+	"github.com/futugyou/openclaw/util"
 )
 
 func skillKitCommandPrintHelp(output io.Writer) {
@@ -99,6 +100,34 @@ func SkillKitCommandRun(
 	switch command {
 	case "new":
 		return skillKitCommandNew(service, rest, output, errwirter, currentDirectory)
+	case "list", "ls":
+		return skillKitCommandList(service, rest, output, errwirter, currentDirectory)
+	}
+
+	return 0, nil
+}
+
+func skillKitCommandList(service *skillkit.SkillPackageService, args []string, output, errwirter io.Writer, currentDirectory string) (int, error) {
+	skillsRoot, err := skillKitSResolveRoot(currentDirectory, getOptionValue(args, "--output"))
+	if err != nil {
+		return 1, err
+	}
+	pkgs, err := service.List(context.Background(), skillsRoot)
+	if err != nil {
+		return 1, err
+	}
+	if len(pkgs) == 0 {
+		output.Write([]byte("No SkillKit skills found.\n"))
+		return 0, nil
+	}
+	slices.SortFunc(pkgs, func(a, b skillkit.SkillPackage) int {
+		return strings.Compare(a.Manifest.Id, b.Manifest.Id)
+	})
+
+	output.Write([]byte("ID                           Name                                  Category     Version\n"))
+	for i := range pkgs {
+		manifest := pkgs[i].Manifest
+		fmt.Fprintf(output, "%-28s %-37s %-12s %s\n", util.Truncate(manifest.Id, 28), util.Truncate(manifest.Name, 37), util.Truncate(manifest.Category, 12), manifest.Version)
 	}
 
 	return 0, nil
