@@ -311,8 +311,241 @@ func skillCommandHandleMetaRunProposals(args []string) (int, error) {
 	if len(args) > 0 && args[0] == "rollback" {
 		return skillCommandRollbackMetaRunProposal(args[1:])
 	}
+	if len(args) > 0 && args[0] == "change" {
+		return skillCommandChangeMetaRunProposal(args[1:])
+	}
 
 	return skillCommandListMetaRunProposals(args, core.MetaRunProposalEntrypointsMetaRuns)
+}
+
+func tryMapMetaRunProposalChangeTarget(to string) (reviewStatus, lifecycleStatus string, result bool) {
+	if to == "accept" {
+		reviewStatus = core.MetaRunProposalReviewStatusesAccepted
+		lifecycleStatus = core.LearningProposalStatusApproved
+		result = true
+		return
+	}
+
+	if to == "dismiss" {
+		reviewStatus = core.MetaRunProposalReviewStatusesDismissed
+		lifecycleStatus = core.LearningProposalStatusRejected
+		result = true
+		return
+	}
+
+	return
+}
+
+func skillCommandChangeMetaRunProposal(args []string) (int, error) {
+	asJson := slices.Contains(args, "--json")
+	sessionId := ""
+	for i := range args {
+		if !strings.HasPrefix(args[i], "-") {
+			sessionId = args[i]
+			break
+		}
+	}
+	if sessionId == "" {
+		msg := "Usage: openclaw skills meta-runs proposals change <session-id> --proposal <id> --to <accept|dismiss> [--reason <text>] [--storage <path>] [--json]"
+		writeSkillsCommandError(asJson, "skills meta-runs proposals change", "missing_session_id", msg)
+		return 2, errors.New(msg)
+	}
+
+	proposalId := getOptionValue(args, "--proposal")
+	if proposalId == "" {
+		msg := "--proposal <id> is required for meta-runs proposals change."
+		writeSkillsCommandError(asJson, "skills meta-runs proposals change", "missing_proposal_id", msg)
+		return 2, errors.New(msg)
+	}
+
+	to := getOptionValue(args, "--to")
+	targetReviewStatus, targetLifecycleStatus, ok := tryMapMetaRunProposalChangeTarget(to)
+	if !ok {
+		msg := "--to must be one of: accept, dismiss."
+		writeSkillsCommandError(asJson, "skills meta-runs proposals change", "invalid_change_target", msg)
+		return 2, errors.New(msg)
+	}
+
+	operatorId := os.Getenv("OPENCLAW_OPERATOR_ID")
+	if !core.MetaRunProposalPolicyCanMutate(operatorId) {
+		msg := "Proposal mutation requires OPENCLAW_OPERATOR_ID."
+		writeSkillsCommandError(asJson, "skills meta-runs proposals change", "permission_denied", msg)
+		return 1, errors.New(msg)
+	}
+
+	reason := getOptionValue(args, "--reason")
+	storagePath := getOptionValue(args, "--storage")
+	learningProposalStore, err := openLearningProposalStore(storagePath)
+	if err != nil {
+		return 1, err
+	}
+	store, err := openMemoryStore(storagePath)
+	if err != nil {
+		return 1, err
+	}
+
+	ctx := context.Background()
+	session, err := store.GetSession(ctx, sessionId)
+	if session == nil || err != nil {
+		msg := fmt.Sprintf("Session '%s' not found.", sessionId)
+		writeSkillsCommandError(asJson, "skills meta-runs proposals change", "session_not_found", msg)
+		return 1, errors.New(msg)
+	}
+
+	proposals := buildDerivedProposals(session, "")
+	var proposal *core.MetaRunDerivedProposalSummary
+	for i := 0; i < len(proposals); i++ {
+		if proposals[i].Id == proposalId {
+			proposal = &proposals[i]
+			break
+		}
+	}
+
+	if proposal == nil {
+		msg := fmt.Sprintf("Proposal '%s' not found in session '%s'.", proposalId, sessionId)
+		writeSkillsCommandError(asJson, "skills meta-runs proposals change", "proposal_not_found", msg)
+		return 1, errors.New(msg)
+	}
+
+	var acceptanceGate *MetaRunProposalAcceptanceGateResult
+	if targetReviewStatus == core.MetaRunProposalReviewStatusesAccepted {
+		acceptanceGate = new(QualityGateEvaluate(proposal, session))
+		if !acceptanceGate.Passed() {
+			msg := writeProposalAcceptanceQualityError(asJson, "skills meta-runs proposals change", acceptanceGate)
+			return 1, errors.New(msg)
+		}
+	}
+
+	durableProposalId := buildMetaRunProposalDurableId(sessionId, proposalId)
+	existing, err := learningProposalStore.GetProposal(ctx, durableProposalId)
+	if err != nil {
+		return 1, err
+	}
+
+	alreadyReviewed := false
+	lifecycleStatus := targetLifecycleStatus
+	currentLifecycleStatus := core.LearningProposalStatusPending
+	if existing != nil && existing.Status != "" {
+		currentLifecycleStatus = existing.Status
+	}
+
+	var record *core.MetaRunProposalReviewRecord
+	if existing == nil {
+		msg := fmt.Sprintf("Invalid lifecycle transition for proposal '%s' in session '%s': pending -> %s. Change only supports %s -> %s.", proposalId, sessionId, targetLifecycleStatus, core.LearningProposalStatusRolledBack, targetLifecycleStatus)
+		writeSkillsCommandError(asJson, "skills meta-runs proposals change", "invalid_lifecycle_transition", msg)
+		return 1, errors.New(msg)
+	}
+
+	if existing.Status != core.LearningProposalStatusRolledBack {
+		msg := fmt.Sprintf("Invalid lifecycle transition for proposal '%s' in session '%s': %s -> %s. Change only supports %s -> %s.", proposalId, sessionId, existing.Status, targetLifecycleStatus, core.LearningProposalStatusRolledBack, targetLifecycleStatus)
+		writeSkillsCommandError(asJson, "skills meta-runs proposals change", "invalid_lifecycle_transition", msg)
+		return 1, errors.New(msg)
+	} else {
+		if !core.MetaRunProposalPolicyIsAllowedActionTransition(core.MetaRunProposalActionsChange, currentLifecycleStatus, targetLifecycleStatus) {
+			msg := fmt.Sprintf("Invalid lifecycle transition for proposal '%s' in session '%s': %s -> %s. Change only supports %s -> %s.", proposalId, sessionId, currentLifecycleStatus, targetLifecycleStatus, core.LearningProposalStatusRolledBack, targetLifecycleStatus)
+			writeSkillsCommandError(asJson, "skills meta-runs proposals change", "invalid_lifecycle_transition", msg)
+			return 1, errors.New(msg)
+		}
+
+		reviewedAtUtc := time.Now().UTC()
+		var runSnapshot *core.SessionMetaRunRecord
+		for i := range session.MetaRunHistory {
+			if session.MetaRunHistory[i].RunId == proposal.RunId {
+				runSnapshot = &session.MetaRunHistory[i]
+				break
+			}
+		}
+
+		var checkpointSnapshot *core.SessionMetaExecutionCheckpoint
+		if runSnapshot.Status == "paused" && session.MetaExecutionCheckpoint != nil && session.MetaExecutionCheckpoint.SkillName == runSnapshot.SkillName {
+			checkpointSnapshot = session.MetaExecutionCheckpoint
+		}
+
+		metadata := buildMetaRunProposalMetadata(existing, sessionId, proposal)
+		if reason != "" {
+			metadata[core.MetaRunProposalMetadataReason] = reason
+		}
+
+		durableRecord := buildUpdatedMetaRunLearningProposal(
+			existing,
+			proposal,
+			sessionId,
+			targetLifecycleStatus,
+			reviewedAtUtc,
+			new(reviewedAtUtc),
+			reason,
+			false,
+			nil,
+			"",
+			metadata)
+
+		populateMetaRunProposalProvenanceMetadata(durableRecord.Metadata, runSnapshot, checkpointSnapshot, reviewedAtUtc)
+		appendMetaRunProposalTransitionMetadata(
+			durableRecord.Metadata,
+			core.MetaRunProposalActionsChange,
+			existing.Status,
+			targetLifecycleStatus,
+			reviewedAtUtc,
+			operatorId,
+			reason)
+		if acceptanceGate != nil {
+			populateMetaRunProposalAcceptanceGateMetadata(durableRecord.Metadata, acceptanceGate, reviewedAtUtc)
+		}
+
+		if err := learningProposalStore.SaveProposal(ctx, durableRecord); err != nil {
+			return 1, err
+		}
+
+		if err := upsertMetaRunReviewWorkflow(
+			ctx,
+			learningProposalStore,
+			sessionId,
+			proposalId,
+			core.MetaRunReviewWorkflowActionsChange,
+			reviewedAtUtc,
+			operatorId,
+			reason); err != nil {
+			return 1, err
+		}
+
+		record = &core.MetaRunProposalReviewRecord{
+			ReviewStatus:  targetReviewStatus,
+			Reason:        reason,
+			ReviewedAtUtc: new(reviewedAtUtc),
+		}
+	}
+
+	responseAudit := &core.MetaRunProposalAuditDetail{
+		ActorId:          operatorId,
+		ChangedAtUtc:     record.ReviewedAtUtc,
+		TransitionAction: core.MetaRunProposalActionsChange,
+	}
+	if alreadyReviewed {
+		responseAudit = buildMetaRunProposalAuditDetail(existing)
+	}
+
+	workflow := getMetaRunReviewWorkflowDetail(ctx, learningProposalStore, sessionId, proposalId)
+
+	response := core.MetaRunProposalReviewMutationResponse{
+		SessionId:       sessionId,
+		ProposalId:      proposalId,
+		ReviewStatus:    record.ReviewStatus,
+		LifecycleStatus: lifecycleStatus,
+		AlreadyReviewed: alreadyReviewed,
+		ReviewedAtUtc:   record.ReviewedAtUtc,
+		Reason:          record.Reason,
+		Audit:           responseAudit,
+		Workflow:        workflow,
+	}
+
+	if asJson {
+		data, _ := json.Marshal(response)
+		fmt.Println(string(data))
+	} else {
+		writeProposalReviewMutationText(response)
+	}
+
+	return 0, nil
 }
 
 func skillCommandRollbackMetaRunProposal(args []string) (int, error) {
