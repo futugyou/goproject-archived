@@ -106,8 +106,30 @@ func SkillKitCommandRun(
 		return skillKitCommandValidate(service, rest, output, errwirter, currentDirectory)
 	case "critique":
 		return skillKitCommandCritique(service, rest, output, errwirter, currentDirectory)
+	case "generate":
+		return skillKitCommandGenerate(service, rest, output, errwirter, currentDirectory)
 	}
 
+	return 0, nil
+}
+
+func skillKitCommandGenerate(service *skillkit.SkillPackageService, args []string, output, errwirter io.Writer, currentDirectory string) (int, error) {
+	skillRef := firstPositional(args)
+	if skillRef == "" {
+		msg := "Usage: openclaw skill generate <skill-id|path> [--output <path>] [--force]"
+		fmt.Fprintln(errwirter, msg)
+		return 2, errors.New(msg)
+	}
+	skillsRoot, err := skillKitSResolveRoot(currentDirectory, getOptionValue(args, "--output"))
+	if err != nil {
+		return 1, err
+	}
+
+	if err := service.Generate(context.Background(), skillRef, skillsRoot, slices.Contains(args, "--force")); err != nil {
+		return 1, err
+	}
+
+	fmt.Fprintln(output, "Generated missing skill files.")
 	return 0, nil
 }
 
