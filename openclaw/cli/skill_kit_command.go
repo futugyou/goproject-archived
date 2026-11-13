@@ -102,9 +102,67 @@ func SkillKitCommandRun(
 		return skillKitCommandNew(service, rest, output, errwirter, currentDirectory)
 	case "list", "ls":
 		return skillKitCommandList(service, rest, output, errwirter, currentDirectory)
+	case "validate":
+		return skillKitCommandValidate(service, rest, output, errwirter, currentDirectory)
 	}
 
 	return 0, nil
+}
+
+func skillKitStatus(severity skillkit.SkillValidationSeverity) string {
+	switch severity {
+	case skillkit.SeverityError:
+		return "FAIL"
+	case skillkit.SeverityWarning:
+		return "WARN"
+	default:
+		return "PASS"
+	}
+}
+
+func skillKitPrintValidation(result skillkit.SkillValidationResult, output io.Writer) {
+	passFail := "FAIL"
+	if result.Passed() {
+		passFail = "PASS"
+	}
+	fmt.Fprintf(output, "Skill validation: %s\n\n", passFail)
+	groupedIssues := make(map[string][]skillkit.SkillValidationIssue)
+	var areas []string
+	for _, issue := range result.Issues {
+		if _, exists := groupedIssues[issue.Area]; !exists {
+			areas = append(areas, issue.Area)
+		}
+		groupedIssues[issue.Area] = append(groupedIssues[issue.Area], issue)
+	}
+
+	for _, area := range areas {
+		fmt.Fprintf(output, "%s:\n", area)
+		for _, issue := range groupedIssues[area] {
+			fmt.Fprintf(output, "[%s] %s\n", skillKitStatus(issue.Severity), issue.Message)
+		}
+		fmt.Fprintln(output)
+	}
+}
+
+func skillKitCommandValidate(service *skillkit.SkillPackageService, args []string, output, errwirter io.Writer, currentDirectory string) (int, error) {
+	skillRef := firstPositional(args)
+	if skillRef == "" {
+		msg := "Usage: openclaw skill validate <skill-id|path> [--output <path>]"
+		fmt.Fprintf(errwirter, "%s\n", msg)
+		return 2, errors.New(msg)
+	}
+
+	skillsRoot, err := skillKitSResolveRoot(currentDirectory, getOptionValue(args, "--output"))
+	if err != nil {
+		return 1, err
+	}
+	result := service.Validate(context.Background(), skillRef, skillsRoot)
+	skillKitPrintValidation(result, output)
+	if result.Passed() {
+		return 0, nil
+	}
+
+	return 1, errors.New("kit skill validate error ")
 }
 
 func skillKitCommandList(service *skillkit.SkillPackageService, args []string, output, errwirter io.Writer, currentDirectory string) (int, error) {
