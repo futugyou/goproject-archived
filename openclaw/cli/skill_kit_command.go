@@ -104,8 +104,31 @@ func SkillKitCommandRun(
 		return skillKitCommandList(service, rest, output, errwirter, currentDirectory)
 	case "validate":
 		return skillKitCommandValidate(service, rest, output, errwirter, currentDirectory)
+	case "critique":
+		return skillKitCommandCritique(service, rest, output, errwirter, currentDirectory)
 	}
 
+	return 0, nil
+}
+
+func skillKitCommandCritique(service *skillkit.SkillPackageService, args []string, output, errwirter io.Writer, currentDirectory string) (int, error) {
+	skillRef := firstPositional(args)
+	if skillRef == "" {
+		msg := "Usage: openclaw skill critique <skill-id|path> [--output <path>]"
+		fmt.Fprintln(errwirter, msg)
+		return 2, errors.New(msg)
+	}
+
+	skillsRoot, err := skillKitSResolveRoot(currentDirectory, getOptionValue(args, "--output"))
+	if err != nil {
+		return 1, err
+	}
+	path, err := service.Critique(context.Background(), skillRef, skillsRoot)
+	if err != nil {
+		return 1, err
+	}
+
+	fmt.Fprintf(output, "Critique written: %s", path)
 	return 0, nil
 }
 
