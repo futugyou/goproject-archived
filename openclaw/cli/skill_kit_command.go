@@ -108,8 +108,37 @@ func SkillKitCommandRun(
 		return skillKitCommandCritique(service, rest, output, errwirter, currentDirectory)
 	case "generate":
 		return skillKitCommandGenerate(service, rest, output, errwirter, currentDirectory)
+	case "package":
+		return skillKitCommandPackage(service, rest, output, errwirter, currentDirectory)
 	}
 
+	return 0, nil
+}
+
+func skillKitCommandPackage(service *skillkit.SkillPackageService, args []string, output, errwirter io.Writer, currentDirectory string) (int, error) {
+	skillRef := firstPositional(args)
+	if skillRef == "" {
+		msg := "Usage: openclaw skill package <skill-id|path> [--output <path>] [--package-output <path>] [--force]"
+		fmt.Fprintln(errwirter, msg)
+		return 2, errors.New(msg)
+	}
+
+	skillsRoot, err := skillKitSResolveRoot(currentDirectory, getOptionValue(args, "--output"))
+	if err != nil {
+		return 1, err
+	}
+
+	packagesRoot, err := skillKitResolvePackagesRoot(currentDirectory, getOptionValue(args, "--package-output"))
+	if err != nil {
+		return 1, err
+	}
+
+	zipPath, err := service.Package(context.Background(), skillRef, skillsRoot, packagesRoot, slices.Contains(args, "--force"))
+	if err != nil {
+		return 1, err
+	}
+
+	fmt.Fprintf(output, "Package written: %s\n", zipPath)
 	return 0, nil
 }
 
