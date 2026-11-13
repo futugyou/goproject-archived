@@ -308,8 +308,212 @@ func skillCommandHandleMetaRunProposals(args []string) (int, error) {
 	if len(args) > 0 && args[0] == "dismiss" {
 		return skillCommandReviewMetaRunProposal(args[1:], core.MetaRunProposalReviewStatusesDismissed, true)
 	}
+	if len(args) > 0 && args[0] == "rollback" {
+		return skillCommandRollbackMetaRunProposal(args[1:])
+	}
 
 	return skillCommandListMetaRunProposals(args, core.MetaRunProposalEntrypointsMetaRuns)
+}
+
+func skillCommandRollbackMetaRunProposal(args []string) (int, error) {
+	asJson := slices.Contains(args, "--json")
+	sessionId := ""
+	for i := range args {
+		if !strings.HasPrefix(args[i], "-") {
+			sessionId = args[i]
+			break
+		}
+	}
+
+	if sessionId == "" {
+		msg := "Usage: openclaw skills meta-runs proposals rollback <session-id> --proposal <id> [--reason <text>] [--storage <path>] [--json]"
+		writeSkillsCommandError(asJson, "skills meta-runs proposals rollback", "missing_session_id", msg)
+		return 2, errors.New(msg)
+	}
+
+	proposalId := getOptionValue(args, "--proposal")
+	if proposalId == "" {
+		msg := "--proposal <id> is required for meta-runs proposals rollback."
+		writeSkillsCommandError(asJson, "skills meta-runs proposals rollback", "missing_proposal_id", msg)
+		return 2, errors.New(msg)
+	}
+
+	operatorId := os.Getenv("OPENCLAW_OPERATOR_ID")
+	if !core.MetaRunProposalPolicyCanMutate(operatorId) {
+		msg := "Proposal mutation requires OPENCLAW_OPERATOR_ID."
+		writeSkillsCommandError(asJson, "skills meta-runs proposals rollback", "permission_denied", msg)
+		return 1, errors.New(msg)
+	}
+
+	ctx := context.Background()
+
+	reason := getOptionValue(args, "--reason")
+	storagePath := getOptionValue(args, "--storage")
+	learningProposalStore, err := openLearningProposalStore(storagePath)
+	if err != nil {
+		return 1, err
+	}
+	store, err := openMemoryStore(storagePath)
+	if err != nil {
+		return 1, err
+	}
+
+	session, err := store.GetSession(ctx, sessionId)
+	if session == nil || err != nil {
+		msg := fmt.Sprintf("Session '%s' not found.", sessionId)
+		writeSkillsCommandError(asJson, "skills meta-runs proposals rollback", "session_not_found", msg)
+		return 1, errors.New(msg)
+	}
+
+	proposals := buildDerivedProposals(session, "")
+	var proposal *core.MetaRunDerivedProposalSummary
+	for i := 0; i < len(proposals); i++ {
+		if proposals[i].Id == proposalId {
+			proposal = &proposals[i]
+			break
+		}
+	}
+
+	if proposal == nil {
+		msg := fmt.Sprintf("Proposal '%s' not found in session '%s'.", proposalId, sessionId)
+		writeSkillsCommandError(asJson, "skills meta-runs proposals rollback", "proposal_not_found", msg)
+		return 1, errors.New(msg)
+	}
+
+	durableProposalId := buildMetaRunProposalDurableId(sessionId, proposalId)
+	existing, err := learningProposalStore.GetProposal(ctx, durableProposalId)
+	if err != nil {
+		return 1, err
+	}
+
+	lifecycleStatus := core.LearningProposalStatusRolledBack
+	currentLifecycleStatus := core.LearningProposalStatusPending
+	if existing != nil && existing.Status != "" {
+		currentLifecycleStatus = existing.Status
+	}
+
+	alreadyReviewed := false
+	var record *core.MetaRunProposalReviewRecord
+
+	if existing == nil || existing.Status == core.LearningProposalStatusPending {
+		msg := fmt.Sprintf("Invalid lifecycle transition for proposal '%s' in session '%s': pending -> %s. Only approved or rejected proposals can be rolled back.", proposalId, sessionId, core.LearningProposalStatusRolledBack)
+		writeSkillsCommandError(asJson, "skills meta-runs proposals rollback", "invalid_lifecycle_transition", msg)
+		return 1, errors.New(msg)
+	}
+
+	if existing.Status == core.LearningProposalStatusRolledBack {
+		alreadyReviewed = true
+		lifecycleStatus = existing.Status
+		record = toMetaRunProposalReviewRecord(existing, sessionId, proposalId)
+	} else if existing.Status == core.LearningProposalStatusApproved || existing.Status == core.LearningProposalStatusRejected {
+		if !core.MetaRunProposalPolicyIsAllowedActionTransition(core.MetaRunProposalActionsRollback, currentLifecycleStatus, lifecycleStatus) {
+			msg := fmt.Sprintf("Invalid lifecycle transition for proposal '%s' in session '%s': %s -> %s. Only approved or rejected proposals can be rolled back.", proposalId, sessionId, currentLifecycleStatus, lifecycleStatus)
+			writeSkillsCommandError(asJson, "skills meta-runs proposals rollback", "invalid_lifecycle_transition", msg)
+			return 1, errors.New(msg)
+		}
+
+		reviewedAtUtc := time.Now().UTC()
+		rollbackReason := DefaultMetaRunProposalRollbackReason
+		if reason != "" {
+			rollbackReason = reason
+		}
+
+		var runSnapshot *core.SessionMetaRunRecord
+		for i := range session.MetaRunHistory {
+			if session.MetaRunHistory[i].RunId == proposal.RunId {
+				runSnapshot = &session.MetaRunHistory[i]
+				break
+			}
+		}
+
+		var checkpointSnapshot *core.SessionMetaExecutionCheckpoint
+		if runSnapshot.Status == "paused" && session.MetaExecutionCheckpoint != nil && session.MetaExecutionCheckpoint.SkillName == runSnapshot.SkillName {
+			checkpointSnapshot = session.MetaExecutionCheckpoint
+		}
+		metadata := buildMetaRunProposalMetadata(existing, sessionId, proposal)
+		metadata[core.MetaRunProposalMetadataReason] = rollbackReason
+
+		durableRecord := buildUpdatedMetaRunLearningProposal(
+			existing,
+			proposal,
+			sessionId,
+			lifecycleStatus,
+			reviewedAtUtc,
+			new(reviewedAtUtc),
+			existing.ReviewNotes,
+			true,
+			new(reviewedAtUtc),
+			rollbackReason,
+			metadata)
+
+		populateMetaRunProposalProvenanceMetadata(durableRecord.Metadata, runSnapshot, checkpointSnapshot, reviewedAtUtc)
+		appendMetaRunProposalTransitionMetadata(
+			durableRecord.Metadata,
+			core.MetaRunProposalActionsRollback,
+			existing.Status,
+			lifecycleStatus,
+			reviewedAtUtc,
+			operatorId,
+			rollbackReason)
+		if err := learningProposalStore.SaveProposal(ctx, durableRecord); err != nil {
+			return 1, err
+		}
+		if err := upsertMetaRunReviewWorkflow(
+			ctx,
+			learningProposalStore,
+			sessionId,
+			proposalId,
+			core.MetaRunReviewWorkflowActionsRollback,
+			reviewedAtUtc,
+			operatorId,
+			rollbackReason); err != nil {
+			return 1, err
+		}
+
+		record = &core.MetaRunProposalReviewRecord{
+			SessionId:     sessionId,
+			ProposalId:    proposalId,
+			ReviewStatus:  core.MetaRunProposalReviewStatusesRolledBack,
+			Reason:        rollbackReason,
+			ReviewedAtUtc: new(reviewedAtUtc),
+		}
+	} else {
+		msg := fmt.Sprintf("Invalid lifecycle transition for proposal '%s' in session '%s': %s -> %s. Only approved or rejected proposals can be rolled back.", proposalId, sessionId, existing.Status, core.LearningProposalStatusRolledBack)
+		writeSkillsCommandError(asJson, "skills meta-runs proposals rollback", "invalid_lifecycle_transition", msg)
+		return 1, errors.New(msg)
+	}
+
+	responseAudit := &core.MetaRunProposalAuditDetail{
+		ActorId:          operatorId,
+		ChangedAtUtc:     record.ReviewedAtUtc,
+		TransitionAction: core.MetaRunProposalActionsRollback,
+	}
+	if alreadyReviewed {
+		responseAudit = buildMetaRunProposalAuditDetail(existing)
+	}
+
+	workflow := getMetaRunReviewWorkflowDetail(ctx, learningProposalStore, sessionId, proposalId)
+
+	response := core.MetaRunProposalReviewMutationResponse{
+		SessionId:       sessionId,
+		ProposalId:      proposalId,
+		ReviewStatus:    record.ReviewStatus,
+		LifecycleStatus: lifecycleStatus,
+		AlreadyReviewed: alreadyReviewed,
+		ReviewedAtUtc:   record.ReviewedAtUtc,
+		Reason:          record.Reason,
+		Audit:           responseAudit,
+		Workflow:        workflow,
+	}
+
+	if asJson {
+		data, _ := json.Marshal(response)
+		fmt.Println(string(data))
+	} else {
+		writeProposalReviewMutationText(response)
+	}
+
+	return 0, nil
 }
 
 func writeProposalAcceptanceQualityError(asJson bool, command string, gate *MetaRunProposalAcceptanceGateResult) string {
