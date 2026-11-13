@@ -314,6 +314,9 @@ func skillCommandHandleMetaRunProposals(args []string) (int, error) {
 	if len(args) > 0 && args[0] == "change" {
 		return skillCommandChangeMetaRunProposal(args[1:])
 	}
+	if len(args) > 0 && args[0] == "show" {
+		return showMetaRunProposal(args[1:], core.MetaRunProposalEntrypointsMetaRuns)
+	}
 
 	return skillCommandListMetaRunProposals(args, core.MetaRunProposalEntrypointsMetaRuns)
 }
