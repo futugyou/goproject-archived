@@ -98,6 +98,17 @@ func getOptionValue(args []string, optionName string) string {
 	return ""
 }
 
+func getOptionValues(args []string, name string) []string {
+	values := []string{}
+	for i := 0; i < len(args)-1; i++ {
+		if args[i] == name {
+			values = append(values, args[i+1])
+		}
+	}
+
+	return values
+}
+
 func parseIntOption(args []string, optionName string, defaultValue int64) int64 {
 	value := getOptionValue(args, optionName)
 	parsed, err := strconv.ParseInt(value, 10, 64)

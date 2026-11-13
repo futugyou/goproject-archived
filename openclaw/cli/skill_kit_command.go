@@ -110,6 +110,104 @@ func SkillKitCommandRun(
 		return skillKitCommandGenerate(service, rest, output, errwirter, currentDirectory)
 	case "package":
 		return skillKitCommandPackage(service, rest, output, errwirter, currentDirectory)
+	case "run":
+		return skillKitCommandRun(service, rest, output, errwirter, currentDirectory)
+	}
+
+	return 0, nil
+}
+
+func skillKitPrintRunPlan(plan *skillkit.SkillRunPlan, output io.Writer) {
+	fmt.Fprintf(output, "Skill: %s\n\n", plan.Manifest.Name)
+
+	fmt.Fprintln(output, "Execution Plan:")
+	for i, step := range plan.Manifest.Workflow.Steps {
+		fmt.Fprintf(output, "%d. %s\n", i+1, step.Id)
+	}
+	fmt.Fprintln(output)
+
+	fmt.Fprintln(output, "Inputs:")
+	for _, issue := range plan.InputIssues {
+		fmt.Fprintf(output, "[%s] %s\n", skillKitStatus(issue.Severity), issue.FileName)
+	}
+	fmt.Fprintln(output)
+
+	fmt.Fprintln(output, "Tool Policy:")
+	fmt.Fprintln(output, "Allowed:")
+	skillKitPrintList(plan.Manifest.Tools.Allowed, output)
+	fmt.Fprintln(output)
+
+	fmt.Fprintln(output, "Forbidden:")
+	skillKitPrintList(plan.Manifest.Tools.Forbidden, output)
+	fmt.Fprintln(output)
+
+	fmt.Fprintln(output, "Approval Required:")
+	approvalList := plan.Manifest.Tools.ApprovalRequired
+	if len(plan.Manifest.HumanApproval.RequiredFor) > 0 {
+		approvalList = plan.Manifest.HumanApproval.RequiredFor
+	}
+	skillKitPrintList(approvalList, output)
+	fmt.Fprintln(output)
+
+	fmt.Fprintln(output, "Dry run complete. No model calls or tool calls were executed.")
+}
+
+func skillKitPrintList(values []string, output io.Writer) {
+	if len(values) == 0 {
+		fmt.Fprintln(output, "- None")
+		return
+	}
+
+	for _, value := range values {
+		fmt.Fprintf(output, "- %s\n", value)
+	}
+}
+
+func skillKitCommandRun(service *skillkit.SkillPackageService, args []string, output, errwirter io.Writer, currentDirectory string) (int, error) {
+	skillRef := firstPositional(args)
+	if skillRef == "" {
+		msg := "Usage: openclaw skill run <skill-id|path> --input <path> [--dry-run] [--output <path>]"
+		fmt.Fprintln(errwirter, msg)
+		return 2, errors.New(msg)
+	}
+
+	if !slices.Contains(args, "--dry-run") {
+		msg := "Full SkillKit runtime execution is not implemented yet. Re-run with --dry-run to inspect the execution plan."
+		fmt.Fprintln(errwirter, msg)
+		return 2, errors.New(msg)
+	}
+
+	values := getOptionValues(args, "--input")
+	inputs := []string{}
+	for _, path := range values {
+		p, err := skillKitResolvePath(currentDirectory, path)
+		if err != nil {
+			return 1, err
+		}
+		inputs = append(inputs, p)
+	}
+
+	if len(inputs) == 0 {
+		msg := "At least one --input <path> is required for skill dry-run planning."
+		fmt.Fprintln(errwirter, msg)
+		return 2, errors.New(msg)
+	}
+
+	skillsRoot, err := skillKitSResolveRoot(currentDirectory, getOptionValue(args, "--output"))
+	if err != nil {
+		return 1, err
+	}
+
+	plan, err := service.PlanRun(context.Background(), skillRef, skillsRoot, inputs)
+	if err != nil {
+		return 1, err
+	}
+
+	skillKitPrintRunPlan(plan, output)
+	for _, issue := range plan.InputIssues {
+		if issue.Severity == skillkit.SeverityError {
+			return 1, errors.New("kit skill run error")
+		}
 	}
 
 	return 0, nil
