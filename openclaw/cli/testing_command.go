@@ -149,12 +149,36 @@ func TestingCommandRun(args []string, output io.Writer, errwirter io.Writer) (in
 		return testingCommandRunScenarios(parsed, output, errwirter)
 	case "report":
 		return testingCommandRegenerateReport(parsed, output, errwirter)
+	case "gates":
+		return testingCommandRunGates(parsed, output, errwirter)
 	default:
 		msg := fmt.Sprintf("Unknown test subcommand: %s", command)
 		fmt.Fprintln(errwirter, msg)
 		PrintHelp(output)
 		return 2, errors.New(msg)
 	}
+}
+
+func testingCommandRunGates(parsed *CliArgs, output, errwirter io.Writer) (int, error) {
+	ctx := context.Background()
+	scenarioDirectory, err := getScenarioDirectory(parsed)
+	if err != nil {
+		return 1, err
+	}
+
+	scenarios, err := primitives.NewJsonScenarioLoader().Load(ctx, scenarioDirectory)
+	if err != nil {
+		return 1, err
+	}
+
+	gateResult := primitives.ScenarioQualityEvaluate(scenarios)
+	if !gateResult.Passed() {
+		writeGateIssues(errwirter, gateResult)
+		return 1, errors.New("scenario quality evaluate error")
+	}
+
+	fmt.Fprintf(output, "Scenario gates passed: %d scenario(s).\n", len(scenarios))
+	return 0, nil
 }
 
 func testingCommandRegenerateReport(parsed *CliArgs, output, errwirter io.Writer) (int, error) {
