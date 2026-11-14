@@ -147,12 +147,35 @@ func TestingCommandRun(args []string, output io.Writer, errwirter io.Writer) (in
 		return testingCommandInit(parsed, output)
 	case "run":
 		return testingCommandRunScenarios(parsed, output, errwirter)
+	case "report":
+		return testingCommandRegenerateReport(parsed, output, errwirter)
 	default:
 		msg := fmt.Sprintf("Unknown test subcommand: %s", command)
 		fmt.Fprintln(errwirter, msg)
 		PrintHelp(output)
 		return 2, errors.New(msg)
 	}
+}
+
+func testingCommandRegenerateReport(parsed *CliArgs, output, errwirter io.Writer) (int, error) {
+	outputRoot, err := getOutputRoot(parsed)
+	if err != nil {
+		return 1, err
+	}
+
+	ctx := context.Background()
+	latest, err := primitives.LoadLatestReportWithDirectory(ctx, outputRoot)
+	if err != nil || latest == nil {
+		msg := fmt.Sprintf("No scenario test results were found under %s.", output)
+		fmt.Fprintln(errwirter, msg)
+		return 1, errors.New(msg)
+	}
+
+	markdown := primitives.ScenarioMarkdownReportBuild(latest.Report)
+	reportPath := filepath.Join(latest.DirectoryPath, "report.md")
+	os.WriteFile(reportPath, []byte(markdown), 0644)
+	fmt.Fprintf(output, "report=%s\n", reportPath)
+	return 0, nil
 }
 
 func getOutputRoot(parsed *CliArgs) (string, error) {
