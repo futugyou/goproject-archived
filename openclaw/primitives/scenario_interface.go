@@ -19,17 +19,17 @@ const (
 )
 
 type AgentScenario struct {
-	Id          string                     `json:"id"`
-	Title       string                     `json:"title"`
-	Description *string                    `json:"description,omitempty"`
-	Risk        ScenarioRisk               `json:"risk"`
-	Type        string                     `json:"type"`
-	Tags        []string                   `json:"tags"`
-	Input       ScenarioInput              `json:"input"`
-	Expected    ScenarioExpected           `json:"expected"`
-	Oracles     []ScenarioOracleDefinition `json:"oracles"`
-	Scripted    *ScriptedTrace             `json:"scriptedTrace,omitempty"`
-	Metadata    map[string]string          `json:"metadata"`
+	Id            string                     `json:"id"`
+	Title         string                     `json:"title"`
+	Description   *string                    `json:"description,omitempty"`
+	Risk          ScenarioRisk               `json:"risk"`
+	Type          string                     `json:"type"`
+	Tags          []string                   `json:"tags"`
+	Input         ScenarioInput              `json:"input"`
+	Expected      ScenarioExpected           `json:"expected"`
+	Oracles       []ScenarioOracleDefinition `json:"oracles"`
+	ScriptedTrace *ScriptedTrace             `json:"scriptedTrace,omitempty"`
+	Metadata      map[string]string          `json:"metadata"`
 }
 
 type ScenarioInput struct {
