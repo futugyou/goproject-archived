@@ -135,6 +135,8 @@ func maxBacktickRun(value string) int {
 	return max
 }
 
+var JsonTraceWriterInstance = &JsonTraceWriter{}
+
 type JsonTraceWriter struct {
 }
 

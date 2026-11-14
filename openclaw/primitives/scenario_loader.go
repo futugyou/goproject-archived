@@ -118,22 +118,22 @@ func copyAgentScenario(s *AgentScenario) {
 	}
 
 	// ScriptedTrace
-	if s.Scripted != nil {
-		if s.Scripted.Status == "" {
-			s.Scripted.Status = ScenarioRunStatusesCompleted
+	if s.ScriptedTrace != nil {
+		if s.ScriptedTrace.Status == "" {
+			s.ScriptedTrace.Status = ScenarioRunStatusesCompleted
 		}
-		if s.Scripted.Steps == nil {
-			s.Scripted.Steps = []TraceStep{}
+		if s.ScriptedTrace.Steps == nil {
+			s.ScriptedTrace.Steps = []TraceStep{}
 		} else {
-			for i := range s.Scripted.Steps {
-				step := &s.Scripted.Steps[i]
+			for i := range s.ScriptedTrace.Steps {
+				step := &s.ScriptedTrace.Steps[i]
 				if step.Kind == "" {
 					step.Kind = TraceStepKindsEvent
 				}
 				step.Metadata = ensureMap(step.Metadata)
 			}
 		}
-		s.Scripted.Metadata = ensureMap(s.Scripted.Metadata)
+		s.ScriptedTrace.Metadata = ensureMap(s.ScriptedTrace.Metadata)
 	}
 }
 
