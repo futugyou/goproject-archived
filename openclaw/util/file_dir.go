@@ -375,6 +375,37 @@ func FindDirectoriesCantainsFileName(candidatePath string, filename string) ([]s
 	return matches, nil
 }
 
+func FindFiles(sourcePath, targetFileName string) ([]string, error) {
+	var matches []string
+
+	err := filepath.WalkDir(sourcePath, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			if os.IsPermission(err) || os.IsNotExist(err) {
+				if d != nil && d.IsDir() {
+					return filepath.SkipDir
+				}
+				return nil
+			}
+			return nil
+		}
+
+		if d.Type()&fs.ModeSymlink != 0 || d.Type()&fs.ModeIrregular != 0 {
+			if d.IsDir() {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+
+		if !d.IsDir() && d.Name() == targetFileName {
+			matches = append(matches, path)
+		}
+
+		return nil
+	})
+
+	return matches, err
+}
+
 func EnumerateTopFiles(root string) []string {
 	var files []string
 
