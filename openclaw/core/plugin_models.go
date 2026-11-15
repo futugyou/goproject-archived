@@ -483,8 +483,8 @@ func DefaultGitToolsConfig() *GitToolsConfig {
 // ==========================================
 
 const (
-	CodeExecConfigBackendDocker  = "docker"
-	CodeExecConfigBackendProcess = "process"
+	CodeExecConfigExecutionBackendTypeDocker = "docker"
+	CodeExecConfigBackendProcess             = "process"
 )
 
 type CodeExecConfig struct {

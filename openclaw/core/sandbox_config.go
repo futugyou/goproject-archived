@@ -3,14 +3,14 @@ package core
 import "strings"
 
 const (
-	SandboxProviderNames_None        = "None"
-	SandboxProviderNames_OpenSandbox = "OpenSandbox"
+	SandboxProviderNamesNone        = "None"
+	SandboxProviderNamesOpenSandbox = "OpenSandbox"
 )
 
 func SandboxProviderNamesNormalize(provider string) string {
 	trimmed := strings.TrimSpace(provider)
 	if trimmed == "" {
-		return SandboxProviderNames_None
+		return SandboxProviderNamesNone
 	}
 	return trimmed
 }
@@ -25,7 +25,7 @@ type SandboxConfig struct {
 
 func DefaultSandboxConfig() *SandboxConfig {
 	return &SandboxConfig{
-		Provider:   SandboxProviderNames_None,
+		Provider:   SandboxProviderNamesNone,
 		DefaultTTL: 300,
 		Tools:      make(map[string]SandboxToolConfig),
 	}
@@ -57,7 +57,7 @@ func IsOpenSandboxProviderConfigured(config *GatewayConfig) bool {
 	}
 	return strings.EqualFold(
 		SandboxProviderNamesNormalize(config.Sandbox.Provider),
-		SandboxProviderNames_OpenSandbox,
+		SandboxProviderNamesOpenSandbox,
 	)
 }
 
@@ -116,7 +116,7 @@ func ResolveModeDetailed(config *GatewayConfig, toolName string, defaultMode Too
 		pConfiguredMode = &configuredMode
 	}
 
-	if strings.EqualFold(provider, SandboxProviderNames_None) {
+	if strings.EqualFold(provider, SandboxProviderNamesNone) {
 		return &ToolSandboxModeResolution{
 			Provider:       provider,
 			ModeSource:     modeSource,

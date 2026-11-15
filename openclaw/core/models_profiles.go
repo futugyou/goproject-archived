@@ -7,6 +7,14 @@ import (
 	"github.com/futugyou/extensions_ai/abstractions/chatcompletion"
 )
 
+const (
+	DeepSeekProviderDefaultsProviderId       = "deepseek"
+	DeepSeekProviderDefaultsOpenAiBaseUrl    = "https://api.deepseek.com"
+	DeepSeekProviderDefaultsDefaultApiKeyRef = "env:DEEPSEEK_API_KEY"
+	DeepSeekProviderDefaultsDefaultModel     = "deepseek-v4-flash"
+	DeepSeekProviderDefaultsProModel         = "deepseek-v4-pro"
+)
+
 type ModelsConfig struct {
 	DefaultProfile string               `json:"default_profile"`
 	Profiles       []ModelProfileConfig `json:"profiles"`

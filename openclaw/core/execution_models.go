@@ -3,10 +3,10 @@ package core
 import "time"
 
 const (
-	BackendLocal       = "local"
-	BackendOpenSandbox = "opensandbox"
-	BackendDocker      = "docker"
-	BackendSsh         = "ssh"
+	ExecutionBackendTypeLocal       = "local"
+	ExecutionBackendTypeOpenSandbox = "opensandbox"
+	ExecutionBackendTypeDocker      = "docker"
+	ExecutionBackendTypeSsh         = "ssh"
 )
 
 type ExecutionConfig struct {
@@ -19,9 +19,9 @@ type ExecutionConfig struct {
 func DefaultExecutionConfig() *ExecutionConfig {
 	return &ExecutionConfig{
 		Enabled:        true,
-		DefaultBackend: BackendLocal,
+		DefaultBackend: ExecutionBackendTypeLocal,
 		Profiles: map[string]ExecutionBackendProfileConfig{
-			BackendLocal: *DefaultExecutionBackendProfileConfig(),
+			ExecutionBackendTypeLocal: *DefaultExecutionBackendProfileConfig(),
 		},
 		Tools: make(map[string]ExecutionToolRouteConfig),
 	}
@@ -45,7 +45,7 @@ type ExecutionBackendProfileConfig struct {
 
 func DefaultExecutionBackendProfileConfig() *ExecutionBackendProfileConfig {
 	return &ExecutionBackendProfileConfig{
-		Type:           BackendLocal,
+		Type:           ExecutionBackendTypeLocal,
 		Enabled:        true,
 		Environment:    make(map[string]string),
 		Port:           22,

@@ -346,7 +346,7 @@ func (b *BrowserToolCapabilityEvaluator) isNonLocalBackendAvailable(config *Gate
 	}
 	profile, ok := config.Execution.Profiles[backendName]
 	if ok {
-		return profile.Enabled && profile.Type != BackendLocal
+		return profile.Enabled && profile.Type != ExecutionBackendTypeLocal
 	}
 
 	return false

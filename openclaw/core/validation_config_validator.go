@@ -800,7 +800,7 @@ func (c *ConfigValidator) Validate(config *GatewayConfig) []string {
 
 	// Sandbox
 	var sandboxProvider = SandboxProviderNamesNormalize(config.Sandbox.Provider)
-	if sandboxProvider != SandboxProviderNames_None && sandboxProvider != SandboxProviderNames_OpenSandbox {
+	if sandboxProvider != SandboxProviderNamesNone && sandboxProvider != SandboxProviderNamesOpenSandbox {
 		errorMsg = append(errorMsg, "Sandbox.Provider must be 'None' or 'OpenSandbox'.")
 	}
 
@@ -808,7 +808,7 @@ func (c *ConfigValidator) Validate(config *GatewayConfig) []string {
 		errorMsg = append(errorMsg, fmt.Sprintf("Sandbox.DefaultTTL must be >= 1 (got %d).", config.Sandbox.DefaultTTL))
 	}
 
-	if sandboxProvider == SandboxProviderNames_OpenSandbox && util.IsBlank(config.Sandbox.Endpoint) {
+	if sandboxProvider == SandboxProviderNamesOpenSandbox && util.IsBlank(config.Sandbox.Endpoint) {
 		errorMsg = append(errorMsg, "Sandbox.Endpoint must be set when Sandbox.Provider='OpenSandbox'.")
 	}
 
@@ -823,15 +823,15 @@ func (c *ConfigValidator) Validate(config *GatewayConfig) []string {
 			errorMsg = append(errorMsg, fmt.Sprintf("Sandbox.Tools.%s.TTL must be >= 1 when set (got %d).", toolName, *toolConfig.TTL))
 		}
 
-		if sandboxProvider == SandboxProviderNames_OpenSandbox && ResolveMode(config, toolName, SandboxProviderNames_None) != SandboxProviderNames_None && util.IsBlank(toolConfig.Template) {
+		if sandboxProvider == SandboxProviderNamesOpenSandbox && ResolveMode(config, toolName, SandboxProviderNamesNone) != SandboxProviderNamesNone && util.IsBlank(toolConfig.Template) {
 			errorMsg = append(errorMsg, fmt.Sprintf("Sandbox.Tools.%s.Template must be set when sandboxing is enabled for that tool.", toolName))
 		}
 	}
 
-	if sandboxProvider == SandboxProviderNames_OpenSandbox {
+	if sandboxProvider == SandboxProviderNamesOpenSandbox {
 
 		for _, candidate := range EnumerateBuiltInCandidates(config) {
-			if ResolveMode(config, candidate.ToolName, candidate.DefaultMode) != SandboxProviderNames_None && util.IsBlank(ResolveTemplate(config, candidate.ToolName)) {
+			if ResolveMode(config, candidate.ToolName, candidate.DefaultMode) != SandboxProviderNamesNone && util.IsBlank(ResolveTemplate(config, candidate.ToolName)) {
 				errorMsg = append(errorMsg, fmt.Sprintf("Sandbox.Tools.%s.Template must be set because %s defaults to sandbox mode '%s'.", candidate.ToolName, candidate.ToolName, ResolveMode(config, candidate.ToolName, candidate.DefaultMode)))
 			}
 		}
