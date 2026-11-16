@@ -1,13 +1,13 @@
 module github.com/futugyou/openclaw
 
-go 1.26.2
+go 1.26.7
 
 require github.com/google/uuid v1.6.0
 
 require (
 	charm.land/bubbles/v2 v2.2.1
 	charm.land/huh/v2 v2.0.3
-	charm.land/lipgloss/v2 v2.0.6
+	charm.land/lipgloss/v2 v2.1.0
 	github.com/Microsoft/go-winio v0.6.4
 	github.com/eclipse/paho.golang v0.23.0
 	github.com/emersion/go-imap/v2 v2.0.0-beta.8
