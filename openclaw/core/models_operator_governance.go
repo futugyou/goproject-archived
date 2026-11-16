@@ -362,7 +362,7 @@ type SetupStatusResponse struct {
 	Artifacts                         []SetupArtifactStatusItem     `json:"artifacts"`
 	Warnings                          []string                      `json:"warnings"`
 	TailscaleServe                    *TailscaleServeStatusResponse `json:"tailscale_serve"`
-	Reliability                       ReliabilitySnapshot           `json:"reliability"`
+	Reliability                       *ReliabilitySnapshot          `json:"reliability"`
 }
 
 func DefaultSetupStatusResponse() SetupStatusResponse {
