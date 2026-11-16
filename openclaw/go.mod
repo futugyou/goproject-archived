@@ -10,7 +10,7 @@ require (
 	charm.land/lipgloss/v2 v2.0.6
 	github.com/Microsoft/go-winio v0.6.4
 	github.com/eclipse/paho.golang v0.23.0
-	github.com/emersion/go-imap/v2 v2.0.0-beta.8
+	github.com/emersion/go-imap/v2 v2.0.0-beta.9
 	github.com/flosch/pongo2/v7 v7.0.0-alpha.1
 	github.com/futugyou/extensions_ai v0.0.1
 	github.com/go-sql-driver/mysql v1.10.1
