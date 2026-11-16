@@ -102,6 +102,11 @@ func SetupCommandRun(args []string, input io.Reader, output io.Writer, errwirter
 		return &SetupCommandResult{ExitCode: code}, err
 	}
 
+	if len(args) > 0 && args[0] == "tailscale" {
+		code, err := setupCommandRunTailscaleSetup(args[1:], input, output, errwirter, canPrompt)
+		return &SetupCommandResult{ExitCode: code}, err
+	}
+
 	parsed := CliArgsParse(args)
 	nonInteractive := parsed.HasFlag("--non-interactive")
 	requiresPrompt := setupCommandRequiresPrompt(parsed)
@@ -189,6 +194,170 @@ func SetupCommandRun(args []string, input io.Reader, output io.Writer, errwirter
 		ExitCode:   0,
 		ConfigPath: answers.ConfigPath,
 	}, nil
+}
+
+func setupCommandRunTailscaleSetup(args []string, input io.Reader, output, errwirter io.Writer, canPrompt bool) (int, error) {
+	helpRequested := len(args) > 0 && (args[0] == "-h" || args[0] == "--help")
+	if len(args) == 0 || helpRequested || args[0] != "serve" {
+		msg := "Usage: openclaw setup tailscale serve [--config <path>] [--local-url <url>] [--non-interactive]"
+		if helpRequested {
+			fmt.Fprintln(output, msg)
+			return 0, nil
+		} else {
+			fmt.Fprintln(errwirter, msg)
+			return 2, errors.New(msg)
+		}
+	}
+
+	parsed := CliArgsParse(args)
+	if parsed == nil {
+		fmt.Fprintln(errwirter, "argument error")
+		return 2, errors.New("argument error")
+	}
+
+	if parsed.ShowHelp {
+		fmt.Fprintln(output, "Usage: openclaw setup tailscale serve [--config <path>] [--local-url <url>] [--non-interactive]")
+		return 0, nil
+	}
+
+	explicitConfig := util.Deref(parsed.GetOption("--config")) != ""
+	configPath, err := filepath.Abs(core.GatewaySetupPathsIntance.ExpandPath(getOptionOr(parsed, "--config", DefaultConfigPath)))
+	if err != nil {
+		fmt.Fprintln(errwirter, err.Error())
+		return 2, err
+	}
+
+	var config *core.GatewayConfig
+	configLoaded := false
+
+	if util.FileExists(configPath) {
+		config, err = core.GatewayConfigFileInstance.Load(configPath)
+		if err != nil {
+			fmt.Fprintf(errwirter, "Could not load config %s: %s", configPath, err.Error())
+			return 1, err
+		}
+		configLoaded = true
+	} else if explicitConfig {
+		msg := fmt.Sprintf("Could not load config %s\n", configPath)
+		fmt.Fprintln(errwirter, msg)
+		return 1, errors.New(msg)
+	} else {
+		config = createTailscaleServePreviewConfig("http://127.0.0.1:18789")
+	}
+
+	localGatewayUrl := util.Deref(parsed.GetOption("--local-url"))
+	if localGatewayUrl == "" {
+		localGatewayUrl = util.Deref(parsed.GetOption("--url"))
+	}
+	if localGatewayUrl == "" {
+		localGatewayUrl = core.TailscaleServeAdvisorInstance.BuildLocalGatewayUrl(config)
+	}
+	if !parsed.HasFlag("--non-interactive") && canPrompt {
+		localGatewayUrl = prompt(output, input, "Local gateway URL", localGatewayUrl)
+	}
+
+	localGatewayUri, err := url.Parse(localGatewayUrl)
+	if err != nil || (localGatewayUri != nil && (!localGatewayUri.IsAbs() || (localGatewayUri.Scheme != "http" && localGatewayUri.Scheme != "https"))) {
+		msg := fmt.Sprintf("Invalid local gateway URL: %s", localGatewayUrl)
+		fmt.Fprintf(errwirter, msg)
+		return 2, errors.New(msg)
+	}
+
+	config.Deployment = &core.DeploymentConfig{
+		Mode:             "tailscale-serve",
+		ReverseProxy:     "tailscale-serve",
+		ExpectedLocalUrl: strings.TrimRight(localGatewayUri.String(), "/"),
+	}
+
+	status, err := core.TailscaleServeAdvisorInstance.BuildStatus(context.Background(), config, &core.TailscaleServeProbeOptions{ForceInclude: true, CheckCli: true})
+	if err != nil {
+		msg := "Expected Tailscale Serve status."
+		fmt.Fprintln(errwirter, msg)
+		return 2, errors.New(msg)
+	}
+
+	writeTailscaleServeInstructions(output, configPath, configLoaded, status)
+
+	return 0, nil
+}
+
+func writeTailscaleServeInstructions(output io.Writer, configPath string, configLoaded bool, status *core.TailscaleServeStatusResponse) {
+	localGateway := strings.TrimRight(status.LocalGatewayUrl, "/")
+
+	fmt.Fprintln(output, "Tailscale Serve setup for OpenClaw.NET")
+	fmt.Fprintln(output)
+	fmt.Fprintln(output, "This profile keeps OpenClaw.NET bound to 127.0.0.1 and uses Tailscale Serve to expose it privately inside your tailnet.")
+
+	if configLoaded {
+		fmt.Fprintf(output, "Config: %s\n", configPath)
+	} else {
+		fmt.Fprintf(output, "Config: %s (not found; using default local gateway guidance)\n", configPath)
+	}
+
+	fmt.Fprintln(output)
+	fmt.Fprintln(output, "Local gateway:")
+	fmt.Fprintln(output, localGateway)
+	fmt.Fprintln(output)
+	fmt.Fprintln(output, "Recommended command:")
+	fmt.Fprintln(output)
+	fmt.Fprintln(output, status.SuggestedServeCommand)
+	fmt.Fprintln(output)
+	fmt.Fprintln(output, "After enabling Serve, open the Tailscale-provided HTTPS URL from a device in your tailnet.")
+	fmt.Fprintln(output)
+	fmt.Fprintln(output, "Useful OpenClaw.NET surfaces:")
+	fmt.Fprintln(output, "- Chat: /chat")
+	fmt.Fprintln(output, "- Admin: /admin")
+	fmt.Fprintln(output, "- MCP: /mcp")
+	fmt.Fprintln(output, "- Integration API: /api/integration/status")
+	fmt.Fprintln(output, "- WebSocket: /ws")
+	fmt.Fprintln(output, "- Doctor: /doctor/text")
+	fmt.Fprintln(output)
+	fmt.Fprintln(output, "Tailscale CLI status:")
+	fmt.Fprintf(output, "- CLI detected: %s\n", strings.ToLower(strconv.FormatBool(status.TailscaleCliDetected)))
+	fmt.Fprintf(output, "- Tailnet reachability: %v\n", status.TailnetReachability)
+	fmt.Fprintf(output, "- Serve detected: %v\n", status.ServeDetected)
+
+	if len(status.Warnings) > 0 {
+		fmt.Fprintln(output)
+		fmt.Fprintln(output, "Advisory warnings:")
+		for _, warning := range status.Warnings {
+			fmt.Fprintf(output, "- %s\n", warning)
+		}
+	}
+
+	fmt.Fprintln(output)
+	fmt.Fprintln(output, "Security notes:")
+	fmt.Fprintln(output, "- Tailscale Serve is for private tailnet access.")
+	fmt.Fprintln(output, "- Do not use Funnel for /admin unless you have reviewed public exposure hardening.")
+	fmt.Fprintln(output, "- Keep OpenClaw.NET auth enabled.")
+	fmt.Fprintln(output, "- Use operator accounts/tokens for admin, API, and websocket clients.")
+	fmt.Fprintln(output)
+	fmt.Fprintln(output, "Follow-up checks:")
+	fmt.Fprintf(output, "openclaw setup status --config %s\n", core.GatewaySetupPathsIntance.QuoteIfNeeded(configPath))
+	fmt.Fprintf(output, "OPENCLAW_BASE_URL=%s OPENCLAW_AUTH_TOKEN=... openclaw admin posture\n", localGateway)
+	fmt.Fprintln(output)
+	fmt.Fprintln(output, "If the gateway is running, check:")
+	fmt.Fprintf(output, "%s/health/ready\n", localGateway)
+}
+
+func createTailscaleServePreviewConfig(localGatewayUrl string) *core.GatewayConfig {
+	var port = 18789
+	baseURL, err := url.Parse(localGatewayUrl)
+	if err == nil && baseURL.IsAbs() {
+		p, err := strconv.Atoi(baseURL.Port())
+		if err == nil && p > 0 {
+			port = p
+		}
+	}
+	return &core.GatewayConfig{
+		BindAddress: "127.0.0.1",
+		Port:        port,
+		Deployment: &core.DeploymentConfig{
+			Mode:             "tailscale-serve",
+			ReverseProxy:     "tailscale-serve",
+			ExpectedLocalUrl: strings.TrimRight(localGatewayUrl, "/"),
+		},
+	}
 }
 
 func normalizeApertureAuthMode(raw string) (string, error) {
