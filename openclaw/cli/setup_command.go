@@ -12,6 +12,7 @@ import (
 	"os"
 	"os/user"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -81,6 +82,26 @@ func setupCommandRequiresPrompt(parsed *CliArgs) bool {
 }
 
 func SetupCommandRun(args []string, input io.Reader, output io.Writer, errwirter io.Writer, currentDirectory string, canPrompt bool) (*SetupCommandResult, error) {
+	if len(args) > 0 && args[0] == "status" {
+		code, err := SetupLifecycleCommandRunStatus(args[1:], output, errwirter)
+		return &SetupCommandResult{ExitCode: code}, err
+	}
+
+	if len(args) > 0 && args[0] == "verify" {
+		code, err := SetupLifecycleCommandRunVerify(args[1:], output, errwirter)
+		return &SetupCommandResult{ExitCode: code}, err
+	}
+
+	if len(args) > 0 && args[0] == "channel" {
+		code, err := ChannelSetupCommandRun(args[1:], input, output, errwirter, canPrompt)
+		return &SetupCommandResult{ExitCode: code}, err
+	}
+
+	if len(args) > 0 && args[0] == "provide" {
+		code, err := setupCommandRunProviderSetup(args[1:], input, output, errwirter, currentDirectory, canPrompt)
+		return &SetupCommandResult{ExitCode: code}, err
+	}
+
 	parsed := CliArgsParse(args)
 	nonInteractive := parsed.HasFlag("--non-interactive")
 	requiresPrompt := setupCommandRequiresPrompt(parsed)
@@ -168,6 +189,253 @@ func SetupCommandRun(args []string, input io.Reader, output io.Writer, errwirter
 		ExitCode:   0,
 		ConfigPath: answers.ConfigPath,
 	}, nil
+}
+
+func normalizeApertureAuthMode(raw string) (string, error) {
+	normalized := strings.ToLower(strings.TrimSpace(raw))
+	if normalized != "bearer" && normalized != "tailnet-identity" {
+		return "", errors.New("Aperture auth mode must be one of: bearer, tailnet-identity.")
+	}
+	return normalized, nil
+}
+
+func parseBooleanOption(raw string, defaultValue bool) (bool, error) {
+	if raw == "" {
+		return defaultValue, nil
+	}
+	return strconv.ParseBool(raw)
+}
+
+func setupCommandRunProviderSetup(args []string, input io.Reader, output io.Writer, errwirter io.Writer, currentDirectory string, canPrompt bool) (int, error) {
+	providerIndex := slices.IndexFunc(args, func(arg string) bool {
+		return !strings.HasPrefix(arg, "--")
+	})
+
+	provider := ""
+	if providerIndex >= 0 {
+		provider = args[providerIndex]
+	}
+
+	if provider != "aperture" {
+		msg := "Usage: openclaw setup provider aperture [--config <path>] [--profile-id <id>] [--endpoint <url>] [--model <route>] [--auth-mode <bearer|tailnet-identity>] [--env-var <name>] [--send-request-metadata <true|false>] [--workspace <path>] [--non-interactive]"
+		fmt.Fprintln(errwirter, msg)
+		return 2, errors.New(msg)
+	}
+
+	filteredArgs := []string{}
+	for i := range args {
+		if i != providerIndex {
+			filteredArgs = append(filteredArgs, args[i])
+		}
+	}
+
+	parsed := CliArgsParse(filteredArgs)
+	if parsed == nil {
+		fmt.Fprintln(errwirter, "argument error")
+		return 2, errors.New("argument error")
+	}
+
+	configpath := getOptionOr(parsed, "--config", DefaultConfigPath)
+	configPath, err := filepath.Abs(core.GatewaySetupPathsIntance.ExpandPath(configpath))
+	if err != nil {
+		return 1, err
+	}
+
+	nonInteractive := parsed.HasFlag("--non-interactive")
+	profileId := getOptionOr(parsed, "--profile-id", "aperture-default")
+	endpoint := util.Deref(parsed.GetOption("--endpoint"))
+	model := util.Deref(parsed.GetOption("--model"))
+
+	authMode, err := normalizeApertureAuthMode(getOptionOr(parsed, "--auth-mode", "bearer"))
+	if err != nil {
+		fmt.Fprintln(errwirter, err.Error())
+		return 2, err
+	}
+
+	envVar := getOptionOr(parsed, "--env-var", "OPENCLAW_APERTURE_TOKEN")
+	sendMetadata, err := parseBooleanOption(getOptionOr(parsed, "--send-request-metadata", ""), false)
+	if err != nil {
+		fmt.Fprintln(errwirter, err.Error())
+		return 2, err
+	}
+
+	if !nonInteractive && canPrompt {
+		if endpoint == "" {
+			endpoint = "https://YOUR_APERTURE_ENDPOINT"
+		}
+		if model == "" {
+			model = "YOUR_APERTURE_MODEL_ROUTE"
+		}
+		endpoint = prompt(output, input, "Aperture endpoint", endpoint)
+		model = prompt(output, input, "Aperture model route", model)
+
+		authMode, err = normalizeApertureAuthMode(prompt(output, input, "Auth mode (bearer|tailnet-identity)", authMode))
+		if err != nil {
+			fmt.Fprintln(errwirter, err.Error())
+			return 2, err
+		}
+
+		if authMode == "bearer" {
+			envVar = prompt(output, input, "Bearer token env var", envVar)
+		}
+
+		sendMetadataStr := "false"
+		if sendMetadata {
+			sendMetadataStr = "true"
+		}
+		sendMetadata, err = parseBooleanOption(prompt(output, input, "Send request metadata (true|false)", sendMetadataStr), false)
+
+		if err != nil {
+			fmt.Fprintln(errwirter, err.Error())
+			return 2, err
+		}
+	}
+
+	if endpoint == "" || model == "" {
+		msg := "Aperture endpoint and model route are required. Re-run with --endpoint and --model, or run from an interactive terminal."
+		fmt.Fprintln(errwirter, msg)
+		return 2, errors.New(msg)
+	}
+
+	apiKey := ""
+	if authMode == "bearer" {
+		apiKey = fmt.Sprintf("env:%s", &envVar)
+	}
+
+	var config *core.GatewayConfig
+	if util.FileExists(configPath) {
+		config, err = core.GatewayConfigFileInstance.Load(configPath)
+		if err != nil {
+			fmt.Fprintln(errwirter, err.Error())
+			return 2, err
+		}
+	} else {
+		workspace, err := filepath.Abs(core.GatewaySetupPathsIntance.ExpandPath(getOptionOr(parsed, "--workspace", filepath.Join(currentDirectory, "workspace"))))
+		if err != nil {
+			fmt.Fprintln(errwirter, err.Error())
+			return 2, err
+		}
+
+		configDirectory := filepath.Dir(configPath)
+		if configDirectory == "" {
+			return 2, errors.New("Config path must contain a directory.")
+		}
+
+		warnings := []string{}
+		f := core.GatewaySetupProfileFactory{}
+
+		config = f.CreateProfileConfig("local", "127.0.0.1", 18789, generateAuthToken(), workspace, filepath.Join(configDirectory, "memory"), "aperture", model, apiKey, "", &warnings)
+		config.Llm.Endpoint = endpoint
+		config.Llm.AuthMode = authMode
+		config.Llm.SendRequestMetadata = sendMetadata
+	}
+
+	existingIndex := slices.IndexFunc(config.Models.Profiles, func(item core.ModelProfileConfig) bool {
+		return item.Id == profileId
+	})
+
+	profile := core.ModelProfileConfig{
+		Id:                  profileId,
+		Provider:            "aperture",
+		Model:               model,
+		BaseUrl:             endpoint,
+		ApiKey:              apiKey,
+		AuthMode:            authMode,
+		SendRequestMetadata: new(sendMetadata),
+		Tags:                []string{"aperture", "remote", "optional"},
+	}
+
+	if existingIndex >= 0 {
+		config.Models.Profiles[existingIndex] = profile
+	} else {
+		config.Models.Profiles = append(config.Models.Profiles, profile)
+	}
+
+	if config.Models.DefaultProfile == "" && len(config.Models.Profiles) == 1 {
+		config.Models.DefaultProfile = profileId
+	}
+
+	validationErrors := core.ConfigValidatorInstance.Validate(config)
+	if len(validationErrors) > 0 {
+		fmt.Fprintln(errwirter, "Config validation failed:")
+		for _, validationError := range validationErrors {
+			fmt.Fprintf(errwirter, "- %s\n", validationError)
+		}
+		return 1, errors.New("Config validation failed:")
+	}
+
+	resolvedWorkspaceRoot := resolveConfiguredPath(config.Tooling.WorkspaceRoot)
+	resolvedMemoryStoragePath := resolveConfiguredPath(config.Memory.StoragePath)
+
+	os.MkdirAll(filepath.Dir(configPath), 0755)
+	if resolvedWorkspaceRoot != "" {
+		os.MkdirAll(resolvedWorkspaceRoot, 0755)
+	}
+	if resolvedMemoryStoragePath != "" {
+		os.MkdirAll(resolvedMemoryStoragePath, 0755)
+	}
+	if err := core.GatewayConfigFileInstance.Save(config, configPath); err != nil {
+		fmt.Fprintln(errwirter, err.Error())
+		return 2, err
+	}
+
+	envExamplePath, err := core.GatewaySetupArtifactsInstance.BuildEnvExamplePath(configPath)
+	if err != nil {
+		fmt.Fprintln(errwirter, err.Error())
+		return 2, err
+	}
+
+	authToken := config.AuthToken
+	if authToken == "" {
+		authToken = generateAuthToken()
+	}
+	workspace := resolvedWorkspaceRoot
+	if workspace == "" {
+		workspace = filepath.Join(currentDirectory, "workspace")
+	}
+	data := core.GatewaySetupArtifactsInstance.BuildEnvExample(apiKey, authToken, workspace, buildReachableBaseUrl(config.BindAddress, config.Port))
+	if err := os.WriteFile(envExamplePath, []byte(data), 0644); err != nil {
+		return 2, err
+	}
+
+	fmt.Fprintf(output, "Wrote config: %s\n", configPath)
+	fmt.Fprintf(output, "Wrote env example: %s\n", envExamplePath)
+	fmt.Fprintf(output, "Aperture profile: %s\n", profileId)
+	fmt.Fprintf(output, "Endpoint: %s\n", endpoint)
+	fmt.Fprintf(output, "Model route: %s\n", model)
+	fmt.Fprintf(output, "Auth mode: %s\n", authMode)
+	if sendMetadata {
+		fmt.Fprintf(output, "Request metadata: %s\n", "enabled")
+	} else {
+		fmt.Fprintf(output, "Request metadata: %s\n", "disabled")
+	}
+	fmt.Fprintln(output)
+	fmt.Fprintln(output, "Next steps:")
+	fmt.Fprintf(output, "openclaw setup verify --config %s --offline\n", core.GatewaySetupPathsIntance.QuoteIfNeeded(configPath))
+	fmt.Fprintln(output, "openclaw models doctor")
+
+	return 0, nil
+}
+
+func resolveConfiguredPath(value string) string {
+	if value == "" {
+		return ""
+	}
+
+	resolved := core.SecretResolverInstance.Resolve(value)
+	if resolved == "" {
+		if strings.HasPrefix(strings.TrimLeft(value, "\n\r"), "env:") {
+			return ""
+		}
+		resolved = value
+	}
+	resolved = core.GatewaySetupPathsIntance.ExpandPath(resolved)
+	if filepath.IsAbs(resolved) {
+		return resolved
+	}
+
+	resolved, _ = filepath.Abs(resolved)
+	return resolved
 }
 
 func setupCommandBuildConfig(answers *SetupAnswers) (*core.GatewayConfig, []string, error) {
