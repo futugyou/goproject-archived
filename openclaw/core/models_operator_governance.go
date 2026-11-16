@@ -408,8 +408,8 @@ type SetupVerificationResponse struct {
 	RecommendedNextActions []string                 `json:"recommended_next_actions"`
 }
 
-func DefaultSetupVerificationResponse() SetupVerificationResponse {
-	return SetupVerificationResponse{
+func DefaultSetupVerificationResponse() *SetupVerificationResponse {
+	return &SetupVerificationResponse{
 		GeneratedAtUtc:         time.Now().UTC(),
 		OverallStatus:          SetupCheckStatesPass,
 		Checks:                 []SetupVerificationCheck{},
@@ -418,11 +418,11 @@ func DefaultSetupVerificationResponse() SetupVerificationResponse {
 }
 
 type SetupVerificationSnapshot struct {
-	RecordedAtUtc   time.Time                 `json:"recorded_at_utc"`
-	Source          string                    `json:"source"`
-	Offline         bool                      `json:"offline"`
-	RequireProvider bool                      `json:"require_provider"`
-	Verification    SetupVerificationResponse `json:"verification"`
+	RecordedAtUtc   time.Time                  `json:"recorded_at_utc"`
+	Source          string                     `json:"source"`
+	Offline         bool                       `json:"offline"`
+	RequireProvider bool                       `json:"require_provider"`
+	Verification    *SetupVerificationResponse `json:"verification"`
 }
 
 func DefaultSetupVerificationSnapshot() SetupVerificationSnapshot {

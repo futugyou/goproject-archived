@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -20,6 +21,91 @@ func setupLifecycleCommandResolveConfigPath(parsed *CliArgs) (string, error) {
 	}
 	configPath = core.GatewaySetupPathsIntance.ExpandPath(configPath)
 	return filepath.Abs(configPath)
+}
+
+func SetupLifecycleCommandRunVerify(args []string, output io.Writer, errwirter io.Writer) (int, error) {
+	parsed := CliArgsParse(args)
+	configPath, err := setupLifecycleCommandResolveConfigPath(parsed)
+	if err != nil {
+		return 1, err
+	}
+
+	config, err := core.GatewayConfigFileInstance.Load(configPath)
+
+	if err != nil {
+		fmt.Fprintln(errwirter, err.Error())
+		return 1, err
+	}
+
+	response, err := runLocalVerification(
+		context.Background(),
+		configPath,
+		config,
+		parsed.HasFlag("--offline"),
+		parsed.HasFlag("--require-provider"),
+		core.SetupVerificationSourcesCli)
+
+	if err != nil {
+		return 1, err
+	}
+	if parsed.HasFlag("--json") {
+		data, _ := json.Marshal(response)
+		fmt.Fprintln(output, string(data))
+	} else {
+		setupLifecycleWriteVerification(output, response)
+	}
+
+	if response.HasFailures {
+		return 1, errors.New("")
+	}
+	return 0, nil
+}
+
+func setupLifecycleWriteVerification(output io.Writer, response *core.SetupVerificationResponse) {
+	fmt.Fprintln(output)
+	fmt.Fprintln(output, "Setup verification:")
+	for _, check := range response.Checks {
+		fmt.Fprintf(output, "- [%s] %s: %s\n", check.Status, check.Label, check.Summary)
+		if check.Detail != "" {
+			fmt.Fprintf(output, "  \n", check.Detail)
+		}
+	}
+
+	if len(response.RecommendedNextActions) > 0 {
+		fmt.Fprintln(output)
+		fmt.Fprintln(output, "Verification next actions:")
+		for _, action := range response.RecommendedNextActions {
+			fmt.Fprintf(output, "- %s\n", action)
+		}
+	}
+
+	fmt.Fprintln(output)
+	fmt.Fprintf(output, "Verification result: %s\n", response.OverallStatus)
+}
+
+func runLocalVerification(ctx context.Context, configPath string, config *core.GatewayConfig, offline, requireProvider bool, source string) (*core.SetupVerificationResponse, error) {
+	localState := core.LocalSetupStateLoaderInstance.Load(config.Memory.StoragePath)
+	verification, err := core.SetupVerificationServiceInstance.Verify(ctx, &core.SetupVerificationRequest{
+		Config:               config,
+		Policy:               localState.Policy,
+		OperatorAccountCount: localState.OperatorAccountCount,
+		Offline:              offline,
+		RequireProvider:      requireProvider,
+		WorkspacePath:        resolveWorkspacePath(config),
+		ModelDoctor:          core.ModelDoctorEvaluatorInstance.Build(config, nil, nil),
+	}, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	core.NewSetupVerificationSnapshotStore(config.Memory.StoragePath).Save(&core.SetupVerificationSnapshot{
+		Source:          source,
+		Offline:         offline,
+		RequireProvider: requireProvider,
+		Verification:    verification,
+	})
+
+	return verification, nil
 }
 
 func SetupLifecycleCommandRunStatus(args []string, output io.Writer, errwirter io.Writer) (int, error) {
