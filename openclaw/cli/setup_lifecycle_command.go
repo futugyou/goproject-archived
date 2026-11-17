@@ -7,9 +7,13 @@ import (
 	"fmt"
 	"html"
 	"io"
+	"net/http"
 	"os"
+	"os/exec"
+	"os/signal"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/futugyou/openclaw/core"
@@ -28,14 +32,14 @@ func setupLifecycleCommandBuildLaunchdPlist(label, binaryPath string, extraArgs 
 
 	var argLinesBuilder strings.Builder
 	for _, arg := range args {
-		argLinesBuilder.WriteString(fmt.Sprintf("    <string>%s</string>\n", html.EscapeString(arg)))
+		fmt.Fprintf(&argLinesBuilder, "    <string>%s</string>\n", html.EscapeString(arg))
 	}
 
 	// 2. 处理环境变量
 	var envLinesBuilder strings.Builder
 	if len(environment) > 0 {
 		for k, v := range environment {
-			envLinesBuilder.WriteString(fmt.Sprintf("    <key>%s</key>\n    <string>%s</string>\n", html.EscapeString(k), html.EscapeString(v)))
+			fmt.Fprintf(&envLinesBuilder, "    <key>%s</key>\n    <string>%s</string>\n", html.EscapeString(k), html.EscapeString(v))
 		}
 	}
 	envSection := ""
@@ -135,6 +139,279 @@ func normalizePlatform(value string) (string, error) {
 	return "", errors.New("Platform must be one of: linux, macos, all.")
 }
 
+func SetupLifecycleCommandRunLaunch(
+	args []string,
+	output io.Writer,
+	errWriter io.Writer,
+) (int, error) {
+	repoRoot := os.Getenv("OPENCLAW_GATEWAY_PATH")
+	if repoRoot == "" {
+		msg := "Could not locate the repository root from the current directory."
+		fmt.Fprintln(errWriter, msg)
+		return 2, errors.New(msg)
+	}
+
+	parsed := CliArgsParse(args)
+
+	configPath, err := setupLifecycleCommandResolveConfigPath(parsed)
+	if err != nil {
+		return 1, err
+	}
+
+	openBrowser := parsed.HasFlag("--open-browser")
+	skipVerify := parsed.HasFlag("--skip-verify")
+	offline := parsed.HasFlag("--offline")
+	requireProvider := parsed.HasFlag("--require-provider")
+
+	config, err := core.GatewayConfigFileInstance.Load(configPath)
+	if err != nil {
+		fmt.Fprintln(errWriter, err.Error())
+		return 1, err
+	}
+
+	// Handle Ctrl+C and SIGTERM.
+	ctx, cancel := signal.NotifyContext(
+		context.Background(),
+		os.Interrupt,
+		syscall.SIGTERM,
+	)
+	defer cancel()
+
+	// Start gateway process.
+	gatewayCmd := exec.Command(
+		"./openclaw-gateway",
+		"--config",
+		configPath,
+	)
+	gatewayCmd.Dir = repoRoot
+
+	stdoutWriter := newLinePrefixWriter("gateway", output)
+	stderrWriter := newLinePrefixWriter("gateway", errWriter)
+
+	gatewayCmd.Stdout = stdoutWriter
+	gatewayCmd.Stderr = stderrWriter
+
+	if err := gatewayCmd.Start(); err != nil {
+		msg := "Failed to start gateway: " + err.Error()
+		fmt.Fprintln(errWriter, msg)
+		return 1, errors.New(msg)
+	}
+
+	// Wait for process exit asynchronously.
+	waitCh := make(chan error, 1)
+	go func() {
+		err := gatewayCmd.Wait()
+		_ = stdoutWriter.Flush()
+		_ = stderrWriter.Flush()
+		waitCh <- err
+	}()
+
+	// Graceful process cleanup.
+	defer func() {
+		if gatewayCmd.ProcessState == nil && gatewayCmd.Process != nil {
+			_ = gatewayCmd.Process.Kill()
+
+			select {
+			case <-waitCh:
+			default:
+			}
+		}
+	}()
+
+	baseUrl := buildReachableBaseUrl(
+		config.BindAddress,
+		config.Port,
+	)
+
+	// Wait until gateway becomes ready.
+	ready := waitForGatewayReady(
+		ctx,
+		baseUrl,
+		config.AuthToken,
+		output,
+	)
+
+	if !ready {
+		select {
+		case err := <-waitCh:
+			if err != nil {
+				fmt.Fprintf(errWriter, "Gateway exited during startup: %v\n", err)
+			}
+		default:
+		}
+
+		msg := "Gateway did not become ready before the startup timeout."
+		fmt.Fprintln(errWriter, msg)
+		return 1, errors.New(msg)
+	}
+
+	// First-run verification.
+	if !skipVerify {
+		verification, err := runLocalVerification(
+			ctx,
+			config,
+			offline,
+			requireProvider,
+			core.SetupVerificationSourcesLaunchStartup,
+		)
+		if err != nil {
+			return 1, err
+		}
+
+		setupLifecycleWriteVerification(output, verification)
+
+		if verification.HasFailures {
+			msg := "Gateway started, but first-run verification found blocking issues."
+			fmt.Fprintln(errWriter, msg)
+			return 1, errors.New(msg)
+		}
+	}
+
+	// Open browser only for loopback addresses.
+	if openBrowser {
+		if util.IsLoopbackBind(config.BindAddress) {
+			chatUrl := strings.TrimRight(baseUrl, "/") + "/chat"
+			util.TryOpenBrowser(chatUrl)
+		} else {
+			fmt.Fprintln(
+				output,
+				"Skipping --open-browser because the configured bind is not loopback-local.",
+			)
+		}
+	}
+
+	// Display launch information.
+	for _, item := range buildLaunchUrls(baseUrl) {
+		fmt.Fprintf(output, "%s: %s\n", item.Label, item.URL)
+	}
+
+	authMode := "token-or-session"
+	if util.IsLoopbackBind(config.BindAddress) {
+		authMode = "loopback-open"
+	}
+
+	fmt.Fprintf(output, "Auth mode: %s\n", authMode)
+	fmt.Fprintln(output, "Streaming gateway logs. Press Ctrl-C to stop.")
+
+	// Wait for gateway exit or user cancellation.
+	select {
+	case err := <-waitCh:
+		if err != nil {
+			return 1, err
+		}
+		return 0, nil
+
+	case <-ctx.Done():
+		fmt.Fprintln(output, "\nStopping gateway...")
+
+		// Try graceful shutdown first.
+		if gatewayCmd.Process != nil {
+			_ = gatewayCmd.Process.Signal(syscall.SIGTERM)
+		}
+
+		shutdownTimer := time.NewTimer(5 * time.Second)
+		defer shutdownTimer.Stop()
+
+		select {
+		case err := <-waitCh:
+			if err != nil {
+				// A signal-related exit is expected during shutdown.
+				return 0, nil
+			}
+
+		case <-shutdownTimer.C:
+			// Graceful shutdown timed out.
+			if gatewayCmd.Process != nil {
+				_ = gatewayCmd.Process.Kill()
+			}
+			<-waitCh
+		}
+
+		return 0, nil
+	}
+}
+
+type LaunchUrl struct {
+	Label string
+	URL   string
+}
+
+func buildLaunchUrls(baseUrl string) []LaunchUrl {
+	normalizedBaseUrl := strings.TrimRight(baseUrl, "/")
+	return []LaunchUrl{
+		{Label: "Gateway URL", URL: normalizedBaseUrl},
+		{Label: "Chat URL", URL: normalizedBaseUrl + "/chat"},
+		{Label: "Admin URL", URL: normalizedBaseUrl + "/admin"},
+	}
+}
+
+func waitForGatewayReady(ctx context.Context, baseUrl, authToken string, output io.Writer) bool {
+	httpclient := &http.Client{Timeout: 3 * time.Second}
+	deadline := time.Now().Add(45 * time.Second)
+
+Loop:
+	for {
+		if time.Now().After(deadline) {
+			break
+		}
+
+		select {
+		case <-ctx.Done():
+			break Loop
+		default:
+		}
+
+		healthURL := fmt.Sprintf("%s/health", baseUrl)
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, healthURL, nil)
+		if err != nil {
+			time.Sleep(1 * time.Second)
+			continue
+		}
+
+		if authToken != "" {
+			req.Header.Set("Authorization", "Bearer "+authToken)
+		}
+
+		resp, err := httpclient.Do(req)
+		if err != nil {
+			time.Sleep(1 * time.Second)
+			continue
+		}
+		resp.Body.Close()
+
+		healthURL2 := fmt.Sprintf("%s/auth/session", baseUrl)
+		req2, err := http.NewRequestWithContext(ctx, http.MethodGet, healthURL2, nil)
+		if err != nil {
+			time.Sleep(1 * time.Second)
+			continue
+		}
+
+		if authToken != "" {
+			req2.Header.Set("Authorization", "Bearer "+authToken)
+		}
+
+		resp2, err := httpclient.Do(req2)
+		if err != nil {
+			time.Sleep(1 * time.Second)
+			continue
+		}
+		resp2.Body.Close()
+
+		if resp.StatusCode == http.StatusOK && resp2.StatusCode == http.StatusOK {
+			fmt.Fprintln(output, "gateway started")
+			return true
+		}
+
+		select {
+		case <-ctx.Done():
+			break Loop
+		case <-time.After(1 * time.Second):
+		}
+	}
+
+	return false
+}
+
 func SetupLifecycleCommandRunService(args []string, output io.Writer, errwirter io.Writer) (int, error) {
 	repoRoot := os.Getenv("OPENCLAW_GATEWAY_PATH")
 	if repoRoot == "" {
@@ -207,7 +484,6 @@ func SetupLifecycleCommandRunVerify(args []string, output io.Writer, errwirter i
 
 	response, err := runLocalVerification(
 		context.Background(),
-		configPath,
 		config,
 		parsed.HasFlag("--offline"),
 		parsed.HasFlag("--require-provider"),
@@ -251,7 +527,7 @@ func setupLifecycleWriteVerification(output io.Writer, response *core.SetupVerif
 	fmt.Fprintf(output, "Verification result: %s\n", response.OverallStatus)
 }
 
-func runLocalVerification(ctx context.Context, configPath string, config *core.GatewayConfig, offline, requireProvider bool, source string) (*core.SetupVerificationResponse, error) {
+func runLocalVerification(ctx context.Context, config *core.GatewayConfig, offline, requireProvider bool, source string) (*core.SetupVerificationResponse, error) {
 	localState := core.LocalSetupStateLoaderInstance.Load(config.Memory.StoragePath)
 	verification, err := core.SetupVerificationServiceInstance.Verify(ctx, &core.SetupVerificationRequest{
 		Config:               config,

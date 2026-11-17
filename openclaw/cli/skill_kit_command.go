@@ -344,6 +344,7 @@ func skillKitCommandList(service *skillkit.SkillPackageService, args []string, o
 	}
 	pkgs, err := service.List(context.Background(), skillsRoot)
 	if err != nil {
+		fmt.Fprintln(errwirter, err.Error())
 		return 1, err
 	}
 	if len(pkgs) == 0 {
