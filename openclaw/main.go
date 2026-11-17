@@ -19,7 +19,7 @@ import (
 
 func main() {
 	// test migrate
-	dsn := os.Getenv("PostgresDB_URL")
+	dsn := os.Getenv("POSTGRESDB_URL")
 	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{})
 	if err != nil {
 		fmt.Println(err.Error())
@@ -63,7 +63,7 @@ func main() {
 	mux := asynq.NewServeMux()
 	mux.Handle(core.TypeAgentLoopTask, agentHandler)
 
-	redisOpt := asynq.RedisClientOpt{Addr: os.Getenv("Redis_URL")}
+	redisOpt := asynq.RedisClientOpt{Addr: os.Getenv("REDIS_URL")}
 
 	// 启动生产者
 	go startScheduler(ctx, logger, redisOpt, clawScheduler)

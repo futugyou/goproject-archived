@@ -5,7 +5,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"html"
 	"io"
+	"os"
 	"path/filepath"
 	"strings"
 	"time"
@@ -13,6 +15,172 @@ import (
 	"github.com/futugyou/openclaw/core"
 	"github.com/futugyou/openclaw/util"
 )
+
+type Artifact struct {
+	Name    string
+	Content string
+}
+
+func setupLifecycleCommandBuildLaunchdPlist(label, binaryPath string, extraArgs []string, environment map[string]string) string {
+	// 1. 构建 ProgramArguments 数组：第一项必须是编译好的 Go 二进制绝对路径，后面跟参数
+	args := []string{binaryPath}
+	args = append(args, extraArgs...)
+
+	var argLinesBuilder strings.Builder
+	for _, arg := range args {
+		argLinesBuilder.WriteString(fmt.Sprintf("    <string>%s</string>\n", html.EscapeString(arg)))
+	}
+
+	// 2. 处理环境变量
+	var envLinesBuilder strings.Builder
+	if len(environment) > 0 {
+		for k, v := range environment {
+			envLinesBuilder.WriteString(fmt.Sprintf("    <key>%s</key>\n    <string>%s</string>\n", html.EscapeString(k), html.EscapeString(v)))
+		}
+	}
+	envSection := ""
+	if envLinesBuilder.Len() > 0 {
+		envSection = fmt.Sprintf("    <key>EnvironmentVariables</key>\n    <dict>\n%s    </dict>\n", envLinesBuilder.String())
+	}
+
+	// 3. 组装 plist XML 模板
+	return fmt.Sprintf(`<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>%s</string>
+    <key>ProgramArguments</key>
+    <array>
+%s    </array>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <true/>
+%s</dict>
+</plist>
+`, html.EscapeString(label), argLinesBuilder.String(), envSection)
+}
+
+func setupLifecycleCommandBuildSystemdUnit(description, repoRoot, projectDirectory, extraArgs string, environment map[string]string) string {
+	envLines := ""
+	if len(environment) > 0 {
+		envs := []string{}
+		for k, v := range environment {
+			envs = append(envs, fmt.Sprintf("Environment=\"%s=%s\"", k, v))
+		}
+		envLines = strings.Join(envs, "\n\r")
+	}
+
+	return fmt.Sprintf(`
+            [Unit]
+            Description=%s
+            After=network-online.target
+            Wants=network-online.target
+
+            [Service]
+            Type=simple
+            WorkingDirectory=%s
+            %s
+			ExecStart=%s %s
+            Restart=on-failure
+            RestartSec=5
+
+            [Install]
+            WantedBy=multi-user.target
+            `, description, repoRoot, envLines, projectDirectory, extraArgs)
+}
+
+func setupLifecycleCommandBuildArtifacts(platform, repoRoot, configPath string, config *core.GatewayConfig) []Artifact {
+	deployItems := []Artifact{}
+
+	// baseUrl := buildReachableBaseUrl(config.BindAddress, config.Port)
+	if platform == "linux" || platform == "all" {
+		deployItems = append(deployItems, Artifact{
+			Name:    "openclaw-gateway.service",
+			Content: setupLifecycleCommandBuildSystemdUnit("OpenClaw Gateway", repoRoot, "OpenClaw.Gateway", fmt.Sprintf("--config %s", core.GatewaySetupPathsIntance.QuoteIfNeeded(configPath)), nil),
+		})
+	}
+
+	if platform == "macos" || platform == "all" {
+		deployItems = append(deployItems, Artifact{
+			Name:    "ai.openclaw.gateway.plist",
+			Content: setupLifecycleCommandBuildLaunchdPlist("ai.openclaw.gateway", repoRoot, []string{fmt.Sprintf("--config %s", core.GatewaySetupPathsIntance.QuoteIfNeeded(configPath))}, nil),
+		})
+	}
+
+	deployItems = append(deployItems, Artifact{
+		Name:    "Caddyfile",
+		Content: buildCaddyfile(config),
+	})
+
+	return deployItems
+}
+
+func buildCaddyfile(config *core.GatewayConfig) string {
+	upstream := fmt.Sprintf("127.0.0.1:%d", config.Port)
+	return fmt.Sprintf(`
+            your-hostname.example.com {
+                encode zstd gzip
+                reverse_proxy %s
+            }
+            `, upstream)
+}
+
+func normalizePlatform(value string) (string, error) {
+	normalized := strings.ToLower(strings.TrimSpace(value))
+	if normalized == "linux" || normalized == "macos" || normalized == "all" {
+		return normalized, nil
+	}
+	return "", errors.New("Platform must be one of: linux, macos, all.")
+}
+
+func SetupLifecycleCommandRunService(args []string, output io.Writer, errwirter io.Writer) (int, error) {
+	repoRoot := os.Getenv("OPENCLAW_GATEWAY_PATH")
+	if repoRoot == "" {
+		msg := "Could not locate the repository root from the current directory."
+		fmt.Fprintln(errwirter, msg)
+		return 2, errors.New(msg)
+	}
+
+	parsed := CliArgsParse(args)
+	configPath, err := setupLifecycleCommandResolveConfigPath(parsed)
+	if err != nil {
+		fmt.Fprintln(errwirter, err.Error())
+		return 1, err
+	}
+
+	platform, err := normalizePlatform(getOptionOr(parsed, "--platform", "all"))
+	if err != nil {
+		fmt.Fprintln(errwirter, err.Error())
+		return 1, err
+	}
+
+	config, err := core.GatewayConfigFileInstance.Load(configPath)
+	if err != nil {
+		fmt.Fprintln(errwirter, err.Error())
+		return 1, err
+	}
+
+	deployDir, err := getDeployDirectory(configPath)
+	if err != nil {
+		fmt.Fprintln(errwirter, err.Error())
+		return 1, err
+	}
+
+	os.MkdirAll(deployDir, 0755)
+
+	for _, file := range setupLifecycleCommandBuildArtifacts(platform, repoRoot, configPath, config) {
+		os.WriteFile(filepath.Join(deployDir, file.Name), []byte(file.Content), 0644)
+	}
+
+	fmt.Fprintf(output, "Wrote deploy artifacts: %s\n", deployDir)
+	for _, artifact := range buildArtifactItems(deployDir) {
+		fmt.Fprintf(output, "- %s: %s\n", artifact.Label, artifact.Path)
+	}
+
+	return 0, nil
+}
 
 func setupLifecycleCommandResolveConfigPath(parsed *CliArgs) (string, error) {
 	configPath := util.Deref(parsed.GetOption("--config"))
@@ -67,7 +235,7 @@ func setupLifecycleWriteVerification(output io.Writer, response *core.SetupVerif
 	for _, check := range response.Checks {
 		fmt.Fprintf(output, "- [%s] %s: %s\n", check.Status, check.Label, check.Summary)
 		if check.Detail != "" {
-			fmt.Fprintf(output, "  \n", check.Detail)
+			fmt.Fprintf(output, " - %s\n", check.Detail)
 		}
 	}
 
@@ -116,7 +284,6 @@ func SetupLifecycleCommandRunStatus(args []string, output io.Writer, errwirter i
 	}
 
 	config, err := core.GatewayConfigFileInstance.Load(configPath)
-
 	if err != nil {
 		fmt.Fprintln(errwirter, err.Error())
 		return 1, err

@@ -259,7 +259,7 @@ func setupCommandRunTailscaleSetup(args []string, input io.Reader, output, errwi
 	localGatewayUri, err := url.Parse(localGatewayUrl)
 	if err != nil || (localGatewayUri != nil && (!localGatewayUri.IsAbs() || (localGatewayUri.Scheme != "http" && localGatewayUri.Scheme != "https"))) {
 		msg := fmt.Sprintf("Invalid local gateway URL: %s", localGatewayUrl)
-		fmt.Fprintf(errwirter, msg)
+		fmt.Fprintln(errwirter, msg)
 		return 2, errors.New(msg)
 	}
 
@@ -468,7 +468,7 @@ func setupCommandRunProviderSetup(args []string, input io.Reader, output io.Writ
 
 	apiKey := ""
 	if authMode == "bearer" {
-		apiKey = fmt.Sprintf("env:%s", &envVar)
+		apiKey = fmt.Sprintf("env:%s", envVar)
 	}
 
 	var config *core.GatewayConfig
