@@ -82,6 +82,16 @@ func setupCommandRequiresPrompt(parsed *CliArgs) bool {
 }
 
 func SetupCommandRun(args []string, input io.Reader, output io.Writer, errwirter io.Writer, currentDirectory string, canPrompt bool) (*SetupCommandResult, error) {
+	if len(args) > 0 && args[0] == "launch" {
+		code, err := SetupLifecycleCommandRunLaunch(args[1:], output, errwirter)
+		return &SetupCommandResult{ExitCode: code}, err
+	}
+
+	if len(args) > 0 && args[0] == "service" {
+		code, err := SetupLifecycleCommandRunService(args[1:], output, errwirter)
+		return &SetupCommandResult{ExitCode: code}, err
+	}
+
 	if len(args) > 0 && args[0] == "status" {
 		code, err := SetupLifecycleCommandRunStatus(args[1:], output, errwirter)
 		return &SetupCommandResult{ExitCode: code}, err

@@ -153,7 +153,7 @@ func SetupLifecycleCommandRunLaunch(
 
 	parsed := CliArgsParse(args)
 
-	configPath, err := setupLifecycleCommandResolveConfigPath(parsed)
+	configPath, err := resolveConfigPath(parsed)
 	if err != nil {
 		return 1, err
 	}
@@ -421,7 +421,7 @@ func SetupLifecycleCommandRunService(args []string, output io.Writer, errwirter 
 	}
 
 	parsed := CliArgsParse(args)
-	configPath, err := setupLifecycleCommandResolveConfigPath(parsed)
+	configPath, err := resolveConfigPath(parsed)
 	if err != nil {
 		fmt.Fprintln(errwirter, err.Error())
 		return 1, err
@@ -459,18 +459,9 @@ func SetupLifecycleCommandRunService(args []string, output io.Writer, errwirter 
 	return 0, nil
 }
 
-func setupLifecycleCommandResolveConfigPath(parsed *CliArgs) (string, error) {
-	configPath := util.Deref(parsed.GetOption("--config"))
-	if configPath == "" {
-		configPath = core.DefaultConfigPath
-	}
-	configPath = core.GatewaySetupPathsIntance.ExpandPath(configPath)
-	return filepath.Abs(configPath)
-}
-
 func SetupLifecycleCommandRunVerify(args []string, output io.Writer, errwirter io.Writer) (int, error) {
 	parsed := CliArgsParse(args)
-	configPath, err := setupLifecycleCommandResolveConfigPath(parsed)
+	configPath, err := resolveConfigPath(parsed)
 	if err != nil {
 		return 1, err
 	}
@@ -554,7 +545,7 @@ func runLocalVerification(ctx context.Context, config *core.GatewayConfig, offli
 
 func SetupLifecycleCommandRunStatus(args []string, output io.Writer, errwirter io.Writer) (int, error) {
 	parsed := CliArgsParse(args)
-	configPath, err := setupLifecycleCommandResolveConfigPath(parsed)
+	configPath, err := resolveConfigPath(parsed)
 	if err != nil {
 		return 1, err
 	}
