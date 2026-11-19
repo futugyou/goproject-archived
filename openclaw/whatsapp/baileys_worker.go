@@ -12,7 +12,7 @@ type UnavailableBaileysWorkerEngine struct {
 	AuthEventReceived AuthEventReceived
 }
 
-func (u *UnavailableBaileysWorkerEngine) DebugEmitAuthEvent(ctx context.Context, payload any) error {
+func (u *UnavailableBaileysWorkerEngine) DebugEmitAuthEvent(ctx context.Context, payload []byte) error {
 	return nil
 }
 
@@ -22,7 +22,7 @@ func (u *UnavailableBaileysWorkerEngine) DebugGetState() any {
 	return data
 }
 
-func (u *UnavailableBaileysWorkerEngine) DebugSimulateInbound(ctx context.Context, payload any) error {
+func (u *UnavailableBaileysWorkerEngine) DebugSimulateInbound(ctx context.Context, payload []byte) error {
 	return nil
 }
 
