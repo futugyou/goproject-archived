@@ -40,5 +40,7 @@ type IWhatsAppWorkerEngine interface {
 	SendReaction(ctx context.Context, request core.BridgeChannelReactionRequest) error
 	DebugSimulateInbound(ctx context.Context, payload []byte) error
 	DebugEmitAuthEvent(ctx context.Context, payload []byte) error
+	SetMessageReceived(messageReceived MessageReceived)
+	SetAuthEventReceived(authEventReceived AuthEventReceived)
 	DebugGetState() any
 }

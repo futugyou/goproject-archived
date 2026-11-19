@@ -86,7 +86,7 @@ func readCapped(stdoutPipe io.ReadCloser) *string {
 	return &result
 }
 
-func createProcess(entryPath, pluginId string, config *json.RawMessage, bridgeScript, mode string, argv []string) (*exec.Cmd, error) {
+func createProcess(entryPath, pluginId string, config []byte, bridgeScript, mode string, argv []string) (*exec.Cmd, error) {
 	entry, err := filepath.Abs(entryPath)
 	if err != nil {
 		return nil, err
@@ -104,7 +104,7 @@ func createProcess(entryPath, pluginId string, config *json.RawMessage, bridgeSc
 	fmt.Fprintf(&envString, "%s=%s ", "OPENCLAW_PLUGIN_CLI_ID", pluginId)
 	if config != nil {
 		var pluginConfig string
-		json.Unmarshal(*config, &pluginConfig)
+		json.Unmarshal(config, &pluginConfig)
 		fmt.Fprintf(&envString, "%s=%s ", "OPENCLAW_PLUGIN_CLI_CONFIG_BASE64", pluginConfig)
 	}
 
@@ -116,7 +116,7 @@ func createProcess(entryPath, pluginId string, config *json.RawMessage, bridgeSc
 	return cmd, nil
 }
 
-func PluginCliCommandDescribe(ctx context.Context, entryPath, pluginId string, config *json.RawMessage, bridgeScript string) *PluginCliDescribeResult {
+func PluginCliCommandDescribe(ctx context.Context, entryPath, pluginId string, config []byte, bridgeScript string) *PluginCliDescribeResult {
 	cmd, err := createProcess(entryPath, pluginId, config, bridgeScript, "--cli-describe", nil)
 	if err != nil {
 		return FailurePluginCliDescribeResult(fmt.Sprintf("Unable to start Node.js for plugin CLI discovery: %s", err.Error()))
@@ -188,7 +188,7 @@ func PluginCliCommandDescribe(ctx context.Context, entryPath, pluginId string, c
 	return FailurePluginCliDescribeResult("Plugin CLI discovery returned unreadable metadata.")
 }
 
-func pluginCliCommandExecute(ctx context.Context, entryPath, pluginId string, config *json.RawMessage, bridgeScript string, argv []string) (int, error) {
+func pluginCliCommandExecute(ctx context.Context, entryPath, pluginId string, config []byte, bridgeScript string, argv []string) (int, error) {
 	cmd, err := createProcess(entryPath, pluginId, config, bridgeScript, "--cli-run", argv)
 	if err != nil {
 		return 1, err
@@ -222,7 +222,7 @@ func pluginCliCommandExecute(ctx context.Context, entryPath, pluginId string, co
 
 type PluginCliCommandMatche struct {
 	Plugin core.DiscoveredPlugin
-	Config *json.RawMessage
+	Config []byte
 }
 
 func TryPluginCliCommandRun(ctx context.Context, command string, args []string, pluginsConfig core.PluginsConfig, workspacePath string, blockedPluginIds []string, bridgeScript string) (int, error) {
@@ -239,13 +239,13 @@ func TryPluginCliCommandRun(ctx context.Context, command string, args []string, 
 
 		entryConfig, ok := pluginsConfig.Entries[plugin.Manifest.Id]
 
-		var pluginConfig *json.RawMessage
+		var pluginConfig []byte
 		if ok && entryConfig != nil {
 			pluginConfig = entryConfig.Config
 		}
 		diagnostics := append(
 			core.ValidateDiscoveredPlugin(plugin),
-			core.PluginConfigValidatorinstance.Validate(plugin.Manifest, util.Deref(pluginConfig))...,
+			core.PluginConfigValidatorinstance.Validate(plugin.Manifest, pluginConfig)...,
 		)
 
 		needcontinue := false

@@ -70,6 +70,8 @@ func (u *UnavailableBaileysWorkerEngine) Stop(ctx context.Context) error {
 	return nil
 }
 
+func (u *UnavailableBaileysWorkerEngine) SetMessageReceived(messageReceived MessageReceived)       {}
+func (u *UnavailableBaileysWorkerEngine) SetAuthEventReceived(authEventReceived AuthEventReceived) {}
 func NewUnavailableBaileysWorkerEngine(config core.WhatsAppFirstPartyWorkerConfig) *UnavailableBaileysWorkerEngine {
 	return &UnavailableBaileysWorkerEngine{config: config}
 }

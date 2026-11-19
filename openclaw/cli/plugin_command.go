@@ -1050,7 +1050,7 @@ func InspectRuntime(ctx context.Context, entryPath, pluginId string) (*PluginRun
 	initRequest := core.BridgeInitRequest{
 		EntryPath: absEntryPath,
 		PluginId:  pluginId,
-		Config:    new(json.RawMessage("{}")),
+		Config:    []byte("{}"),
 		Transport: &core.BridgeTransportRuntimeConfig{Mode: "stdio"},
 	}
 

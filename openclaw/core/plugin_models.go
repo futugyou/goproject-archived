@@ -43,8 +43,8 @@ type DiscoveredPlugin struct {
 
 // PluginEntryConfig 代表网关配置中针对单个插件的设置
 type PluginEntryConfig struct {
-	Enabled bool             `json:"enabled"`
-	Config  *json.RawMessage `json:"config,omitempty"`
+	Enabled bool   `json:"enabled"`
+	Config  []byte `json:"config,omitempty"`
 }
 
 func NewDefaultPluginEntryConfig() *PluginEntryConfig {
@@ -767,8 +767,8 @@ type BridgeError struct {
 
 // BridgeNotification 来自插件桥进程的通知（插件 → 网关）。
 type BridgeNotification struct {
-	Notification string           `json:"notification"`
-	Params       *json.RawMessage `json:"params,omitempty"`
+	Notification string `json:"notification"`
+	Params       []byte `json:"params,omitempty"`
 }
 
 // BridgeInitResult 初始化插件桥进程的结果。
@@ -930,7 +930,7 @@ func DefaultBridgeToolDescriptor() BridgeToolDescriptor {
 type BridgeInitRequest struct {
 	EntryPath string                        `json:"entry_path"`
 	PluginId  string                        `json:"plugin_id"`
-	Config    *json.RawMessage              `json:"config,omitempty"`
+	Config    []byte                        `json:"config,omitempty"`
 	Transport *BridgeTransportRuntimeConfig `json:"transport"`
 }
 

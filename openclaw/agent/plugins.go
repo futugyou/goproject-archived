@@ -682,7 +682,7 @@ type PluginBridgeProcess struct {
 	runtimeTransport    *core.BridgeTransportRuntimeConfig
 	entryPath           string
 	pluginID            string
-	pluginConfig        *json.RawMessage
+	pluginConfig        []byte
 	notificationHandler BridgeNotificationHandler
 
 	initialized         atomic.Bool
@@ -767,7 +767,7 @@ func (p *PluginBridgeProcess) Start(
 	ctx context.Context,
 	entryPath string,
 	pluginID string,
-	pluginConfig *json.RawMessage,
+	pluginConfig []byte,
 ) (*core.BridgeInitResult, error) {
 	p.entryPath = entryPath
 	p.pluginID = pluginID
@@ -1359,7 +1359,7 @@ func (ph *PluginHost) loadPlugin(ctx context.Context, plugin core.DiscoveredPlug
 
 	configDiagnostics := append(
 		core.ValidateDiscoveredPlugin(plugin),
-		core.PluginConfigValidatorinstance.Validate(plugin.Manifest, *ph.getPluginConfig(id))...,
+		core.PluginConfigValidatorinstance.Validate(plugin.Manifest, ph.getPluginConfig(id))...,
 	)
 
 	if len(configDiagnostics) > 0 {
@@ -1489,7 +1489,7 @@ func (ph *PluginHost) loadPlugin(ctx context.Context, plugin core.DiscoveredPlug
 				return nil
 			}
 
-			channelID, ok := util.TryGetPropertyString(*notification.Params, "channelId")
+			channelID, ok := util.TryGetPropertyString(notification.Params, "channelId")
 			if !ok || channelID == "" {
 				return nil
 			}
@@ -1508,12 +1508,12 @@ func (ph *PluginHost) loadPlugin(ctx context.Context, plugin core.DiscoveredPlug
 			switch notification.Notification {
 			case "channel_message":
 				go func() {
-					if err := target.HandleInbound(context.Background(), *notification.Params); err != nil {
+					if err := target.HandleInbound(context.Background(), notification.Params); err != nil {
 						ph.logger.Error("Failed to handle inbound channel message", "channelId", channelID, "error", err.Error())
 					}
 				}()
 			case "channel_auth_event":
-				target.HandleAuthEvent(*notification.Params)
+				target.HandleAuthEvent(notification.Params)
 			case "channel_typing", "channel_receipt", "channel_reaction":
 				ph.logger.Info("Received channel notification", "type", notification.Notification, "channelId", channelID)
 			}
@@ -1691,7 +1691,7 @@ func (ph *PluginHost) getOriginFormat(p core.DiscoveredPlugin) string {
 	return "bridge"
 }
 
-func (ph *PluginHost) getPluginConfig(pluginID string) *json.RawMessage {
+func (ph *PluginHost) getPluginConfig(pluginID string) []byte {
 	if entry, ok := ph.config.Entries[pluginID]; ok {
 		return entry.Config
 	}

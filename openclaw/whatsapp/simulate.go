@@ -146,3 +146,10 @@ func (s *SimulatedWhatsAppWorkerEngine) Stop(ctx context.Context) error {
 	s.stopCount++
 	return nil
 }
+func (s *SimulatedWhatsAppWorkerEngine) SetMessageReceived(messageReceived MessageReceived) {
+	s.MessageReceived = messageReceived
+}
+
+func (s *SimulatedWhatsAppWorkerEngine) SetAuthEventReceived(authEventReceived AuthEventReceived) {
+	s.AuthEventReceived = authEventReceived
+}
