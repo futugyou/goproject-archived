@@ -1,8 +1,10 @@
 package whatsapp
 
 import (
+	"bufio"
 	"encoding/json"
 	"fmt"
+	"os"
 	"sync"
 
 	"github.com/futugyou/openclaw/core"
@@ -30,6 +32,53 @@ func Error(id string, code int, message string) core.BridgeResponse {
 type WhatsAppRun struct {
 	service *WhatsAppWorkerService
 	mu      sync.Mutex
+}
+
+func (w *WhatsAppRun) notificationHandler(notification core.BridgeNotification) error {
+	payload, err := json.Marshal(notification)
+	if err != nil {
+		return err
+	}
+
+	w.mu.Lock()
+	defer w.mu.Unlock()
+
+	writer := bufio.NewWriter(os.Stdout)
+	fmt.Fprintln(writer, string(payload))
+	return writer.Flush()
+}
+
+func (w *WhatsAppRun) Run() error {
+	if w.service == nil {
+		w.service = &WhatsAppWorkerService{}
+	}
+
+	w.service.Notification = w.notificationHandler
+
+	scanner := bufio.NewScanner(os.Stdin)
+	writer := bufio.NewWriter(os.Stdout)
+	buf := make([]byte, 0, 64*1024)
+	scanner.Buffer(buf, 10*1024*1024)
+	for scanner.Scan() {
+		line := scanner.Text()
+		var request core.BridgeRequest
+		if err := json.Unmarshal([]byte(line), &request); err != nil {
+			return err
+		}
+
+		response := w.HandleRequest(request)
+
+		data, _ := json.Marshal(response)
+
+		fmt.Fprintln(writer, string(data))
+		writer.Flush()
+
+		if line == "__shutdown__" {
+			break
+		}
+	}
+
+	return scanner.Err()
 }
 
 func bindAndCall[TReq any, TRes any](
