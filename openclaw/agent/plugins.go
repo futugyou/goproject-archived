@@ -40,8 +40,8 @@ type BridgeNotificationHandler func(notify core.BridgeNotification) error
 type IBridgeTransport interface {
 	Prepare(ctx context.Context) error
 	Start(ctx context.Context, process *exec.Cmd) error
-	SendRequest(ctx context.Context, method string, parameters any) error
-	SendAndWait(ctx context.Context, method string, parameters any) (*core.BridgeResponse, error)
+	SendRequest(ctx context.Context, method string, parameters []byte) error
+	SendAndWait(ctx context.Context, method string, parameters []byte) (*core.BridgeResponse, error)
 	SetNotificationHandler(handler BridgeNotificationHandler) error
 	Close() error
 }
@@ -172,7 +172,7 @@ func (p *BridgeTransportBase) cancelPendingRequests(err error) {
 	})
 }
 
-func (p *BridgeTransportBase) SendAndWait(ctx context.Context, method string, parameters any) (*core.BridgeResponse, error) {
+func (p *BridgeTransportBase) SendAndWait(ctx context.Context, method string, parameters []byte) (*core.BridgeResponse, error) {
 	if p.writer == nil {
 		return nil, errors.New("bridge transport is not ready")
 	}
@@ -222,7 +222,7 @@ func (p *BridgeTransportBase) SendAndWait(ctx context.Context, method string, pa
 	}
 }
 
-func (p *BridgeTransportBase) SendRequest(ctx context.Context, method string, parameters any) error {
+func (p *BridgeTransportBase) SendRequest(ctx context.Context, method string, parameters []byte) error {
 	if p.writer == nil {
 		return errors.New("bridge transport is not ready")
 	}
@@ -619,7 +619,7 @@ func (h *HybridBridgeTransport) SetNotificationHandler(handler BridgeNotificatio
 	}
 }
 
-func (h *HybridBridgeTransport) SendAndWait(ctx context.Context, method string, parameters any) (*core.BridgeResponse, error) {
+func (h *HybridBridgeTransport) SendAndWait(ctx context.Context, method string, parameters []byte) (*core.BridgeResponse, error) {
 	if !h.useSocket.Load() {
 		return h.bootstrap.SendAndWait(ctx, method, parameters)
 	}
@@ -657,7 +657,7 @@ func (b *HybridBridgeTransport) isFallbackError(err error) bool {
 	return errors.As(err, &opErr)
 }
 
-func (h *HybridBridgeTransport) SendRequest(ctx context.Context, method string, parameters any) error {
+func (h *HybridBridgeTransport) SendRequest(ctx context.Context, method string, parameters []byte) error {
 	_, err := h.SendAndWait(ctx, method, parameters)
 	return err
 }
@@ -788,7 +788,7 @@ func (p *PluginBridgeProcess) Start(
 	}
 
 	var init core.BridgeInitResult
-	if err := json.Unmarshal(*resp.Result, &init); err != nil {
+	if err := json.Unmarshal(resp.Result, &init); err != nil {
 		return nil, fmt.Errorf("failed to deserialize init response: %w", err)
 	}
 
@@ -818,7 +818,8 @@ func (p *PluginBridgeProcess) ExecuteTool(ctx context.Context, toolName string, 
 		Params: rawParams,
 	}
 
-	resp, err := p.SendAndWait(ctx, "execute", execRequest)
+	data, _ := json.Marshal(execRequest)
+	resp, err := p.SendAndWait(ctx, "execute", data)
 	if err != nil {
 		return "", err
 	}
@@ -829,7 +830,7 @@ func (p *PluginBridgeProcess) ExecuteTool(ctx context.Context, toolName string, 
 
 	if resp.Result != nil {
 		var resultObj map[string]json.RawMessage
-		if err := json.Unmarshal(*resp.Result, &resultObj); err == nil {
+		if err := json.Unmarshal(resp.Result, &resultObj); err == nil {
 			if details, ok := resultObj["details"]; ok && string(details) != "null" {
 				return string(details), nil
 			}
@@ -850,18 +851,18 @@ func (p *PluginBridgeProcess) ExecuteTool(ctx context.Context, toolName string, 
 				}
 			}
 		}
-		return string(*resp.Result), nil
+		return string(resp.Result), nil
 	}
 
 	return "", nil
 }
 
-func (p *PluginBridgeProcess) SendRequest(ctx context.Context, method string, parameters any) error {
+func (p *PluginBridgeProcess) SendRequest(ctx context.Context, method string, parameters []byte) error {
 	_, err := p.SendAndWait(ctx, method, parameters)
 	return err
 }
 
-func (p *PluginBridgeProcess) SendAndWait(ctx context.Context, method string, parameters any) (*core.BridgeResponse, error) {
+func (p *PluginBridgeProcess) SendAndWait(ctx context.Context, method string, parameters []byte) (*core.BridgeResponse, error) {
 	if err := p.ensureProcessRunning(ctx); err != nil {
 		return nil, err
 	}
@@ -1037,7 +1038,8 @@ func (p *PluginBridgeProcess) initializeProcess(ctx context.Context) (*core.Brid
 		Transport: runtimeTransport,
 	}
 
-	resp, err := transport.SendAndWait(ctx, "init", initReq)
+	data, _ := json.Marshal(initReq)
+	resp, err := transport.SendAndWait(ctx, "init", data)
 	if err != nil {
 		_ = transport.Close()
 		p.transport = nil
@@ -1630,10 +1632,11 @@ func (ph *PluginHost) RegisterCommandsWith(processor *core.ChatCommandProcessor)
 	for _, cmd := range ph.pluginCommands {
 		c := cmd
 		processor.RegisterDynamic(c.CommandName, func(ctx context.Context, args string) (string, error) {
-			resp, err := c.Bridge.SendAndWait(ctx, "command_execute", core.BridgeCommandExecuteRequest{
+			data, _ := json.Marshal(core.BridgeCommandExecuteRequest{
 				Name: c.CommandName,
 				Args: args,
 			})
+			resp, err := c.Bridge.SendAndWait(ctx, "command_execute", data)
 			if err != nil {
 				return fmt.Sprintf("Command error: %v", err), nil
 			}
@@ -1643,7 +1646,7 @@ func (ph *PluginHost) RegisterCommandsWith(processor *core.ChatCommandProcessor)
 			}
 
 			if resp.Result != nil {
-				if rVal, ok := util.TryGetPropertyString(*resp.Result, "result"); ok {
+				if rVal, ok := util.TryGetPropertyString(resp.Result, "result"); ok {
 					return rVal, nil
 				}
 			}

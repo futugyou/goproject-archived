@@ -1102,12 +1102,12 @@ func InspectRuntime(ctx context.Context, entryPath, pluginId string) (*PluginRun
 	if bridgeResp.Error != nil {
 		return nil, errors.New(bridgeResp.Error.Message)
 	}
-	if bridgeResp.Result == nil || len(*bridgeResp.Result) == 0 {
+	if bridgeResp.Result == nil {
 		return nil, errors.New("plugin bridge returned an empty inspection result.")
 	}
 
 	var initResult core.BridgeInitResult
-	if err := json.Unmarshal(*bridgeResp.Result, &initResult); err != nil {
+	if err := json.Unmarshal(bridgeResp.Result, &initResult); err != nil {
 		return nil, errors.New("plugin bridge returned an unreadable inspection result.")
 	}
 

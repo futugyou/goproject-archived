@@ -749,14 +749,14 @@ type DiscoveredNativeDynamicPlugin struct {
 type BridgeRequest struct {
 	Method string `json:"method"`
 	Id     string `json:"id"`
-	Params any    `json:"params,omitempty"`
+	Params []byte `json:"params,omitempty"`
 }
 
 // BridgeResponse 来自插件桥的 JSON-RPC 响应外壳。
 type BridgeResponse struct {
-	Id     string           `json:"id"`
-	Result *json.RawMessage `json:"result,omitempty"`
-	Error  *BridgeError     `json:"error,omitempty"`
+	Id     string       `json:"id"`
+	Result []byte       `json:"result,omitempty"`
+	Error  *BridgeError `json:"error,omitempty"`
 }
 
 // BridgeError 来自插件桥的错误载荷。

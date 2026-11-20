@@ -108,17 +108,18 @@ func (a *BridgedChannelAdapter) SelfIds() []string {
 
 func (a *BridgedChannelAdapter) Start(ctx context.Context) error {
 	req := core.BridgeChannelControlRequest{ChannelId: a.channelId}
-	response, err := a.bridge.SendAndWait(ctx, "channel_start", req)
+	data, _ := json.Marshal(req)
+	response, err := a.bridge.SendAndWait(ctx, "channel_start", data)
 	if err != nil {
 		return err
 	}
 
-	if response == nil || response.Result == nil || len(*response.Result) == 0 {
+	if response == nil || response.Result == nil || len(response.Result) == 0 {
 		return nil
 	}
 
 	var rawMap map[string]interface{}
-	if err := json.Unmarshal(*response.Result, &rawMap); err != nil {
+	if err := json.Unmarshal(response.Result, &rawMap); err != nil {
 		return err
 	}
 
@@ -192,8 +193,8 @@ func (a *BridgedChannelAdapter) Send(ctx context.Context, message *core.Outbound
 		Subject:          message.Subject,
 		Attachments:      attachments,
 	}
-
-	return a.bridge.SendRequest(ctx, "channel_send", req)
+	data, _ := json.Marshal(req)
+	return a.bridge.SendRequest(ctx, "channel_send", data)
 }
 
 func (a *BridgedChannelAdapter) SendTyping(ctx context.Context, recipientId string, isTyping bool, accountId string) error {
@@ -203,8 +204,8 @@ func (a *BridgedChannelAdapter) SendTyping(ctx context.Context, recipientId stri
 		AccountId:   accountId,
 		IsTyping:    isTyping,
 	}
-
-	err := a.bridge.SendRequest(ctx, "channel_typing", req)
+	data, _ := json.Marshal(req)
+	err := a.bridge.SendRequest(ctx, "channel_typing", data)
 	if err != nil {
 		a.logger.Debug("Failed to send typing indicator", "channelId", a.channelId, "error", err)
 	}
@@ -219,8 +220,8 @@ func (a *BridgedChannelAdapter) SendReadReceipt(ctx context.Context, messageId s
 		RemoteJid:   remoteJid,
 		Participant: participant,
 	}
-
-	err := a.bridge.SendRequest(ctx, "channel_read_receipt", req)
+	data, _ := json.Marshal(req)
+	err := a.bridge.SendRequest(ctx, "channel_read_receipt", data)
 	if err != nil {
 		a.logger.Debug("Failed to send read receipt", "channelId", a.channelId, "error", err)
 	}
@@ -236,8 +237,8 @@ func (a *BridgedChannelAdapter) SendReaction(ctx context.Context, messageId, emo
 		RemoteJid:   remoteJid,
 		Participant: participant,
 	}
-
-	err := a.bridge.SendRequest(ctx, "channel_react", req)
+	data, _ := json.Marshal(req)
+	err := a.bridge.SendRequest(ctx, "channel_react", data)
 	if err != nil {
 		a.logger.Debug("Failed to send reaction", "channelId", a.channelId, "error", err)
 	}
@@ -418,7 +419,8 @@ func (a *BridgedChannelAdapter) Close(ctx context.Context) error {
 
 func (a *BridgedChannelAdapter) Restart(ctx context.Context) error {
 	req := core.BridgeChannelControlRequest{ChannelId: a.channelId}
-	_ = a.bridge.SendRequest(ctx, "channel_stop", req)
+	data, _ := json.Marshal(req)
+	_ = a.bridge.SendRequest(ctx, "channel_stop", data)
 
 	a.mu.Lock()
 	a.selfID = nil
@@ -506,7 +508,7 @@ func (b *BridgedToolHook) AfterExecute(ctx context.Context, toolName string, arg
 		return nil
 	}
 
-	err := b.bridge.SendRequest(ctx, "hook_after", core.BridgeHookAfterRequest{
+	data, _ := json.Marshal(core.BridgeHookAfterRequest{
 		EventName:  eventName,
 		ToolName:   toolName,
 		Arguments:  arguments,
@@ -514,6 +516,7 @@ func (b *BridgedToolHook) AfterExecute(ctx context.Context, toolName string, arg
 		DurationMs: float64(duration.Milliseconds()),
 		Failed:     failed,
 	})
+	err := b.bridge.SendRequest(ctx, "hook_after", data)
 
 	if err != nil {
 		b.logger.Warn("hook failed", "PluginId", b.pluginId, "ToolName", toolName)
@@ -531,11 +534,12 @@ func (b *BridgedToolHook) BeforeExecute(ctx context.Context, toolName string, ar
 	initCtx, cancel := context.WithTimeout(ctx, b.beforeTimeout)
 	defer cancel()
 
-	response, err := b.bridge.SendAndWait(initCtx, "hook_before", core.BridgeHookBeforeRequest{
+	data, _ := json.Marshal(core.BridgeHookBeforeRequest{
 		EventName: eventName,
 		ToolName:  toolName,
 		Arguments: arguments,
 	})
+	response, err := b.bridge.SendAndWait(initCtx, "hook_before", data)
 
 	if err != nil {
 		b.logger.Warn("hook failed on tool", "PluginId", b.pluginId, "ToolName", toolName)
@@ -547,7 +551,7 @@ func (b *BridgedToolHook) BeforeExecute(ctx context.Context, toolName string, ar
 	}
 
 	var raw map[string]any
-	if err := json.Unmarshal(*response.Result, &raw); err != nil {
+	if err := json.Unmarshal(response.Result, &raw); err != nil {
 		return true
 	}
 
