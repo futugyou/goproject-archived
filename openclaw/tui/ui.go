@@ -930,11 +930,11 @@ func (ui *TerminalUi) ShowChat(ctx context.Context, defaultPresetId string) erro
 			return err
 		}
 
-		messages := []*core.OpenAiMessage{
+		messages := []core.OpenAiMessage{
 			{Role: "user", Content: core.OpenAiMessageContentFromText(prompt)},
 		}
 		if system != "" {
-			messages = []*core.OpenAiMessage{
+			messages = []core.OpenAiMessage{
 				{Role: "system", Content: core.OpenAiMessageContentFromText(system)},
 				{Role: "user", Content: core.OpenAiMessageContentFromText(prompt)},
 			}

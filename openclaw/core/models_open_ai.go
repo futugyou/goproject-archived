@@ -12,16 +12,16 @@ type HealthResponse struct {
 }
 
 type OpenAiChatCompletionRequest struct {
-	Model       string           `json:"model,omitempty"`
-	Messages    []*OpenAiMessage `json:"messages"`
-	Stream      bool             `json:"stream"`
-	Temperature *float32         `json:"temperature,omitempty"`
-	MaxTokens   *int             `json:"max_tokens,omitempty"`
+	Model       string          `json:"model,omitempty"`
+	Messages    []OpenAiMessage `json:"messages"`
+	Stream      bool            `json:"stream"`
+	Temperature float64         `json:"temperature,omitempty"`
+	MaxTokens   int64           `json:"max_tokens,omitempty"`
 }
 
 func DefaultOpenAiChatCompletionRequest() *OpenAiChatCompletionRequest {
 	return &OpenAiChatCompletionRequest{
-		Messages: make([]*OpenAiMessage, 0),
+		Messages: make([]OpenAiMessage, 0),
 	}
 }
 
