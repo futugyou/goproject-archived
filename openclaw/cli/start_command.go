@@ -48,7 +48,7 @@ func ensureConfigArgument(args []string, configPath string) []string {
 func StartCommandRun(args []string, input io.Reader, output io.Writer, errwirter io.Writer, currentDirectory string, canPrompt bool, handlers *StartCommandHandlers) (int, error) {
 	parsed := CliArgsParse(args)
 	if parsed.ShowHelp {
-		startCommandWriteHelp(output)
+		StartCommandWriteHelp(output)
 		return 0, nil
 	}
 
@@ -92,7 +92,7 @@ func StartCommandRun(args []string, input io.Reader, output io.Writer, errwirter
 	return handlers.RunLaunch(ensureConfigArgument(args, launchConfigPath), output, errwirter)
 }
 
-func startCommandWriteHelp(output io.Writer) {
+func StartCommandWriteHelp(output io.Writer) {
 	msg := `openclaw start
 
             Usage:
