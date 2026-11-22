@@ -867,7 +867,58 @@ func WriteInsights(insights *core.OperatorInsightsResponse) {
 	}
 }
 
-func setupCmd(ctx context.Context, args []string) error         { return nil }
+func setupCmd(ctx context.Context, args []string) error {
+	parsed := cli.CliArgsParse(args)
+	if parsed.ShowHelp {
+		printSetupHelp()
+		return nil
+	}
+
+	dir, err := os.Getwd()
+	if err != nil {
+		return err
+	}
+
+	_, err = cli.SetupCommandRun(args, os.Stdin, os.Stdout, os.Stderr, dir, util.IsInputRedirected())
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func printSetupHelp() {
+	fmt.Println(`
+            openclaw setup
+
+            Usage:
+              openclaw setup [--profile <local|public|tailscale-serve>] [--non-interactive]
+                              [--config <path>] [--workspace <path>] [--provider <id>] [--model <id>] [--model-preset <id>] [--api-key <secret-or-envref>]
+                              [--bind <address>] [--port <n>] [--auth-token <token>]
+                              [--docker-image <image>] [--opensandbox-endpoint <url>] [--ssh-host <host>] [--ssh-user <user>] [--ssh-key <path>]
+              openclaw setup launch [--config <path>] [--with-companion] [--open-browser] [--skip-verify] [--offline] [--require-provider]
+              openclaw setup service [--config <path>] [--platform <linux|macos|all>]
+              openclaw setup status [--config <path>]
+              openclaw setup verify [--config <path>] [--offline] [--require-provider] [--json]
+              openclaw setup channel <telegram|slack|discord|teams|whatsapp> [--config <path>] [--non-interactive] [...]
+              openclaw setup tailscale serve [--config <path>] [--local-url <url>] [--non-interactive]
+
+            Notes:
+              - Prefer 'openclaw start' for the one-command local path.
+              - Bare 'openclaw setup' launches a guided onboarding flow.
+              - 'openclaw setup launch' starts the gateway in the current repo checkout, runs verification, and streams logs until Ctrl-C.
+              - Use --with-companion to start Companion too.
+              - If you start the gateway directly and hit local startup friction, use: dotnet run --project src/OpenClaw.Gateway -c Release -- --quickstart
+              - 'openclaw setup service' writes systemd/launchd/Caddy deployment artifacts next to the config.
+              - 'openclaw setup status' summarizes bind/auth posture and deploy artifact presence.
+              - 'openclaw setup verify' runs the first-run verification checks without launching the gateway.
+              - 'openclaw setup channel ...' updates an existing external config with channel-specific settings.
+              - 'openclaw setup tailscale serve' prints private tailnet Serve instructions without enabling public bind or changing providers.
+              - Use --non-interactive for automation or CI.
+              - Writes an external JSON config file plus an adjacent env example.
+              - Prints gateway, companion, doctor, and admin posture commands.`)
+}
+
 func updateCmd(ctx context.Context, args []string) error        { return nil }
 func upgradeCmd(ctx context.Context, args []string) error       { return nil }
 func backupCmd(ctx context.Context, args []string) error        { return nil }
