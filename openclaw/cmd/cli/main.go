@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"context"
 	"errors"
 	"fmt"
@@ -345,7 +346,179 @@ func runCmd(ctx context.Context, args []string) error {
 	return nil
 }
 
-func chatCmd(ctx context.Context, args []string) error          { return nil }
+func chatCmd(ctx context.Context, args []string) error {
+	parsed := cli.CliArgsParse(args)
+	if parsed.ShowHelp {
+		printHelp()
+		return nil
+	}
+
+	baseUrl := util.Deref(parsed.GetOption("--url"))
+	if baseUrl == "" {
+		baseUrl = os.Getenv(EnvBaseUrl)
+	}
+	if baseUrl == "" {
+		baseUrl = DefaultBaseUrl
+	}
+
+	token := resolveAuthToken(parsed, os.Stderr)
+	model := util.Deref(parsed.GetOption("--model"))
+	system := util.Deref(parsed.GetOption("--system"))
+	preset := util.Deref(parsed.GetOption("--preset"))
+
+	temperature := ParseFloat(parsed.GetOption("--temperature"))
+	maxTokens := ParseInt(parsed.GetOption("--max-tokens"))
+
+	httpClient, err := client.NewOpenClawHttpClient(baseUrl, token, nil)
+	if err != nil {
+		return err
+	}
+
+	conversation := []core.OpenAiMessage{}
+	if system != "" {
+		if system != "" {
+			conversation = append(conversation, core.OpenAiMessage{Role: "system", Content: &core.OpenAiMessageContent{Text: system}})
+		}
+	}
+
+	fmt.Fprintf(os.Stdout, "openclaw chat — type /help for commands")
+	scanner := bufio.NewScanner(os.Stdin)
+	buf := make([]byte, 0, 64*1024)
+	scanner.Buffer(buf, 10*1024*1024)
+
+	for scanner.Scan() {
+		fmt.Print("> ")
+		line := scanner.Text()
+		if line == "" {
+			break
+		}
+
+		userContent := line
+		if strings.HasPrefix(line, "/image ") {
+			userContent = BuildImageCommandContent(line)
+		}
+
+		if userContent == "" {
+			continue
+		}
+
+		if strings.HasPrefix(line, "/") && !strings.HasPrefix(line, "/image ") {
+			if HandleSlashCommand(line, &conversation, &model, &system) {
+				break
+			}
+			continue
+		}
+
+		conversation = append(conversation, core.OpenAiMessage{Role: "user", Content: &core.OpenAiMessageContent{Text: userContent}})
+		messages := BuildMessages(system, userContent, conversation)
+
+		request := core.OpenAiChatCompletionRequest{
+			Model:       model,
+			Stream:      true,
+			Temperature: temperature,
+			MaxTokens:   maxTokens,
+			Messages:    messages,
+		}
+
+		assistantText, err := httpClient.StreamChatCompletion(context.Background(), request, func(s string) {
+			fmt.Println(s)
+		}, new(preset))
+		if err != nil {
+			return err
+		}
+		if !strings.HasSuffix(assistantText, "\n") {
+			fmt.Println("")
+		}
+		conversation = append(conversation, core.OpenAiMessage{Role: "assistant", Content: &core.OpenAiMessageContent{Text: assistantText}})
+	}
+
+	return scanner.Err()
+
+}
+
+func HandleSlashCommand(command string, conversation *[]core.OpenAiMessage, model, system *string) bool {
+	if command == "/exit" || command == "/quit" {
+		return true
+	}
+
+	if command == "/help" {
+		fmt.Fprintln(os.Stdout, `Commands:
+                  /help
+                  /exit
+                  /reset
+                  /system <text>
+                  /model <model>`)
+		return false
+	}
+
+	if command == "/reset" {
+		conversation = new([]core.OpenAiMessage{})
+		if util.Deref(system) != "" {
+			*conversation = append(*conversation, core.OpenAiMessage{Role: "system", Content: &core.OpenAiMessageContent{Text: *system}})
+		}
+
+		fmt.Fprintln(os.Stdout, "Reset conversation.")
+		return false
+	}
+
+	if strings.HasPrefix(command, "/system ") {
+		system = new(command[len("/system "):])
+		c := []core.OpenAiMessage{}
+		for _, m := range *conversation {
+			if m.Role != "system" {
+				c = append(c, m)
+			}
+		}
+
+		if util.Deref(system) != "" {
+			c = append(c, core.OpenAiMessage{Role: "system", Content: &core.OpenAiMessageContent{Text: *system}})
+		}
+
+		conversation = &c
+		fmt.Fprintln(os.Stdout, "Set system prompt.")
+		return false
+	}
+
+	if strings.HasPrefix(command, "/model ") {
+		model = new(command[len("/model "):])
+		if *model == "" {
+			fmt.Fprintln(os.Stdout, "Cleared model override.")
+		} else {
+			fmt.Fprintf(os.Stdout, "Set model: %s\n", *model)
+		}
+
+		return false
+	}
+
+	fmt.Fprintf(os.Stdout, "Unknown command: %s\n", command)
+	return false
+}
+
+func BuildImageCommandContent(command string) string {
+	tail := command[len("/image "):]
+	if len(tail) == 0 {
+		fmt.Fprintln(os.Stdout, "Usage: /image <path|url> [prompt]")
+		return ""
+	}
+
+	firstSpace := strings.Index(tail, " ")
+	image := tail
+	if firstSpace >= 0 {
+		image = tail[:firstSpace]
+	}
+
+	prompt := "Describe this image."
+	if firstSpace >= 0 {
+		image = tail[firstSpace+1:]
+	}
+
+	if prompt == "" {
+		prompt = "Describe this image."
+	}
+
+	return BuildUserContent(prompt, nil, []string{image})
+}
+
 func liveCmd(ctx context.Context, args []string) error          { return nil }
 func tuiCmd(ctx context.Context, args []string) error           { return nil }
 func insightsCmd(ctx context.Context, args []string) error      { return nil }
