@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -14,6 +15,7 @@ import (
 	"strconv"
 	"strings"
 	"syscall"
+	"time"
 	"unicode"
 
 	"github.com/futugyou/openclaw/cli"
@@ -521,10 +523,21 @@ func BuildImageCommandContent(command string) string {
 	return BuildUserContent(prompt, nil, []string{image})
 }
 
+func printLiveHelp() {
+	fmt.Println(` openclaw live
+
+            Usage:
+              openclaw live [--url <url>] [--token <token>] [--provider <id>] [--model <id>] [--system <text>] [--voice <name>] [--modality <TEXT|AUDIO>]...
+
+            Notes:
+              - Opens a Gemini Live websocket session through the gateway.
+              - Interactive commands: /interrupt, /audio-file <path> [mime], /exit`)
+}
+
 func liveCmd(ctx context.Context, args []string) error {
 	parsed := cli.CliArgsParse(args)
 	if parsed.ShowHelp {
-		printHelp()
+		printLiveHelp()
 		return nil
 	}
 
@@ -703,7 +716,157 @@ func printTuiHelp() {
                 automations, profiles, learning proposals, approvals, direct chat, and live sessions.`)
 }
 
-func insightsCmd(ctx context.Context, args []string) error      { return nil }
+func insightsCmd(ctx context.Context, args []string) error {
+	parsed := cli.CliArgsParse(args)
+	if parsed.ShowHelp {
+		printInsightsHelp()
+		return nil
+	}
+
+	baseUrl := util.Deref(parsed.GetOption("--url"))
+	if baseUrl == "" {
+		baseUrl = os.Getenv(EnvBaseUrl)
+	}
+	if baseUrl == "" {
+		baseUrl = DefaultBaseUrl
+	}
+
+	token := resolveAuthToken(parsed, os.Stderr)
+	fromUtc := ParseDateTimeOffset(parsed.GetOption("--from"))
+	toUtc := ParseDateTimeOffset(parsed.GetOption("--to"))
+
+	httpClient, err := client.NewOpenClawHttpClient(baseUrl, token, nil)
+	if err != nil {
+		return err
+	}
+
+	insights, err := httpClient.GetOperatorInsights(context.Background(), fromUtc, toUtc)
+	if err != nil {
+		return err
+	}
+	if parsed.HasFlag("--json") {
+		data, _ := json.Marshal(insights)
+		fmt.Println(string(data))
+		return nil
+	}
+
+	WriteInsights(insights)
+	return nil
+}
+
+func ParseDateTimeOffset(value *string) *time.Time {
+	if value == nil {
+		return nil
+	}
+
+	d, err := time.Parse("20060102150405", *value)
+	if err != nil {
+		return nil
+	}
+
+	return &d
+}
+
+func printInsightsHelp() {
+	fmt.Println(`
+	openclaw insights
+
+            Usage:
+              openclaw insights [--from <iso8601>] [--to <iso8601>] [--json] [--url <url>] [--token <token>]
+
+            Notes:
+              - Summarizes provider usage, estimated token spend, tool frequency, and session counts.
+              - Provider and tool usage are live runtime counters; session counts use the requested range.`)
+}
+
+func formatCost(val float64) string {
+	return strconv.FormatFloat(val, 'f', -1, 64)
+}
+
+func WriteInsights(insights *core.OperatorInsightsResponse) {
+	fmt.Printf("window: %s..%s\n", insights.StartUtc.UTC().Format(time.RFC3339Nano), insights.EndUtc.UTC().Format(time.RFC3339Nano))
+
+	fmt.Printf("sessions: active=%d persisted=%d total=%d range=%d 24h=%d 7d=%d\n",
+		insights.Sessions.Active,
+		insights.Sessions.Persisted,
+		insights.Sessions.UniqueTotal,
+		insights.Sessions.InRange,
+		insights.Sessions.Last24Hours,
+		insights.Sessions.Last7Days,
+	)
+
+	fmt.Printf("provider_usage: requests=%d errors=%d tokens=%d input=%d output=%d cache_read=%d cache_write=%d estimated_cost_usd=%s\n",
+		insights.Totals.ProviderRequests,
+		insights.Totals.ProviderErrors,
+		insights.Totals.TotalTokens(),
+		insights.Totals.InputTokens,
+		insights.Totals.OutputTokens,
+		insights.Totals.CacheReadTokens,
+		insights.Totals.CacheWriteTokens,
+		formatCost(insights.Totals.EstimatedCostUsd),
+	)
+
+	fmt.Printf("tool_calls: %d\n", insights.Totals.ToolCalls)
+
+	fmt.Println()
+	fmt.Println("Providers")
+	if len(insights.Providers) == 0 {
+		fmt.Println("- none")
+	} else {
+		limit := min(len(insights.Providers), 10)
+		for _, provider := range insights.Providers[:limit] {
+			fmt.Printf("- %s/%s: requests=%d tokens=%d input=%d output=%d retries=%d errors=%d estimated_cost_usd=%s\n",
+				provider.ProviderId,
+				provider.ModelId,
+				provider.Requests,
+				provider.TotalTokens(),
+				provider.InputTokens,
+				provider.OutputTokens,
+				provider.Retries,
+				provider.Errors,
+				formatCost(provider.EstimatedCostUsd),
+			)
+		}
+	}
+
+	fmt.Println()
+	fmt.Println("Tools")
+	if len(insights.Tools) == 0 {
+		fmt.Println("- none")
+	} else {
+		limit := min(len(insights.Tools), 10)
+		for _, tool := range insights.Tools[:limit] {
+			fmt.Printf("- %s: calls=%d failures=%d timeouts=%d avg_ms=%.1f\n",
+				tool.ToolName,
+				tool.Calls,
+				tool.Failures,
+				tool.Timeouts,
+				tool.AverageDurationMs,
+			)
+		}
+	}
+
+	if len(insights.Sessions.ByChannel) > 0 {
+		channels := make([]string, len(insights.Sessions.ByChannel))
+		for i, item := range insights.Sessions.ByChannel {
+			channels[i] = fmt.Sprintf("%s=%d", item.Label, item.Count)
+		}
+		fmt.Printf("session_channels: %s\n", strings.Join(channels, ", "))
+	}
+
+	if len(insights.Sessions.ByState) > 0 {
+		states := make([]string, len(insights.Sessions.ByState))
+		for i, item := range insights.Sessions.ByState {
+			states[i] = fmt.Sprintf("%s=%d", item.Label, item.Count)
+		}
+		fmt.Printf("session_states: %s\n", strings.Join(states, ", "))
+	}
+
+	for _, warning := range insights.Warnings {
+		fmt.Printf("note: %s\n", warning)
+	}
+}
+
 func setupCmd(ctx context.Context, args []string) error         { return nil }
 func updateCmd(ctx context.Context, args []string) error        { return nil }
 func upgradeCmd(ctx context.Context, args []string) error       { return nil }
