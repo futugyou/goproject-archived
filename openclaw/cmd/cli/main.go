@@ -3,6 +3,7 @@ package main
 import (
 	"bufio"
 	"context"
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"io"
@@ -501,15 +502,15 @@ func BuildImageCommandContent(command string) string {
 		return ""
 	}
 
-	firstSpace := strings.Index(tail, " ")
+	before, after, ok := strings.Cut(tail, " ")
 	image := tail
-	if firstSpace >= 0 {
-		image = tail[:firstSpace]
+	if ok {
+		image = before
 	}
 
 	prompt := "Describe this image."
-	if firstSpace >= 0 {
-		image = tail[firstSpace+1:]
+	if ok {
+		image = after
 	}
 
 	if prompt == "" {
@@ -519,7 +520,152 @@ func BuildImageCommandContent(command string) string {
 	return BuildUserContent(prompt, nil, []string{image})
 }
 
-func liveCmd(ctx context.Context, args []string) error          { return nil }
+func liveCmd(ctx context.Context, args []string) error {
+
+	parsed := cli.CliArgsParse(args)
+	if parsed.ShowHelp {
+		printHelp()
+		return nil
+	}
+
+	baseUrl := util.Deref(parsed.GetOption("--url"))
+	if baseUrl == "" {
+		baseUrl = os.Getenv(EnvBaseUrl)
+	}
+	if baseUrl == "" {
+		baseUrl = DefaultBaseUrl
+	}
+
+	token := resolveAuthToken(parsed, os.Stderr)
+	provider := util.Deref(parsed.GetOption("--provider"))
+	model := util.Deref(parsed.GetOption("--model"))
+	system := util.Deref(parsed.GetOption("--system"))
+	voice := util.Deref(parsed.GetOption("--voice"))
+
+	modalities, ok := parsed.Options["--modality"]
+	if !ok {
+		modalities = []string{"TEXT"}
+	}
+
+	return RunLiveConsole(baseUrl, token, provider, model, system, voice, modalities)
+
+}
+
+func RunLiveConsole(baseUrl, token, provider, model, system, voice string, modalities []string) error {
+	httpclient := client.NewOpenClawLiveClient(0)
+	httpclient.OnEnvelopeReceived = func(envelope *core.LiveServerEnvelope) {
+		switch envelope.Type {
+		case "opened":
+			fmt.Fprintf(os.Stdout, "[opened] %s\n", envelope.Text)
+		case "text":
+			fmt.Print(envelope.Text)
+		case "turn_complete":
+			fmt.Println("")
+		case "audio":
+			fmt.Fprintf(os.Stdout, "[audio] mime=%s bytes=%d\n", envelope.MimeType, len(envelope.Base64Data))
+		case "input_transcription":
+			fmt.Fprintf(os.Stdout, "[input] %s\n", envelope.Text)
+		case "output_transcription":
+			fmt.Fprintf(os.Stdout, "[output] %s\n", envelope.Text)
+		case "interrupted":
+			fmt.Fprintln(os.Stdout, "[interrupted]")
+		case "error":
+			fmt.Fprintf(os.Stdout, "[error] %s\n", envelope.Error)
+		}
+	}
+
+	httpclient.OnError = func(err error) {
+		fmt.Fprintf(os.Stdout, "[client-error] %s\n", err.Error())
+	}
+
+	ctx := context.Background()
+	url, err := client.BuildWebSocketURI(baseUrl)
+	if err != nil {
+		return err
+	}
+	httpclient.Connect(
+		ctx,
+		url,
+		token,
+		core.LiveSessionOpenRequest{
+			Provider:           provider,
+			Model:              model,
+			SystemInstruction:  system,
+			VoiceName:          voice,
+			ResponseModalities: modalities,
+		})
+
+	fmt.Fprintln(os.Stdout, "openclaw live — commands: /interrupt, /audio-file <path> [mime], /exit")
+
+	scanner := bufio.NewScanner(os.Stdin)
+	buf := make([]byte, 0, 64*1024)
+	scanner.Buffer(buf, 10*1024*1024)
+
+	for scanner.Scan() {
+		fmt.Println("live> ")
+		line := scanner.Text()
+		if line == "" {
+			break
+		}
+
+		if line == "/exit" {
+			break
+		}
+
+		if line == "/interrupt" {
+			if err := httpclient.Interrupt(context.Background()); err != nil {
+				return nil
+			}
+			continue
+		}
+
+		if strings.HasPrefix(line, "/audio-file ") {
+			tail := line[len("/audio-file "):]
+			if len(tail) == 0 {
+				fmt.Fprintln(os.Stdout, "Usage: /audio-file <path> [mime]")
+				continue
+			}
+
+			parts := strings.Split(tail, " ")
+			path, err := filepath.Abs(parts[0])
+			if err != nil {
+				return err
+			}
+			if !util.FileExists(path) {
+				fmt.Fprintf(os.Stdout, "File not found: %s\n", path)
+				continue
+			}
+
+			mime := "audio/pcm"
+			if len(parts) > 1 {
+				mime = parts[1]
+			}
+
+			data, err := os.ReadFile(path)
+			if err != nil {
+				return err
+			}
+
+			base64 := base64.StdEncoding.EncodeToString(data)
+
+			if err := httpclient.SendAudio(context.Background(), base64, mime, true); err != nil {
+				return err
+			}
+			continue
+		}
+
+		if err := httpclient.SendText(context.Background(), line, true); err != nil {
+			return err
+		}
+	}
+
+	if err := scanner.Err(); err != nil {
+		fmt.Fprintln(os.Stderr, err.Error())
+	}
+
+	return httpclient.CloseSession(context.Background())
+}
+
 func tuiCmd(ctx context.Context, args []string) error           { return nil }
 func insightsCmd(ctx context.Context, args []string) error      { return nil }
 func setupCmd(ctx context.Context, args []string) error         { return nil }
