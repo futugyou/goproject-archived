@@ -21,7 +21,7 @@ type TerminalUi struct {
 	client *client.OpenClawHttpClient
 }
 
-func RunAsync(ctx context.Context, baseUrl, authToken, presetId string) error {
+func Run(ctx context.Context, baseUrl, authToken, presetId string) error {
 	client, err := client.NewOpenClawHttpClient(baseUrl, authToken, nil)
 	if err != nil {
 		return err

@@ -19,6 +19,7 @@ import (
 	"github.com/futugyou/openclaw/cli"
 	"github.com/futugyou/openclaw/client"
 	"github.com/futugyou/openclaw/core"
+	"github.com/futugyou/openclaw/tui"
 	"github.com/futugyou/openclaw/util"
 	"github.com/spf13/cobra"
 )
@@ -521,7 +522,6 @@ func BuildImageCommandContent(command string) string {
 }
 
 func liveCmd(ctx context.Context, args []string) error {
-
 	parsed := cli.CliArgsParse(args)
 	if parsed.ShowHelp {
 		printHelp()
@@ -666,7 +666,43 @@ func RunLiveConsole(baseUrl, token, provider, model, system, voice string, modal
 	return httpclient.CloseSession(context.Background())
 }
 
-func tuiCmd(ctx context.Context, args []string) error           { return nil }
+func tuiCmd(ctx context.Context, args []string) error {
+	parsed := cli.CliArgsParse(args)
+	if parsed.ShowHelp {
+		printTuiHelp()
+		return nil
+	}
+
+	baseUrl := util.Deref(parsed.GetOption("--url"))
+	if baseUrl == "" {
+		baseUrl = os.Getenv(EnvBaseUrl)
+	}
+	if baseUrl == "" {
+		baseUrl = DefaultBaseUrl
+	}
+
+	token := resolveAuthToken(parsed, os.Stderr)
+	preset := util.Deref(parsed.GetOption("--preset"))
+
+	if err := tui.Run(context.Background(), baseUrl, token, preset); err != nil {
+		fmt.Fprintln(os.Stderr, "The TUI is not available in this build. Use the non-AOT build or the admin web UI.")
+		return err
+	}
+
+	return nil
+}
+
+func printTuiHelp() {
+	fmt.Println(`openclaw tui
+
+            Usage:
+              openclaw tui [--url <url>] [--token <token>]
+
+            Notes:
+              - Launches the Spectre.Console terminal UI for runtime status, sessions, search,
+                automations, profiles, learning proposals, approvals, direct chat, and live sessions.`)
+}
+
 func insightsCmd(ctx context.Context, args []string) error      { return nil }
 func setupCmd(ctx context.Context, args []string) error         { return nil }
 func updateCmd(ctx context.Context, args []string) error        { return nil }
