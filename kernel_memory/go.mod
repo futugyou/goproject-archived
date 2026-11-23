@@ -9,7 +9,7 @@ require (
 	github.com/pkoukk/tiktoken-go v0.1.8
 	github.com/xuri/excelize/v2 v2.11.1
 	golang.org/x/sync v0.25.0
-	golang.org/x/text v0.43.0
+	golang.org/x/text v0.44.0
 )
 
 require (
