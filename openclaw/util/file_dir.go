@@ -4,6 +4,8 @@ import (
 	"archive/zip"
 	"bufio"
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -629,69 +631,169 @@ func IsDirNotEmpty(dirPath string) bool {
 	return len(entries) > 0
 }
 
+type UnixModeStrategy int
+
+const (
+	UnixModePreserveSource UnixModeStrategy = iota
+	UnixModeOwnerOnlyPreserveExecute
+)
+
+type CopyOptions struct {
+	UnixModeStrategy UnixModeStrategy
+	RejectSymlinks   bool
+	SkipDirs         map[string]bool
+}
+
 func CopyDirectory(source, destination string) error {
-	info, err := os.Stat(source)
-	if err != nil {
-		return err
-	}
-	if err := os.MkdirAll(destination, info.Mode()); err != nil {
-		return err
-	}
-
-	entries, err := os.ReadDir(source)
-	if err != nil {
-		return err
-	}
-
-	for _, entry := range entries {
-		name := entry.Name()
-		srcPath := filepath.Join(source, name)
-		dstPath := filepath.Join(destination, name)
-
-		if entry.IsDir() {
-			if name == "node_modules" || name == ".git" {
-				continue
-			}
-			if err := CopyDirectory(srcPath, dstPath); err != nil {
-				return err
-			}
-		} else {
-			in, err := os.Open(srcPath)
-			if err != nil {
-				return err
-			}
-
-			out, err := os.Create(dstPath)
-			if err != nil {
-				in.Close()
-				return err
-			}
-
-			_, err = io.Copy(out, in)
-			out.Close()
-			in.Close()
-			if err != nil {
-				return err
-			}
-		}
-	}
-	return nil
+	return copyDirectoryWithOptions(source, destination, CopyOptions{
+		UnixModeStrategy: UnixModePreserveSource,
+		RejectSymlinks:   false,
+		SkipDirs: map[string]bool{
+			"node_modules": true,
+			".git":         true,
+		},
+	})
 }
 
 func CopyDirectoryWithoutSymlink(source, destination string) error {
-	info, err := os.Lstat(source) // 注意：使用 Lstat 而不是 Stat，防止被软链接欺骗
+	return copyDirectoryWithOptions(source, destination, CopyOptions{
+		UnixModeStrategy: UnixModePreserveSource,
+		RejectSymlinks:   true,
+	})
+}
+
+func CopyDirectoryWithOptions(source, destination string, opts CopyOptions) error {
+	return copyDirectoryWithOptions(source, destination, opts)
+}
+
+func buildRestrictedFileMode(sourceMode os.FileMode) os.FileMode {
+	mode := os.FileMode(0600)
+	if sourceMode&0111 != 0 {
+		mode |= 0100
+	}
+	return mode
+}
+
+func resolveDestinationMode(sourceMode os.FileMode, isDir bool, strategy UnixModeStrategy) os.FileMode {
+	switch strategy {
+	case UnixModeOwnerOnlyPreserveExecute:
+		if isDir {
+			return 0700
+		}
+		return buildRestrictedFileMode(sourceMode)
+	case UnixModePreserveSource:
+		fallthrough
+	default:
+		return sourceMode.Perm()
+	}
+}
+
+func applyUnixMode(sourcePath, destinationPath string, isDir bool, strategy UnixModeStrategy) {
+	info, err := os.Lstat(sourcePath)
+	if err != nil {
+		return
+	}
+	mode := resolveDestinationMode(info.Mode(), isDir, strategy)
+	_ = os.Chmod(destinationPath, mode)
+}
+
+func createSiblingFilePath(targetPath, suffix string) (string, error) {
+	absPath, err := filepath.Abs(targetPath)
+	if err != nil {
+		absPath = targetPath
+	}
+	dir := filepath.Dir(absPath)
+	base := filepath.Base(absPath)
+
+	var randBytes [16]byte
+	if _, err := rand.Read(randBytes[:]); err != nil {
+		return "", err
+	}
+	token := hex.EncodeToString(randBytes[:])
+
+	return filepath.Join(dir, fmt.Sprintf("%s.%s.%s.tmp", base, suffix, token)), nil
+}
+
+func copyFileStaged(sourcePath, destinationPath string, opts CopyOptions) error {
+	if opts.RejectSymlinks {
+		srcInfo, err := os.Lstat(sourcePath)
+		if err != nil {
+			return err
+		}
+		if srcInfo.Mode()&os.ModeSymlink != 0 {
+			return fmt.Errorf("refusing to copy file symlink: %s", sourcePath)
+		}
+	}
+
+	dstDir := filepath.Dir(destinationPath)
+	if dstDir != "" && dstDir != "." {
+		if err := os.MkdirAll(dstDir, 0755); err != nil {
+			return err
+		}
+	}
+
+	stagedPath, err := createSiblingFilePath(destinationPath, "staged")
 	if err != nil {
 		return err
 	}
 
-	// 检查是否为符号链接 / Reparse Point
-	if info.Mode()&os.ModeSymlink != 0 {
+	moved := false
+	defer func() {
+		if !moved {
+			_ = os.Remove(stagedPath)
+		}
+	}()
+
+	in, err := os.Open(sourcePath)
+	if err != nil {
+		return err
+	}
+	defer in.Close()
+
+	out, err := os.OpenFile(stagedPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0600)
+	if err != nil {
+		return err
+	}
+
+	if _, err := io.Copy(out, in); err != nil {
+		_ = out.Close()
+		return err
+	}
+	if err := out.Close(); err != nil {
+		return err
+	}
+
+	applyUnixMode(sourcePath, stagedPath, false, opts.UnixModeStrategy)
+
+	if err := os.Rename(stagedPath, destinationPath); err != nil {
+		return err
+	}
+	moved = true
+	return nil
+}
+
+func copyDirectoryWithOptions(source, destination string, opts CopyOptions) error {
+	var info os.FileInfo
+	var err error
+
+	if opts.RejectSymlinks {
+		info, err = os.Lstat(source)
+	} else {
+		info, err = os.Stat(source)
+	}
+	if err != nil {
+		return err
+	}
+
+	if opts.RejectSymlinks && info.Mode()&os.ModeSymlink != 0 {
 		return fmt.Errorf("refusing to copy symlink: %s", source)
 	}
 
-	if err := os.MkdirAll(destination, info.Mode().Perm()); err != nil {
+	dirMode := resolveDestinationMode(info.Mode(), true, opts.UnixModeStrategy)
+	if err := os.MkdirAll(destination, dirMode); err != nil {
 		return err
 	}
+	applyUnixMode(source, destination, true, opts.UnixModeStrategy)
 
 	entries, err := os.ReadDir(source)
 	if err != nil {
@@ -699,47 +801,35 @@ func CopyDirectoryWithoutSymlink(source, destination string) error {
 	}
 
 	for _, entry := range entries {
-		// 检查目录项本身是否为符号链接
-		if entry.Type()&os.ModeSymlink != 0 {
-			return fmt.Errorf("refusing to copy symlink: %s", filepath.Join(source, entry.Name()))
+		name := entry.Name()
+		if opts.SkipDirs[name] && entry.IsDir() {
+			continue
 		}
 
-		name := entry.Name()
+		if opts.RejectSymlinks && entry.Type()&os.ModeSymlink != 0 {
+			return fmt.Errorf("refusing to copy symlink: %s", filepath.Join(source, name))
+		}
+
 		srcPath := filepath.Join(source, name)
 		dstPath := filepath.Join(destination, name)
 
-		if entry.IsDir() {
-			if err := CopyDirectory(srcPath, dstPath); err != nil {
+		isDir := entry.IsDir()
+		if !isDir && entry.Type()&os.ModeSymlink != 0 {
+			if targetInfo, statErr := os.Stat(srcPath); statErr == nil && targetInfo.IsDir() {
+				isDir = true
+			}
+		}
+
+		if isDir {
+			if err := copyDirectoryWithOptions(srcPath, dstPath, opts); err != nil {
 				return err
 			}
 		} else {
-			// 注意：复制文件时，也需要对文件本身的 Lstat 进行检查，确保它不是软链接
-			fileInfo, err := os.Lstat(srcPath)
-			if err != nil {
-				return err
-			}
-			if fileInfo.Mode()&os.ModeSymlink != 0 {
-				return fmt.Errorf("refusing to copy file symlink: %s", srcPath)
-			}
-
-			in, err := os.Open(srcPath)
-			if err != nil {
-				return err
-			}
-
-			out, err := os.Create(dstPath)
-			if err != nil {
-				in.Close()
-				return err
-			}
-
-			_, err = io.Copy(out, in)
-			out.Close()
-			in.Close()
-			if err != nil {
+			if err := copyFileStaged(srcPath, dstPath, opts); err != nil {
 				return err
 			}
 		}
 	}
+
 	return nil
 }
