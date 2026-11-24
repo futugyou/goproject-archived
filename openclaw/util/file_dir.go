@@ -714,7 +714,7 @@ func createSiblingFilePath(targetPath, suffix string) (string, error) {
 	return filepath.Join(dir, fmt.Sprintf("%s.%s.%s.tmp", base, suffix, token)), nil
 }
 
-func copyFileStaged(sourcePath, destinationPath string, opts CopyOptions) error {
+func copyFileWithSuffix(sourcePath, destinationPath, stageSuffix string, opts CopyOptions) error {
 	if opts.RejectSymlinks {
 		srcInfo, err := os.Lstat(sourcePath)
 		if err != nil {
@@ -732,7 +732,12 @@ func copyFileStaged(sourcePath, destinationPath string, opts CopyOptions) error 
 		}
 	}
 
-	stagedPath, err := createSiblingFilePath(destinationPath, "staged")
+	suffix := stageSuffix
+	if suffix == "" {
+		suffix = "staged"
+	}
+
+	stagedPath, err := createSiblingFilePath(destinationPath, suffix)
 	if err != nil {
 		return err
 	}
@@ -825,7 +830,7 @@ func copyDirectoryWithOptions(source, destination string, opts CopyOptions) erro
 				return err
 			}
 		} else {
-			if err := copyFileStaged(srcPath, dstPath, opts); err != nil {
+			if err := copyFileWithSuffix(srcPath, dstPath, "staged", opts); err != nil {
 				return err
 			}
 		}

@@ -15,9 +15,9 @@ import (
 	"github.com/futugyou/openclaw/util"
 )
 
-func UpgradeCommandRun(args []string, output io.Writer, errWriter io.Writer, currentDirectory string) (int, error) {
+func UpgradeCommandRun(args []string, output io.Writer, errWriter io.Writer) (int, error) {
 	if len(args) == 0 || args[0] == "-h" || args[0] == "--help" || args[0] == "help" {
-		UpgradeCommandPrintHelp(output)
+		upgradeCommandPrintHelp(output)
 		return 0, nil
 	}
 
@@ -25,12 +25,78 @@ func UpgradeCommandRun(args []string, output io.Writer, errWriter io.Writer, cur
 	rest := args[1:]
 	switch subcommand {
 	case "check":
-		return UpgradeCommandRunCheck(rest, output, errWriter, currentDirectory)
+		return upgradeCommandRunCheck(rest, output, errWriter)
+	case "rollback":
+		return upgradeCommandRunRollback(rest, output, errWriter)
 	default:
 		msg := fmt.Sprintf("Unknown upgrade subcommand: %s", subcommand)
-		UpgradeCommandPrintHelp(output)
+		upgradeCommandPrintHelp(output)
 		return 2, errors.New(msg)
 	}
+}
+
+func buildRollbackVerifyArgs(configPath string, parsed *CliArgs, snapshot *core.UpgradeRollbackSnapshot) []string {
+	args := []string{
+		"--config",
+		configPath,
+	}
+
+	if parsed.HasFlag("--offline") || snapshot.Offline {
+		args = append(args, "--offline")
+	}
+	if parsed.HasFlag("--require-provider") || snapshot.RequireProvider {
+		args = append(args, "--require-provider")
+	}
+
+	return args
+}
+
+func upgradeCommandRunRollback(args []string, output, errWriter io.Writer) (int, error) {
+	parsed := CliArgsParse(args)
+	if parsed.ShowHelp {
+		upgradeCommandPrintHelp(output)
+		return 0, nil
+	}
+
+	configPath, err := resolveConfigPath(parsed)
+	if err != nil {
+		return 1, err
+	}
+
+	quotedConfigPath := core.GatewaySetupPathsIntance.QuoteIfNeeded(configPath)
+	store := core.NewUpgradeRollbackSnapshotStore(configPath)
+	snapshot, err := store.Load()
+	if err != nil {
+		fmt.Fprintf(errWriter, "%s Delete the broken snapshot and rerun 'openclaw upgrade check --config %s' before upgrading.\n", err.Error(), quotedConfigPath)
+		return 1, err
+	}
+
+	if err := restoreSnapshot(snapshot, store, configPath); err != nil {
+		fmt.Fprintf(errWriter, "Failed to restore rollback snapshot: %s\n", err.Error())
+		return 1, err
+	}
+
+	fmt.Fprintln(output, "Restored last-known-good setup snapshot.")
+	fmt.Fprintf(output, "Config: %s\n", configPath)
+	fmt.Fprintf(output, "Captured at: %s\n", snapshot.CreatedAtUtc.Format("20060102150405"))
+	fmt.Fprintf(output, "Captured by: openclaw %s\n", snapshot.CreatedByVersion)
+	fmt.Fprintf(output, "Snapshot directory: %s\n", store.SnapshotDirectory())
+
+	currentVersion := "0.0.0"
+	if !strings.EqualFold(snapshot.CreatedByVersion, currentVersion) {
+		fmt.Fprintf(output, "Current CLI version: openclaw %s\n", currentVersion)
+	}
+
+	fmt.Fprintln(output)
+	fmt.Fprintln(output, "Re-running setup verification on the restored files...")
+
+	verifyExitCode, err := SetupLifecycleCommandRunVerify(buildRollbackVerifyArgs(configPath, parsed, snapshot), output, errWriter)
+	if verifyExitCode == 0 {
+		fmt.Fprintln(output)
+		fmt.Fprintln(output, "Rollback completed successfully.")
+	}
+
+	return verifyExitCode, err
 }
 
 type UpgradeCheckSummary struct {
@@ -220,8 +286,7 @@ func enumerateSkillRoots(config *core.GatewayConfig, workspacePath string) []Ski
 	if config.Skills.Load.IncludeManaged {
 		if homeDir, err := os.UserHomeDir(); err == nil {
 			managed := filepath.Join(homeDir, ".openclaw", "skills")
-			if _, ok := seen[managed]; !ok {
-				seen[managed] = struct{}{}
+			if !util.AddIfAbsent(seen, managed) {
 				result = append(result, SkillRootDto{
 					Path:   managed,
 					Source: core.SkillSourceManaged,
@@ -566,10 +631,10 @@ func captureSnapshotArtifacts(items []RollbackCaptureItem, payloadRoot string) e
 	return nil
 }
 
-func UpgradeCommandRunCheck(args []string, output, errWriter io.Writer, currentDirectory string) (int, error) {
+func upgradeCommandRunCheck(args []string, output, errWriter io.Writer) (int, error) {
 	parsed := CliArgsParse(args)
 	if parsed.ShowHelp {
-		UpgradeCommandPrintHelp(output)
+		upgradeCommandPrintHelp(output)
 		return 0, nil
 	}
 
@@ -633,7 +698,7 @@ func UpgradeCommandRunCheck(args []string, output, errWriter io.Writer, currentD
 	return 0, nil
 }
 
-func UpgradeCommandPrintHelp(output io.Writer) {
+func upgradeCommandPrintHelp(output io.Writer) {
 	fmt.Fprintln(output, `
             openclaw upgrade
 
@@ -648,4 +713,203 @@ func UpgradeCommandPrintHelp(output io.Writer) {
               - Captures a last-known-good config/env/deploy snapshot when preflight succeeds.
               - 'rollback' restores the saved snapshot and reruns setup verification.
               - Returns a non-zero exit code when blocking issues are found.`)
+}
+
+func validateSnapshotRelativePath(snapshotRelativePath, artifactKind string) (string, error) {
+	if snapshotRelativePath == "" {
+		return "", fmt.Errorf("Snapshot artifact '%s' is missing its payload path.", artifactKind)
+	}
+
+	if filepath.IsAbs(snapshotRelativePath) {
+		return "", fmt.Errorf("Snapshot artifact '%s' has an invalid rooted payload path '%s'", artifactKind, snapshotRelativePath)
+	}
+
+	normalizedPath := strings.ReplaceAll(snapshotRelativePath, "/", string(os.PathSeparator))
+	segments := strings.Split(normalizedPath, string(os.PathSeparator))
+	hasdot := false
+	for _, segment := range segments {
+		if segment == "." || segment == ".." {
+			hasdot = true
+			break
+		}
+	}
+	if len(segments) == 0 || hasdot {
+		return "", fmt.Errorf("Snapshot artifact '%s' has an invalid payload path '%s'", artifactKind, snapshotRelativePath)
+	}
+
+	return strings.Join(segments, string(os.PathSeparator)), nil
+}
+
+func validateRestoreArtifacts(snapshot *core.UpgradeRollbackSnapshot, configPath string) ([]ValidatedRestoreArtifact, error) {
+	expectedByKind := map[string]RollbackCaptureItem{}
+	for _, item := range buildRollbackCaptureItems(configPath) {
+		expectedByKind[item.Kind] = item
+	}
+
+	seen := map[string]struct{}{}
+
+	validated := []ValidatedRestoreArtifact{}
+	for _, artifact := range snapshot.Artifacts {
+		expected, ok := expectedByKind[artifact.Kind]
+		if !ok {
+			return nil, fmt.Errorf("Snapshot artifact '%s' is not a supported rollback artifact kind.", artifact.Kind)
+		}
+
+		if ok := util.AddIfAbsent(seen, artifact.Kind); !ok {
+			return nil, fmt.Errorf("Snapshot artifact '%s' appears multiple times in the rollback manifest.", artifact.Kind)
+		}
+
+		if artifact.IsDirectory != expected.IsDirectory {
+			return nil, fmt.Errorf("Snapshot artifact '%s' has an unexpected directory/file shape.", artifact.Kind)
+		}
+
+		expectedTargetPath, err := filepath.Abs(expected.TargetPath)
+		if err != nil {
+			return nil, err
+		}
+
+		manifestTargetPath, err := filepath.Abs(artifact.TargetPath)
+		if err != nil {
+			return nil, err
+		}
+		if !strings.EqualFold(expectedTargetPath, manifestTargetPath) {
+			return nil, fmt.Errorf("Snapshot artifact '%s' has an unexpected restore target path '%s'", artifact.Kind, artifact.TargetPath)
+		}
+
+		if !artifact.Exists {
+			if artifact.SnapshotRelativePath != "" {
+				return nil, fmt.Errorf("Snapshot artifact '%s' is marked absent but still includes a payload path.", artifact.Kind)
+			}
+
+			art := ValidatedRestoreArtifact{
+				Kind:        artifact.Kind,
+				TargetPath:  expectedTargetPath,
+				IsDirectory: artifact.IsDirectory,
+			}
+			validated = append(validated, art)
+			continue
+		}
+
+		snapshotRelativePath, err := validateSnapshotRelativePath(artifact.SnapshotRelativePath, artifact.Kind)
+		if err != nil {
+			return nil, err
+		}
+		if !strings.EqualFold(snapshotRelativePath, expected.SnapshotRelativePath) {
+			return nil, fmt.Errorf("Snapshot artifact '%s' has an unexpected payload path '%s'", artifact.Kind, artifact.SnapshotRelativePath)
+		}
+
+		art := ValidatedRestoreArtifact{
+			Kind:                 artifact.Kind,
+			TargetPath:           expectedTargetPath,
+			IsDirectory:          artifact.IsDirectory,
+			Exists:               true,
+			SnapshotRelativePath: snapshotRelativePath,
+		}
+		validated = append(validated, art)
+	}
+
+	missingKinds := []string{}
+	for key := range expectedByKind {
+		if _, ok := seen[key]; !ok {
+			missingKinds = append(missingKinds, key)
+		}
+	}
+
+	if len(missingKinds) > 0 {
+		return nil, fmt.Errorf("Rollback snapshot manifest is missing required artifact(s): %s", strings.Join(missingKinds, ", "))
+	}
+
+	return validated, nil
+}
+
+func createSiblingDirectoryPath(path, suffix string) (string, error) {
+	fullPath, err := filepath.Abs(path)
+	if err != nil {
+		return "", err
+	}
+
+	parent := filepath.Dir(fullPath)
+
+	name := filepath.Base(fullPath)
+	return filepath.Join(parent, fmt.Sprintf("%s.%s.%s", name, suffix, util.CleanUUID())), nil
+}
+
+func replaceDirectory(sourcePath, destinationPath string) error {
+	fullDestinationPath, err := filepath.Abs(destinationPath)
+	if err != nil {
+		return err
+	}
+
+	destinationParent := filepath.Dir(fullDestinationPath)
+	os.MkdirAll(destinationParent, 0755)
+
+	stagedPath, err := createSiblingDirectoryPath(fullDestinationPath, "staged")
+	if err != nil {
+		return err
+	}
+	backupPath, err := createSiblingDirectoryPath(fullDestinationPath, "backup")
+	if err != nil {
+		return err
+	}
+	backupCreated := false
+	replaced := false
+
+	defer func() {
+		if util.DirectoryExists(stagedPath) {
+			os.Remove(stagedPath)
+		}
+		if replaced && backupCreated && util.DirectoryExists(backupPath) {
+			os.Remove(backupPath)
+		}
+	}()
+
+	if err := util.CopyDirectoryWithOptions(sourcePath, stagedPath, util.CopyOptions{
+		UnixModeStrategy: util.UnixModePreserveSource,
+	}); err != nil {
+		return err
+	}
+
+	if util.DirectoryExists(fullDestinationPath) {
+		if err := os.Rename(fullDestinationPath, backupPath); err != nil {
+			return err
+		}
+		backupCreated = true
+	}
+
+	return nil
+}
+
+func restoreSnapshot(snapshot *core.UpgradeRollbackSnapshot, store *core.UpgradeRollbackSnapshotStore, configPath string) error {
+	artifacts, err := validateRestoreArtifacts(snapshot, configPath)
+	if err != nil {
+		return err
+	}
+
+	for _, artifact := range artifacts {
+		if artifact.Exists {
+			payloadPath, err := store.ResolvePayloadPath(artifact.SnapshotRelativePath)
+			if err != nil {
+				return err
+			}
+			if artifact.IsDirectory {
+				err = replaceDirectory(payloadPath, artifact.TargetPath)
+			} else {
+				err = util.CopyFile(payloadPath, artifact.TargetPath)
+			}
+			if err != nil {
+				return err
+			}
+			continue
+		}
+
+		if artifact.IsDirectory {
+			if util.DirectoryExists(artifact.TargetPath) {
+				util.DeleteDirectory(artifact.TargetPath)
+			}
+		} else if util.FileExists(artifact.TargetPath) {
+			util.DeleteOneFile(artifact.TargetPath)
+		}
+	}
+
+	return nil
 }

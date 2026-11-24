@@ -432,3 +432,11 @@ func IntersectIgnoreCase(a, b []string) []string {
 	}
 	return result
 }
+
+func AddIfAbsent[K comparable](m map[K]struct{}, key K) bool {
+	if _, exists := m[key]; exists {
+		return false
+	}
+	m[key] = struct{}{}
+	return true
+}
