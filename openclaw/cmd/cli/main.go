@@ -1090,7 +1090,197 @@ func printMigrateHelp() {
               - Upstream dry-run is the default; apply mode writes translated config, managed skills, and a plugin review plan.`)
 }
 
-func pulseCmd(ctx context.Context, args []string) error         { return nil }
+func pulseCmd(ctx context.Context, args []string) error {
+	if len(args) == 0 || args[0] == "-h" || args[0] == "--help" || args[0] == "help" {
+		printPulseHelp()
+		return nil
+	}
+
+	subcommand := strings.ToLower(strings.TrimSpace(args[0]))
+	parsed := cli.CliArgsParse(args[1:])
+	if parsed.ShowHelp {
+		printPulseHelp()
+		return nil
+	}
+
+	baseUrl := util.Deref(parsed.GetOption("--url"))
+	if baseUrl == "" {
+		baseUrl = os.Getenv(EnvBaseUrl)
+	}
+	if baseUrl == "" {
+		baseUrl = DefaultBaseUrl
+	}
+
+	token := resolveAuthToken(parsed, os.Stderr)
+
+	httpclient, err := client.NewOpenClawHttpClient(baseUrl, token, nil)
+	if err != nil {
+		return err
+	}
+
+	switch subcommand {
+	case "status":
+		return pulseStatus(ctx, httpclient)
+	case "run":
+		return pulseRun(ctx, httpclient, parsed)
+	case "enable":
+		return pulseEnable(ctx, httpclient)
+	case "disable":
+		return pulseDisable(ctx, httpclient)
+	case "events":
+		return pulseEvents(ctx, httpclient, parsed)
+	case "doctor":
+		return pulseDoctor(ctx, httpclient)
+	default:
+		return fmt.Errorf("Unknown pulse command: %s", subcommand)
+	}
+}
+
+func printPulseHelp() {
+	fmt.Println(`
+            openclaw pulse
+
+            Usage:
+              openclaw pulse status [--url <url>] [--token <token>]
+              openclaw pulse run [--text <text>] [--mode now|next-heartbeat] [--url <url>] [--token <token>]
+              openclaw pulse enable [--url <url>] [--token <token>]
+              openclaw pulse disable [--url <url>] [--token <token>]
+              openclaw pulse events [--limit <n>] [--url <url>] [--token <token>]
+              openclaw pulse doctor [--url <url>] [--token <token>]
+
+            Notes:
+              - Runtime Pulse is a scheduled heartbeat turn, not cron automation.
+              - OK replies are suppressed by default; alerts remain operator-visible.`)
+}
+
+func pulseDoctor(ctx context.Context, httpclient *client.OpenClawHttpClient) error {
+	status, err := httpclient.GetPulseStatus(ctx)
+	if err != nil {
+		return err
+	}
+
+	writePulseStatus(status)
+	fmt.Println("")
+	fmt.Println("doctor:")
+	if !status.Enabled {
+		fmt.Println("- pulse is disabled or has a zero interval")
+	}
+
+	if !status.Config.Visibility.ShowOk && !status.Config.Visibility.ShowAlerts && !status.Config.Visibility.UseIndicator {
+		fmt.Println("- all visibility controls are disabled; scheduled pulse calls are skipped")
+	}
+
+	if status.HeartbeatExists && status.HeartbeatEmpty {
+		fmt.Println("- HEARTBEAT.md exists but has no actionable content")
+	}
+	if strings.EqualFold(status.Config.Target, "last") {
+		fmt.Println("- target=last may send alerts externally")
+	}
+	if status.Config.IncludeReasoning {
+		fmt.Println("- includeReasoning may expose more detail in human-facing channels")
+	}
+	return nil
+}
+
+func pulseEvents(ctx context.Context, httpclient *client.OpenClawHttpClient, parsed *cli.CliArgs) error {
+	limit, _ := strconv.ParseInt(util.Deref(parsed.GetOption("--limit")), 10, 64)
+	if limit <= 0 {
+		limit = 50
+	}
+
+	events, err := httpclient.GetPulseEvents(ctx, int(limit))
+	if err != nil {
+		return err
+	}
+
+	for _, item := range events.Items {
+		fmt.Printf("%s %s %s %s", item.TimestampUtc.Format("20060102150405"), item.Severity, item.Action, item.Summary)
+	}
+	return nil
+}
+
+func pulseDisable(ctx context.Context, httpclient *client.OpenClawHttpClient) error {
+	status, err := httpclient.DisablePulse(ctx)
+	writePulseStatus(status)
+	return err
+}
+
+func pulseEnable(ctx context.Context, httpclient *client.OpenClawHttpClient) error {
+	status, err := httpclient.EnablePulse(ctx)
+	writePulseStatus(status)
+	return err
+}
+
+func pulseRun(ctx context.Context, httpclient *client.OpenClawHttpClient, parsed *cli.CliArgs) error {
+	text := util.Deref(parsed.GetOption("--text"))
+	mode := util.Deref(parsed.GetOption("--mode"))
+	if mode == "" {
+		mode = "now"
+	}
+	result, err := httpclient.RunPulse(ctx, core.PulseRunRequest{
+		Text: text,
+		Mode: mode,
+	})
+	if err != nil {
+		return err
+	}
+
+	fmt.Printf("outcome: %s\n", result.Outcome)
+	if result.SkipReason != "" {
+		fmt.Printf("skip_reason: %s\n", result.SkipReason)
+	}
+	if result.SessionId != "" {
+		fmt.Printf("session: %s\n", result.SessionId)
+	}
+	if result.MessagePreview != "" {
+		fmt.Println(result.MessagePreview)
+	}
+
+	return nil
+}
+
+func pulseStatus(ctx context.Context, httpclient *client.OpenClawHttpClient) error {
+	status, err := httpclient.GetPulseStatus(ctx)
+	writePulseStatus(status)
+	return err
+}
+
+func writePulseStatus(status *core.PulseStatusResponse) {
+	if status == nil {
+		return
+	}
+
+	fmt.Println("Runtime Pulse")
+	fmt.Printf("Enabled: %t\n", status.Enabled)
+	fmt.Printf("Interval: %v\n", status.Interval)
+	fmt.Printf("HEARTBEAT path: %s\n", status.HeartbeatPath)
+	fmt.Printf("HEARTBEAT exists: %t\n", status.HeartbeatExists)
+	fmt.Printf("HEARTBEAT empty: %t\n", status.HeartbeatEmpty)
+	fmt.Printf("Last result: %s\n", status.LastResult)
+
+	if strings.TrimSpace(status.LastSkipReason) != "" {
+		fmt.Printf("Last skip reason: %s\n", status.LastSkipReason)
+	}
+	if status.LastRunAtUtc != nil {
+		fmt.Printf("Last run: %s\n", status.LastRunAtUtc.UTC().Format(time.RFC3339Nano))
+	}
+	if status.NextRunAtUtc != nil {
+		fmt.Printf("Next run: %s\n", status.NextRunAtUtc.UTC().Format(time.RFC3339Nano))
+	}
+
+	fmt.Printf("Target: %s\n", status.Config.Target)
+	fmt.Printf("Session: %s\n", status.Config.Session)
+	fmt.Printf("Light context: %t\n", status.Config.LightContext)
+	fmt.Printf("Isolated session: %t\n", status.Config.IsolatedSession)
+	fmt.Printf("Recent OKs: %d\n", status.RecentOkCount)
+	fmt.Printf("Recent alerts: %d\n", status.RecentAlertCount)
+
+	limit := min(len(status.RecentAlerts), 5)
+	for _, alert := range status.RecentAlerts[:limit] {
+		fmt.Printf("- %s [%s] %s\n", alert.TimestampUtc.UTC().Format(time.RFC3339Nano), alert.Severity, alert.Text)
+	}
+}
+
 func heartbeatCmd(ctx context.Context, args []string) error     { return nil }
 func modelsCmd(ctx context.Context, args []string) error        { return nil }
 func evalCmd(ctx context.Context, args []string) error          { return nil }
