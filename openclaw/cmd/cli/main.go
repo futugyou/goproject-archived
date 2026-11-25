@@ -1741,7 +1741,88 @@ func printModelsHelp() {
               openclaw models remove <package> [--models-root <path>]`)
 }
 
-func evalCmd(ctx context.Context, args []string) error          { return nil }
+func evalCmd(ctx context.Context, args []string) error {
+	if len(args) == 0 || args[0] == "-h" || args[0] == "--help" || args[0] == "help" {
+		printEvalHelp()
+		return nil
+	}
+
+	subcommand := strings.ToLower(strings.TrimSpace(args[0]))
+	parsed := cli.CliArgsParse(args[1:])
+
+	baseUrl := util.Deref(parsed.GetOption("--url"))
+	if baseUrl == "" {
+		baseUrl = os.Getenv(EnvBaseUrl)
+	}
+	if baseUrl == "" {
+		baseUrl = DefaultBaseUrl
+	}
+
+	token := resolveAuthToken(parsed, os.Stderr)
+
+	httpclient, err := client.NewOpenClawHttpClient(baseUrl, token, nil)
+	if err != nil {
+		return err
+	}
+
+	if subcommand == "run" || subcommand == "compare" {
+		profiles := []string{}
+		singleProfile := strings.TrimSpace(util.Deref(parsed.GetOption("--profile")))
+		if singleProfile != "" {
+			profiles = append(profiles, singleProfile)
+		}
+		multiProfiles := strings.TrimSpace(util.Deref(parsed.GetOption("--profiles")))
+		if multiProfiles != "" {
+			profiles = append(profiles, strings.Split(multiProfiles, ",")...)
+		}
+
+		scenarios, ok := parsed.Options["--scenario"]
+		if !ok {
+			scenarios = []string{}
+		}
+
+		report, err := httpclient.RunModelEvaluation(ctx, core.ModelEvaluationRequest{
+			ProfileIds:      profiles,
+			ScenarioIds:     scenarios,
+			IncludeMarkdown: true,
+		})
+		if err != nil {
+			return err
+		}
+
+		fmt.Printf("run_id=%s\n", report.RunId)
+		fmt.Printf("json=%s\n", report.JsonPath)
+		if report.MarkdownPath != "" {
+			fmt.Printf("markdown=%s\n", report.MarkdownPath)
+		}
+
+		for _, profile := range report.Profiles {
+			fmt.Printf("[%s] %s/%s\n", profile.ProfileId, profile.ProviderId, profile.ModelId)
+			for _, scenario := range profile.Scenarios {
+				summary := scenario.Summary
+				if summary == "" {
+					summary = scenario.Error
+				}
+				fmt.Printf("- %s: {scenario.Status} (%d ms) %s\n", scenario.ScenarioId, scenario.LatencyMs, summary)
+			}
+		}
+
+		return nil
+	}
+
+	printEvalHelp()
+	return fmt.Errorf("unsupport eval subcommand: %s", subcommand)
+}
+
+func printEvalHelp() {
+	fmt.Println(`
+            openclaw eval
+
+            Usage:
+              openclaw eval run [--profile <id>] [--scenario <id>]... [--url <url>] [--token <token>]
+              openclaw eval compare --profiles <id,id,...> [--scenario <id>]... [--url <url>] [--token <token>]`)
+}
+
 func accountsCmd(ctx context.Context, args []string) error      { return nil }
 func backendsCmd(ctx context.Context, args []string) error      { return nil }
 func adminCmd(ctx context.Context, args []string) error         { return nil }
