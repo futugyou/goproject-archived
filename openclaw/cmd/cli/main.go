@@ -1622,7 +1622,125 @@ func printHeartbeatHelp() {
               - Prefer OPENCLAW_BASE_URL / OPENCLAW_AUTH_TOKEN over command-line tokens.`)
 }
 
-func modelsCmd(ctx context.Context, args []string) error        { return nil }
+func modelsCmd(ctx context.Context, args []string) error {
+	if len(args) == 0 || args[0] == "-h" || args[0] == "--help" || args[0] == "help" {
+		printModelsHelp()
+		return nil
+	}
+
+	subcommand := strings.ToLower(strings.TrimSpace(args[0]))
+	if subcommand == "presets" {
+		for _, preset := range core.LocalModelPresetDefinitionPackages {
+			fmt.Printf("- %s | %s | tags=%s | %s\n", preset.Id, preset.Label, strings.Join(preset.Tags, ","), preset.Description)
+		}
+		return nil
+	}
+
+	if subcommand == "packages" || subcommand == "status" || subcommand == "install" || subcommand == "verify" || subcommand == "remove" {
+		_, err := cli.ModelCommandRun(subcommand, args[1:], os.Stdout, os.Stderr)
+		return err
+	}
+
+	parsed := cli.CliArgsParse(args[1:])
+
+	baseUrl := util.Deref(parsed.GetOption("--url"))
+	if baseUrl == "" {
+		baseUrl = os.Getenv(EnvBaseUrl)
+	}
+	if baseUrl == "" {
+		baseUrl = DefaultBaseUrl
+	}
+
+	token := resolveAuthToken(parsed, os.Stderr)
+
+	httpclient, err := client.NewOpenClawHttpClient(baseUrl, token, nil)
+	if err != nil {
+		return err
+	}
+
+	if subcommand == "list" {
+		response, err := httpclient.GetModelProfiles(ctx)
+		if err != nil {
+			return err
+		}
+
+		profileid := response.DefaultProfileId
+		if profileid == "" {
+			profileid = "none"
+		}
+
+		fmt.Printf("default_profile=%s\n", profileid)
+		for _, profile := range response.Profiles {
+			profileid = profile.PresetId
+			if profileid == "" {
+				profileid = "none"
+			}
+			fmt.Printf("- %s | %s/%s | default=%t | preset=%s | tags=%s\n",
+				profile.Id, profile.ProviderId, profile.ModelId, profile.IsDefault, profileid, strings.Join(profile.Tags, ","))
+
+			if len(profile.CompatibilityNotes) > 0 {
+				fmt.Printf("  notes: %s\n", strings.Join(profile.CompatibilityNotes, "; "))
+			}
+
+			if len(profile.ValidationIssues) > 0 {
+				fmt.Printf("  issues: %s\n", strings.Join(profile.ValidationIssues, "; "))
+			}
+		}
+
+		return nil
+	}
+
+	if subcommand == "doctor" {
+		response, err := httpclient.GetModelSelectionDoctor(ctx)
+		if err != nil {
+			return err
+		}
+		profileid := response.DefaultProfileId
+		if profileid == "" {
+			profileid = "none"
+		}
+
+		fmt.Printf("default_profile=%s\n", profileid)
+		for _, e := range response.Errors {
+			fmt.Printf("ERROR: %s\n", e)
+		}
+		for _, e := range response.Warnings {
+			fmt.Printf("WARN: %s\n", e)
+		}
+		for _, profile := range response.Profiles {
+			profileid = profile.PresetId
+			if profileid == "" {
+				profileid = "none"
+			}
+			fmt.Printf("- %s | available=%t | preset=%s | compatibility=%t | %s/%s\n",
+				profile.Id, profile.IsAvailable, profileid, profile.UsesCompatibilityTransport, profile.ProviderId, profile.ModelId)
+
+		}
+		if len(response.Errors) > 0 {
+			return fmt.Errorf("mode subcommand:%s error: %s", subcommand, strings.Join(response.Errors, ","))
+		}
+		return nil
+	}
+
+	printModelsHelp()
+	return fmt.Errorf("unsupport mode subcommand: %s", subcommand)
+}
+
+func printModelsHelp() {
+	fmt.Println(`
+            openclaw models
+
+            Usage:
+              openclaw models list [--url <url>] [--token <token>]
+              openclaw models doctor [--url <url>] [--token <token>]
+              openclaw models presets
+              openclaw models packages
+              openclaw models status [package] [--models-root <path>]
+              openclaw models install <package> --accept-license [--path <model>] [--mmproj-path <gguf>] [--draft-path <model>] [--download-url <url>] [--token <hf-token>] [--models-root <path>] [--no-optional-files]
+              openclaw models verify <package> [--models-root <path>]
+              openclaw models remove <package> [--models-root <path>]`)
+}
+
 func evalCmd(ctx context.Context, args []string) error          { return nil }
 func accountsCmd(ctx context.Context, args []string) error      { return nil }
 func backendsCmd(ctx context.Context, args []string) error      { return nil }
