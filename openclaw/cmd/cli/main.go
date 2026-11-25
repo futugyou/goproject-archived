@@ -919,19 +919,177 @@ func printSetupHelp() {
               - Prints gateway, companion, doctor, and admin posture commands.`)
 }
 
-func updateCmd(ctx context.Context, args []string) error        { return nil }
-func upgradeCmd(ctx context.Context, args []string) error       { return nil }
-func backupCmd(ctx context.Context, args []string) error        { return nil }
-func maintenanceCmd(ctx context.Context, args []string) error   { return nil }
-func paymentCmd(ctx context.Context, args []string) error       { return nil }
-func externalCmd(ctx context.Context, args []string) error      { return nil }
-func routingCmd(ctx context.Context, args []string) error       { return nil }
-func memoryCmd(ctx context.Context, args []string) error        { return nil }
-func testCmd(ctx context.Context, args []string) error          { return nil }
-func harnessCmd(ctx context.Context, args []string) error       { return nil }
-func regressionCmd(ctx context.Context, args []string) error    { return nil }
-func initCmd(ctx context.Context, args []string) error          { return nil }
-func migrateCmd(ctx context.Context, args []string) error       { return nil }
+func printUpgradeHelp() {
+	fmt.Println(`
+            openclaw upgrade
+
+            Usage:
+              openclaw upgrade check [--config <path>] [--offline]
+              openclaw upgrade rollback [--config <path>] [--offline] [--require-provider]
+
+            Notes:
+              - Runs preflight checks before an upgrade.
+              - Combines setup verification, provider readiness, plugin compatibility,
+                skill compatibility, and migration-risk heuristics into one report.
+              - Captures a last-known-good config/env/deploy snapshot when preflight succeeds.
+              - 'rollback' restores the saved snapshot and reruns setup verification.
+              - Returns a non-zero exit code when blocking issues are found.`)
+}
+
+func updateCmd(ctx context.Context, args []string) error {
+	_, err := cli.UpdateCommandRun(args)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func upgradeCmd(ctx context.Context, args []string) error {
+	if len(args) == 0 || args[0] == "-h" || args[0] == "--help" || args[0] == "help" {
+		printUpgradeHelp()
+		return nil
+	}
+
+	_, err := cli.UpgradeCommandRun(args, os.Stdout, os.Stderr)
+	return err
+}
+
+func backupCmd(ctx context.Context, args []string) error {
+	_, err := cli.BackupCommandsRun(args)
+	return err
+}
+
+func maintenanceCmd(ctx context.Context, args []string) error {
+	if len(args) == 0 || args[0] == "-h" || args[0] == "--help" || args[0] == "help" {
+		printMaintenanceHelp()
+		return nil
+	}
+
+	_, err := cli.MaintenanceCommandsRun(args, os.Stdout, os.Stderr)
+	return err
+}
+
+func printMaintenanceHelp() {
+	fmt.Println(`
+            openclaw maintenance
+
+            Usage:
+              openclaw maintenance scan [--config <path>] [--json]
+              openclaw maintenance fix [--config <path>] [--dry-run] [--json] [--apply <all|retention|metadata|artifacts>]`)
+}
+
+func paymentCmd(ctx context.Context, args []string) error {
+	_, err := cli.PaymentCommandRun(args)
+	return err
+}
+
+func externalCmd(ctx context.Context, args []string) error {
+	_, err := cli.ExternalCliCommandRun(ctx, args)
+	return err
+}
+
+func routingCmd(ctx context.Context, args []string) error {
+	_, err := cli.RoutingCommandRun(args)
+	return err
+}
+
+func memoryCmd(ctx context.Context, args []string) error {
+	_, err := cli.MemoryCommandRun(ctx, args)
+	return err
+}
+
+func testCmd(ctx context.Context, args []string) error {
+	_, err := cli.TestingCommandRun(args, os.Stdout, os.Stderr)
+	return err
+}
+
+func harnessCmd(ctx context.Context, args []string) error {
+	_, err := cli.HarnessCommandRun(args)
+	return err
+}
+
+func regressionCmd(ctx context.Context, args []string) error {
+	_, err := cli.HarnessCommandRunRegressionAlias(args, os.Stdout, os.Stderr)
+	return err
+}
+
+func initCmd(ctx context.Context, args []string) error {
+	_, err := cli.InitCommandRun(args)
+	return err
+}
+
+func migrateCmd(ctx context.Context, args []string) error {
+	dir, err := os.Getwd()
+	if err != nil {
+		return err
+	}
+
+	if len(args) > 0 && args[0] == "upstream" {
+		_, err := cli.UpstreamMigrationCommandRun(args[1:], os.Stdout, os.Stderr, dir)
+		return err
+	}
+	if len(args) > 0 && args[0] == "legacy" {
+		args = args[1:]
+	}
+
+	parsed := cli.CliArgsParse(args)
+	if parsed.ShowHelp {
+		printMigrateHelp()
+		return nil
+	}
+
+	baseUrl := util.Deref(parsed.GetOption("--url"))
+	if baseUrl == "" {
+		baseUrl = os.Getenv(EnvBaseUrl)
+	}
+	if baseUrl == "" {
+		baseUrl = DefaultBaseUrl
+	}
+
+	token := resolveAuthToken(parsed, os.Stderr)
+	apply := parsed.HasFlag("--apply")
+
+	httpclient, err := client.NewOpenClawHttpClient(baseUrl, token, nil)
+	if err != nil {
+		return err
+	}
+
+	migrated, err := httpclient.MigrateAutomations(ctx, apply)
+	if err != nil {
+		return err
+	}
+
+	if apply {
+		fmt.Println("Applied legacy automation migration.")
+	} else {
+		fmt.Println("Previewed legacy automation migration.")
+	}
+
+	fmt.Printf("Automations: %d\n", len(migrated.Items))
+	for _, item := range migrated.Items {
+		fmt.Printf("- %s | %s | %s | enabled=%t draft=%t\n",
+			item.Id, item.Name, item.Schedule, item.Enabled, item.IsDraft)
+	}
+
+	return nil
+}
+
+func printMigrateHelp() {
+	fmt.Println(`
+            openclaw migrate
+
+            Usage:
+              openclaw migrate [--apply] [--url <url>] [--token <token>]
+              openclaw migrate legacy [--apply] [--url <url>] [--token <token>]
+              openclaw migrate upstream --source <path> --target-config <path> [--apply] [--report <path>]
+
+            Notes:
+              - Bare 'openclaw migrate' remains the legacy automation migration alias.
+              - 'openclaw migrate upstream' performs upstream config + skill + plugin-manifest migration.
+              - Upstream dry-run is the default; apply mode writes translated config, managed skills, and a plugin review plan.`)
+}
+
 func pulseCmd(ctx context.Context, args []string) error         { return nil }
 func heartbeatCmd(ctx context.Context, args []string) error     { return nil }
 func modelsCmd(ctx context.Context, args []string) error        { return nil }

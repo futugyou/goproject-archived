@@ -49,7 +49,7 @@ func harnessCommandRunWithWriters(args []string, output, errOutput io.Writer) (i
 	return runRegression(parsed, output)
 }
 
-func RunRegressionAlias(args []string, output, errOutput io.Writer) (int, error) {
+func HarnessCommandRunRegressionAlias(args []string, output, errOutput io.Writer) (int, error) {
 	if len(args) == 0 || args[0] == "-h" || args[0] == "--help" || args[0] == "help" {
 		harnessPrintAliasHelp(output)
 		return 0, nil
