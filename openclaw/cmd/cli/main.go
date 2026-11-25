@@ -12,6 +12,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"syscall"
@@ -1823,7 +1824,181 @@ func printEvalHelp() {
               openclaw eval compare --profiles <id,id,...> [--scenario <id>]... [--url <url>] [--token <token>]`)
 }
 
-func accountsCmd(ctx context.Context, args []string) error      { return nil }
+func parseMetadata(pairs []string) (map[string]string, error) {
+	metadata := map[string]string{}
+	for _, pair := range pairs {
+		separator := strings.Index(pair, "=")
+		if separator <= 0 || separator == len(pair)-1 {
+			return nil, fmt.Errorf("Invalid metadata entry: %s", pair)
+		}
+
+		metadata[pair[:separator]] = pair[separator+1:]
+	}
+
+	return metadata, nil
+}
+
+func accountsCmd(ctx context.Context, args []string) error {
+	if len(args) == 0 || args[0] == "-h" || args[0] == "--help" || args[0] == "help" {
+		printAccountsHelp()
+		return nil
+	}
+
+	subcommand := strings.ToLower(strings.TrimSpace(args[0]))
+	parsed := cli.CliArgsParse(args[1:])
+
+	baseUrl := util.Deref(parsed.GetOption("--url"))
+	if baseUrl == "" {
+		baseUrl = os.Getenv(EnvBaseUrl)
+	}
+	if baseUrl == "" {
+		baseUrl = DefaultBaseUrl
+	}
+
+	token := resolveAuthToken(parsed, os.Stderr)
+	httpclient, err := client.NewOpenClawHttpClient(baseUrl, token, nil)
+	if err != nil {
+		return err
+	}
+	switch subcommand {
+	case "list":
+		accounts, err := httpclient.GetIntegrationAccounts(ctx)
+		if err != nil {
+			return err
+		}
+		items := accounts.Items
+		slices.SortFunc(items, func(a, b core.ConnectedAccount) int {
+			return strings.Compare(a.Provider, b.Provider)
+		})
+
+		for _, item := range items {
+			fmt.Printf("%s | provider=%s | kind=%s | active=%t | display=%s\n", item.Id, item.Provider, item.SecretKind, item.IsActive, item.DisplayName)
+			if item.ExpiresAt != nil {
+				fmt.Printf("  expires=%s", item.ExpiresAt.Format("20060102150405"))
+			}
+		}
+
+		return nil
+	case "add":
+		provider := ""
+		if len(parsed.Positionals) > 0 {
+			provider = parsed.Positionals[0]
+		}
+
+		if provider == "" {
+			msg := "Provider is required."
+			fmt.Fprintln(os.Stderr, msg)
+			return errors.New(msg)
+		}
+
+		scopes, _ := parsed.Options["--scope"]
+		metadataValues, _ := parsed.Options["--metadata"]
+		metadata, err := parseMetadata(metadataValues)
+		if err != nil {
+			return err
+		}
+		var expiresAt *time.Time
+		if value, err := time.Parse(time.RFC3339Nano, util.Deref(parsed.GetOption("--expires-at"))); err != nil {
+			expiresAt = new(value)
+		}
+		created, err := httpclient.CreateIntegrationAccount(ctx, core.ConnectedAccountCreateRequest{
+			Provider:      provider,
+			DisplayName:   util.Deref(parsed.GetOption("--display-name")),
+			SecretRef:     util.Deref(parsed.GetOption("--secret-ref")),
+			Secret:        util.Deref(parsed.GetOption("--secret")),
+			TokenFilePath: util.Deref(parsed.GetOption("--token-file")),
+			Scopes:        scopes,
+			ExpiresAt:     expiresAt,
+			Metadata:      metadata,
+		})
+
+		fmt.Printf("created account: %s\n", created.Account.Id)
+		fmt.Printf("provider=%s kind=%s display=%s", created.Account.Provider, created.Account.SecretKind, created.Account.DisplayName)
+		return nil
+	case "probe":
+		target := ""
+		if len(parsed.Positionals) > 0 {
+			target = parsed.Positionals[0]
+		}
+
+		if target == "" {
+			msg := "Provider or account id is required."
+			fmt.Fprintln(os.Stderr, msg)
+			return errors.New(msg)
+		}
+
+		backendId := util.Deref(parsed.GetOption("--backend"))
+		if strings.HasPrefix(target, "acct_") {
+			response, err := httpclient.TestAccountResolution(ctx, core.BackendCredentialResolutionRequest{
+				BackendId: backendId,
+				CredentialSource: &core.ConnectedAccountSecretRef{
+					ConnectedAccountId: target,
+				},
+			})
+			if err != nil {
+				return err
+			}
+
+			if !response.Success || response.Credential == nil {
+				msg := response.Error
+				if msg == "" {
+					msg = "Credential resolution failed."
+				}
+
+				fmt.Fprintln(os.Stderr, msg)
+				return errors.New(msg)
+			}
+
+			fmt.Printf("resolved provider=%s source=%s account=%s\n", response.Credential.Provider, response.Credential.SourceKind, response.Credential.AccountId)
+			if response.Credential.TokenFilePath != "" {
+				fmt.Printf("token_file=%s\n", response.Credential.TokenFilePath)
+			}
+
+			if len(response.Credential.Scopes) > 0 {
+				fmt.Printf("scopes=%s\n", strings.Join(response.Credential.Scopes, ","))
+			}
+			return nil
+		}
+
+		if backendId == "" {
+			msg := "When probing by provider, --backend is required in v1."
+			fmt.Fprintln(os.Stderr, msg)
+			return errors.New(msg)
+		}
+
+		probe, err := httpclient.ProbeIntegrationBackend(ctx, backendId, core.BackendProbeRequest{})
+		if err != nil {
+			return err
+		}
+
+		exitCode := "n/a"
+		if probe.ExitCode != nil {
+			exitCode = strconv.Itoa(*probe.ExitCode)
+		}
+		fmt.Printf("backend=%s success=%t exit_code=%s}\n", probe.BackendId, probe.Success, exitCode)
+		fmt.Println(probe.Message)
+		if probe.Success {
+			return nil
+		}
+		return errors.New("account subcommand 'probe' error")
+	}
+
+	printAccountsHelp()
+	return fmt.Errorf("unsupport account subcommand: %s", subcommand)
+}
+
+func printAccountsHelp() {
+	fmt.Println(`
+            openclaw accounts
+
+            Usage:
+              openclaw accounts list [--url <url>] [--token <token>]
+              openclaw accounts add <provider> [--display-name <name>] (--secret-ref <ref> | --secret <secret> | --token-file <path>)
+                                     [--scope <scope>]... [--expires-at <iso8601>] [--metadata <key=value>]... [--url <url>] [--token <token>]
+              openclaw accounts remove <id> [--url <url>] [--token <token>]
+              openclaw accounts probe <provider|id> [--backend <id>] [--url <url>] [--token <token>]`)
+}
+
 func backendsCmd(ctx context.Context, args []string) error      { return nil }
 func adminCmd(ctx context.Context, args []string) error         { return nil }
 func compatibilityCmd(ctx context.Context, args []string) error { return nil }
