@@ -1281,7 +1281,347 @@ func writePulseStatus(status *core.PulseStatusResponse) {
 	}
 }
 
-func heartbeatCmd(ctx context.Context, args []string) error     { return nil }
+func heartbeatCmd(ctx context.Context, args []string) error {
+	if len(args) == 0 || args[0] == "-h" || args[0] == "--help" || args[0] == "help" {
+		printHeartbeatHelp()
+		return nil
+	}
+
+	subcommand := strings.ToLower(strings.TrimSpace(args[0]))
+	parsed := cli.CliArgsParse(args[1:])
+	if parsed.ShowHelp {
+		printHeartbeatHelp()
+		return nil
+	}
+
+	baseUrl := util.Deref(parsed.GetOption("--url"))
+	if baseUrl == "" {
+		baseUrl = os.Getenv(EnvBaseUrl)
+	}
+	if baseUrl == "" {
+		baseUrl = DefaultBaseUrl
+	}
+
+	token := resolveAuthToken(parsed, os.Stderr)
+
+	httpclient, err := client.NewOpenClawHttpClient(baseUrl, token, nil)
+	if err != nil {
+		return err
+	}
+
+	switch subcommand {
+	case "status":
+		return heartbeatStatus(ctx, httpclient)
+	case "preview":
+		return heartbeatPreview(ctx, httpclient)
+	case "wizard":
+		return heartbeatWizard(ctx, httpclient)
+	case "run":
+		return pulseRun(ctx, httpclient, parsed)
+	default:
+		return fmt.Errorf("Unknown heartbeat command: %s", subcommand)
+	}
+}
+
+func heartbeatWizard(ctx context.Context, httpclient *client.OpenClawHttpClient) error {
+	current, err := httpclient.GetHeartbeat(ctx)
+	if err != nil {
+		return err
+	}
+
+	status := "disabled"
+	if current.Config.Enabled {
+		status = "enabled"
+	}
+
+	fmt.Printf("Config path: %s\n", current.ConfigPath)
+	fmt.Printf("HEARTBEAT path: %s\n", current.HeartbeatPath)
+	fmt.Printf("Current status: %s\n", status)
+	fmt.Println()
+
+	config := core.HeartbeatConfigDto{
+		Enabled:             promptBool("Enable heartbeat", current.Config.Enabled),
+		CronExpression:      prompt("Cron expression", defaultString(current.Config.CronExpression, "@hourly")),
+		Timezone:            prompt("Timezone", defaultString(current.Config.Timezone, "UTC")),
+		DeliveryChannelId:   strings.ToLower(prompt("Delivery channel", defaultString(current.Config.DeliveryChannelId, "cron"))),
+		DeliveryRecipientId: promptOptional("Delivery recipient", current.Config.DeliveryRecipientId),
+		DeliverySubject:     promptOptional("Delivery subject", current.Config.DeliverySubject),
+		ModelId:             promptOptional("Model override", current.Config.ModelId),
+		Tasks:               promptTasks(current),
+	}
+
+	preview, err := httpclient.PreviewHeartbeat(ctx, config)
+	if err != nil {
+		return err
+	}
+
+	fmt.Println()
+	fmt.Println("Preview")
+	fmt.Println("-------")
+	writeHeartbeatPreview(preview)
+
+	hasErrors := false
+	for _, issue := range preview.Issues {
+		if strings.EqualFold(issue.Severity, "error") {
+			hasErrors = true
+			break
+		}
+	}
+	if hasErrors {
+		msg := "Heartbeat config has validation errors and was not saved."
+		fmt.Println(msg)
+		return errors.New(msg)
+	}
+
+	if !promptBool("Save this heartbeat config", true) {
+		fmt.Println("Heartbeat config not saved.")
+		return nil
+	}
+
+	saved, err := httpclient.SaveHeartbeat(ctx, config)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Failed to save heartbeat config: %v\n", err)
+		return err
+	}
+
+	fmt.Println("Heartbeat config saved.")
+	writeHeartbeatPreview(saved)
+	return nil
+}
+
+func promptTasks(current *core.HeartbeatPreviewResponse) []core.HeartbeatTaskDto {
+	if current == nil {
+		return nil
+	}
+
+	templates := []core.HeartbeatTemplateDto{}
+	for _, template := range current.AvailableTemplates {
+		if template.Available {
+			templates = append(templates, template)
+		}
+	}
+
+	if len(templates) == 0 {
+		fmt.Println("No heartbeat templates are currently available from the gateway.")
+		return current.Config.Tasks
+	}
+
+	fmt.Println("Available templates:")
+	for i := range templates {
+		fmt.Printf("  %d. %s (%s)\n", i+1, templates[i].Label, templates[i].Key)
+	}
+
+	if len(current.Suggestions) > 0 {
+		fmt.Println("")
+		fmt.Println("Suggestions:")
+		for i := range current.Suggestions {
+			fmt.Printf("  - %s [%s] — %s\n", current.Suggestions[i].Title, current.Suggestions[i].TemplateKey, current.Suggestions[i].Reason)
+		}
+	}
+
+	selected := prompt("Template numbers (comma separated, blank keeps current tasks)", "")
+	if selected == "" {
+		return current.Config.Tasks
+	}
+
+	tasks := []core.HeartbeatTaskDto{}
+	picks := strings.Split(selected, ",")
+	for _, pick := range picks {
+		index, _ := strconv.ParseInt(pick, 10, 64)
+		if index < 1 || index > int64(len(templates)) {
+			continue
+		}
+
+		template := templates[index-1]
+		defaultTitle := template.Label
+		title := prompt("Task title", defaultTitle)
+		target := promptOptional("Task target", "")
+		instruction := promptOptional("Task instruction", "")
+		priority := strings.ToLower(prompt("Priority (low|normal|high)", "normal"))
+		conditionMode := strings.ToLower(prompt("Condition mode (and|or)", "and"))
+		conditions := promptConditions()
+
+		tasks = append(tasks, core.HeartbeatTaskDto{
+			Id:            fmt.Sprintf("task-%s", util.CleanUUID())[:12],
+			TemplateKey:   template.Key,
+			Title:         title,
+			Target:        target,
+			Instruction:   instruction,
+			Priority:      priority,
+			Enabled:       true,
+			ConditionMode: conditionMode,
+			Conditions:    conditions,
+		})
+
+	}
+
+	return tasks
+}
+
+func promptConditions() []core.HeartbeatConditionDto {
+	conditions := []core.HeartbeatConditionDto{}
+
+	for {
+		if !promptBool("Add a condition", false) {
+			break
+		}
+
+		field := prompt("Condition field", "subject")
+		op := prompt("Condition operator (contains|equals|any_of|is_true)", "contains")
+
+		values := []string{}
+		if !strings.EqualFold(op, "is_true") {
+			values = strings.Split(prompt("Condition values (comma separated)", ""), ",")
+		}
+		conditions = append(conditions, core.HeartbeatConditionDto{
+			Field:    field,
+			Operator: op,
+			Values:   values,
+		})
+	}
+
+	return conditions
+}
+
+func promptOptional(label, defaultValue string) string {
+	suffix := ""
+	if defaultValue != "" {
+		suffix = fmt.Sprintf(" [%s]", defaultValue)
+	}
+
+	fmt.Printf("%s%s: ", label, suffix)
+	value := strings.TrimSpace(util.ReadConsoleLine())
+	if value == "" {
+		return defaultValue
+	}
+
+	return value
+}
+
+func defaultString(value, defaultValue string) string {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return defaultValue
+	}
+
+	return value
+}
+
+func prompt(label, defaultValue string) string {
+	fmt.Printf("%s [%s]: ", label, defaultValue)
+	value := strings.TrimSpace(util.ReadConsoleLine())
+	if value == "" {
+		return defaultValue
+	}
+
+	return value
+}
+
+func promptBool(label string, defaultValue bool) bool {
+	if defaultValue {
+		fmt.Printf("%s [Y/n]: ", label)
+	} else {
+		fmt.Printf("%s [y/N]: ", label)
+	}
+
+	value := strings.ToLower(strings.TrimSpace(util.ReadConsoleLine()))
+	if value == "" {
+		return defaultValue
+	}
+
+	return value == "y" || value == "yes" || value == "true"
+}
+
+func heartbeatPreview(ctx context.Context, httpclient *client.OpenClawHttpClient) error {
+	preview, err := httpclient.GetHeartbeat(ctx)
+	writeHeartbeatPreview(preview)
+	return err
+}
+
+func writeHeartbeatPreview(preview *core.HeartbeatPreviewResponse) {
+	if preview == nil {
+		return
+	}
+
+	fmt.Printf("Config path: %s\n", preview.ConfigPath)
+	fmt.Printf("HEARTBEAT path: %s\n", preview.HeartbeatPath)
+	fmt.Printf("memory.md path: %s\n", preview.MemoryMarkdownPath)
+	fmt.Printf("Managed job active: %t\n", preview.ManagedJobActive)
+	fmt.Printf("Drift detected: %t\n", preview.DriftDetected)
+	fmt.Printf("Model: %s:%s\n", preview.CostEstimate.ProviderId, preview.CostEstimate.ModelId)
+	fmt.Printf("Estimated input tokens/run: %d\n", preview.CostEstimate.EstimatedInputTokensPerRun)
+	fmt.Printf("Estimated monthly runs: %d\n", preview.CostEstimate.EstimatedRunsPerMonth)
+	fmt.Printf("Estimated OK cost/month: $%.4f\n", preview.CostEstimate.EstimatedOkCostUsdPerMonth)
+	fmt.Printf("Estimated alert cost/month: $%.4f\n", preview.CostEstimate.EstimatedAlertCostUsdPerMonth)
+	fmt.Println()
+
+	if len(preview.Issues) > 0 {
+		fmt.Println("Issues:")
+		for _, issue := range preview.Issues {
+			fmt.Printf("- %s: %s\n", issue.Severity, issue.Message)
+		}
+		fmt.Println()
+	}
+
+	fmt.Println(preview.HeartbeatMarkdown)
+}
+
+func heartbeatStatus(ctx context.Context, httpclient *client.OpenClawHttpClient) error {
+	status, err := httpclient.GetHeartbeatStatus(ctx)
+	writeHeartbeatStatus(status)
+	return err
+}
+
+func writeHeartbeatStatus(status *core.HeartbeatStatusResponse) {
+	if status == nil {
+		return
+	}
+	fmt.Printf("Config path: %s\n", status.ConfigPath)
+	fmt.Printf("HEARTBEAT path: %s\n", status.HeartbeatPath)
+	fmt.Printf("memory.md path: %s\n", status.MemoryMarkdownPath)
+	fmt.Printf("Config exists: %t\n", status.ConfigExists)
+	fmt.Printf("HEARTBEAT exists: %t\n", status.HeartbeatExists)
+	fmt.Printf("Enabled: %t\n", status.Config.Enabled)
+	fmt.Printf("Drift detected: %t\n", status.DriftDetected)
+	fmt.Printf("Monthly runs: %d\n", status.CostEstimate.EstimatedRunsPerMonth)
+	fmt.Printf("Estimated OK cost/month: $%.4f\n", status.CostEstimate.EstimatedOkCostUsdPerMonth)
+	fmt.Printf("Estimated alert cost/month: $%.4f\n", status.CostEstimate.EstimatedAlertCostUsdPerMonth)
+
+	if status.LastRun != nil {
+		fmt.Printf("Last run: %s\n", status.LastRun.LastRunAtUtc.UTC().Format(time.RFC3339Nano))
+		fmt.Printf("Last outcome: %s\n", status.LastRun.Outcome)
+		fmt.Printf("Delivery suppressed: %t\n", status.LastRun.DeliverySuppressed)
+		fmt.Printf("Last run tokens: in %d / out %d\n", status.LastRun.InputTokens, status.LastRun.OutputTokens)
+		if strings.TrimSpace(status.LastRun.MessagePreview) != "" {
+			fmt.Printf("Last preview: %s\n", status.LastRun.MessagePreview)
+		}
+	}
+
+	if len(status.Issues) > 0 {
+		fmt.Println()
+		fmt.Println("Issues:")
+		for _, issue := range status.Issues {
+			fmt.Printf("- %s: %s\n", issue.Severity, issue.Message)
+		}
+	}
+}
+
+func printHeartbeatHelp() {
+	fmt.Println(`
+            openclaw heartbeat
+
+            Usage:
+              openclaw heartbeat status [--url <url>] [--token <token>]
+              openclaw heartbeat preview [--url <url>] [--token <token>]
+              openclaw heartbeat wizard [--url <url>] [--token <token>]
+              openclaw heartbeat run --text <text> [--mode now|next-heartbeat] [--url <url>] [--token <token>]
+
+            Notes:
+              - Wizard/preview/status manage the legacy cron-backed heartbeat wizard.
+              - Run is an alias for Runtime Pulse manual wake.
+              - Prefer OPENCLAW_BASE_URL / OPENCLAW_AUTH_TOKEN over command-line tokens.`)
+}
+
 func modelsCmd(ctx context.Context, args []string) error        { return nil }
 func evalCmd(ctx context.Context, args []string) error          { return nil }
 func accountsCmd(ctx context.Context, args []string) error      { return nil }

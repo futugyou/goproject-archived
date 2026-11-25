@@ -1,6 +1,7 @@
 package util
 
 import (
+	"bufio"
 	"cmp"
 	"crypto/rand"
 	"crypto/sha256"
@@ -439,4 +440,10 @@ func AddIfAbsent[K comparable](m map[K]struct{}, key K) bool {
 	}
 	m[key] = struct{}{}
 	return true
+}
+
+func ReadConsoleLine() string {
+	reader := bufio.NewReader(os.Stdin)
+	text, _ := reader.ReadString('\n')
+	return strings.TrimRight(text, "\r\n")
 }
