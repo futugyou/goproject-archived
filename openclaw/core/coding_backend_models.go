@@ -438,7 +438,7 @@ type BackendSessionRecord struct {
 	StartedAtUtc            *time.Time `json:"started_at_utc,omitempty"`
 	CompletedAtUtc          *time.Time `json:"completed_at_utc,omitempty"`
 	LastEventSequence       int64      `json:"last_event_sequence"`
-	ExitCode                *int       `json:"exit_code,omitempty"`
+	ExitCode                int        `json:"exit_code,omitempty"`
 	LastError               string     `json:"last_error,omitempty"`
 }
 

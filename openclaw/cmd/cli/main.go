@@ -1999,7 +1999,208 @@ func printAccountsHelp() {
               openclaw accounts probe <provider|id> [--backend <id>] [--url <url>] [--token <token>]`)
 }
 
-func backendsCmd(ctx context.Context, args []string) error      { return nil }
+func printBackendsHelp() {
+	fmt.Println(`
+            openclaw backends
+
+            Usage:
+              openclaw backends list [--url <url>] [--token <token>]
+              openclaw backends probe <id> [--workspace <path>] [--url <url>] [--token <token>]
+              openclaw backends run <id> --workspace <path> --prompt <text> [--model <id>] [--read-only <true|false>] [--url <url>] [--token <token>]
+              openclaw backends session send <id> <sessionId> --text <text> [--url <url>] [--token <token>]`)
+}
+
+func readAllStdin() (string, error) {
+	if !util.IsInputRedirected() {
+		return "", nil
+	}
+
+	data, err := io.ReadAll(os.Stdin)
+	if err != nil {
+		return "", err
+	}
+
+	text := string(data)
+	if strings.TrimSpace(text) == "" {
+		return "", nil
+	}
+
+	trimmed := strings.TrimRight(text, " \t\r\n")
+	return trimmed, nil
+}
+
+func writeBackendEvent(evt core.BackendEvent) {
+	switch evt.Type {
+	case "assistant_message":
+		fmt.Println(evt.Text)
+	case "stdout_output":
+		fmt.Println(evt.Text)
+	case "stderr_output":
+		fmt.Fprintln(os.Stderr, evt.Text)
+	case "shell_command_proposed":
+		fmt.Printf("$ %s\n", evt.Command)
+	case "shell_command_executed":
+		fmt.Printf("executed: %s (exit=%s)\n", evt.Command, formatOptionalInt(evt.ExitCode))
+	case "tool_call_requested":
+		fmt.Printf("tool: %s\n", evt.ToolName)
+	case "patch_proposed":
+		fmt.Printf("patch proposed: %s\n", fallbackString(evt.Path, "(unknown)"))
+	case "patch_applied":
+		pathOrSummary := fallbackString(evt.Path, fallbackString(evt.Summary, "(unknown)"))
+		fmt.Printf("patch applied: %s\n", pathOrSummary)
+	case "file_read":
+		fmt.Printf("read: %s\n", evt.Path)
+	case "file_write":
+		fmt.Printf("write: %s\n", evt.Path)
+	case "error":
+		fmt.Fprintf(os.Stderr, "error: %s\n", evt.Message)
+	case "session_completed":
+		fmt.Printf(
+			"session completed: exit=%s reason=%s\n",
+			formatOptionalInt(evt.ExitCode),
+			fallbackString(evt.Reason, "n/a"),
+		)
+	}
+}
+
+func formatOptionalInt(v *int) string {
+	if v == nil {
+		return "n/a"
+	}
+	return strconv.Itoa(*v)
+}
+
+func fallbackString(v string, defaultVal string) string {
+	if v == "" {
+		return defaultVal
+	}
+	return v
+}
+
+func pollBackendSession(
+	ctx context.Context,
+	httpclient *client.OpenClawHttpClient,
+	backendId,
+	sessionId string,
+	afterSequence int64,
+	idleLimit int) error {
+	idleCount := 0
+	for {
+		events, err := httpclient.GetBackendEvents(ctx, backendId, sessionId, afterSequence, 200)
+		if err != nil {
+			return err
+		}
+		for _, item := range events.Items {
+			writeBackendEvent(item)
+		}
+
+		if len(events.Items) > 0 {
+			afterSequence = events.NextSequence
+			idleCount = 0
+		} else {
+			idleCount++
+		}
+
+		session, err := httpclient.GetBackendSession(ctx, backendId, sessionId)
+		if err != nil {
+			return err
+		}
+
+		state := "failed"
+		if session.Session != nil {
+			state = session.Session.State
+		}
+
+		if state == "completed" {
+			if session.Session == nil || session.Session.ExitCode == 0 {
+				return nil
+			}
+			return errors.New("backup command error")
+		}
+
+		if state == "failed" || state == "cancelled" {
+			return errors.New("backup command error")
+		}
+		if idleCount >= idleLimit {
+			fmt.Printf("session_state=%s\n", state)
+			return nil
+		}
+
+		time.Sleep(500)
+	}
+}
+
+func backendsCmd(ctx context.Context, args []string) error {
+	if len(args) == 0 || args[0] == "-h" || args[0] == "--help" || args[0] == "help" {
+		printBackendsHelp()
+		return nil
+	}
+
+	subcommand := strings.ToLower(strings.TrimSpace(args[0]))
+	if subcommand == "session" && len(args) > 1 && strings.EqualFold(args[1], "send") {
+		parsed := cli.CliArgsParse(args[2:])
+		backendId := ""
+		sessionId := ""
+		if len(parsed.Positionals) > 0 {
+			backendId = parsed.Positionals[0]
+		}
+		if len(parsed.Positionals) > 1 {
+			sessionId = parsed.Positionals[1]
+		}
+
+		if backendId == "" || sessionId == "" {
+			msg := "Backend id and session id are required."
+			fmt.Fprintln(os.Stderr, msg)
+			return errors.New(msg)
+		}
+
+		text := util.Deref(parsed.GetOption("--text"))
+		if text == "" {
+			text, _ = readAllStdin()
+		}
+
+		if text == "" {
+			msg := "--text or stdin is required."
+			fmt.Fprintln(os.Stderr, msg)
+			return errors.New(msg)
+		}
+
+		baseUrl := util.Deref(parsed.GetOption("--url"))
+		if baseUrl == "" {
+			baseUrl = os.Getenv(EnvBaseUrl)
+		}
+		if baseUrl == "" {
+			baseUrl = DefaultBaseUrl
+		}
+
+		token := resolveAuthToken(parsed, os.Stderr)
+
+		httpclient, err := client.NewOpenClawHttpClient(baseUrl, token, nil)
+		if err != nil {
+			return err
+		}
+
+		before, err := httpclient.GetBackendSession(ctx, backendId, sessionId)
+		if err != nil {
+			return err
+		}
+
+		var afterSequence int64 = 0
+		if before.Session != nil {
+			afterSequence = before.Session.LastEventSequence
+		}
+
+		if _, err := httpclient.SendBackendInput(ctx, backendId, sessionId, core.BackendInput{Text: text}); err != nil {
+			return err
+		}
+
+		return pollBackendSession(ctx, httpclient, backendId, sessionId, afterSequence, 4)
+	}
+
+	printBackendsHelp()
+	return fmt.Errorf("unsupport backup subcommand: %s", subcommand)
+}
+
 func adminCmd(ctx context.Context, args []string) error         { return nil }
 func compatibilityCmd(ctx context.Context, args []string) error { return nil }
 func pluginsCmd(ctx context.Context, args []string) error       { return nil }
