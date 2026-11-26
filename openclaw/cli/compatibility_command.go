@@ -136,7 +136,7 @@ func printHelp(output io.Writer) {
       openclaw compat catalog [--status <compatible|incompatible>] [--kind <kind>] [--category <category>] [--json]
 
     Notes:
-      - The catalog is backed by the pinned public compatibility smoke manifest shipped with OpenClaw.NET.
+      - The catalog is backed by the pinned public compatibility smoke manifest shipped with OpenClaw.
       - Use --json when you want machine-readable output.
 `
 	fmt.Fprint(output, helpText)

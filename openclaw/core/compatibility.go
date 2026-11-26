@@ -208,7 +208,7 @@ func buildPublicCompatibilityCatalogSummary(entry CompatibilityCatalogManifestEn
 	}
 
 	if isCompatible {
-		return "Pinned compatibility scenario expected to load successfully under the documented OpenClaw.NET subset."
+		return "Pinned compatibility scenario expected to load successfully under the documented OpenClaw subset."
 	}
 	return "Pinned negative compatibility scenario expected to fail with explicit diagnostics."
 }

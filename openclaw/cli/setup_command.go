@@ -294,9 +294,9 @@ func setupCommandRunTailscaleSetup(args []string, input io.Reader, output, errwi
 func writeTailscaleServeInstructions(output io.Writer, configPath string, configLoaded bool, status *core.TailscaleServeStatusResponse) {
 	localGateway := strings.TrimRight(status.LocalGatewayUrl, "/")
 
-	fmt.Fprintln(output, "Tailscale Serve setup for OpenClaw.NET")
+	fmt.Fprintln(output, "Tailscale Serve setup for OpenClaw")
 	fmt.Fprintln(output)
-	fmt.Fprintln(output, "This profile keeps OpenClaw.NET bound to 127.0.0.1 and uses Tailscale Serve to expose it privately inside your tailnet.")
+	fmt.Fprintln(output, "This profile keeps OpenClaw bound to 127.0.0.1 and uses Tailscale Serve to expose it privately inside your tailnet.")
 
 	if configLoaded {
 		fmt.Fprintf(output, "Config: %s\n", configPath)
@@ -314,7 +314,7 @@ func writeTailscaleServeInstructions(output io.Writer, configPath string, config
 	fmt.Fprintln(output)
 	fmt.Fprintln(output, "After enabling Serve, open the Tailscale-provided HTTPS URL from a device in your tailnet.")
 	fmt.Fprintln(output)
-	fmt.Fprintln(output, "Useful OpenClaw.NET surfaces:")
+	fmt.Fprintln(output, "Useful OpenClaw surfaces:")
 	fmt.Fprintln(output, "- Chat: /chat")
 	fmt.Fprintln(output, "- Admin: /admin")
 	fmt.Fprintln(output, "- MCP: /mcp")
@@ -339,7 +339,7 @@ func writeTailscaleServeInstructions(output io.Writer, configPath string, config
 	fmt.Fprintln(output, "Security notes:")
 	fmt.Fprintln(output, "- Tailscale Serve is for private tailnet access.")
 	fmt.Fprintln(output, "- Do not use Funnel for /admin unless you have reviewed public exposure hardening.")
-	fmt.Fprintln(output, "- Keep OpenClaw.NET auth enabled.")
+	fmt.Fprintln(output, "- Keep OpenClaw auth enabled.")
 	fmt.Fprintln(output, "- Use operator accounts/tokens for admin, API, and websocket clients.")
 	fmt.Fprintln(output)
 	fmt.Fprintln(output, "Follow-up checks:")

@@ -488,7 +488,7 @@ func upstreamMigrationTranslateConfig(sourcePath, discoveredConfigPath string) (
 			Type:     "config",
 			Subject:  "gateway-config",
 			Status:   "partial",
-			Summary:  "No upstream JSON config file was discovered. A default OpenClaw.NET config will be written instead.",
+			Summary:  "No upstream JSON config file was discovered. A default OpenClaw config will be written instead.",
 			Warnings: []string{"Provide provider/model/auth settings manually if the source tree did not include a compatible JSON config."},
 		})
 		return

@@ -3,6 +3,7 @@ package cli
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strconv"
 	"strings"
@@ -89,6 +90,10 @@ func PaymentCommandRun(args []string) (int, error) {
 		paymentCommandWrite(*status, isjson, paymentCommandTextStatus)
 		return 0, nil
 	case "execute":
+		idempotencyKey := util.Deref(parsed.GetOption("--idempotency-key"))
+		if idempotencyKey == "" {
+			return 1, errors.New("idempotency-key is required.")
+		}
 		protocol := util.Deref(parsed.GetOption("--protocol"))
 		if protocol == "" {
 			protocol = "http-402"
@@ -101,8 +106,10 @@ func PaymentCommandRun(args []string) (int, error) {
 		if p, err := strconv.ParseInt(util.Deref(parsed.GetOption("--amount-minor")), 10, 64); err == nil {
 			amount = p
 		}
+
 		request := payments.MachinePaymentRequest{
 			ProviderId:      provider,
+			IdempotencyKey:  idempotencyKey,
 			FundingSourceId: util.Deref(parsed.GetOption("--funding-source")),
 			Environment:     environment,
 			Challenge: payments.MachinePaymentChallenge{

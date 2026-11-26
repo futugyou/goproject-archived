@@ -1576,7 +1576,7 @@ func (ph *PluginHost) loadBundle(plugin core.DiscoveredPlugin) {
 		diagnostics = append(diagnostics, core.PluginCompatibilityDiagnostic{
 			Severity: "warning",
 			Code:     "bundle_capability_detected_only",
-			Message:  fmt.Sprintf("Bundle capability '%s' was detected but has no OpenClaw.NET runtime mapping.", capName),
+			Message:  fmt.Sprintf("Bundle capability '%s' was detected but has no OpenClaw runtime mapping.", capName),
 			Surface:  capName,
 			Path:     plugin.RootPath,
 		})

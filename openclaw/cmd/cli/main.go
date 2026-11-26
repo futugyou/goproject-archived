@@ -2550,7 +2550,7 @@ func runPluginOrUnknown(ctx context.Context, command string, args []string) erro
 
 func printHelp() {
 	fmt.Println(`
-            openclaw — OpenClaw.NET CLI
+            openclaw — OpenClaw CLI
 
             Usage:
               openclaw start [options]
