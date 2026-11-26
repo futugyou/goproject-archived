@@ -2197,8 +2197,129 @@ func backendsCmd(ctx context.Context, args []string) error {
 		return pollBackendSession(ctx, httpclient, backendId, sessionId, afterSequence, 4)
 	}
 
+	parsedRoot := cli.CliArgsParse(args[1:])
+	baseUrlRoot := util.Deref(parsedRoot.GetOption("--url"))
+	if baseUrlRoot == "" {
+		baseUrlRoot = os.Getenv(EnvBaseUrl)
+	}
+	if baseUrlRoot == "" {
+		baseUrlRoot = DefaultBaseUrl
+	}
+
+	tokenRoot := resolveAuthToken(parsedRoot, os.Stderr)
+
+	rootClient, err := client.NewOpenClawHttpClient(baseUrlRoot, tokenRoot, nil)
+	if err != nil {
+		return err
+	}
+
+	switch subcommand {
+	case "list":
+		backends, err := rootClient.GetIntegrationBackends(ctx)
+		if err != nil {
+			return err
+		}
+		for _, item := range backends.Items {
+			fmt.Printf("%s | provider=%s | enabled=%t | model=%s | executable=%s\n",
+				item.BackendId, item.Provider, item.Enabled, fallbackString(item.DefaultModel, "n/a"), fallbackString(item.ExecutablePath, "n/a"))
+			fmt.Printf("  readonly_default=%t write_enabled=%t require_workspace=%t\n",
+				item.AccessPolicy.ReadOnlyByDefault, item.AccessPolicy.WriteEnabled, item.AccessPolicy.RequireWorkspace)
+		}
+
+		return nil
+	case "probe":
+		backendId := ""
+		if len(parsedRoot.Positionals) > 0 {
+			backendId = parsedRoot.Positionals[0]
+		}
+
+		if backendId == "" {
+			msg := "Backend id is required."
+			fmt.Fprintln(os.Stderr, msg)
+			return errors.New(msg)
+		}
+
+		result, err := rootClient.ProbeIntegrationBackend(ctx, backendId, core.BackendProbeRequest{
+			WorkspacePath: util.Deref(parsedRoot.GetOption("--workspace")),
+		})
+		if err != nil {
+			return err
+		}
+
+		fmt.Printf("backend=%s success=%t exit_code=%s structured_output=%t\n",
+			result.BackendId, result.Success, formatOptionalInt(result.ExitCode), result.StructuredOutputSupported)
+
+		if result.Message != "" {
+			fmt.Println(result.Message)
+		}
+		if result.Stdout != "" {
+			fmt.Println(result.Stdout)
+		}
+		if result.Stderr != "" {
+			fmt.Println(result.Stderr)
+		}
+
+		if result.Success {
+			return nil
+		}
+
+		return fmt.Errorf("backup subcommand '%s' error", subcommand)
+
+	case "run":
+		backendId := ""
+		if len(parsedRoot.Positionals) > 0 {
+			backendId = parsedRoot.Positionals[0]
+		}
+
+		if backendId == "" {
+			msg := "Backend id is required."
+			fmt.Fprintln(os.Stderr, msg)
+			return errors.New(msg)
+		}
+
+		prompt := util.Deref(parsedRoot.GetOption("--prompt"))
+		if prompt == "" {
+			prompt, _ = readAllStdin()
+		}
+		if prompt == "" {
+			msg := "--prompt or stdin is required."
+			fmt.Fprintln(os.Stderr, msg)
+			return errors.New(msg)
+		}
+
+		started, err := rootClient.StartBackendSession(ctx, backendId, core.StartBackendSessionRequest{
+			BackendId:     backendId,
+			WorkspacePath: util.Deref(parsedRoot.GetOption("--workspace")),
+			Prompt:        prompt,
+			Model:         util.Deref(parsedRoot.GetOption("--model")),
+			ReadOnly:      parseBool(parsedRoot.GetOption("--read-only")),
+		})
+		if err != nil {
+			return err
+		}
+
+		if started.Session == nil {
+			msg := "Backend session failed to start."
+			fmt.Fprintln(os.Stderr, msg)
+			return errors.New(msg)
+		}
+
+		fmt.Printf("session=%s\n", started.Session.SessionId)
+		return pollBackendSession(ctx, rootClient, backendId, started.Session.SessionId, 0, 6)
+	}
+
 	printBackendsHelp()
 	return fmt.Errorf("unsupport backup subcommand: %s", subcommand)
+}
+
+func parseBool(valuep *string) *bool {
+	value := util.Deref(valuep)
+	v, err := strconv.ParseBool(value)
+	if err != nil {
+		return nil
+	}
+
+	return &v
 }
 
 func adminCmd(ctx context.Context, args []string) error         { return nil }
