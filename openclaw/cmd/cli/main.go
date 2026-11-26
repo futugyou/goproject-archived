@@ -2322,7 +2322,190 @@ func parseBool(valuep *string) *bool {
 	return &v
 }
 
-func adminCmd(ctx context.Context, args []string) error         { return nil }
+func writePosture(posture *core.SecurityPostureResponse) {
+	fmt.Printf("public_bind: %t\n", (posture.PublicBind))
+	fmt.Printf("auth_token_configured: %t\n", (posture.AuthTokenConfigured))
+	fmt.Printf("autonomy_mode: %s\n", posture.AutonomyMode)
+	fmt.Printf("tool_approval_required: %t\n", (posture.ToolApprovalRequired))
+	fmt.Printf("requester_match_http_tool_approval: %t\n", (posture.RequireRequesterMatchForHttpToolApproval))
+	fmt.Printf("browser_session_cookie_secure_effective: %t\n", (posture.BrowserSessionCookieSecureEffective))
+	fmt.Printf("trust_forwarded_headers: %t\n", (posture.TrustForwardedHeaders))
+	fmt.Printf("plugin_bridge: enabled=%t transport=%s security=%s\n",
+		(posture.PluginBridgeEnabled),
+		posture.PluginBridgeTransportMode,
+		posture.PluginBridgeSecurityMode,
+	)
+	fmt.Printf("sandbox_configured: %t\n", (posture.SandboxConfigured))
+
+	if len(posture.RiskFlags) > 0 {
+		fmt.Println("risk_flags:")
+		for _, risk := range posture.RiskFlags {
+			fmt.Printf("- %s\n", risk)
+		}
+	}
+
+	if len(posture.Recommendations) > 0 {
+		fmt.Println("recommendations:")
+		for _, recommendation := range posture.Recommendations {
+			fmt.Printf("- %s\n", recommendation)
+		}
+	}
+}
+
+func adminCmd(ctx context.Context, args []string) error {
+	if len(args) == 0 || args[0] == "-h" || args[0] == "--help" || args[0] == "help" {
+		printAdminHelp()
+		return nil
+	}
+
+	group := strings.ToLower(strings.TrimSpace(args[0]))
+	if group == "posture" {
+		parsed := cli.CliArgsParse(args[1:])
+		baseUrl := util.Deref(parsed.GetOption("--url"))
+		if baseUrl == "" {
+			baseUrl = os.Getenv(EnvBaseUrl)
+		}
+		if baseUrl == "" {
+			baseUrl = DefaultBaseUrl
+		}
+
+		token := resolveAuthToken(parsed, os.Stderr)
+		httpclient, err := client.NewOpenClawHttpClient(baseUrl, token, nil)
+		if err != nil {
+			return err
+		}
+		posture, err := httpclient.GetSecurityPosture(ctx)
+		if err != nil {
+			return err
+		}
+		writePosture(posture)
+		return nil
+	}
+
+	if group == "incident" && len(args) > 1 && strings.EqualFold(args[1], "export") {
+		parsed := cli.CliArgsParse(args[2:])
+		baseUrl := util.Deref(parsed.GetOption("--url"))
+		if baseUrl == "" {
+			baseUrl = os.Getenv(EnvBaseUrl)
+		}
+		if baseUrl == "" {
+			baseUrl = DefaultBaseUrl
+		}
+		token := resolveAuthToken(parsed, os.Stderr)
+		httpclient, err := client.NewOpenClawHttpClient(baseUrl, token, nil)
+		if err != nil {
+			return err
+		}
+
+		approvalLimit := ParseInt(parsed.GetOption("--approval-limit"))
+		if approvalLimit <= 0 {
+			approvalLimit = 100
+		}
+
+		eventLimit := ParseInt(parsed.GetOption("--event-limit"))
+		if eventLimit <= 0 {
+			eventLimit = 200
+		}
+
+		bundle, err := httpclient.ExportIncidentBundle(ctx, int(approvalLimit), int(eventLimit))
+		if err != nil {
+			return err
+		}
+
+		data, _ := json.Marshal(bundle)
+		fmt.Println(string(data))
+		return nil
+	}
+
+	if group == "trajectory" && len(args) > 1 && strings.EqualFold(args[1], "export") {
+		parsed := cli.CliArgsParse(args[2:])
+		baseUrl := util.Deref(parsed.GetOption("--url"))
+		if baseUrl == "" {
+			baseUrl = os.Getenv(EnvBaseUrl)
+		}
+		if baseUrl == "" {
+			baseUrl = DefaultBaseUrl
+		}
+		token := resolveAuthToken(parsed, os.Stderr)
+		httpclient, err := client.NewOpenClawHttpClient(baseUrl, token, nil)
+		if err != nil {
+			return err
+		}
+		fromUtc := ParseDateTimeOffset(parsed.GetOption("--from"))
+		toUtc := ParseDateTimeOffset(parsed.GetOption("--to"))
+		sessionId := util.Deref(parsed.GetOption("--session"))
+		anonymize := parsed.HasFlag("--anonymize")
+		jsonl, err := httpclient.ExportTrajectoryJsonl(ctx, fromUtc, toUtc, sessionId, anonymize)
+		if err != nil {
+			return err
+		}
+		outputPath := util.Deref(parsed.GetOption("--output"))
+		if outputPath == "" {
+			fmt.Println(jsonl)
+		} else {
+			if err := util.SaveFile(ctx, outputPath, jsonl); err != nil {
+				fmt.Println("wrote file error")
+			} else {
+				fmt.Printf("wrote %s\n", outputPath)
+			}
+		}
+
+		return nil
+	}
+
+	if group == "approvals" && len(args) > 1 && strings.EqualFold(args[1], "simulate") {
+		parsed := cli.CliArgsParse(args[2:])
+		tool := util.Deref(parsed.GetOption("--tool"))
+		if tool == "" {
+			fmt.Fprintln(os.Stderr, "--tool is required.")
+			return errors.New("--tool is required.")
+		}
+		baseUrl := util.Deref(parsed.GetOption("--url"))
+		if baseUrl == "" {
+			baseUrl = os.Getenv(EnvBaseUrl)
+		}
+		if baseUrl == "" {
+			baseUrl = DefaultBaseUrl
+		}
+		token := resolveAuthToken(parsed, os.Stderr)
+		httpclient, err := client.NewOpenClawHttpClient(baseUrl, token, nil)
+		if err != nil {
+			return err
+		}
+
+		response, err := httpclient.SimulateApproval(ctx, core.ApprovalSimulationRequest{
+			ToolName:              tool,
+			ArgumentsJson:         util.Deref(parsed.GetOption("--args")),
+			AutonomyMode:          util.Deref(parsed.GetOption("--autonomy")),
+			RequireToolApproval:   parseBool(parsed.GetOption("--require-approval")),
+			ApprovalRequiredTools: parsed.Options["--approval-tool"],
+		})
+
+		fmt.Printf("%s: %s\n", response.Decision, response.Reason)
+		fmt.Printf("tool=%s autonomy=%s require_approval=%t\n",
+			response.ToolName, response.AutonomyMode, response.RequireToolApproval)
+		if len(response.ApprovalRequiredTools) > 0 {
+			fmt.Printf("approval_tools=%s\n", strings.Join(response.ApprovalRequiredTools, ","))
+		}
+
+		return nil
+	}
+
+	printAdminHelp()
+	return fmt.Errorf("unsupport admin subcommand: %s", group)
+}
+
+func printAdminHelp() {
+	fmt.Println(`
+            openclaw admin
+
+            Usage:
+              openclaw admin posture [--url <url>] [--token <token>]
+              openclaw admin incident export [--approval-limit <n>] [--event-limit <n>] [--url <url>] [--token <token>]
+              openclaw admin trajectory export [--session <id>] [--from <iso8601>] [--to <iso8601>] [--anonymize] [--output <path>] [--url <url>] [--token <token>]
+              openclaw admin approvals simulate --tool <tool> [--args <json>] [--autonomy <mode>] [--require-approval <true|false>] [--approval-tool <tool>]... [--url <url>] [--token <token>]`)
+}
+
 func compatibilityCmd(ctx context.Context, args []string) error { return nil }
 func pluginsCmd(ctx context.Context, args []string) error       { return nil }
 func skillCmd(ctx context.Context, args []string) error         { return nil }
