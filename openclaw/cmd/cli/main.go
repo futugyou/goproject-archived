@@ -2506,11 +2506,30 @@ func printAdminHelp() {
               openclaw admin approvals simulate --tool <tool> [--args <json>] [--autonomy <mode>] [--require-approval <true|false>] [--approval-tool <tool>]... [--url <url>] [--token <token>]`)
 }
 
-func compatibilityCmd(ctx context.Context, args []string) error { return nil }
-func pluginsCmd(ctx context.Context, args []string) error       { return nil }
-func skillCmd(ctx context.Context, args []string) error         { return nil }
-func skillsCmd(ctx context.Context, args []string) error        { return nil }
-func clawHubCmd(ctx context.Context, args []string) error       { return nil }
+func compatibilityCmd(ctx context.Context, args []string) error {
+	_, err := cli.CompatibilityCommandRun(args)
+	return err
+}
+
+func pluginsCmd(ctx context.Context, args []string) error {
+	_, err := cli.PluginCommandRun(ctx, args)
+	return err
+}
+
+func skillCmd(ctx context.Context, args []string) error {
+	_, err := cli.SkillKitSimpleCommandRun(args)
+	return err
+}
+
+func skillsCmd(ctx context.Context, args []string) error {
+	_, err := cli.SkillCommandRun(args)
+	return err
+}
+
+func clawHubCmd(ctx context.Context, args []string) error {
+	_, err := cli.ClawHubCommandRun(ctx, args)
+	return err
+}
 
 func printVersion(ctx context.Context, args []string) error {
 	fmt.Println("1.0.0")

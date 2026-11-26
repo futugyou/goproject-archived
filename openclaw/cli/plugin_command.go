@@ -162,7 +162,7 @@ func pluginCommandPrintHelp() {
               openclaw plugins search openclaw dingtalk`)
 }
 
-func PluginCommandRun(ctx context.Context, command string, args []string) (int, error) {
+func PluginCommandRun(ctx context.Context, args []string) (int, error) {
 	if len(args) == 0 || args[0] == "-h" || args[0] == "--help" {
 		pluginCommandPrintHelp()
 		return 0, nil

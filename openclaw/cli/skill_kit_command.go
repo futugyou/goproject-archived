@@ -80,7 +80,11 @@ func skillKitResolvePath(currentDirectory, path string) (string, error) {
 }
 
 func SkillKitSimpleCommandRun(args []string) (int, error) {
-	return SkillKitCommandRun(args, os.Stdout, os.Stderr, ".")
+	dir, err := os.Getwd()
+	if err != nil {
+		return 1, err
+	}
+	return SkillKitCommandRun(args, os.Stdout, os.Stderr, dir)
 }
 
 func SkillKitCommandRun(
